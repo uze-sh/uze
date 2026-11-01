@@ -44,7 +44,7 @@
   - Codex runs `remove` then `add`, re-adding the old root if `add` fails;
   - refresh caches (Codex: `codex plugin add <id>`; Antigravity: `agy plugin install` again, which replaces its copy);
   - delete the old root only when no receipt names it.
-- [ ] 3.5b Linked sources:
+- [x] 3.5b Linked sources:
   - a linked package's build receipt records `source: linked`, and an edit re-renders it in place;
   - the link record keeps the pre-link commit; after `uze market unlink`, the next resolution re-ingests it from the cached clone and re-renders the build as `source: pinned`;
   - offline without that commit's blobs, it reports that it needs the network and keeps the linked build.

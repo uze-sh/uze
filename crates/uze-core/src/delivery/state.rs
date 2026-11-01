@@ -408,6 +408,14 @@ pub struct MarketplaceRecord {
     /// by `market add`, which is the operator.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub declared_by_project: bool,
+    /// The commit each of this marketplace's plugins was pinned to when the
+    /// marketplace was linked, by plugin name: a linked ingest records the
+    /// checkout as its provenance, so this is what says which bytes to put
+    /// back once it is unlinked. Kept across `unlink` until the next
+    /// resolution has restored that commit; optional for the reason `link`
+    /// is.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pinned_before_link: BTreeMap<String, String>,
 }
 
 impl MarketplaceRecord {
@@ -500,19 +508,28 @@ fn register_marketplace(
             // `marketplace_unlink` removes one.
             link: registry.marketplaces.get(name).and_then(|r| r.link.clone()),
             declared_by_project: !operator,
+            pinned_before_link: BTreeMap::new(),
         },
     );
     write_json(&path, &registry)?;
     Ok(true)
 }
 
-/// Records that this machine reads `name` from `checkout`.
+/// Records that this machine reads `name` from `checkout`, and the commit
+/// each plugin in `pinned` was installed at before it: the first link's pin
+/// stands, so linking again while linked (or while a restore is pending)
+/// never records a pin taken from the checkout.
 ///
 /// Refuses a checkout that is a different repository from the one the
 /// marketplace is registered as: a link says "read this marketplace here",
 /// and a directory holding some other project is not that marketplace
 /// wherever it sits.
-pub fn marketplace_link(home: &UzeHome, name: &str, checkout: &std::path::Path) -> Result<()> {
+pub fn marketplace_link(
+    home: &UzeHome,
+    name: &str,
+    checkout: &std::path::Path,
+    pinned: BTreeMap<String, String>,
+) -> Result<()> {
     let path = home.marketplaces_path();
     let mut registry: MarketplaceRegistry = read_json_or_default(&path)?;
     let record = registry
@@ -544,12 +561,30 @@ pub fn marketplace_link(home: &UzeHome, name: &str, checkout: &std::path::Path) 
     }
 
     record.link = Some(local.fetch.into());
+    for (plugin, commit) in pinned {
+        record.pinned_before_link.entry(plugin).or_insert(commit);
+    }
     write_json(&path, &registry)
+}
+
+/// Forgets the pre-link pin of `plugin` in `name`: its commit was restored,
+/// or the plugin is gone.
+pub fn marketplace_forget_pin(home: &UzeHome, name: &str, plugin: &str) -> Result<()> {
+    let path = home.marketplaces_path();
+    let mut registry: MarketplaceRegistry = read_json_or_default(&path)?;
+    let Some(record) = registry.marketplaces.get_mut(name) else {
+        return Ok(());
+    };
+    if record.pinned_before_link.remove(plugin).is_some() {
+        write_json(&path, &registry)?;
+    }
+    Ok(())
 }
 
 /// Stops reading `name` from a checkout. The Store keeps whatever it
 /// already holds: unlinking says where to read from next, not that what
-/// was read is wrong.
+/// was read is wrong. The pre-link pins stay, for the next resolution to
+/// restore.
 pub fn marketplace_unlink(home: &UzeHome, name: &str) -> Result<bool> {
     let path = home.marketplaces_path();
     let mut registry: MarketplaceRegistry = read_json_or_default(&path)?;

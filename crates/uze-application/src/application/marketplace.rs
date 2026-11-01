@@ -253,7 +253,46 @@ impl MarketplaceRequest {
             fetched.push(repository.clone());
         }
         let commit = acquisition::mirror::resolve(&repository, self.reference.as_deref())?;
+        self.materialize_at(plugin, &repository, &commit)
+    }
 
+    /// One plugin's bytes at `commit`, from the marketplace's cached clone
+    /// and nothing else: the commit a linked plugin was pinned to before the
+    /// link, put back once it is unlinked. Fails when the clone lacks the
+    /// commit or its content and no fetch reaches them, which is the
+    /// caller's to report as needing the network.
+    pub(crate) fn materialize_cached(
+        &self,
+        plugin: &str,
+        at: MirrorAt<'_>,
+        commit: &str,
+    ) -> Result<MaterializedPackage> {
+        let repository = super::marketplace_catalogue::mirror_dir(at.home, at.marketplace);
+        if acquisition::mirror::resolve(&repository, Some(commit)).is_err() {
+            // A clone pruned or never filled: one fetch may still reach the
+            // commit, and offline it fails here rather than later.
+            let held = at.catalogues.hold(at.marketplace)?;
+            acquisition::mirror::ensure_for(
+                &self.repository.fetch,
+                &self.repository.identity,
+                &repository,
+                self.reference.as_deref(),
+                None,
+            )?;
+            at.catalogues.absorb_fetch(at.home, at.marketplace, &held);
+        }
+        let commit = acquisition::mirror::resolve(&repository, Some(commit))?;
+        self.materialize_at(plugin, &repository, &commit)
+    }
+
+    fn materialize_at(
+        &self,
+        plugin: &str,
+        repository: &Path,
+        commit: &str,
+    ) -> Result<MaterializedPackage> {
+        let repository = repository.to_path_buf();
+        let commit = commit.to_owned();
         let subpath = &self.repository.subpath;
         let manifest_bytes =
             acquisition::mirror::read_file(&repository, &commit, &subpath.manifest_path())?;
@@ -504,10 +543,26 @@ impl Marketplace<'_> {
 
     fn link_existing(&self, name: &str, checkout: &Path) -> Result<()> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
-        uze_core::state::marketplace_link(&self.0.home, name, checkout)?;
+        // A linked ingest records the checkout as the provenance, so the
+        // commit each installed plugin was pinned to is kept now, for the
+        // resolution after `unlink` to put back.
+        let pinned = self
+            .0
+            .installed_packages()
+            .into_iter()
+            .filter(|package| package.id.marketplace() == name)
+            .filter_map(|package| match package.provenance.resolved {
+                uze_core::ResolvedSource::Git { commit, .. } => {
+                    Some((package.id.plugin_name().to_owned(), commit))
+                }
+                _ => None,
+            })
+            .collect();
+        uze_core::state::marketplace_link(&self.0.home, name, checkout, pinned)?;
         // What the catalogue holds was read from the source, not from the
-        // checkout now answering for it.
-        self.0.marketplace_catalogues.invalidate(name);
+        // checkout now answering for it. The mirror stays: it is the source's
+        // clone, which `unlink` puts the pinned commits back from.
+        self.0.marketplace_catalogues.forget_listing(name);
         Ok(())
     }
 
@@ -517,7 +572,7 @@ impl Marketplace<'_> {
     pub fn unlink(&self, name: &str) -> Result<bool> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
         let had = uze_core::state::marketplace_unlink(&self.0.home, name)?;
-        self.0.marketplace_catalogues.invalidate(name);
+        self.0.marketplace_catalogues.forget_listing(name);
         Ok(had)
     }
 

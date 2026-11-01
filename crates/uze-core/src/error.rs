@@ -336,6 +336,15 @@ pub enum UzeError {
     /// access, so no other transport is tried and none is blamed.
     #[error("this machine is offline, or cannot resolve the repository's host\n{detail}")]
     RepositoryOffline { detail: String },
+    /// A plugin's marketplace was unlinked, and the commit it was pinned to
+    /// before the link is not in the marketplace's cached clone: putting it
+    /// back needs the network, and until then the build from the checkout
+    /// stays.
+    #[error(
+        "{plugin} keeps what its linked checkout had: {commit}, the commit it was pinned to \
+         before the link, needs the network to come back"
+    )]
+    PinNeedsNetwork { plugin: String, commit: String },
     /// A short locator matched nothing UZE can read: a bare word, an
     /// ambiguous name, an alias this machine does not have.
     #[error("{0}")]

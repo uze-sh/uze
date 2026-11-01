@@ -17,6 +17,7 @@ use uze_core::{
 
 use super::extensions::prune_compiled_cache;
 use super::lifecycle::remove::ReceiptTeardown;
+use super::lifecycle::update::PinRestoration;
 use super::services::Health;
 
 #[derive(Clone, Debug, Serialize)]
@@ -42,6 +43,18 @@ pub enum MaintenanceOutcome {
     },
     UpdateAvailable {
         plugin: String,
+    },
+    /// A plugin whose marketplace was unlinked holds the commit it was
+    /// pinned to before the link again, read from the cached clone.
+    PinRestored {
+        plugin: String,
+        commit: String,
+    },
+    /// What putting a pre-link commit back needs is not on this machine:
+    /// the build from the checkout stays until the network is there.
+    NeedsNetwork {
+        plugin: String,
+        reason: String,
     },
     /// A reference UZE wrote into a shared discovery root that points into
     /// `$UZE_HOME` at something gone, which no receipt claims. Removed
@@ -99,6 +112,11 @@ impl std::fmt::Display for MaintenanceOutcome {
             MaintenanceOutcome::UpdateAvailable { plugin } => {
                 write!(formatter, "{plugin} has an update available")
             }
+            MaintenanceOutcome::PinRestored { plugin, commit } => write!(
+                formatter,
+                "put {plugin} back at {commit}, the commit it was pinned to before the link"
+            ),
+            MaintenanceOutcome::NeedsNetwork { reason, .. } => write!(formatter, "{reason}"),
             MaintenanceOutcome::NeedsHumanAction {
                 plugin,
                 integration,
@@ -130,7 +148,9 @@ impl MaintenanceReport {
             .filter(|outcome| {
                 matches!(
                     outcome,
-                    MaintenanceOutcome::Repaired { .. } | MaintenanceOutcome::OrphanCleaned { .. }
+                    MaintenanceOutcome::Repaired { .. }
+                        | MaintenanceOutcome::OrphanCleaned { .. }
+                        | MaintenanceOutcome::PinRestored { .. }
                 )
             })
             .count()
@@ -163,6 +183,10 @@ impl Health<'_> {
     /// state remains evidence for a person to decide on.
     #[tracing::instrument(name = "health.maintain", skip_all)]
     pub fn maintain(&self) -> MaintenanceReport {
+        // Before the lock, which putting a pin back takes itself; asking
+        // nobody, so a pinned commit that would run something new waits for
+        // a command that can ask.
+        let restored = self.restore_pins();
         let Ok(_mutation) = MutationLock::acquire(&self.0.home) else {
             return MaintenanceReport {
                 outcomes: vec![MaintenanceOutcome::Unavailable {
@@ -172,7 +196,7 @@ impl Health<'_> {
             };
         };
 
-        let mut report = MaintenanceReport::default();
+        let mut report = MaintenanceReport { outcomes: restored };
         let extensions = self.0.extensions().installed();
         prune_compiled_cache(&self.0.home, &extensions);
         // Prunes any Store registration whose directory is gone and cleans
@@ -334,6 +358,61 @@ impl Health<'_> {
             self.0.inspection_cache.invalidate();
         }
         report
+    }
+
+    /// Puts back the commit each plugin of an unlinked marketplace was
+    /// pinned to before the link ([`PinRestoration`]). A pin whose commit
+    /// would run something new, or whose detach is refused, is left for an
+    /// update to settle.
+    fn restore_pins(&self) -> Vec<MaintenanceOutcome> {
+        let pending = state::marketplace_list(&self.0.home).is_ok_and(|marketplaces| {
+            marketplaces
+                .values()
+                .any(|record| record.link.is_none() && !record.pinned_before_link.is_empty())
+        });
+        if !pending {
+            return Vec::new();
+        }
+        let authority = uze_core::trust::NoTrustAuthority;
+        self.0
+            .installed_packages()
+            .iter()
+            .filter_map(|package| {
+                let restoration = self.0.plugins().restore_pinned(package, &authority)?;
+                let plugin = package.id.as_str().to_owned();
+                Some(match restoration {
+                    Ok(PinRestoration::Restored {
+                        report: crate::application::UpdatePluginReport::Updated { .. },
+                        commit,
+                    }) => MaintenanceOutcome::PinRestored {
+                        plugin,
+                        commit: super::lifecycle::update::short_commit(&commit).to_owned(),
+                    },
+                    Ok(PinRestoration::Restored { .. }) => MaintenanceOutcome::NeedsHumanAction {
+                        plugin,
+                        integration: None,
+                        receipt: None,
+                        state: Some(AttachmentState::Drifted),
+                        reason: "the commit pinned before the link was not put back: managed \
+                                 state has drifted"
+                            .to_owned(),
+                    },
+                    Ok(PinRestoration::NeedsNetwork(error)) => MaintenanceOutcome::NeedsNetwork {
+                        plugin,
+                        reason: error.to_string(),
+                    },
+                    Err(error) => MaintenanceOutcome::NeedsHumanAction {
+                        plugin,
+                        integration: None,
+                        receipt: None,
+                        state: None,
+                        reason: format!(
+                            "the commit pinned before the link was not put back: {error}"
+                        ),
+                    },
+                })
+            })
+            .collect()
     }
 
     /// First prunes any Store registration whose directory is gone

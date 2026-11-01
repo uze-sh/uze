@@ -188,7 +188,7 @@ mod tests {
             },
         )
         .unwrap();
-        uze_core::state::marketplace_link(&home, "market", &market).unwrap();
+        uze_core::state::marketplace_link(&home, "market", &market, Default::default()).unwrap();
         let app = UzeApplication::new(home, Vec::new());
         install(&app, &plugin);
 

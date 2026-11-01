@@ -16,6 +16,7 @@ use uze_core::{
     trust::{SourceOrigin, TrustAuthority},
 };
 
+use super::lifecycle::update::PinRestoration;
 use super::marketplace::MarketplaceRequest;
 use super::services::Project;
 use super::*;
@@ -892,6 +893,14 @@ impl Project<'_> {
             // `replace_with` is the path that replaces, and it puts the
             // installed revision back if the new one cannot be delivered.
             let content_before = self.installed_revision(&qualified).content;
+            // The first resolution after `uze market unlink` puts back the
+            // commit pinned before the link, and leaves the lock as it is.
+            if let Ok(installed) = self.0.package_by_name(&qualified)
+                && let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority)
+            {
+                outcomes.push(restored_outcome(name, restoration)?);
+                continue;
+            }
             let (installed_id, deliveries) = if self.0.package_by_name(&qualified).is_ok() {
                 let materialized = request.materialize_plugin(
                     &name,
@@ -1041,6 +1050,12 @@ impl Project<'_> {
         let mut outcomes = Vec::new();
         for id in targets {
             let before = self.installed_revision(&id);
+            if let Ok(installed) = self.0.package_by_name(&id)
+                && let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority)
+            {
+                outcomes.push(restored_outcome(id, restoration)?);
+                continue;
+            }
             match self.0.plugins().update(&id, authority) {
                 Ok(UpdatePluginReport::Updated { deliveries, .. }) => {
                     let after = self.installed_revision(&id);
@@ -1117,6 +1132,56 @@ impl Project<'_> {
         Ok((!copies.is_quiet()).then_some(copies))
     }
 
+    /// Puts back, for every plugin the project declares, the commit pinned
+    /// before its marketplace was linked, once it is unlinked
+    /// ([`super::lifecycle::update::PinRestoration`]): what an install
+    /// resolves first. A pin that needs the network is a skip, said.
+    fn restore_declared_pins(
+        &self,
+        manifest: &manifest::ProjectManifest,
+        authority: &dyn TrustAuthority,
+    ) -> Result<InstallProgress> {
+        let mut progress = InstallProgress::default();
+        for (name, marketplace) in manifest.declared_plugins() {
+            let Ok(installed) = self.0.package_by_name(&format!("{name}@{marketplace}")) else {
+                continue;
+            };
+            let Some(restoration) = self.0.plugins().restore_pinned(&installed, authority) else {
+                continue;
+            };
+            let skip = |reason: String| SkippedPlugin {
+                plugin: name.to_owned(),
+                marketplace: marketplace.to_owned(),
+                reason,
+            };
+            match restoration {
+                Ok(PinRestoration::Restored {
+                    report: UpdatePluginReport::Updated { deliveries, .. },
+                    ..
+                }) => {
+                    progress.installed.push(name.to_owned());
+                    progress.undelivered.extend(
+                        deliveries
+                            .into_iter()
+                            .filter(|delivery| delivery.error().is_some())
+                            .map(|delivery| (name.to_owned(), delivery)),
+                    );
+                }
+                Ok(PinRestoration::Restored { .. }) => progress.skipped.push(skip(
+                    "managed state has drifted; the linked checkout's build was kept".to_owned(),
+                )),
+                Ok(PinRestoration::NeedsNetwork(error)) => {
+                    progress.skipped.push(skip(error.to_string()));
+                }
+                Err(error @ UzeError::TrustRequired { .. }) => {
+                    progress.skipped.push(skip(error.to_string()));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(progress)
+    }
+
     /// The working copy `marketplace` is linked to on this machine, if any.
     fn linked_source(&self, marketplace: &str) -> Option<std::path::PathBuf> {
         uze_core::state::marketplace_get(&self.0.home, marketplace)
@@ -1188,8 +1253,10 @@ impl Project<'_> {
         let manifest = manifest::load(&canonical)?.unwrap_or_default();
         let mut lock = project_lock::load_lock(&canonical)?.unwrap_or_default();
 
+        // Before the lock, which putting a pin back takes itself.
+        let restored = self.restore_declared_pins(&manifest, authority)?;
         let mut mutation = Some(uze_core::persistence::MutationLock::acquire(&self.0.home)?);
-        let mut progress = InstallProgress::default();
+        let mut progress = restored;
         let stale = project_lock::stale_against(&manifest, &lock);
         self.prefetch_install_sources(&canonical, &manifest, &lock, &stale);
         self.resolve_declared(
@@ -2162,6 +2229,36 @@ pub struct UpdateReport {
     /// plugins with something to say.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<RuleCopies>,
+}
+
+/// What an update says of a plugin whose pre-link commit it put back.
+fn restored_outcome(plugin: String, restoration: Result<PinRestoration>) -> Result<UpdateOutcome> {
+    Ok(match restoration {
+        Ok(PinRestoration::Restored {
+            report: UpdatePluginReport::Updated { deliveries, .. },
+            commit,
+        }) => UpdateOutcome::Moved {
+            plugin,
+            revision: commit,
+            deliveries,
+        },
+        Ok(PinRestoration::Restored { .. }) => UpdateOutcome::Blocked {
+            plugin,
+            reason: "managed state has drifted; nothing was changed".to_owned(),
+        },
+        Ok(PinRestoration::NeedsNetwork(error)) => UpdateOutcome::Held {
+            plugin,
+            reason: error.to_string(),
+        },
+        Err(UzeError::TrustRequired { detail, .. }) => UpdateOutcome::Held {
+            plugin,
+            reason: format!(
+                "the commit pinned before the link asks to execute something new ({detail}); \
+                 confirm it explicitly"
+            ),
+        },
+        Err(error) => return Err(error),
+    })
 }
 
 impl UpdateOutcome {

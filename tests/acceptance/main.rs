@@ -11,6 +11,7 @@ mod command_approval;
 mod engine;
 mod fresh_project;
 mod lifecycle;
+mod linked_builds;
 mod multi_harness;
 mod package_and_workspace;
 mod package_only;

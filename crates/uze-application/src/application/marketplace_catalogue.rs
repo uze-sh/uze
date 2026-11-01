@@ -367,6 +367,32 @@ impl MarketplaceCatalogues {
         fetched
     }
 
+    /// Forgets what `name`'s listing says in both tiers, and keeps its
+    /// mirror: what a link or an unlink changes is who answers for the
+    /// marketplace, not the clone of its source, which is where the commit
+    /// pinned before a link is put back from.
+    pub fn forget_listing(&self, name: &str) {
+        self.memo
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(name);
+        let _held = self.hold(name);
+        let Ok(entries) = fs::read_dir(self.entry_dir(name)) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry.file_name() == REPOSITORY_DIR {
+                continue;
+            }
+            let path = entry.path();
+            let _ = if path.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+        }
+    }
+
     /// Forgets `name` in both tiers. Best effort, as cache: an entry a
     /// writer kept past the wait is removed all the same.
     pub fn invalidate(&self, name: &str) {
