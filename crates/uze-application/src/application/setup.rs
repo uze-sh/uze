@@ -408,8 +408,18 @@ impl UzeApplication {
                 let _span =
                     tracing::debug_span!("integration.install", integration = integration.id())
                         .entered();
-                if let Err(error) = integration.install(&self.home, &detection) {
-                    first_refusal.get_or_insert(error);
+                match integration.install(&self.home, &detection) {
+                    // What preparing wrote on no package's account (OpenCode's
+                    // `uze.ts`) is owned from the moment it exists, so a purge
+                    // finds it however the harness came to be prepared.
+                    Ok(()) => {
+                        if let Err(error) = self.record_setup_artifacts(integration.as_ref()) {
+                            tracing::warn!(integration = integration.id(), %error, "setup's own delivery went unrecorded");
+                        }
+                    }
+                    Err(error) => {
+                        first_refusal.get_or_insert(error);
+                    }
                 }
             }
         }

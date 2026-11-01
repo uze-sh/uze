@@ -372,6 +372,33 @@ fn a_purge_leaves_no_harness_file_naming_the_home() {
     assert!(references.is_empty(), "{references:?}");
 }
 
+/// A harness prepared by an install alone, never by `setup`, still has
+/// what preparing wrote (OpenCode's `uze.ts`) owned by a receipt, so a purge
+/// takes it back like everything else.
+#[test]
+fn a_purge_after_an_install_with_no_setup_leaves_no_harness_file_naming_the_home() {
+    let env = TestEnvironment::isolated();
+    install_fake_harnesses(&env);
+    let (market, add) = uze_testkit::marketplace::marketplace_add_args(
+        env.root(),
+        &fixtures::canonical("store-tie"),
+    );
+    env.run_ok(
+        uze_bin(),
+        &market.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+
+    let output = uninstall(&env, &["--yes", "--purge"]);
+
+    assert!(output.status.success(), "{}", said(&output));
+    let references = uze_home_references(&env);
+    assert!(references.is_empty(), "{references:?}");
+}
+
 #[test]
 fn the_operators_codex_hooks_keep_their_place() {
     let env = TestEnvironment::isolated();
