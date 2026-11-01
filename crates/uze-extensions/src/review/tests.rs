@@ -702,3 +702,103 @@ fn a_comment_that_cannot_be_kept_is_not_offered() {
     assert!(!view.typing());
     assert!(view.notice.is_some(), "and says why");
 }
+
+#[test]
+fn a_send_refused_or_declined_leaves_the_drafts_drafts() {
+    use crate::contract::{AgentWritten, Extension};
+    for written in [
+        AgentWritten::Refused("busy".to_owned()),
+        AgentWritten::Declined,
+    ] {
+        let mut extension = sending_extension();
+        extension.command(SURFACE, Command::Send, SPACE);
+        extension.agent_write("review-send", written);
+        let view = extension.review_view().unwrap();
+        assert_eq!(view.drafts().len(), 1);
+        assert!(view.notice.is_some(), "and says it was not sent");
+    }
+}
+
+#[test]
+fn the_door_counts_the_branch_and_says_what_waits() {
+    use crate::contract::Extension;
+    let mut extension = sending_extension();
+    assert!(
+        badge(&extension).starts_with("review"),
+        "nothing counted yet: {}",
+        badge(&extension)
+    );
+    extension.counted(PathBuf::from("/w"), 14_714, 672, 3);
+    let drafts = badge(&extension);
+    assert!(drafts.starts_with("+14,714 -672"), "{drafts}");
+    assert!(drafts.ends_with('1'), "one draft waits: {drafts}");
+    let view = extension.review_view_mut().unwrap();
+    view.record.comments[0].status = CommentStatus::Answered;
+    let answered = extension.door_badge().unwrap();
+    let last = answered.spans.last().unwrap();
+    assert_eq!(
+        last.role,
+        crate::view::Role::Success,
+        "an answer waits, in the success hue"
+    );
+}
+
+#[test]
+fn resolve_puts_the_answered_comment_away() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    handle_command(&mut view, Command::Type('x'), SPACE);
+    handle_command(&mut view, Command::AddComment, SPACE);
+    view.record.comments[0].status = CommentStatus::Answered;
+    handle_command(&mut view, Command::Resolve, SPACE);
+    assert_eq!(view.record.comments[0].status, CommentStatus::Resolved);
+    assert!(
+        !line_texts(&view)
+            .iter()
+            .any(|line| line.contains("answered"))
+    );
+}
+
+#[test]
+fn open_in_code_lands_on_a_line_the_new_file_has() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = sending_extension();
+    let path = PathBuf::from("/w/naming.rs");
+    let view = extension.review_view_mut().unwrap();
+    view.files = reviewing().files;
+    view.selected = Some(path.clone());
+    view.absorb_diff(path.clone(), Ok(diff_of(&path, NAMING)), "x".to_owned());
+    // The removed `fn old() {}` is cell 1: it has no line in the new file.
+    view.mark = Some((1, 1));
+    let asked = extension.command(SURFACE, Command::OpenInCode, SPACE);
+    assert_eq!(
+        asked,
+        Outcome::OpenPath {
+            project: PathBuf::from("/w"),
+            target: path,
+            line: Some(2),
+        }
+    );
+}
+
+#[test]
+fn a_discard_is_asked_first_and_only_then_handed_to_the_host() {
+    let mut view = reviewing();
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_command(&mut view, Command::Activate, SPACE);
+    assert_eq!(view.restore, None, "asked, not done");
+    handle_hit(&mut view, ViewHit::Answer(false), SPACE);
+    assert_eq!(view.restore, None, "declined");
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_command(&mut view, Command::Activate, SPACE);
+    handle_hit(&mut view, ViewHit::Answer(true), SPACE);
+    assert_eq!(view.restore, Some(vec![PathBuf::from("/w/naming.rs")]));
+}
