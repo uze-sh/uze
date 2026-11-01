@@ -997,24 +997,6 @@ impl UzeStore {
     }
 }
 
-/// Enforces the invariant that an installed package is **self-contained**:
-/// no symlink the Store persists may resolve outside the package root.
-///
-/// This is not a rule about where a package came from. A local directory and
-/// a cloned repository are held to it identically, because it protects what
-/// happens *after* installation: an integration later points a harness at a
-/// path inside the store, and the harness follows whatever it finds there.
-///
-/// Every symlink is checked on its own and none is followed. That is
-/// deliberate and it is also what makes chains and cycles harmless: a chain
-/// can only leave the root if some individual link leaves it, and that link
-/// is checked like any other. Nothing here traverses a link, so there is no
-/// cycle to guard against.
-///
-/// The one place a textual reading and the kernel disagree is `..` stepping
-/// back out of a link: `s -> .` makes `s/s/../..` two levels up on disk and
-/// none on paper. A target that does that is refused rather than resolved,
-/// so each link's own check stays the whole answer.
 /// Where a build keeps, under their own relative paths, the parts of the
 /// package its harness would misread at the plugin root (Claude's `bin/`,
 /// `commands/`, ...): out of the harness's reach as components, still
@@ -1044,6 +1026,24 @@ pub(crate) fn assert_no_reserved_path(root: &Path) -> Result<()> {
     }
 }
 
+/// Enforces the invariant that an installed package is **self-contained**:
+/// no symlink the Store persists may resolve outside the package root.
+///
+/// This is not a rule about where a package came from. A local directory and
+/// a cloned repository are held to it identically, because it protects what
+/// happens *after* installation: an integration later points a harness at a
+/// path inside the store, and the harness follows whatever it finds there.
+///
+/// Every symlink is checked on its own and none is followed. That is
+/// deliberate and it is also what makes chains and cycles harmless: a chain
+/// can only leave the root if some individual link leaves it, and that link
+/// is checked like any other. Nothing here traverses a link, so there is no
+/// cycle to guard against.
+///
+/// The one place a textual reading and the kernel disagree is `..` stepping
+/// back out of a link: `s -> .` makes `s/s/../..` two levels up on disk and
+/// none on paper. A target that does that is refused rather than resolved,
+/// so each link's own check stays the whole answer.
 pub(crate) fn assert_self_contained(root: &Path) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
