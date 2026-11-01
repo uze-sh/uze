@@ -7,14 +7,14 @@ to the agent in one send, then reads the answers where they asked.
 ## ADDED Requirements
 
 ### Requirement: The review has a door that is always on the tab strip
-The tab strip SHALL always draw the review's door in an agent's context:
-the branch's additions and deletions against its target when there are
-any, and the word `review` when there are none. It SHALL NOT disappear on
-a clean checkout, and pressing it SHALL open the review, or close it when
-it is the surface in front.
+While the review is switched on in the workspace, the tab strip SHALL
+always draw its door in an agent's context: the branch's additions and
+deletions against its target when there are any, and `review` when there
+are none. Pressing it SHALL open the review, or close it when it is the
+surface in front.
 
 #### Scenario: A branch with work on it
-- **WHEN** the checkout's branch adds 81 lines and removes 16 against its target
+- **WHEN** the agent's branch adds 81 lines and removes 16 against its target
 - **THEN** the door reads `+81 -16`
 
 #### Scenario: Nothing differs from the target
@@ -26,10 +26,15 @@ it is the surface in front.
 - **WHEN** the review is in front and the operator presses its door
 - **THEN** the review is put away and the agent's pane is shown
 
+#### Scenario: The review switched off
+- **WHEN** the operator switches the review off for the workspace
+- **THEN** no door is drawn for it, and its key does nothing
+
 ### Requirement: The door says what waits on the operator
-The door SHALL add `◆n` for n unsent drafts, `◆n` in the success hue for n
-answered comments not yet resolved, and a working mark while the agent is
-on a review it was sent. Drafts SHALL take precedence over answers.
+The door SHALL add `◆n` for n unsent drafts and `◆n` in the success hue for
+n answered comments not yet resolved, drafts taking precedence. From the
+moment a send is typed until that agent's next finished turn, it SHALL
+show a working mark instead.
 
 #### Scenario: Drafts waiting to be sent
 - **WHEN** the operator has written two comments and sent none
@@ -39,12 +44,16 @@ on a review it was sent. Drafts SHALL take precedence over answers.
 - **WHEN** the agent answered three sent comments and none is resolved or drafted
 - **THEN** the door shows `◆3` in the success hue
 
+#### Scenario: The agent is on the review
+- **WHEN** a send was typed and the agent's turn has not finished
+- **THEN** the door shows the working mark, which gives way when the turn finishes
+
 ### Requirement: The review diffs the branch against its target
 The review SHALL show, per changed file, the difference between the merge
 base of the checkout's target and the working tree, committed and
 uncommitted work together. An `uncommitted` filter SHALL narrow it to what
-is not committed yet. A checkout with no known target SHALL fall back to
-its last commit and say so.
+is not committed yet. With no known target, or on the target branch
+itself, it SHALL show the uncommitted changes and say why.
 
 #### Scenario: Committed and uncommitted work in one diff
 - **WHEN** the branch has three commits on `main` and one file edited but not committed
@@ -56,35 +65,54 @@ its last commit and say so.
 
 #### Scenario: No target known
 - **WHEN** the checkout's target has not been evaluated
-- **THEN** the review shows the changes against the last commit and says the target is unknown
+- **THEN** the review shows the uncommitted changes and says the target is unknown
+
+#### Scenario: An agent on the target branch
+- **WHEN** the agent works directly on `main`, which is also its target
+- **THEN** the review shows the uncommitted changes and says the branch is its own target
+
+### Requirement: The target is the fetched one when there is one
+The merge base SHALL be taken against the target as last fetched, when it
+has been, and the local target branch otherwise, so work already landed
+upstream is not shown as the branch's own.
+
+#### Scenario: A stale local main
+- **WHEN** the local `main` is behind the fetched `main`, which already holds two of the branch's commits
+- **THEN** the review does not list what those two commits changed
 
 ### Requirement: Lines are marked by pointer, keyboard or text selection
 The operator SHALL be able to mark a run of diff lines by dragging over
-their numbers, by shift-clicking, by extending from the cursor with
-shift and an arrow, or by selecting text across lines. The marked lines
+their numbers, by shift-clicking a number, by extending from the cursor
+with shift and an arrow, or by selecting text across lines. A drag that
+starts on a line number SHALL mark lines, never select text. Marked lines
 SHALL stay lit until commented or cleared.
 
 #### Scenario: Dragging over line numbers
 - **WHEN** the operator presses on line 52's number and releases on line 56's
-- **THEN** lines 52 to 56 are marked and a `c comment` affordance stands under the last
+- **THEN** lines 52 to 56 are marked and a `comment` affordance stands under the last
 
 #### Scenario: Selecting text
 - **WHEN** the operator selects `.ok()?` with the pointer on line 55
 - **THEN** line 55 is marked and the comment quotes the selected text
 
 ### Requirement: A comment is written under the lines it is about
-Pressing `c` SHALL open a comment under the marked lines, or the cursor's
-line when none is marked. `ctrl+enter` SHALL add it as a draft and `esc`
-SHALL drop it. A draft SHALL be drawn under its lines with a mark in the
-gutter, and SHALL be editable and deletable until it is sent.
+The comment action SHALL open a composer under the marked lines, or the
+cursor's line when none is marked. Its add action, bound by default to a
+chord every terminal sends and offered as a control, SHALL keep it as a
+draft, and cancel SHALL drop it. A draft SHALL be drawn under its lines,
+editable and deletable until sent.
 
 #### Scenario: A draft is added
-- **WHEN** the operator marks lines 52-56, presses `c`, types and presses `ctrl+enter`
+- **WHEN** the operator marks lines 52-56, opens the composer, types and presses add
 - **THEN** a draft stands under line 56 and lines 52-56 carry the comment mark
 
 #### Scenario: An empty comment is not kept
-- **WHEN** the operator presses `ctrl+enter` with nothing typed
+- **WHEN** the operator presses add with nothing typed
 - **THEN** no draft is added
+
+#### Scenario: A terminal without an enhanced keyboard
+- **WHEN** the terminal cannot send `ctrl+enter`
+- **THEN** the composer's add is still reachable by its default chord and by its control
 
 ### Requirement: A comment carries code
 A comment SHALL draw a fenced block as code, coloured as the file's
@@ -101,9 +129,10 @@ selected text, and one that wraps the selected text in backticks.
 - **THEN** it becomes `` `rev-parse` `` and is drawn as code
 
 ### Requirement: A file can be marked viewed
-Each listed file SHALL carry a viewed mark the operator toggles by
-pointer or by `v`. `v` on an unviewed file SHALL mark it and select the
-next unviewed one. The list SHALL say how many of its files are viewed.
+Each listed file SHALL carry a viewed mark the operator toggles by pointer
+or by the viewed action. The action on an unviewed file SHALL mark it and
+select the next unviewed one. The list SHALL say how many of its files are
+viewed.
 
 #### Scenario: Viewed and on to the next
 - **WHEN** the operator presses `v` on `naming.rs` with `tests.rs` the next unviewed file
@@ -119,66 +148,120 @@ was viewed, and SHALL NOT count as viewed.
 - **THEN** `naming.rs` shows it changed since it was viewed, and the viewed count drops by one
 
 ### Requirement: Drafts and viewed marks outlive the session
-Drafts, sent comments, their answers and viewed marks SHALL be kept per
-repository and branch across workspace sessions, and SHALL be discarded
-once that branch no longer exists. A record that cannot be read SHALL be
-reported and never written over.
+Comments, their answers and viewed marks SHALL be kept per agent among the
+project's records, across workspace sessions, slot moves and the agent
+naming its work, and SHALL go when the agent is forgotten. A record that
+cannot be read SHALL be reported and never written over.
 
 #### Scenario: Reopening the workspace
 - **WHEN** the operator writes two drafts, quits the workspace and opens it again on the same agent
 - **THEN** the review shows both drafts on their lines
 
-#### Scenario: The branch is gone
-- **WHEN** the branch a review was kept for is deleted after landing
-- **THEN** its review record is discarded
+#### Scenario: The agent names its work
+- **WHEN** the operator has two drafts and the agent runs `uze agent work name fix/branch-naming`, renaming its branch
+- **THEN** both drafts are still there
 
-### Requirement: Every draft is sent to the agent as one prompt
-`s` SHALL send every draft as one prompt to the agent whose checkout the
-review is on, through the agent bridge, which shows the text before typing
-and refuses an agent that is not ready. The prompt SHALL number each
-comment and give its path, its lines, the quoted lines and its text. Sent
-drafts SHALL become sent comments.
+### Requirement: A send tells the agent where the review is
+The send action SHALL type one line into the review's agent through the
+agent bridge, which shows it first and refuses an agent that is not ready:
+how many comments wait and the command that shows them. Drafts SHALL
+become sent comments of a numbered send only once the line is typed.
 
 #### Scenario: Two drafts sent
-- **WHEN** the operator presses `s` with two drafts and the agent is ready
-- **THEN** one prompt naming comments 1 and 2 with their paths and lines is shown, then typed, and both comments read `sent`
+- **WHEN** the operator sends with two drafts and the agent is ready
+- **THEN** one line saying two review comments wait, and naming `uze agent review show`, is shown and then typed, and both comments read `sent`
 
 #### Scenario: A busy agent
-- **WHEN** the operator presses `s` while the agent's turn is running
+- **WHEN** the operator sends while the agent's turn is running
 - **THEN** nothing is typed, the drafts stay drafts, and the notice says the agent is busy
 
+#### Scenario: The operator declines
+- **WHEN** the operator declines the bridge's confirmation
+- **THEN** the drafts stay drafts
+
+### Requirement: The agent reads the review through the CLI
+`uze agent review show` SHALL be accepted only from an agent UZE launched,
+and SHALL print that agent's sent, unanswered comments: send and comment
+number, path, lines, the quoted lines and the text, with code blocks
+intact, and how to reply. It SHALL exit 0 however it fails.
+
+#### Scenario: The agent reads its review
+- **WHEN** the agent runs `uze agent review show` after send 3 with two comments
+- **THEN** it prints `3/1` and `3/2` with their paths, lines, quotes and text
+
+#### Scenario: Run outside an agent
+- **WHEN** a plain shell runs `uze agent review show`
+- **THEN** nothing is printed but a line saying it is not an agent UZE launched
+
 ### Requirement: The agent answers a comment where it was asked
-`uze agent review reply <n> <text>` SHALL be accepted only from an agent UZE
-launched, for a comment sent to that agent, and SHALL attach the text to
-comment n. The review SHALL draw the answer under the comment and offer to
-resolve it. The prompt SHALL tell the agent how to reply.
+`uze agent review reply <send>/<n> <text>` SHALL be accepted only from the
+agent the comment was sent to, SHALL attach the text as its answer, and
+SHALL never change the comment's own fields. The review SHALL draw the
+answer under the comment and offer to resolve it.
 
 #### Scenario: An answer arrives
-- **WHEN** the agent runs `uze agent review reply 1 "apply now refuses a taken branch"`
-- **THEN** comment 1 shows the answer and a `resolve` action, and the door counts it as waiting
+- **WHEN** the agent runs `uze agent review reply 3/1 "apply now refuses a taken branch"`
+- **THEN** comment 3/1 shows the answer and a `resolve` action, and the door counts it as waiting
 
-#### Scenario: A reply from outside an agent
-- **WHEN** a plain shell runs `uze agent review reply 1 "done"`
-- **THEN** nothing is attached and the command says it is not an agent UZE launched
+#### Scenario: A reference that names no comment
+- **WHEN** the agent replies to `3/9` and send 3 has two comments
+- **THEN** nothing is attached and the command says there is no such comment
+
+#### Scenario: Another agent's comment
+- **WHEN** a second agent on the same project replies to a comment sent to the first
+- **THEN** nothing is attached
+
+### Requirement: An answer is bounded and drawn as text
+An answer SHALL be bounded in bytes, and a comment SHALL hold a bounded
+number of answers. Control and escape characters SHALL be removed when an
+answer is written and again when it is drawn. The launch key identifies
+the agent; it is not a trust boundary, and the record is read as untrusted.
+
+#### Scenario: An escape sequence in an answer
+- **WHEN** an answer holds a terminal escape sequence
+- **THEN** the review draws it as plain text, without the sequence
+
+#### Scenario: An oversized answer
+- **WHEN** an answer exceeds the bound
+- **THEN** it is cut at the bound and the review says it was cut
 
 ### Requirement: A comment survives the lines it was about changing
 A sent comment whose lines are no longer in the diff SHALL stay in the
-review, at the end of its file, with its quoted lines and a note that they
+review at the end of its file, with its quoted lines and a note that they
 changed. Resolving SHALL take a comment out of the diff and the door's
 count.
 
 #### Scenario: The agent rewrote the commented function
-- **WHEN** comment 1 was on lines 52-56 and the agent's commit replaced them
-- **THEN** comment 1 stands at the end of `naming.rs` quoting the old lines, marked as changed
+- **WHEN** comment 3/1 was on lines 52-56 and the agent's commit replaced them
+- **THEN** comment 3/1 stands at the end of `naming.rs` quoting the old lines, marked as changed
+
+### Requirement: A change is discarded only where it is uncommitted
+The review SHALL offer to discard a file's changes only when that file has
+uncommitted changes, and discarding SHALL restore it to the last commit,
+after the confirmation the surface already asks for.
+
+#### Scenario: A file changed only by commits
+- **WHEN** `docs/workspace.md` differs from the target only through committed work
+- **THEN** its row offers no discard
 
 ### Requirement: A marked line opens in the code surface
-`o` SHALL open the code surface on the marked file at the first marked
-line, or the cursor's line, using the path hand-off the surfaces share. A
-removed line SHALL open at the nearest line that still exists.
+The open-in-code action SHALL open the code surface on the marked file at
+the first marked line, or the cursor's, by the path hand-off the surfaces
+share. A removed line SHALL open at the nearest line that still exists.
 
 #### Scenario: From the review to the file
-- **WHEN** the operator presses `o` with line 53 of `naming.rs` marked
+- **WHEN** the operator opens in code with line 53 of `naming.rs` marked
 - **THEN** the code surface shows `naming.rs`'s contents with line 53 in view
+
+### Requirement: Every review key is a named action with a pointer twin
+Comment, add, cancel, send, viewed, open in code, extend the mark and
+resolve SHALL be named, rebindable actions in the review's own scope,
+listed in the action index, and each SHALL have a control the pointer
+reaches, its hint clicked being its key.
+
+#### Scenario: A rebound send
+- **WHEN** the operator's keymap binds the review's send to another chord
+- **THEN** the hint bar shows that chord, and clicking the hint sends
 
 ### Requirement: A changed image is drawn in the review
 When the selected file is a binary file in one of the drawn image formats
@@ -195,9 +278,9 @@ image, or one that cannot be decoded, SHALL keep that message.
 - **THEN** the review says Git records that it changed, with no image
 
 ### Requirement: Reading the review never blocks the workspace
-Every Git read the review makes (the file list, a file's diff, the door's
-counts, the merge base) SHALL run off the drawing thread, and an answer to
-a question no longer asked SHALL be dropped on arrival.
+Every read the review makes (the file list, a file's diff, the door's
+counts, the merge base, its record) SHALL run off the drawing thread, and
+an answer to a question no longer asked SHALL be dropped on arrival.
 
 #### Scenario: Moving through files quickly
 - **WHEN** the operator holds the down arrow through twenty changed files
@@ -205,7 +288,7 @@ a question no longer asked SHALL be dropped on arrival.
 
 ### Requirement: Returning to an agent shows the review as it was left
 When an agent comes back to the front with the review kept for it, the
-review SHALL show the same file, marks, open composer text and scroll.
+review SHALL show the same file, marks, composer text and scroll.
 
 #### Scenario: A half-written comment
 - **WHEN** the operator is typing a comment on agent A, selects agent B, then agent A
