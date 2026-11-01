@@ -14,7 +14,7 @@ use std::{
     time::Instant,
 };
 
-use super::diff::{self, DiffCell};
+use crate::review::diff::{self, DiffCell};
 pub(super) use crate::shared::git_status::{
     ChangedFile, FileStatus, STATUS_ARGS, parse_numstat, parse_porcelain_status,
 };

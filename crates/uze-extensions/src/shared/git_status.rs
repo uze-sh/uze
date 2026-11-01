@@ -40,7 +40,7 @@ impl FileStatus {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ChangedFile {
     pub(crate) status: FileStatus,
     /// Absolute — resolved against the repository root (`CodeView::root`),

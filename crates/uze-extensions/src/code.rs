@@ -72,7 +72,6 @@ use crate::{
 };
 
 mod changes;
-mod diff;
 mod editor;
 mod exclude;
 mod extension;
@@ -97,8 +96,8 @@ pub use render::view;
 pub use request::{FileAnswer, FileRequest, LoadedFile, fulfill, unanswered};
 pub use search::Findings;
 
+use crate::review::diff::{self, DiffLineKind};
 use changes::Changes;
-use diff::DiffLineKind;
 use editor::OpenFile;
 use files::Files;
 use map::{Followed, Map};
