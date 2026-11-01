@@ -79,16 +79,7 @@ NAMING_END = "UZE_STORES_NAMING_END"
 REGISTRY_BEGIN = "UZE_STORES_REGISTRY_BEGIN"
 REGISTRY_END = "UZE_STORES_REGISTRY_END"
 
-#: Where a harness keeps its configuration and discovery files, under the
-#: run's home; `.agents` is the cross-vendor skills root one of them reads.
-HARNESS_HOMES = (
-    ".claude",
-    ".claude.json",
-    ".codex",
-    ".config/opencode",
-    ".gemini",
-    ".agents",
-)
+HARNESS_HOMES = lifecycle.HARNESS_HOMES
 
 #: What a vendor keeps after its *own* uninstall, which UZE's purge runs:
 #: measured, not assumed (`lifecycle.VENDOR_KEEPS`). Claude Code 2.1.316
