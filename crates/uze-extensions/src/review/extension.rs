@@ -75,10 +75,10 @@ pub struct ReviewExtension {
     drawer_notice: Option<(PathBuf, Span)>,
     /// A comment a press in the drawer asked the review to open on.
     open_on: Option<u64>,
-    /// The agent a send was typed into and the checkout it works in, until
-    /// its turn finishes or it is gone: the turn's end is when its answers
-    /// are read, without waiting for the next pass.
-    working: Option<(String, PathBuf)>,
+    /// The agent a send was typed into, until its turn finishes or it is
+    /// gone: the turn's end is when its answers are read, without waiting
+    /// for the next pass.
+    working: Option<String>,
     listing: bool,
     listed_at: Option<Instant>,
     /// How long the last list read took.
@@ -197,8 +197,6 @@ impl ReviewExtension {
         }
     }
 
-    /// Asks the bridge to tell the agent its drafts wait for it. The
-    /// drafts become a send only once the bridge says the line was typed.
     /// A press in the drawer: the send, or a comment, which the review
     /// opens on, in its file, with its lines marked.
     fn drawer_hit(&mut self, hit: ViewHit, _space: Size) -> Outcome {
@@ -313,8 +311,6 @@ impl ReviewExtension {
         }))
     }
 
-    /// The marked line, or the cursor's, in the code surface: the first
-    /// marked line that still exists in the new file.
     /// The selected file in the code surface, from its top.
     fn open_file(&self) -> Outcome {
         let Some(view) = self.open.as_ref() else {
@@ -330,6 +326,8 @@ impl ReviewExtension {
         }
     }
 
+    /// The marked line, or the cursor's, in the code surface: the first
+    /// marked line that still exists in the new file.
     fn open_in_code(&mut self) -> Outcome {
         let Some(view) = self.open.as_ref() else {
             return Outcome::Stay;
@@ -943,7 +941,7 @@ impl Extension for ReviewExtension {
             })
             .unwrap_or_default();
         // An agent gone takes the turn it was on with it.
-        if let Some((agent, _)) = &self.working
+        if let Some(agent) = &self.working
             && !self.agents.iter().any(|(id, _)| id == agent)
         {
             self.working = None;
@@ -952,7 +950,7 @@ impl Extension for ReviewExtension {
 
     fn agent_events(&mut self, happened: &[AgentHappened], _now: Instant) {
         let finished = happened.iter().any(|event| {
-            self.working.as_ref().map(|(agent, _)| agent) == Some(&event.agent)
+            self.working.as_ref() == Some(&event.agent)
                 && event.event == uze_contract::AgentEvent::TurnFinished
         });
         if finished {
@@ -986,7 +984,7 @@ impl Extension for ReviewExtension {
                 Some(view) => view.change(sent),
                 None => self.waiting.push((root.clone(), vec![sent])),
             }
-            self.working = Some((sending.agent, root));
+            self.working = Some(sending.agent);
             return;
         }
         match written {

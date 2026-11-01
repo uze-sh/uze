@@ -485,8 +485,6 @@ impl Attach<'_> {
     }
 }
 
-/// The question, drawn over everything but the toasts: the exact text,
-/// which agent it goes to, and which extension asks.
 /// What the confirmation says in place of the text typed: a bundled
 /// extension's summary, since its text is UZE's own, written for the agent;
 /// never a plugin's, whose text is read whole (D182), whatever it says of
@@ -501,6 +499,9 @@ pub(in crate::ui::orchestrator) fn summary_shown(
     }
 }
 
+/// The question, drawn over everything but the toasts: the exact text, or
+/// a bundled extension's words for it, which agent it goes to, and which
+/// extension asks.
 pub(in crate::ui::orchestrator) fn render_agent_write(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
