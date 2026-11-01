@@ -681,7 +681,7 @@ pub(super) fn render_line(
             theme::fg(Token::StateDanger),
             Some(theme::color(Token::StateDiffRemoved)),
         ),
-        LineTone::Card => (
+        LineTone::Card(_) => (
             theme::fg(Token::TextFaint),
             Some(theme::color(Token::SurfaceRaised)),
         ),
@@ -696,7 +696,7 @@ pub(super) fn render_line(
     // stands in the text's column, the numbers beside it on the content's
     // ground.
     let gutter_ground = match line.tone {
-        LineTone::Card if !line.marked => None,
+        LineTone::Card(_) if !line.marked => None,
         _ => background,
     };
     let mut content_spans: Vec<TextSpan<'static>> = line.spans.iter().map(styled).collect();
@@ -764,4 +764,23 @@ pub(super) fn render_line(
     let text = Paragraph::new(lines)
         .style(Style::default().bg(background.unwrap_or(theme::color(Token::SurfaceBackground))));
     frame.render_widget(text, columns[1]);
+    if let LineTone::Card(role) = line.tone {
+        card_rule(frame, columns[1], role, background);
+    }
+}
+
+/// The rule down a card's left, over the first cell of each of its rows:
+/// what tells a comment from the code around it at a glance.
+fn card_rule(frame: &mut ratatui::Frame<'_>, area: Rect, role: Role, ground: Option<Color>) {
+    let mut style = Style::default().fg(super::prose::color(role));
+    if let Some(ground) = ground {
+        style = style.bg(ground);
+    }
+    let rule = theme::glyph(Symbol::BarMedium);
+    let buffer = frame.buffer_mut();
+    for y in area.top()..area.bottom() {
+        if buffer.area.contains((area.x, y).into()) {
+            buffer[(area.x, y)].set_symbol(&rule).set_style(style);
+        }
+    }
 }

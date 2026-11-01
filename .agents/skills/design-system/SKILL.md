@@ -177,9 +177,14 @@ on "cancel" must not save first.
   `state.diff-marked`, a draft comment's gold held faint, over the diff's
   red and green, across the whole line, its sign and number included; never the list's `SurfaceSelected`, which the operator
   could not tell from a line passed over.
-- A comment stands under the lines it is about, set in from the edge,
-  never in a box the extension draws: its first line says where and what
-  state (`◆ L52–56 · draft`), with its actions as words on that line
+- A comment stands under the lines it is about on a card the host draws
+  (`LineTone::Card(role)`), never a box the extension draws: its lines on
+  `SurfaceRaised` with a row of air above and below, and `bar.medium`
+  down its left in the hue of what waits on it (a draft `warning`, sent
+  `info`, answered `success`, the one being written `accent`). The
+  operator asked for that rule: read without it, a comment was lost among
+  the code. Its first line says where and what state
+  (`◆ L52–56 · draft`), with its actions as words on that line
   (`edit`, `delete`, `resolve`). Words of a line that act are
   `Span::pressable`: the host makes each a target of its own and lifts it
   under the pointer in its own hue (`ViewHit::Press`), never text a press

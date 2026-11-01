@@ -124,11 +124,12 @@ fn a_comment_written_on_marked_lines_stands_under_them_as_a_draft() {
     assert_eq!(view.drafts()[0].path, "naming.rs");
     assert_eq!(view.drafts()[0].rows[0].text, "fn apply() {");
     let lines = line_texts(&view);
+    assert!(lines[3].is_empty(), "the card opens on a row of air: {lines:?}");
     assert!(
-        lines[3].contains("L2") && lines[3].contains("draft"),
+        lines[4].contains("L2") && lines[4].contains("draft"),
         "{lines:?}"
     );
-    assert!(lines[4].contains("check it"), "{lines:?}");
+    assert!(lines[5].contains("check it"), "{lines:?}");
     assert_eq!(view.unwritten.len(), 1, "kept to be written");
 }
 
@@ -1051,7 +1052,7 @@ fn the_comment_being_written_is_a_card_with_room_and_its_own_buttons() {
     let drawn = render::lines(&view);
     let card: Vec<&render::Drawn> = drawn
         .iter()
-        .filter(|drawn| drawn.content.tone == LineTone::Card)
+        .filter(|drawn| matches!(drawn.content.tone, LineTone::Card(_)))
         .collect();
     let writing = card
         .iter()
@@ -1127,5 +1128,52 @@ fn a_menu_entry_lights_under_the_pointer() {
     assert_eq!(
         extension.command(SURFACE, Command::Activate, SPACE),
         Outcome::Copy("naming.rs".to_owned())
+    );
+}
+
+/// A kept comment stands on a card, every line of it, its rule in the hue
+/// of what waits on it: a draft the operator's gold, an answer green.
+#[test]
+fn a_kept_comment_stands_on_a_card_ruled_in_its_states_hue() {
+    use crate::view::{LineTone, Role};
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    handle_command(&mut view, Command::Type('x'), SPACE);
+    handle_command(&mut view, Command::AddComment, SPACE);
+    let tones = |view: &ReviewView| -> Vec<LineTone> {
+        render::lines(view)
+            .iter()
+            .filter(|drawn| {
+                matches!(
+                    drawn.line,
+                    surface::Line::CardHeader(_) | surface::Line::CardBody(_)
+                )
+            })
+            .map(|drawn| drawn.content.tone)
+            .collect()
+    };
+    let draft = tones(&view);
+    assert!(
+        draft.len() >= 3,
+        "its header, its text and its air: {draft:?}"
+    );
+    assert!(
+        draft
+            .iter()
+            .all(|tone| *tone == LineTone::Card(Role::Warning))
+    );
+    view.record.comments[0].status = CommentStatus::Answered;
+    assert!(
+        tones(&view)
+            .iter()
+            .all(|tone| *tone == LineTone::Card(Role::Success))
     );
 }

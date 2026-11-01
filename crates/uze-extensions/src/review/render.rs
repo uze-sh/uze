@@ -74,9 +74,10 @@ impl Building {
         }
     }
 
-    /// A line of the comment being written, on its card's ground.
-    fn on_card(mut self) -> Self {
-        self.tone = LineTone::Card;
+    /// A line of a comment, on its card's ground, the rule down its left
+    /// in `hue`.
+    fn on_card(mut self, hue: Role) -> Self {
+        self.tone = LineTone::Card(hue);
         self
     }
 
@@ -438,7 +439,17 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
         ),
         CommentStatus::Resolved => ("resolved".to_owned(), Role::Dim),
     };
-    let mut header = Building::new()
+    // The rule says what waits on it, in the door's hues: a draft the
+    // operator's, an answer the agent's.
+    let hue = match comment.status {
+        CommentStatus::Draft => Role::Warning,
+        CommentStatus::Sent => Role::Info,
+        CommentStatus::Answered => Role::Success,
+        CommentStatus::Resolved => Role::Dim,
+    };
+    let card = || Building::new().on_card(hue);
+    drawn.push(card().drawn(Line::CardBody(id)));
+    let mut header = card()
         .push(Span::new(INDENT, Role::Default))
         .push(Span::new(COMMENT_MARK.to_string(), Role::Warning))
         .push(Span::new(format!(" {} · ", label(comment)), Role::Muted))
@@ -468,7 +479,7 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
                 super::record::RowKind::Context => " ",
             };
             drawn.push(
-                Building::new()
+                card()
                     .push(Span::new(RULE, Role::Faint))
                     .push(Span::new(format!("{sign} {}", row.text), Role::Dim))
                     .drawn(Line::CardBody(id)),
@@ -477,7 +488,7 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
     }
     if !comment.excerpt.is_empty() {
         drawn.push(
-            Building::new()
+            card()
                 .push(Span::new(RULE, Role::Faint))
                 .push(Span::new(format!("on “{}”", comment.excerpt), Role::Muted))
                 .drawn(Line::CardBody(id)),
@@ -486,7 +497,7 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
     let cached = review.rich.get(&id);
     if let Some(cached) = cached {
         for line in &cached.lines {
-            let mut building = Building::new().push(Span::new(RULE, Role::Faint));
+            let mut building = card().push(Span::new(RULE, Role::Faint));
             for span in line {
                 building = building.push(span.clone());
             }
@@ -498,13 +509,13 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
         .unwrap_or_default()
     {
         drawn.push(
-            Building::new()
+            card()
                 .push(Span::new(RULE, Role::Faint))
                 .push(Span::new("agent", Role::Warning))
                 .drawn(Line::CardBody(id)),
         );
         for line in answer {
-            let mut building = Building::new().push(Span::new(RULE, Role::Faint));
+            let mut building = card().push(Span::new(RULE, Role::Faint));
             for span in line {
                 building = building.push(Span {
                     role: if span.role == Role::Default {
@@ -518,6 +529,7 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
             drawn.push(building.drawn(Line::CardBody(id)));
         }
     }
+    drawn.push(card().drawn(Line::CardBody(id)));
     drawn.push(blank());
 }
 
@@ -536,7 +548,8 @@ fn composer(review: &ReviewView, drawn: &mut Vec<Drawn>) {
         Some(_) => "editing",
         None => "new comment",
     };
-    let card = || Building::new().on_card();
+    // Accent: the one being written, where the keys are.
+    let card = || Building::new().on_card(Role::Accent);
     drawn.push(card().drawn(Line::ComposerPad));
     drawn.push(
         card()

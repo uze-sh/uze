@@ -284,7 +284,6 @@ fn code(block: &[String], path: &Path, theme: &str) -> Vec<Rich> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::record::RowKind;
 
     fn typed(composer: &mut Composer, text: &str) {
         composer.insert(text);

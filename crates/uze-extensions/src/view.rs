@@ -1112,10 +1112,12 @@ pub enum LineTone {
     Neutral,
     Added,
     Removed,
-    /// A line of a card standing in the content, such as the comment
-    /// being written: its text on a raised ground, so it reads apart from
-    /// the file around it; the gutter stays the content's.
-    Card,
+    /// A line of a card standing in the content, a comment: its text on
+    /// a raised ground with a rule down its left in the role's hue, so it
+    /// reads apart from the file around it; the gutter stays the
+    /// content's. The rule is the host's to draw, over the line's first
+    /// cell, which the extension leaves blank.
+    Card(Role),
 }
 
 /// A collapsible section an extension contributes to one of the host's
