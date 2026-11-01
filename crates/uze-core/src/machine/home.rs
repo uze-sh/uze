@@ -676,6 +676,23 @@ impl UzeHome {
         self.root.join("cache")
     }
 
+    /// What the last measure of the home found: its size per tier, and
+    /// what the collectors last freed. Remembered: `uze doctor --repair`
+    /// measures it again, and plain `doctor` only shows what it says, so
+    /// it never walks the home to answer.
+    pub fn collection_record_path(&self) -> PathBuf {
+        self.cache_dir().join("collection.json")
+    }
+
+    /// The terminal runtime's own workspace: its record, lock, operator key
+    /// and endpoint. `uze-terminal` composes this path itself (the one
+    /// sanctioned exception to the map); it is named here only so the map
+    /// can declare it opaque, a subtree nothing else collects, walks or
+    /// compares, since what it holds is live while a workspace runs.
+    pub fn terminal_runtime_dir(&self) -> PathBuf {
+        self.state_dir().join("terminal")
+    }
+
     /// Cross-invocation cache of `IntegrationPort::detect()` results (see
     /// `detection_cache`). Reconstructable at any time from a live probe —
     /// never authoritative, hence `cache_dir()` rather than `state_dir()`.

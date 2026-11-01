@@ -273,7 +273,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::TerminalEndpoint,
-        paths: &[],
+        paths: &["terminal_runtime_dir"],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -402,6 +402,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "appearance_cache_path",
             "release_notes_cache_path",
             "marketplace_cache_dir",
+            "collection_record_path",
             "logs_dir",
             "gate_log_path",
         ],

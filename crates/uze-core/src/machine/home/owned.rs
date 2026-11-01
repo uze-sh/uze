@@ -101,6 +101,10 @@ pub enum Form {
     /// A file held for exclusion and never read: a kernel `flock`, which
     /// cannot go stale, so nothing ever clears one.
     Lock,
+    /// A subtree another component composes and keeps for itself, live
+    /// while it runs: nothing collects it, walks it or compares it with
+    /// this list.
+    Opaque,
 }
 
 /// Whether this build still reads a path.
@@ -122,6 +126,12 @@ pub struct OwnedPath {
     pub tier: Tier,
     pub form: Form,
     pub standing: Standing,
+    /// Whether UZE sweeps it: a generated or remembered path whose owner
+    /// decides what of it is still needed, or a retired one nothing
+    /// carries across. Each has exactly one collector
+    /// (`every_disposable_root_has_one_collector`); the map holds no rule
+    /// of its own.
+    pub disposable: bool,
     compose: fn(&UzeHome) -> PathBuf,
 }
 
@@ -133,6 +143,7 @@ impl std::fmt::Debug for OwnedPath {
             .field("tier", &self.tier)
             .field("form", &self.form)
             .field("standing", &self.standing)
+            .field("disposable", &self.disposable)
             .finish()
     }
 }
@@ -143,6 +154,94 @@ impl OwnedPath {
     pub fn path(&self, home: &UzeHome) -> PathBuf {
         (self.compose)(home)
     }
+
+    /// Its place relative to the home, one segment per component, every
+    /// parameterised part spelled as a placeholder: `{project}`, and a
+    /// package's `{package}`, `{marketplace}` and `{plugin}`.
+    pub fn pattern(&self, home: &UzeHome) -> Vec<String> {
+        let path = self.path(home);
+        let relative = path.strip_prefix(home.root()).unwrap_or(&path);
+        relative
+            .components()
+            .map(|component| {
+                let segment = component.as_os_str().to_string_lossy();
+                match PACKAGE_SEGMENTS
+                    .iter()
+                    .find(|(literal, _)| *literal == segment)
+                {
+                    Some((_, placeholder)) => (*placeholder).to_owned(),
+                    None => segment.into_owned(),
+                }
+            })
+            .collect()
+    }
+
+    /// Whether `relative` (segments under the home) is this path, each
+    /// placeholder standing for any text within one segment.
+    pub fn matches(&self, home: &UzeHome, relative: &[String]) -> bool {
+        let pattern = self.pattern(home);
+        pattern.len() == relative.len()
+            && pattern
+                .iter()
+                .zip(relative)
+                .all(|(pattern, segment)| segment_matches(pattern, segment))
+    }
+
+    /// Whether `relative` is a directory above this path, which a walk of
+    /// the home descends into to reach it.
+    pub fn lies_under(&self, home: &UzeHome, relative: &[String]) -> bool {
+        let pattern = self.pattern(home);
+        pattern.len() > relative.len()
+            && pattern
+                .iter()
+                .zip(relative)
+                .all(|(pattern, segment)| segment_matches(pattern, segment))
+    }
+
+    const fn swept(self) -> Self {
+        OwnedPath {
+            disposable: true,
+            ..self
+        }
+    }
+}
+
+/// How [`package`]'s placeholder id is spelled in a path, and the
+/// placeholder each spelling stands for.
+const PACKAGE_SEGMENTS: [(&str, &str); 3] = [
+    ("plugin@marketplace", "{package}"),
+    ("marketplace", "{marketplace}"),
+    ("plugin", "{plugin}"),
+];
+
+/// Whether `segment` is what `pattern` spells, each `{…}` in it standing
+/// for any text, none included.
+fn segment_matches(pattern: &str, segment: &str) -> bool {
+    let mut pieces = Vec::new();
+    let mut rest = pattern;
+    while let Some(open) = rest.find('{') {
+        let Some(close) = rest[open..].find('}') else {
+            break;
+        };
+        pieces.push(&rest[..open]);
+        rest = &rest[open + close + 1..];
+    }
+    pieces.push(rest);
+    if pieces.len() == 1 {
+        return pattern == segment;
+    }
+    let (first, last) = (pieces[0], pieces[pieces.len() - 1]);
+    if !segment.starts_with(first) || !segment[first.len()..].ends_with(last) {
+        return false;
+    }
+    let mut middle = &segment[first.len()..segment.len() - last.len()];
+    for piece in &pieces[1..pieces.len() - 1] {
+        match middle.find(piece) {
+            Some(at) => middle = &middle[at + piece.len()..],
+            None => return false,
+        }
+    }
+    segment.len() >= first.len() + last.len()
 }
 
 const fn owned(
@@ -156,6 +255,7 @@ const fn owned(
         tier,
         form,
         standing: Standing::Current,
+        disposable: false,
         compose,
     }
 }
@@ -171,6 +271,7 @@ const fn retired(
         tier,
         form,
         standing: Standing::Retired,
+        disposable: false,
         compose,
     }
 }
@@ -186,7 +287,7 @@ fn package() -> PackageId {
         .expect("a valid placeholder id")
 }
 
-use Form::{Directory, Document, Lock};
+use Form::{Directory, Document, Lock, Opaque};
 use Tier::{Authored, Bytes, Generated, Record, Remembered, Store};
 
 /// Every path [`UzeHome`] composes. Order follows the tiers.
@@ -340,12 +441,20 @@ const OWNED: &[OwnedPath] = &[
     owned("project_memory_dir", Record, Directory, |home| {
         home.project_memory_dir(PROJECT)
     }),
+    owned(
+        "terminal_runtime_dir",
+        Record,
+        Opaque,
+        UzeHome::terminal_runtime_dir,
+    ),
+    // Nothing carries it across: the retired collector removes it.
     retired(
         "retired_profiles_path",
         Record,
         Document,
         UzeHome::retired_profiles_path,
-    ),
+    )
+    .swept(),
     retired("scattered_project_records", Record, Document, |home| {
         home.scattered_project_records(PROJECT).agents
     }),
@@ -428,7 +537,7 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("themes_dir", Authored, Directory, UzeHome::themes_dir),
     // Generated.
-    owned("runtime_dir", Generated, Directory, UzeHome::runtime_dir),
+    owned("runtime_dir", Generated, Directory, UzeHome::runtime_dir).swept(),
     owned(
         "runtime_projects_dir",
         Generated,
@@ -437,10 +546,12 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("runtime_project_dir", Generated, Directory, |home| {
         home.runtime_project_dir(PROJECT)
-    }),
+    })
+    .swept(),
     owned("runtime_projection_dir", Generated, Directory, |home| {
         home.runtime_projection_dir(VENDOR, PROJECT)
-    }),
+    })
+    .swept(),
     owned("agent_context_dir", Generated, Directory, |home| {
         home.agent_context_dir(PROJECT, AGENT)
     }),
@@ -470,7 +581,8 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("session_context_dir", Generated, Directory, |home| {
         home.session_context_dir(VENDOR)
-    }),
+    })
+    .swept(),
     owned(
         "runtime_rules_dir",
         Generated,
@@ -482,7 +594,8 @@ const OWNED: &[OwnedPath] = &[
         Generated,
         Directory,
         UzeHome::rules_sessions_dir,
-    ),
+    )
+    .swept(),
     owned(
         "compiled_extensions_dir",
         Generated,
@@ -491,7 +604,8 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("compiled_extension_path", Generated, Document, |home| {
         home.compiled_extension_path("{digest}")
-    }),
+    })
+    .swept(),
     owned(
         "extension_scratch_root",
         Generated,
@@ -500,10 +614,12 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("extension_scratch_dir", Generated, Directory, |home| {
         home.extension_scratch_dir("{run}")
-    }),
+    })
+    .swept(),
     owned("extension_pictures_dir", Generated, Directory, |home| {
         home.extension_pictures_dir(PLUGIN, EXTENSION)
-    }),
+    })
+    .swept(),
     owned(
         "extension_costs_path",
         Generated,
@@ -581,8 +697,15 @@ const OWNED: &[OwnedPath] = &[
         Remembered,
         Directory,
         UzeHome::marketplace_cache_dir,
+    )
+    .swept(),
+    owned(
+        "collection_record_path",
+        Remembered,
+        Document,
+        UzeHome::collection_record_path,
     ),
-    owned("logs_dir", Remembered, Directory, UzeHome::logs_dir),
+    owned("logs_dir", Remembered, Directory, UzeHome::logs_dir).swept(),
     owned("gate_log_path", Remembered, Document, |home| {
         home.gate_log_path(AGENT)
     }),
@@ -598,6 +721,11 @@ impl UzeHome {
     /// The owned path a builder composes, by the builder's name.
     pub fn owned_path(name: &str) -> Option<&'static OwnedPath> {
         OWNED.iter().find(|owned| owned.name == name)
+    }
+
+    /// Every path UZE sweeps: each has exactly one collector.
+    pub fn disposable_paths() -> impl Iterator<Item = &'static OwnedPath> {
+        OWNED.iter().filter(|owned| owned.disposable)
     }
 }
 
@@ -633,6 +761,39 @@ mod tests {
                 owned.path(&home).display()
             );
         }
+    }
+
+    /// Only what costs nothing to delete is swept: a generated or
+    /// remembered path, or a retired one. A record, bytes, a build or the
+    /// operator's text is never a collector's to judge.
+    #[test]
+    fn only_what_costs_nothing_is_disposable() {
+        for owned in UzeHome::disposable_paths() {
+            assert!(
+                matches!(owned.tier, Tier::Generated | Tier::Remembered)
+                    || owned.standing == Standing::Retired,
+                "{} is disposable in the {:?} tier",
+                owned.name,
+                owned.tier
+            );
+            assert_ne!(owned.form, Form::Opaque, "{}", owned.name);
+        }
+    }
+
+    #[test]
+    fn a_placeholder_stands_for_any_text_in_one_segment() {
+        let home = UzeHome::at("/uze-home");
+        let conversation = UzeHome::owned_path("conversation_path").unwrap();
+        let path = |text: &str| text.split('/').map(str::to_owned).collect::<Vec<_>>();
+        assert!(conversation.matches(&home, &path("state/projects/abc/conversations/a1.json")));
+        assert!(!conversation.matches(&home, &path("state/projects/abc/conversations/a1.toml")));
+        assert!(conversation.lies_under(&home, &path("state/projects/abc")));
+        let plugin = UzeHome::owned_path("plugin_dir").unwrap();
+        assert!(plugin.matches(&home, &path("sources/plugins/ai/flow")));
+        let superseded = UzeHome::owned_path("superseded_dir").unwrap();
+        assert!(superseded.matches(&home, &path("sources/superseded/flow@ai")));
+        assert!(segment_matches("gate-{agent}.log", "gate-a.log"));
+        assert!(!segment_matches("gate-{agent}.log", "gate.log"));
     }
 
     #[test]
