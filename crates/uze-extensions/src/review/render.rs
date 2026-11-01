@@ -645,10 +645,18 @@ fn discard_body(review: &ReviewView, path: &std::path::Path) -> String {
         .find(|file| file.path == path)
         .map(|file| file.status);
     match (review.partners.get(path), status) {
-        (Some(other), _) => format!(
-            "Takes the rename back: {} returns the way the last commit has it. This cannot be undone.",
-            review.relative(other)
-        ),
+        (Some(other), _) => {
+            // Asked from either side: the side the last commit lacks goes.
+            let (old, new) = match status {
+                Some(FileStatus::Deleted) => (path, other.as_path()),
+                _ => (other.as_path(), path),
+            };
+            format!(
+                "Takes the rename back: {} returns the way the last commit has it, and {} goes. This cannot be undone.",
+                review.relative(old),
+                review.relative(new)
+            )
+        }
         (None, Some(FileStatus::Untracked | FileStatus::Added)) => {
             "Deletes the file, which the last commit does not have. This cannot be undone."
                 .to_owned()

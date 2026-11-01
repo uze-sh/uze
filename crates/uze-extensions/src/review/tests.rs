@@ -868,3 +868,16 @@ fn a_file_git_cannot_stamp_reads_changed_and_cannot_be_marked() {
     handle_command(&mut view, Command::MarkViewed, SPACE);
     assert!(view.notice.is_some(), "says why it is not marked");
 }
+
+#[test]
+fn discarding_a_rename_from_its_old_name_says_which_side_goes() {
+    let mut view = reviewing();
+    let (old, new) = (PathBuf::from("/w/naming.rs"), PathBuf::from("/w/named.rs"));
+    view.files[0].status = FileStatus::Deleted;
+    view.partners = [(new.clone(), old.clone()), (old.clone(), new)].into();
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_command(&mut view, Command::Activate, SPACE);
+    let body = super::view(&view, SPACE).confirm.unwrap().body;
+    assert!(body.contains("naming.rs returns"), "{body}");
+    assert!(body.contains("named.rs goes"), "{body}");
+}
