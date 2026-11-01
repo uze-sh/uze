@@ -391,7 +391,13 @@ pub(super) fn render(
                 }),
                 None => render_extension(frame, surface_area, model, open, hits, metrics),
             };
-            render_extension_navigation(frame, slot, surface_area, open, hits);
+            let pointed = match model.hovered {
+                Some(WorkspaceHit::Extension(ExtensionHit { slot, hit })) if slot == open.tag => {
+                    Some(hit)
+                }
+                _ => None,
+            };
+            render_extension_navigation(frame, slot, surface_area, open, pointed, hits);
             render_declared_overlays(frame, surface_area, inspector_area, model, hits);
             question
         }
@@ -678,6 +684,7 @@ fn render_extension_navigation(
     slot: Rect,
     surface: Rect,
     open: &OpenExtension,
+    pointed: Option<ViewHit>,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     let mut navigation_hits = Vec::new();
@@ -686,6 +693,7 @@ fn render_extension_navigation(
         &open.view,
         slot,
         surface,
+        pointed,
         &mut navigation_hits,
     );
     hits.splice(

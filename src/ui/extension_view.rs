@@ -246,6 +246,7 @@ fn render_surface(
     widget::fill(frame, area, Token::SurfaceBackground);
     if view.layout == ViewLayout::Board {
         let mut rendered = render_board(frame, view, area, keys, held.sliding, selection, hits);
+        lines::lift_pointed_chip(frame, hits, held.sliding.map(|(hit, _)| hit));
         rendered.content_space = board_space(area);
         rendered.content_area = geometry::board_rows(area).1;
         return rendered;
@@ -380,6 +381,7 @@ fn render_surface(
         keys,
         view.notice.as_ref().map(styled),
     );
+    lines::lift_pointed_chip(frame, hits, held.sliding.map(|(hit, _)| hit));
     rendered.content_space = uze_extensions::view::Size {
         width: content_area.width,
         height: content_area.height,
@@ -643,9 +645,11 @@ pub(crate) fn render_navigation(
     view: &View,
     slot: Rect,
     surface: Rect,
+    pointed: Option<ViewHit>,
     hits: &mut Vec<(Rect, ViewHit)>,
 ) {
     render_subjects(frame, slot, &view.subjects, hits);
+    lines::lift_pointed_chip(frame, hits, pointed);
     if view.layout == ViewLayout::Board
         && let Some(navigator) = view.navigator.as_ref()
     {

@@ -520,7 +520,7 @@ fn framed(
                 &mut hits,
             );
             let mut navigation = Vec::new();
-            render_navigation(frame, view, slot, surface, &mut navigation);
+            render_navigation(frame, view, slot, surface, None, &mut navigation);
             hits.splice(0..0, navigation);
         })
         .unwrap();
@@ -3355,4 +3355,70 @@ fn only_numbered_text_nobody_types_into_marks_lines_from_its_text() {
     };
     assert!(marks(false), "a diff");
     assert!(!marks(true), "a file typed into");
+}
+
+/// A chip over the content answers the pointer as every control does:
+/// the one under it is lifted in its own ink, the one beside it is not.
+#[test]
+fn a_chip_lifts_under_the_pointer() {
+    let mut view = sample();
+    view.modes = vec![
+        Mode {
+            label: "viewed".to_owned(),
+            active: false,
+            icon: RowIcon::None,
+        },
+        Mode {
+            label: "other".to_owned(),
+            active: false,
+            icon: RowIcon::None,
+        },
+    ];
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    };
+    let (rest, hits) = draw(None);
+    let at = |mode: usize| {
+        let (rect, _) = hits
+            .iter()
+            .find(|(_, hit)| *hit == ViewHit::SelectMode(mode))
+            .expect("each chip is a target");
+        (rect.x + 1, rect.y)
+    };
+    let (pointed, _) = draw(Some((ViewHit::SelectMode(0), 0)));
+    assert_eq!(
+        pointed[at(0)].fg,
+        theme::lifted_ink(rest[at(0)].fg),
+        "lifted"
+    );
+    assert_eq!(
+        pointed[at(0)].modifier,
+        rest[at(0)].modifier,
+        "its weight kept"
+    );
+    assert_eq!(pointed[at(1)].fg, rest[at(1)].fg, "the other stays");
 }

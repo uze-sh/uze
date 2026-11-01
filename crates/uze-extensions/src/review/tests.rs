@@ -124,7 +124,10 @@ fn a_comment_written_on_marked_lines_stands_under_them_as_a_draft() {
     assert_eq!(view.drafts()[0].path, "naming.rs");
     assert_eq!(view.drafts()[0].rows[0].text, "fn apply() {");
     let lines = line_texts(&view);
-    assert!(lines[3].is_empty(), "the card opens on a row of air: {lines:?}");
+    assert!(
+        lines[3].is_empty(),
+        "the card opens on a row of air: {lines:?}"
+    );
     assert!(
         lines[4].contains("L2") && lines[4].contains("draft"),
         "{lines:?}"

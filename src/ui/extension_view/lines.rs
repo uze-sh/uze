@@ -217,6 +217,24 @@ fn pressable_cells(
     cells
 }
 
+/// The chip under the pointer, a mode of the content or a subject of the
+/// bar, lifted in its own ink, as every control is: it answers a click,
+/// so it answers the pointer passing over it.
+pub(super) fn lift_pointed_chip(
+    frame: &mut ratatui::Frame<'_>,
+    hits: &[(Rect, ViewHit)],
+    pointed: Option<ViewHit>,
+) {
+    let Some(pointed) =
+        pointed.filter(|hit| matches!(hit, ViewHit::SelectMode(_) | ViewHit::SelectSubject(_)))
+    else {
+        return;
+    };
+    if let Some((rect, _)) = hits.iter().find(|(_, hit)| *hit == pointed) {
+        lift_cells(frame, *rect);
+    }
+}
+
 /// Draws the cells of `area` again in their own ink lifted, the hover of
 /// words that act: colour only, the weight kept.
 fn lift_cells(frame: &mut ratatui::Frame<'_>, area: Rect) {

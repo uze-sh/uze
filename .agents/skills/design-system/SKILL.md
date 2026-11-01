@@ -101,6 +101,9 @@ on "cancel" must not save first.
 
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
+  A surface's chips (the content's modes, the bar's subjects: `viewed`,
+  `files · map`, `all · uncommitted`) are lifted by the host under the
+  pointer (`lines::lift_pointed_chip`), whatever surface draws them.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
   or a background overlay.
 - The one exception: a line of text that opens something (a notice's
