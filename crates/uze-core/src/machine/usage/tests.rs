@@ -105,7 +105,7 @@ fn total(tallies: &[Tally]) -> u32 {
 }
 
 fn read(ledger: &mut Ledger, harness: &Harness, carried: &[FoundResource]) -> Option<Vec<Tally>> {
-    ledger.read(harness, carried, now(), &AtomicBool::new(false))
+    ledger.read(harness, carried, &AtomicBool::new(false))
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn a_cancelled_reading_answers_nothing() {
     let cancelled = AtomicBool::new(true);
     assert!(
         ledger
-            .read(&harness, &[skill("review")], now(), &cancelled)
+            .read(&harness, &[skill("review")], &cancelled)
             .is_none()
     );
     assert!(harness.reads.lock().unwrap().is_empty());
@@ -279,12 +279,13 @@ fn uses_are_summed_per_period_by_name_or_by_definition() {
             )]),
         ),
     ]);
-    count_uses(&mut machine, &tallies, now());
+    count_uses(&mut machine, &tallies);
     let uses = machine.resources[0].uses_on(None).unwrap();
-    assert_eq!((uses.days_7, uses.days_30, uses.days_90), (2, 5, 5));
+    assert_eq!(uses.total, 5);
+    assert_eq!(uses.last, Some(day_of(now()) - 2), "the latest use's day");
     assert!(uses.complete);
     let on_a = machine.resources[0].uses_on(Some("a")).unwrap();
-    assert_eq!(on_a.days_30, 2, "one harness's figure is its own");
+    assert_eq!(on_a.total, 2, "one harness's figure is its own");
     assert!(machine.harnesses.iter().all(|h| h.uses_known));
 }
 
@@ -292,21 +293,21 @@ fn uses_are_summed_per_period_by_name_or_by_definition() {
 fn unused_needs_every_carrying_harness_read() {
     let mut machine = overview(vec![row("quiet", &["a"]), row("half", &["a", "b"])]);
     let tallies = BTreeMap::from([("a".to_owned(), Some(Vec::new())), ("b".to_owned(), None)]);
-    count_uses(&mut machine, &tallies, now());
-    assert!(machine.resources[0].unused(30, None));
-    assert!(!machine.resources[1].unused(30, None));
+    count_uses(&mut machine, &tallies);
+    assert!(machine.resources[0].unused(None));
+    assert!(!machine.resources[1].unused(None));
     assert!(
-        machine.resources[1].unused(30, Some("a")),
+        machine.resources[1].unused(Some("a")),
         "narrowed to the harness that was read"
     );
-    assert_eq!(machine.resources[1].uses_on(None).unwrap().within(30), 0);
+    assert_eq!(machine.resources[1].uses_on(None).unwrap().total, 0);
 }
 
 #[test]
 fn a_harness_that_cannot_be_read_leaves_its_resources_unknown() {
     let mut machine = overview(vec![row("only-b", &["b"])]);
     let tallies = BTreeMap::from([("b".to_owned(), None)]);
-    count_uses(&mut machine, &tallies, now());
+    count_uses(&mut machine, &tallies);
     assert_eq!(machine.resources[0].uses_on(None), None);
 }
 
@@ -323,7 +324,6 @@ fn an_inferred_use_makes_the_count_an_estimate() {
     count_uses(
         &mut machine,
         &BTreeMap::from([("a".to_owned(), Some(tallies))]),
-        now(),
     );
     assert!(machine.resources[0].uses_on(None).unwrap().estimate);
 }

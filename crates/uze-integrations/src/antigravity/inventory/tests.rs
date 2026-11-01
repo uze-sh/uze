@@ -52,14 +52,14 @@ impl Gemini {
         .inventory()
     }
 
-    fn sessions(&self, now: SystemTime) -> SessionCounts {
+    fn sessions(&self) -> SessionCounts {
         let (cli, config) = (self.cli(), self.config());
         Locations {
             cli_root: &cli,
             config_dir: &config,
             gemini_root: &self.root,
         }
-        .session_counts(now)
+        .session_counts()
     }
 }
 
@@ -226,8 +226,9 @@ fn sessions_are_the_conversation_databases_and_never_their_logs() {
     let old = gemini.write("antigravity-cli/conversations/b.db", "");
     age(&recent, 2 * day, now);
     age(&old, 40 * day, now);
-    let counts = gemini.sessions(now);
-    assert_eq!((counts.days_7, counts.days_30, counts.days_90), (1, 1, 2));
+    let counts = gemini.sessions();
+    assert_eq!(counts.total, 2);
+    assert_eq!(counts.oldest, Some(seconds(now) - 40 * day));
 }
 
 #[test]
@@ -238,5 +239,11 @@ fn a_write_ahead_log_newer_than_its_database_moves_the_activity() {
     let log = gemini.write("antigravity-cli/conversations/a.db-wal", "");
     age(&database, 40 * 86_400, now);
     age(&log, 86_400, now);
-    assert_eq!(gemini.sessions(now).days_7, 1);
+    assert_eq!(gemini.sessions().oldest, Some(seconds(now) - 86_400));
+}
+
+fn seconds(time: SystemTime) -> u64 {
+    time.duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }

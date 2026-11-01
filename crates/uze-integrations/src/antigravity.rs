@@ -263,13 +263,10 @@ impl IntegrationPort for AntigravityIntegration {
             .then(|| self.inventory_locations().inventory())
     }
 
-    fn session_counts(
-        &self,
-        now: std::time::SystemTime,
-    ) -> Option<uze_core::inventory::SessionCounts> {
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
         self.cli_root
             .is_dir()
-            .then(|| self.inventory_locations().session_counts(now))
+            .then(|| self.inventory_locations().session_counts())
     }
 
     fn usage_records(

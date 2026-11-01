@@ -76,7 +76,7 @@
 - task:     4.1
 - commit:   d367057c
 - trigger:  The fields need a keyboard path, and `tab` toggles between the strip and the screen everywhere else.
-- decided:  On the Overview, `tab` walks list → harness → period → strip, `shift+tab` walks back; `←→` turn a field the keys are on; the foot names where `tab` goes next.
+- decided:  On the Overview, `tab` walks list → harness → headings → strip (the period field went with D12), `shift+tab` walks back; `←→` turn a field the keys are on; the foot names where `tab` goes next.
 - rejected: Bare letters: "every bare letter here acts on a selection" (`uze-keys/src/load.rs`).
 - blast:    `machine.rs::machine_next_field`, `management.rs::hints`.
 
@@ -109,3 +109,14 @@
 - decided:  Read each harness's own session records after the fact, incrementally (stamp and offset per record in `cache/`), taking only names, invoker and time. Codex's MCP uses, recorded only inside the `exec` script, are an estimate shown with `~`.
 - rejected: A uze hook per harness: synchronous cost on every turn (Codex's `async` lost 2 of 10 calls; Antigravity has none), delivery and upkeep in four configurations, empty until the day of install, and blind to typed uses in Antigravity and OpenCode. A hook only for Codex's MCP: kept for later, if the estimate proves poor.
 - blast:    `IntegrationPort`, `machine/usage`, the four integrations' readers, the Overview's columns and statuses, the spec's privacy requirement.
+
+## D12 — No period: every figure covers all the records a harness keeps
+
+- status:   pending
+- task:     7.8
+- commit:
+- trigger:  On the author's machine 30 and 90 days read the same: Claude Code deletes transcripts after 30 days by default (`cleanupPeriodDays`), so a 90-day period promised a span no record covers. The operator asked whether a period was needed at all.
+- decided:  The period field is gone. Sessions and uses count every record a harness still keeps; the header says how many days of records the sessions span (from the oldest record's time), and each resource's panel says when it was last used. `unused` is no use in any record. `SessionCounts` and `Uses` carry a total and the oldest or last time instead of three windows.
+- rejected: Keeping 7/30/90: the windows only differ inside the span each harness keeps, which differs per harness, so a window wider than it reads as a claim the records cannot support.
+- blast:    `SessionCounts`, `Uses`, `IntegrationPort::session_counts`, the Overview's header, fields and `tab` order (D8), the spec's session and field requirements.
+

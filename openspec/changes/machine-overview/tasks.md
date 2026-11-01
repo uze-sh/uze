@@ -27,7 +27,7 @@
 ## 4. Screen
 
 - [x] 4.1 Overview in Marketplace's shape: header fields, filter, tree folded by kind, panel, foot keys, per the design-system skill's checklist
-- [x] 4.2 Harness field narrows every row, group and total; period sets the session count; a test with ten harnesses keeps the columns
+- [x] 4.2 Harness field narrows every row, group, total and use count; no period field (D12); a test with ten harnesses keeps the columns
 - [x] 4.3 `uze` findings group from `actionable_alerts`, drawn only with findings
 - [x] 4.4 Drawn at once from the snapshot, in-flight header while collecting, broken reasons, duplicates naming each other, removal guidance (Marketplace link or the harness's command, copy only); click == key tests for every hint
 - [x] 4.5 Remove `Feature::Overview` and offer the route in every build
@@ -44,10 +44,10 @@
 
 - [x] 7.1 Core types in `machine/usage`: `UsageRecord` (id, stamp), `Resume`, `UsageRead`, `Use` (kind, target, time, invoker, exact); `usage_records` and `read_usage` on `IntegrationPort` with "not known" defaults
 - [x] 7.2 Core reading: skip a record whose stamp is unchanged, resume an append-only one at its offset, replace a rewritten one's uses; cancel between records; `cache/machine-usage.json` named in `UzeHome`, in the `cache/` tier, lost only at the cost of a fresh reading; tests for each
-- [x] 7.3 Join a use to the inventory (name, MCP server, definition path), daily counts into `PERIODS`, `uses` and the `unused` status (never where any carrying harness reads unknown); tests
+- [x] 7.3 Join a use to the inventory (name, MCP server, definition path), daily tallies summed over every record, `uses` and the `unused` status (never where any carrying harness reads unknown); tests
 - [x] 7.4 Claude Code reader: `<command-name>`, `agent_mention`, `tool_use` `Skill`/`Agent`/`mcp__`, one use per mention and dispatch; fixture tests from the Lab's shapes
 - [x] 7.5 Codex reader: `<skill>`, the `exec` script's `SKILL.md` read judged by its output, `rN/` aliases, `spawn_agent`, `mcp__` as an estimate; fixture tests
-- [ ] 7.6 OpenCode reader: sessions updated in the period without opening its database, `session export` only for changed ones with a timeout; `skills[]`/`agents[]`, `skill`/`subagent` tools, `<key>_<tool>`; measure the listing and export cost in the Lab first
+- [x] 7.6 OpenCode reader: every session without opening its database, `session export` only for changed ones with a timeout; `skills[]`/`agents[]`, `skill`/`subagent` tools, `<key>_<tool>`; measure the listing and export cost in the Lab first
 - [x] 7.7 Antigravity reader: `[Slash Command]`/`<SKILL>`, `read_file`/`view_file`/`run_command` of an absolute `SKILL.md` not in an `ERROR` step, `invoke_subagent`, `call_mcp_tool`, subagents' transcripts; fixture tests
 - [x] 7.8 Collection stage 4 (uses) after sessions; the `uses` column (blank for hooks and rules, `?` unknown, `~` estimate), sortable, and `unused` in the status column and the menu's marks
 - [x] 7.9 Benchmark: first reading and an incremental one over generated records of realistic size, with a pass/fail budget; check on the real machine without printing any record

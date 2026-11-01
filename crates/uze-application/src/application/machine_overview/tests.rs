@@ -1,7 +1,4 @@
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::SystemTime,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use uze_core::{
     ExposurePlan, Resource, UzeHome,
@@ -28,9 +25,8 @@ impl Harness {
             present: true,
             found: Some(Vec::new()),
             sessions: Some(SessionCounts {
-                days_7: 1,
-                days_30: 2,
-                days_90: 3,
+                total: 2,
+                oldest: None,
             }),
             panics: false,
         }
@@ -60,7 +56,7 @@ impl IntegrationPort for Harness {
         assert!(!self.panics, "a reader that breaks");
         self.found.clone()
     }
-    fn session_counts(&self, _now: SystemTime) -> Option<SessionCounts> {
+    fn session_counts(&self) -> Option<SessionCounts> {
         self.sessions
     }
 }
@@ -89,7 +85,7 @@ fn every_detected_harness_answers_and_the_result_is_remembered() {
     let ids: Vec<_> = overview.harnesses.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, ["a", "b"]);
     assert_eq!(overview.resources.len(), 1);
-    assert_eq!(overview.harnesses[0].sessions.unwrap().days_30, 2);
+    assert_eq!(overview.harnesses[0].sessions.unwrap().total, 2);
     assert_eq!(
         answers, 5,
         "one answer per harness's inventory, one with the sessions, one per harness's uses"

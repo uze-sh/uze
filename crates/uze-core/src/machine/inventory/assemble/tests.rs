@@ -293,12 +293,12 @@ fn a_harness_that_cannot_list_is_reported_as_such() {
 }
 
 #[test]
-fn sessions_are_counted_by_their_last_activity() {
-    let now = std::time::SystemTime::now();
+fn every_session_counts_and_the_oldest_says_how_far_back_they_reach() {
+    let now = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000 * 86_400);
     let day = std::time::Duration::from_secs(86_400);
-    let counts =
-        SessionCounts::from_activity([now, now - day * 10, now - day * 60, now - day * 120], now);
-    assert_eq!((counts.days_7, counts.days_30, counts.days_90), (1, 2, 3));
+    let counts = SessionCounts::from_activity([now, now - day * 10, now - day * 120]);
+    assert_eq!(counts.total, 3);
+    assert_eq!(counts.oldest, Some(880 * 86_400));
 }
 
 #[test]

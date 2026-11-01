@@ -1,4 +1,4 @@
-use std::{fs, path::Path, time::SystemTime};
+use std::{fs, path::Path};
 
 use uze_core::{
     UzeHome,
@@ -211,14 +211,14 @@ fn sessions_are_root_transcripts_and_never_subagents() {
     write(&projects.join("-work-app/two.jsonl"), "");
     write(&projects.join("-work-app/one/subagents/agent-a.jsonl"), "");
     write(&projects.join("-work-other/three.jsonl"), "");
-    let counts = session_counts(&projects, SystemTime::now()).unwrap();
-    assert_eq!(counts.days_30, 3);
+    let counts = session_counts(&projects).unwrap();
+    assert_eq!(counts.total, 3);
 }
 
 #[test]
 fn no_transcripts_directory_is_unknown() {
     let root = uze_testkit::temp::TempDir::new("claude-sessions-none");
-    assert!(session_counts(&root.join("projects"), SystemTime::now()).is_none());
+    assert!(session_counts(&root.join("projects")).is_none());
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn no_session_text_reaches_the_overview() {
         "---\nname: review\n---\n",
     );
     let found = inventory_of(root.path());
-    let sessions = session_counts(&root.join(".claude/projects"), SystemTime::now());
+    let sessions = session_counts(&root.join(".claude/projects"));
     let overview = uze_core::inventory::assemble(
         vec![uze_core::inventory::HarnessInventory {
             id: "claude-code".into(),
@@ -254,6 +254,6 @@ fn no_session_text_reaches_the_overview() {
         &[],
     );
     let kept = serde_json::to_string(&overview).unwrap();
-    assert_eq!(sessions.unwrap().days_30, 1);
+    assert_eq!(sessions.unwrap().total, 1);
     assert!(!kept.contains(sentinel), "{kept}");
 }

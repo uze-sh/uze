@@ -5,7 +5,7 @@
 //! not depend on which harness answered is decided here, once:
 //! - which records to read again, and from where ([`Resume`]);
 //! - what is kept between readings, in the `cache/` tier ([`Ledger`]);
-//! - the daily counts a period is summed from.
+//! - every use the records still hold, and the day of the last one.
 //!
 //! No hook counts anything: a use is read after the fact, so an agent's turn
 //! pays nothing for it and the count covers the past from the first reading.
@@ -17,7 +17,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ use crate::{
     Result,
     home::UzeHome,
     integration::IntegrationPort,
-    inventory::{FoundResource, MachineOverview, PERIODS, ResourceKind},
+    inventory::{FoundResource, MachineOverview, ResourceKind},
     persistence::write_atomic,
 };
 
@@ -146,12 +146,12 @@ pub struct Tally {
     pub estimate: bool,
 }
 
-/// How often one resource was used in each of [`PERIODS`].
+/// How often one resource was used in every record a harness still keeps.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Uses {
-    pub days_7: u64,
-    pub days_30: u64,
-    pub days_90: u64,
+    pub total: u64,
+    /// The day of the last use, in days since the epoch.
+    pub last: Option<u64>,
     /// Some of them were inferred rather than recorded.
     pub estimate: bool,
     /// Every harness carrying the resource could be read.
@@ -159,44 +159,19 @@ pub struct Uses {
 }
 
 impl Uses {
-    pub fn within(&self, days: u32) -> u64 {
-        match days {
-            0..=7 => self.days_7,
-            8..=30 => self.days_30,
-            _ => self.days_90,
-        }
-    }
-
     /// Adds what another harness counted.
     pub fn add(&mut self, other: &Uses) {
-        self.days_7 += other.days_7;
-        self.days_30 += other.days_30;
-        self.days_90 += other.days_90;
+        self.total += other.total;
+        self.last = self.last.max(other.last);
         self.estimate |= other.estimate;
     }
 
-    /// Adds `tally` to every period it falls in, as of `today`.
-    pub fn count(&mut self, tally: &Tally, today: u64) {
-        let total = u64::from(tally.by_person) + u64::from(tally.by_model);
-        let age = today.saturating_sub(tally.day);
-        for (days, sum) in [
-            (7, &mut self.days_7),
-            (30, &mut self.days_30),
-            (90, &mut self.days_90),
-        ] {
-            if age < days {
-                *sum += total;
-            }
-        }
+    /// Adds one day's tally.
+    pub fn count(&mut self, tally: &Tally) {
+        self.total += u64::from(tally.by_person) + u64::from(tally.by_model);
+        self.last = self.last.max(Some(tally.day));
         self.estimate |= tally.estimate;
     }
-}
-
-/// How far back records are read: the longest period offered.
-pub fn horizon(now: SystemTime) -> SystemTime {
-    let longest = PERIODS.iter().copied().max().unwrap_or(90);
-    now.checked_sub(Duration::from_secs(u64::from(longest) * DAY))
-        .unwrap_or(UNIX_EPOCH)
 }
 
 pub fn day_of(time: SystemTime) -> u64 {
@@ -250,10 +225,9 @@ impl Ledger {
         &mut self,
         harness: &dyn IntegrationPort,
         carried: &[FoundResource],
-        now: SystemTime,
         cancelled: &AtomicBool,
     ) -> Option<Vec<Tally>> {
-        let records = harness.usage_records(horizon(now))?;
+        let records = harness.usage_records(UNIX_EPOCH)?;
         let known = Carried::of(carried);
         let kept = self.harnesses.entry(harness.id().to_owned()).or_default();
         let listed: BTreeSet<&str> = records.iter().map(|record| record.id.as_str()).collect();
@@ -305,13 +279,8 @@ impl Ledger {
 
 /// Gives every skill, agent and MCP server of `overview` its uses on each
 /// harness carrying it, from that harness's tallies (`None`: its uses are
-/// unknown, and it is left out), as of `now`.
-pub fn count_uses(
-    overview: &mut MachineOverview,
-    tallies: &BTreeMap<String, Option<Vec<Tally>>>,
-    now: SystemTime,
-) {
-    let today = day_of(now);
+/// unknown, and it is left out).
+pub fn count_uses(overview: &mut MachineOverview, tallies: &BTreeMap<String, Option<Vec<Tally>>>) {
     for report in &mut overview.harnesses {
         report.uses_known = tallies.get(&report.id).is_some_and(Option::is_some);
     }
@@ -338,7 +307,7 @@ pub fn count_uses(
                         Target::Definition(path) => *path == location.path,
                     }
             }) {
-                uses.count(tally, today);
+                uses.count(tally);
             }
         }
     }

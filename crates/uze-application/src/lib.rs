@@ -84,7 +84,7 @@ pub use uze_core::exposure::PackageEnvelope;
 /// never names `uze_core`.
 pub mod machine_overview {
     pub use uze_core::inventory::{
-        HarnessReport, Location, MachineOverview, Origin, OverviewResource, PERIODS, ResourceKind,
+        HarnessReport, Location, MachineOverview, Origin, OverviewResource, ResourceKind,
         SessionCounts, Status,
     };
     pub use uze_core::usage::{COUNTED, Uses};

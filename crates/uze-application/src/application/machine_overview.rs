@@ -64,7 +64,7 @@ impl UzeApplication {
             if cancelled.load(Ordering::Relaxed) {
                 return None;
             }
-            gathered[index].sessions = answered(|| integration.session_counts(now));
+            gathered[index].sessions = answered(|| integration.session_counts());
         }
         let mut overview = inventory::assemble(gathered.clone(), &receipts);
         answer(&overview);
@@ -72,13 +72,13 @@ impl UzeApplication {
         let mut tallies = BTreeMap::new();
         for (index, integration) in detected.iter().enumerate() {
             let carried = gathered[index].found.as_deref().unwrap_or_default();
-            let read = answered(|| Some(ledger.read(*integration, carried, now, cancelled)));
+            let read = answered(|| Some(ledger.read(*integration, carried, cancelled)));
             if cancelled.load(Ordering::Relaxed) {
                 save_ledger(&self.home, &ledger);
                 return None;
             }
             tallies.insert(integration.id().to_owned(), read.flatten());
-            usage::count_uses(&mut overview, &tallies, now);
+            usage::count_uses(&mut overview, &tallies);
             answer(&overview);
         }
         save_ledger(&self.home, &ledger);

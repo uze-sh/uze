@@ -21,9 +21,8 @@ fn harness(id: &str, name: &str, sessions: u64) -> HarnessReport {
         name: name.to_owned(),
         inventory_known: true,
         sessions: Some(SessionCounts {
-            days_7: sessions / 4,
-            days_30: sessions,
-            days_90: sessions * 2,
+            total: sessions,
+            oldest: Some(now_seconds() - 29 * 86_400),
         }),
         uses_known: true,
     }
@@ -268,16 +267,21 @@ fn a_harness_narrows_the_menu_the_table_and_the_totals() {
     );
 }
 
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 #[test]
-fn the_period_sets_what_sessions_are_counted_over() {
-    let mut model = model();
-    key(&mut model, KeyCode::Tab);
-    key(&mut model, KeyCode::Tab);
-    key(&mut model, KeyCode::Right);
+fn the_header_counts_every_session_and_says_how_far_back_the_records_reach() {
+    let model = model();
     let drawn = rows(&model);
-    assert!(drawn.iter().any(|row| row.contains("90 days")));
     assert!(
-        drawn.iter().any(|row| row.contains("90 sessions")),
+        drawn
+            .iter()
+            .any(|row| row.contains("45 sessions in 30 days of records")),
         "{drawn:#?}"
     );
 }
@@ -287,8 +291,6 @@ fn tab_walks_the_fields_and_reaches_the_screens() {
     let mut model = model();
     key(&mut model, KeyCode::Tab);
     assert_eq!(model.remembered.machine.field, Field::Harness);
-    key(&mut model, KeyCode::Tab);
-    assert_eq!(model.remembered.machine.field, Field::Period);
     key(&mut model, KeyCode::Tab);
     assert_eq!(model.remembered.machine.field, Field::Columns);
     key(&mut model, KeyCode::Tab);
@@ -446,7 +448,7 @@ fn the_headings_are_reached_by_the_keyboard_too() {
     let mut clicked = model();
     let mut pressed = model();
     click(&mut clicked, &Hit::MachineSort(Column::Name));
-    for _ in 0..3 {
+    for _ in 0..2 {
         key(&mut pressed, KeyCode::Tab);
     }
     assert_eq!(pressed.remembered.machine.field, Field::Columns);
@@ -505,15 +507,15 @@ fn an_empty_section_says_so_in_the_middle_of_its_room_with_no_headings() {
     );
 }
 
-/// `resource` used `days_30` times in 30 days on each harness named.
-fn used_on(resource: &mut OverviewResource, harnesses: &[&str], days_30: u64, estimate: bool) {
+/// `resource` used `total` times, the last of them yesterday, on each
+/// harness named.
+fn used_on(resource: &mut OverviewResource, harnesses: &[&str], total: u64, estimate: bool) {
     for harness in harnesses {
         resource.uses.insert(
             (*harness).to_owned(),
             Uses {
-                days_7: days_30,
-                days_30,
-                days_90: days_30,
+                total,
+                last: (total > 0).then(|| now_seconds() / 86_400 - 1),
                 estimate,
                 complete: true,
             },
@@ -625,7 +627,7 @@ fn the_panel_says_what_a_use_count_rests_on() {
     assert!(
         drawn
             .iter()
-            .any(|row| row.contains("4 in 30 days · partly inferred · some")),
+            .any(|row| row.contains("4 · last yesterday · partly inferred")),
         "{drawn:#?}"
     );
 }

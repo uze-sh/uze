@@ -401,11 +401,8 @@ impl IntegrationPort for CodexIntegration {
         Some(inventory::inventory(&self.inventory_places(), &receipts))
     }
 
-    fn session_counts(
-        &self,
-        now: std::time::SystemTime,
-    ) -> Option<uze_core::inventory::SessionCounts> {
-        Some(inventory::session_counts(&self.inventory_places(), now))
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
+        Some(inventory::session_counts(&self.inventory_places()))
     }
 
     fn usage_records(

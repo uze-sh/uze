@@ -313,11 +313,8 @@ impl IntegrationPort for ClaudeIntegration {
         }))
     }
 
-    fn session_counts(
-        &self,
-        now: std::time::SystemTime,
-    ) -> Option<uze_core::inventory::SessionCounts> {
-        inventory::session_counts(&self.transcripts_root, now)
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
+        inventory::session_counts(&self.transcripts_root)
     }
 
     fn usage_records(

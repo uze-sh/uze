@@ -236,8 +236,8 @@ fn a_subagents_thread_is_not_a_session() {
         "",
     );
     write(&root.join(".codex/sessions/2026/10/31/notes.jsonl"), "{}\n");
-    let counts = session_counts(&places(&root), SystemTime::now());
-    assert_eq!(counts.days_30, 2);
+    let counts = session_counts(&places(&root));
+    assert_eq!(counts.total, 2);
 }
 
 #[test]
@@ -250,12 +250,12 @@ fn nothing_past_the_first_line_is_read() {
         r#"{"type":"session_meta","payload":{"id":"a"}}"#,
         "\u{0}not json at all {{{\n\"parent_thread_id\":\"x\"\n",
     );
-    let counts = session_counts(&places(&root), SystemTime::now());
-    assert_eq!(counts.days_7, 1);
+    let counts = session_counts(&places(&root));
+    assert_eq!(counts.total, 1);
 }
 
 #[test]
-fn old_sessions_fall_out_of_the_short_periods() {
+fn the_oldest_session_says_how_far_back_the_records_reach() {
     let root = TempDir::new("codex-inventory-old");
     rollout(
         &root,
@@ -266,8 +266,13 @@ fn old_sessions_fall_out_of_the_short_periods() {
     );
     let path = root.join(".codex/sessions/2026/10/01/rollout-old.jsonl");
     let file = fs::File::options().write(true).open(&path).unwrap();
-    file.set_modified(SystemTime::now() - Duration::from_secs(86_400 * 40))
-        .unwrap();
-    let counts = session_counts(&places(&root), SystemTime::now());
-    assert_eq!((counts.days_7, counts.days_30, counts.days_90), (0, 0, 1));
+    let forty_days_ago = SystemTime::now() - Duration::from_secs(86_400 * 40);
+    file.set_modified(forty_days_ago).unwrap();
+    let counts = session_counts(&places(&root));
+    assert_eq!(counts.total, 1);
+    let oldest = forty_days_ago
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert_eq!(counts.oldest, Some(oldest));
 }

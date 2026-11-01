@@ -15,7 +15,7 @@ use std::{
 };
 
 use uze_application::machine_overview::{
-    MachineOverview, Origin, OverviewResource, PERIODS, ResourceKind, Status,
+    MachineOverview, Origin, OverviewResource, ResourceKind, Status,
 };
 
 use super::model::ListScreen;
@@ -84,12 +84,11 @@ pub(crate) enum Field {
     #[default]
     List,
     Harness,
-    Period,
     Columns,
 }
 
 impl Field {
-    const ORDER: [Field; 4] = [Self::List, Self::Harness, Self::Period, Self::Columns];
+    const ORDER: [Field; 3] = [Self::List, Self::Harness, Self::Columns];
 
     pub(crate) fn next(self, forward: bool) -> Self {
         let at = Self::ORDER
@@ -195,10 +194,9 @@ impl Sort {
     }
 }
 
-/// The period and the harness the screen is narrowed to.
+/// The harness the screen is narrowed to, if one is.
 #[derive(Clone, Copy)]
 pub(crate) struct On<'a> {
-    pub(crate) days: u32,
     pub(crate) harness: Option<&'a str>,
 }
 
@@ -208,16 +206,14 @@ fn status_rank(resource: &OverviewResource, on: On<'_>) -> u8 {
     match resource.status {
         Status::Broken { .. } => 0,
         Status::Duplicate { .. } => 1,
-        Status::Ok if resource.unused(on.days, on.harness) => 2,
+        Status::Ok if resource.unused(on.harness) => 2,
         Status::Ok if resource.checked => 3,
         Status::Ok => 4,
     }
 }
 
 fn uses_within(resource: &OverviewResource, on: On<'_>) -> Option<u64> {
-    resource
-        .uses_on(on.harness)
-        .map(|uses| uses.within(on.days))
+    resource.uses_on(on.harness).map(|uses| uses.total)
 }
 
 /// A collection's cancel switch, carried by the intent that starts it.
@@ -242,8 +238,6 @@ pub(crate) struct MachineScreen {
     cancel: Cancel,
     /// The one harness the screen is narrowed to, or every one.
     pub(crate) harness: Option<String>,
-    /// A position in [`PERIODS`].
-    pub(crate) period: usize,
     /// The menu's choice; `None` is the first section on offer.
     pub(crate) section: Option<Group>,
     pub(crate) pane: Pane,
@@ -257,16 +251,11 @@ pub(crate) struct MachineScreen {
 }
 
 impl MachineScreen {
-    /// The period and the harness every figure on screen is narrowed to.
+    /// The harness every figure on screen is narrowed to.
     pub(crate) fn on(&self) -> On<'_> {
         On {
-            days: self.period_days(),
             harness: self.harness.as_deref(),
         }
-    }
-
-    pub(crate) fn period_days(&self) -> u32 {
-        PERIODS[self.period.min(PERIODS.len() - 1)]
     }
 
     /// Asks for a collection when the Overview has stood in front long
@@ -422,7 +411,7 @@ impl MachineScreen {
         self.overview.as_ref()?.resources.get(index)
     }
 
-    /// Moves the harness or the period field one step.
+    /// Moves the harness field, or the column the headings are on, one step.
     pub(crate) fn turn(&mut self, field: Field, forward: bool) {
         match field {
             Field::List => {}
@@ -455,13 +444,6 @@ impl MachineScreen {
                 } else {
                     (at + len - 1) % len
                 }];
-            }
-            Field::Period => {
-                self.period = if forward {
-                    (self.period + 1) % PERIODS.len()
-                } else {
-                    (self.period + PERIODS.len() - 1) % PERIODS.len()
-                };
             }
         }
     }
@@ -627,7 +609,7 @@ impl TuiModel {
     }
 
     /// `tab`: the keyboard moves from the menu and table to the harness
-    /// field, the period field, the table's headings, and on to the
+    /// field, the table's headings, and on to the
     /// screens' strip, as it does from every other screen; `shift+tab`
     /// walks back.
     pub(crate) fn machine_next_field(&mut self, forward: bool) -> Intent {
@@ -679,7 +661,7 @@ impl TuiModel {
     pub(crate) fn machine_activate_label(&self) -> Option<String> {
         match self.remembered.machine.field {
             Field::Columns => return Some("reverse".to_owned()),
-            Field::Harness | Field::Period => return None,
+            Field::Harness => return None,
             Field::List => {}
         }
         if self.remembered.machine.pane == Pane::Menu {

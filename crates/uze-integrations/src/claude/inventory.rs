@@ -10,7 +10,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::SystemTime,
 };
 
 use serde_json::Value;
@@ -59,7 +58,7 @@ pub(super) fn machine_inventory(home: &ClaudeHome<'_>) -> Vec<FoundResource> {
     found
 }
 
-pub(super) fn session_counts(transcripts_root: &Path, now: SystemTime) -> Option<SessionCounts> {
+pub(super) fn session_counts(transcripts_root: &Path) -> Option<SessionCounts> {
     let projects = fs::read_dir(transcripts_root).ok()?;
     let times = projects
         .flatten()
@@ -67,7 +66,7 @@ pub(super) fn session_counts(transcripts_root: &Path, now: SystemTime) -> Option
         .flat_map(|entries| entries.flatten())
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
         .filter_map(|entry| entry.metadata().ok()?.modified().ok());
-    Some(SessionCounts::from_activity(times, now))
+    Some(SessionCounts::from_activity(times))
 }
 
 /// A plugin as Claude installed it, with what tells uze's own apart.

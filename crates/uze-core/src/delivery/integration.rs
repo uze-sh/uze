@@ -543,13 +543,10 @@ pub trait IntegrationPort: Send + Sync {
         None
     }
 
-    /// How many sessions this harness recorded in each Overview period,
-    /// subagents excluded, from its records' metadata or its published
-    /// statistics — never from what a session said. `None` is unknown.
-    fn session_counts(
-        &self,
-        _now: std::time::SystemTime,
-    ) -> Option<crate::inventory::SessionCounts> {
+    /// How many sessions this harness still keeps records of, subagents
+    /// excluded, from its records' metadata or its published statistics —
+    /// never from what a session said. `None` is unknown.
+    fn session_counts(&self) -> Option<crate::inventory::SessionCounts> {
         None
     }
 
@@ -1497,11 +1494,7 @@ mod tests {
     #[test]
     fn an_integration_that_declares_nothing_reports_no_inventory_and_no_sessions() {
         assert!(UndeclaredIntegration.machine_inventory().is_none());
-        assert!(
-            UndeclaredIntegration
-                .session_counts(std::time::SystemTime::now())
-                .is_none()
-        );
+        assert!(UndeclaredIntegration.session_counts().is_none());
     }
 
     /// An override for a harness nobody has catalogued is the operator's

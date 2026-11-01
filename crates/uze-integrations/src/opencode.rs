@@ -280,10 +280,7 @@ impl IntegrationPort for OpenCodeIntegration {
         Some(inventory::inventory(self.config_root(), &self.config_path))
     }
 
-    fn session_counts(
-        &self,
-        _now: std::time::SystemTime,
-    ) -> Option<uze_core::inventory::SessionCounts> {
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
         let (executable, home) = self.session_query()?;
         inventory::session_counts(&executable, &home)
     }

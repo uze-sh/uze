@@ -98,10 +98,10 @@ pub(super) fn inventory(
 }
 
 /// Sessions with activity in each period, subagent threads excluded.
-pub(super) fn session_counts(places: &CodexPlaces, now: SystemTime) -> SessionCounts {
+pub(super) fn session_counts(places: &CodexPlaces) -> SessionCounts {
     let mut times = Vec::new();
     collect_rollouts(&places.sessions(), &mut times);
-    SessionCounts::from_activity(times, now)
+    SessionCounts::from_activity(times)
 }
 
 fn collect_rollouts(dir: &Path, times: &mut Vec<SystemTime>) {

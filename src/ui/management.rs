@@ -581,9 +581,6 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
             crate::ui::machine::Field::Harness => {
                 hints.run(Action::FocusContent, Action::FocusSidebar, "harness")
             }
-            crate::ui::machine::Field::Period => {
-                hints.run(Action::FocusContent, Action::FocusSidebar, "period")
-            }
             crate::ui::machine::Field::Columns => {
                 hints.run(Action::FocusContent, Action::FocusSidebar, "column")
             }
@@ -601,8 +598,7 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     if model.route == Route::Overview {
         let next = match model.remembered.machine.field {
             crate::ui::machine::Field::List => "harness",
-            crate::ui::machine::Field::Harness => "period",
-            crate::ui::machine::Field::Period => "order",
+            crate::ui::machine::Field::Harness => "order",
             crate::ui::machine::Field::Columns => "screens",
         };
         hints = hints.named(Action::FocusNext, next);

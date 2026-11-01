@@ -14,7 +14,9 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use uze_application::machine_overview::{COUNTED, Origin, OverviewResource, ResourceKind, Status};
+use uze_application::machine_overview::{
+    COUNTED, Origin, OverviewResource, ResourceKind, SessionCounts, Status,
+};
 
 use crate::ui::content_area;
 use crate::ui::hit::Hit;
@@ -405,10 +407,7 @@ fn render_header(
     hits: &mut Vec<(Rect, Hit)>,
 ) {
     let screen = &model.remembered.machine;
-    let fields = [
-        (Field::Harness, screen.harness_label()),
-        (Field::Period, format!("{} days", screen.period_days())),
-    ];
+    let fields = [(Field::Harness, screen.harness_label())];
     let arrows = (text::columns(&theme::glyph(Symbol::StepPrevious))
         + text::columns(&theme::glyph(Symbol::StepNext))) as u16;
     // Each field is its arrows and label with a column between each, and a
@@ -484,16 +483,19 @@ fn summary(model: &TuiModel) -> String {
                 machine::tokens(per_session)
             ));
         }
-        let days = screen.period_days();
-        let sessions: Vec<Option<u64>> = overview
+        let sessions: Vec<SessionCounts> = overview
             .harnesses
             .iter()
             .filter(|harness| screen.harness.as_ref().is_none_or(|h| *h == harness.id))
-            .map(|harness| harness.sessions.map(|counts| counts.within(days)))
+            .filter_map(|harness| harness.sessions)
             .collect();
-        if !sessions.is_empty() && sessions.iter().any(Option::is_some) {
-            let total: u64 = sessions.iter().flatten().sum();
-            parts.push(counted(total as usize, "session"));
+        if !sessions.is_empty() {
+            let total: u64 = sessions.iter().map(|counts| counts.total).sum();
+            let mut said = counted(total as usize, "session");
+            if let Some(oldest) = sessions.iter().filter_map(|counts| counts.oldest).min() {
+                said.push_str(&format!(" in {}", reach(oldest)));
+            }
+            parts.push(said);
         }
         let look = shown
             .iter()
@@ -672,7 +674,7 @@ fn uses_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
     match resource.uses_on(on.harness) {
         None => Span::styled("?", theme::fg(Token::TextFaint)),
         Some(uses) => {
-            let count = uses.within(on.days);
+            let count = uses.total;
             let text = if uses.estimate {
                 format!("~{count}")
             } else {
@@ -692,7 +694,7 @@ fn uses_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
 /// found against it; a dash for what nothing on disk can judge; unused for
 /// what nobody used in the period, every harness carrying it read.
 fn status_cell(resource: &OverviewResource, on: On<'_>) -> Span<'static> {
-    if resource.unused(on.days, on.harness) {
+    if resource.unused(on.harness) {
         return Span::styled(
             format!("{} unused", theme::glyph(Symbol::MarkUnused)),
             theme::fg(Token::TextMuted),
@@ -745,7 +747,7 @@ fn figure(tokens: Option<u32>) -> Span<'static> {
 }
 
 fn status_style(resource: &OverviewResource, on: On<'_>) -> (&'static str, Token) {
-    if resource.unused(on.days, on.harness) {
+    if resource.unused(on.harness) {
         return ("unused", Token::TextMuted);
     }
     let status = &resource.status;
@@ -760,11 +762,13 @@ fn status_style(resource: &OverviewResource, on: On<'_>) -> (&'static str, Token
 
 /// A resource's uses in the panel, with what the figure rests on.
 fn uses_said(resource: &OverviewResource, on: On<'_>) -> String {
-    let days = on.days;
     let Some(uses) = resource.uses_on(on.harness) else {
         return "not known: no harness's records could be read".to_owned();
     };
-    let mut said = format!("{} in {days} days", uses.within(days));
+    let mut said = match uses.last {
+        Some(day) => format!("{} · last {}", uses.total, day_said(day)),
+        None => "none in the records".to_owned(),
+    };
     if uses.estimate {
         said.push_str(" · partly inferred");
     }
@@ -772,6 +776,28 @@ fn uses_said(resource: &OverviewResource, on: On<'_>) -> String {
         said.push_str(" · some harnesses unread");
     }
     said
+}
+
+/// How far back the records reach, from the oldest one's last change:
+/// `29 days of records`.
+fn reach(oldest: u64) -> String {
+    let days = now_seconds().saturating_sub(oldest) / 86_400 + 1;
+    format!("{} of records", counted(days as usize, "day"))
+}
+
+/// A day in days since the epoch, as near as it is to today.
+fn day_said(day: u64) -> String {
+    match (now_seconds() / 86_400).saturating_sub(day) {
+        0 => "today".to_owned(),
+        1 => "yesterday".to_owned(),
+        days => format!("{days} days ago"),
+    }
+}
+
+fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 fn finding_word(severity: Severity) -> (String, Token) {

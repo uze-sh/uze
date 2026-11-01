@@ -68,7 +68,7 @@ The core owns everything harness-neutral:
 - duplicate detection (same kind and name, different content digest);
 - token estimation from the files;
 - the static health checks;
-- which records to read again, the cursors, the period buckets, and joining
+- which records to read again, the cursors, the daily tallies, and joining
   a use to the resource it names;
 - status and order;
 - the snapshot and scheduling.
@@ -111,7 +111,7 @@ it. Nothing is executed to check.
 |---|---|---|
 | Claude Code | root `projects/*/*.jsonl` by modification time | living under `<session>/subagents/` |
 | Codex | rollouts under `sessions/` by modification time | the opening `session_meta` carrying `parent_thread_id` (the first line only) |
-| OpenCode | `opencode stats --days N --json`, run from a directory outside every project with a short timeout | its own `sessions` / `subagents` split |
+| OpenCode | `opencode stats --json`, run from a directory outside every project with a short timeout | its own `sessions` / `subagents` split |
 | Antigravity | `conversations/*.db` by the newer of the file's and its `-wal`'s modification time, none opened | not needed: it records no subagent conversations there |
 
 The OpenCode figure is used only if the Lab proves it is machine-wide;
@@ -148,8 +148,10 @@ a launch calls any of this.
 
 ### 7. The screen
 
-The screen has a header with two fields, `‹ every harness ›` and `‹ 30 days ›`;
-the period sets only the session count. Below it are three columns:
+The screen has a header with one field, `‹ every harness ›`, and a summary
+that counts the sessions and says how many days of records they span. There is
+no period field (D12): every figure covers all the records a harness keeps.
+Below it are three columns:
 
 - a menu of sections: uze's findings while there are any, then every kind,
   always present, each with its count and a `!` mark for what in it is
@@ -181,7 +183,7 @@ hold the past, and carry the typed uses. Decision D11.
 The integration only parses; the core owns the rest:
 
 - **Records.** `usage_records(since)` lists, from metadata, the records of
-  sessions active in the longest period (90 days), subagents' included.
+  every session the harness keeps, subagents' included.
 - **Reading.** The core reads a record again only when its stamp changed, and
   an append-only one from the byte offset where it stopped (`Resume::At`);
   one rewritten as a whole is read from the start (`Resume::Start`) and its
@@ -198,7 +200,7 @@ The integration only parses; the core owns the rest:
 |---|---|---|---|---|
 | Claude Code | `projects/**/*.jsonl` | `<command-name>/<name>` (skill, plugin skill, MCP prompt); `agent_mention` | `tool_use` `Skill` / `Agent` / `mcp__<server>__<tool>` (a plugin's as `mcp__plugin_<plugin>_<server>__`) | offset |
 | Codex | `sessions/**/rollout-*.jsonl` | `<skill><name>…<path>` | the `exec` script's read of `…/<dir>/SKILL.md` when its output shows it succeeded; `spawn_agent` `agent_type`; `mcp__<server>__<tool>` in the script, as an estimate | offset |
-| OpenCode | sessions updated in the period, asked of `opencode` | `skills[]` / `agents[]` of a user message | tool `skill` `id`, `subagent` `agent`, `<key>_<tool>` matched against the configured keys | start (`session export`) |
+| OpenCode | every session, asked of `opencode api session.list` | `skills[]` / `agents[]` of a user message | tool `skill` `id`, `subagent` `agent`, `<key>_<tool>` matched against the configured keys | start (`session export`) |
 | Antigravity | `brain/*/.system_generated/logs/transcript.jsonl` | `[Slash Command]` with `<SKILL>…(<name>)` | `read_file`/`view_file` of an absolute `SKILL.md` path, or a `run_command` reading it, not an `ERROR` step; `invoke_subagent` `TypeName`; `call_mcp_tool` `ServerName` | offset |
 
 One use counts once: within a message, a mention and the call it led to are

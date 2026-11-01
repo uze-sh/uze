@@ -85,7 +85,7 @@ impl Locations<'_> {
         found
     }
 
-    pub(super) fn session_counts(&self, now: SystemTime) -> SessionCounts {
+    pub(super) fn session_counts(&self) -> SessionCounts {
         let conversations = self.cli_root.join("conversations");
         let activity = entries(&conversations)
             .into_iter()
@@ -98,7 +98,7 @@ impl Locations<'_> {
                     .flatten()
                     .max()
             });
-        SessionCounts::from_activity(activity, now)
+        SessionCounts::from_activity(activity)
     }
 }
 

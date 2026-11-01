@@ -201,28 +201,23 @@ fn listed_plugins(config: Option<&serde_json::Value>, config_path: &Path) -> Vec
         .collect()
 }
 
-/// Sessions per Overview period, as `opencode stats` counts them.
+/// Every session the harness keeps, as `opencode stats` counts them over
+/// the whole machine.
 pub(super) fn session_counts(executable: &Path, home: &Path) -> Option<SessionCounts> {
-    let outside_every_project = std::env::temp_dir();
-    let ask = |days: u32| -> Option<u64> {
-        let days = days.to_string();
-        let output = process::capture_read_only_from(
-            executable,
-            home,
-            &outside_every_project,
-            &["stats", "--days", days.as_str(), "--json"],
-            STATS_TIMEOUT,
-        )
-        .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        sessions_in(&output.stdout)
-    };
+    let output = process::capture_read_only_from(
+        executable,
+        home,
+        &std::env::temp_dir(),
+        &["stats", "--json"],
+        STATS_TIMEOUT,
+    )
+    .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     Some(SessionCounts {
-        days_7: ask(7)?,
-        days_30: ask(30)?,
-        days_90: ask(90)?,
+        total: sessions_in(&output.stdout)?,
+        oldest: None,
     })
 }
 

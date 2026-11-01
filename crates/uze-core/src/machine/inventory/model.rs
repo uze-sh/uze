@@ -1,14 +1,10 @@
 use std::{
     collections::BTreeMap,
     path::PathBuf,
-    time::{Duration, SystemTime},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde::{Deserialize, Serialize};
-
-/// The periods sessions are counted over, in days, in the order the
-/// Overview offers them.
-pub const PERIODS: [u32; 3] = [30, 90, 7];
 
 /// The name every harness lists uze's own rules engine hook by, so the
 /// one resource it is reads as one row whatever file each harness keeps
@@ -167,40 +163,30 @@ impl FoundResource {
     }
 }
 
-/// Sessions with activity in each of [`PERIODS`], subagents excluded.
+/// The sessions a harness still keeps records of, subagents excluded: a
+/// harness deletes old ones on its own schedule, so this is all of them.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionCounts {
-    pub days_7: u64,
-    pub days_30: u64,
-    pub days_90: u64,
+    pub total: u64,
+    /// When the oldest of them last changed, in seconds since the epoch:
+    /// how far back the records reach. `None` where the harness only gives
+    /// a figure.
+    #[serde(default)]
+    pub oldest: Option<u64>,
 }
 
 impl SessionCounts {
     /// Counts sessions by their last activity.
-    pub fn from_activity(times: impl IntoIterator<Item = SystemTime>, now: SystemTime) -> Self {
+    pub fn from_activity(times: impl IntoIterator<Item = SystemTime>) -> Self {
         let mut counts = Self::default();
         for time in times {
-            let age = now.duration_since(time).unwrap_or(Duration::ZERO);
-            let days = age.as_secs() / 86_400;
-            if days < 7 {
-                counts.days_7 += 1;
-            }
-            if days < 30 {
-                counts.days_30 += 1;
-            }
-            if days < 90 {
-                counts.days_90 += 1;
-            }
+            counts.total += 1;
+            let seconds = time
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs());
+            counts.oldest = Some(counts.oldest.map_or(seconds, |oldest| oldest.min(seconds)));
         }
         counts
-    }
-
-    pub fn within(&self, days: u32) -> u64 {
-        match days {
-            7 => self.days_7,
-            90 => self.days_90,
-            _ => self.days_30,
-        }
     }
 }
 
@@ -326,14 +312,13 @@ impl OverviewResource {
         })
     }
 
-    /// Nothing is wrong with it, and no use of it is found in the last
-    /// `days` on `harness` (or on any harness carrying it), every one of
-    /// them read.
-    pub fn unused(&self, days: u32, harness: Option<&str>) -> bool {
+    /// Nothing is wrong with it, and no record of `harness` (or of any
+    /// harness carrying it) holds a use of it, every one of them read.
+    pub fn unused(&self, harness: Option<&str>) -> bool {
         self.status == Status::Ok
             && self
                 .uses_on(harness)
-                .is_some_and(|uses| uses.complete && uses.within(days) == 0)
+                .is_some_and(|uses| uses.complete && uses.total == 0)
     }
 
     pub fn reaches(&self, harness: &str) -> bool {

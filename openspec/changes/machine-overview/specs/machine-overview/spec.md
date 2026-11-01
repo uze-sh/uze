@@ -73,7 +73,7 @@ A skill, agent or instruction file that loads more when it is used SHALL report 
 - **THEN** its detail shows the tokens of its description per session and the tokens of the rest of its file when used
 
 ### Requirement: Sessions are counted per harness
-The Overview SHALL count each harness's sessions with activity in the chosen period (7, 30 or 90 days), from the records' metadata or the harness's published statistics. A subagent's record SHALL NOT count as a session. A harness whose sessions cannot be counted machine-wide SHALL show its count as unknown.
+The Overview SHALL count every session each harness still keeps a record of, from the records' metadata or the harness's published statistics, and SHALL say how far back those records reach where the harness lets it be known. A subagent's record SHALL NOT count as a session. A harness whose sessions cannot be counted machine-wide SHALL show its count as unknown.
 
 #### Scenario: A session with subagents
 - **WHEN** a session started three subagents, each with its own record
@@ -81,7 +81,11 @@ The Overview SHALL count each harness's sessions with activity in the chosen per
 
 #### Scenario: Narrowing to one harness
 - **WHEN** the operator chooses Codex in the harness field
-- **THEN** the header shows Codex's sessions in the period
+- **THEN** the header shows Codex's sessions and how many days of records they span
+
+#### Scenario: A harness that deletes old records
+- **WHEN** a harness keeps only its last 30 days of sessions
+- **THEN** the header says the records reach back 30 days, and no figure claims a longer span
 
 ### Requirement: Broken is a fact on disk
 A resource SHALL read `broken` only when a fact on disk proves it cannot work: a hook's command file is missing, an MCP server's local command is not found, a skill or agent file cannot be read or its frontmatter is invalid, a plugin's directory is missing. Its reason SHALL be shown in one line.
@@ -102,15 +106,15 @@ Each resource SHALL carry one status — `broken`, `duplicate`, `unused` or `ok`
 - **THEN** the broken one is first, the duplicate second, and the three others follow heaviest first
 
 #### Scenario: A skill nobody used
-- **WHEN** a skill has no use in the period on any harness that carries it, and every one of them could be read
+- **WHEN** no record of any harness that carries a skill holds a use of it, and every one of them could be read
 - **THEN** it reads `unused` and comes after the duplicates
 
 #### Scenario: A server reached by URL
 - **WHEN** an MCP server is reached by URL and nothing is found against it
 - **THEN** its status shows no check
 
-### Requirement: Harness and period narrow the screen
-The Overview SHALL offer a harness field (every harness, or one) that narrows every row, group and total, and a period field that sets the period sessions and uses are counted over. Neither field SHALL grow with the number of harnesses.
+### Requirement: The harness field narrows the screen
+The Overview SHALL offer a harness field (every harness, or one) that narrows every row, group, total and use count to that harness. It SHALL NOT grow with the number of harnesses. There SHALL be no period field: each harness keeps its records for a span of its own, and every figure covers all of them.
 
 #### Scenario: Ten harnesses
 - **WHEN** ten harnesses are detected
@@ -131,7 +135,7 @@ Collecting and showing the Overview SHALL write nothing outside `$UZE_HOME/cache
 - **THEN** the Overview types the harness's own uninstall command into a new shell and runs nothing
 
 ### Requirement: Uses are counted from the harnesses' own records
-Each skill, agent and MCP server SHALL show its uses in the period, read from the records each harness keeps of its sessions: one the person typed (a slash command, a `$` or `@` mention) and one the model chose (a tool call, the read of a skill's file) alike, subagents' records included. One use SHALL count once however many signs of it a record holds. A failed read of a skill's file SHALL NOT count. No hook SHALL be added to any harness to count.
+Each skill, agent and MCP server SHALL show its uses, and the day of the last one, read from every record each harness keeps of its sessions: one the person typed (a slash command, a `$` or `@` mention) and one the model chose (a tool call, the read of a skill's file) alike, subagents' records included. One use SHALL count once however many signs of it a record holds. A failed read of a skill's file SHALL NOT count. No hook SHALL be added to any harness to count.
 
 #### Scenario: A skill typed by the person
 - **WHEN** the person typed `/review` in a session and the harness expanded it with no tool call
@@ -153,7 +157,7 @@ Where a harness's record does not name a use but lets it be inferred from what t
 - **THEN** that server's uses read with `~`
 
 ### Requirement: A record already read is not read again
-A record unchanged since the last collection SHALL NOT be opened again, and one only appended to SHALL be read from where the last reading stopped. Only records with activity in the longest period SHALL be read. Losing what was kept between readings SHALL cost only a fresh reading.
+A record unchanged since the last collection SHALL NOT be opened again, and one only appended to SHALL be read from where the last reading stopped. Losing what was kept between readings SHALL cost only a fresh reading.
 
 #### Scenario: A second opening
 - **WHEN** the Overview is opened again after one session grew by ten lines

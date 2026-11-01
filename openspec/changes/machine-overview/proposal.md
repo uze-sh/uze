@@ -19,9 +19,10 @@ machine's health, across every harness.
   session and the tokens it loads when used (measured on its files, offline,
   as estimates), and a status: `ok`, `broken` (a fact on disk proves it
   cannot work) or `duplicate` (the same name with different content).
-- Sessions are counted per harness and period, from file metadata or the
-  harness's published statistics.
-- Each skill, agent and MCP server shows how often it was used in the period,
+- Sessions are counted per harness, every one the harness still keeps a
+  record of, from file metadata or the harness's published statistics, with
+  how far back those records reach.
+- Each skill, agent and MCP server shows how often it was used and when last,
   whether the person typed it or the model chose it, read from the records
   every harness already keeps of its sessions, so the count covers the past
   from the first opening; one with no use reads `unused`. Only the names of
