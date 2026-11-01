@@ -70,20 +70,25 @@ impl WorkspaceModel {
 
     /// Whether `item` has anything to draw now.
     fn item_draws(&self, item: &HostedSlot) -> bool {
+        self.bar_item_view(item).is_some()
+    }
+
+    /// What `item` draws on the bar now, or `None` when it draws nothing:
+    /// the one answer the layout's row and the drawing both read, so the
+    /// bar never stands for an item it does not draw, nor draws one it
+    /// took no row for.
+    pub(in crate::ui::orchestrator) fn bar_item_view(&self, item: &HostedSlot) -> Option<View> {
         self.remembered
             .declared
-            .engine(&item.owner)
-            .and_then(|engine| {
-                engine.view(
-                    &item.surface.id,
-                    uze_extensions::view::Size {
-                        width: crate::ui::orchestrator::render::BAR_ITEM_MAX,
-                        height: 1,
-                    },
-                )
-            })
+            .engine(&item.owner)?
+            .view(
+                &item.surface.id,
+                uze_extensions::view::Size {
+                    width: crate::ui::orchestrator::render::BAR_ITEM_MAX,
+                    height: 1,
+                },
+            )
             .and_then(super::status::drawn_tree)
-            .is_some()
     }
 
     /// The release installed and waiting on a restart, which the bar offers.

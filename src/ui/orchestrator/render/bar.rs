@@ -3,7 +3,7 @@
 //! mirror: a hairline toward the pane, then one row, on the same column.
 
 use super::*;
-use crate::ui::orchestrator::declared::{HostedSlot, drawn_tree, folded};
+use crate::ui::orchestrator::declared::{HostedSlot, folded};
 use tab_strip::{GroupButton, button_group, group_width};
 use uze_extensions::contract::SurfaceSlot;
 use uze_extensions::view::View;
@@ -103,18 +103,7 @@ pub(super) fn render_bar(
         .bar_items()
         .into_iter()
         .filter_map(|slot| {
-            let view = model
-                .remembered
-                .declared
-                .engine(&slot.owner)?
-                .view(
-                    &slot.surface.id,
-                    uze_extensions::view::Size {
-                        width: ITEM_MAX,
-                        height: 1,
-                    },
-                )
-                .and_then(drawn_tree)?;
+            let view = model.bar_item_view(slot)?;
             // One line: a text is cut where the item ends, never wrapped.
             Some((slot, folded(view)))
         })
