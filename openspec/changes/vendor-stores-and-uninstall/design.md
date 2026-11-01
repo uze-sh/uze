@@ -333,10 +333,16 @@ not apply when it is absent.
 
       Each vendor keeps an empty `cache/uze-local` of its own, which is
       vendor bookkeeping UZE leaves alone.
-   3. Repoint each marketplace only when its registered root differs, and
-      never while a session of that harness is running:
-      - **Claude:** a same-name `marketplace add`.
-      - **Codex:** `remove`, then `add`. If the `add` fails, re-add the
+   3. Repoint each marketplace only when its registered root differs,
+      which is once per machine (the move off `runtime/`). No session of
+      the harness is waited for: nothing in UZE sees a harness process it
+      did not start, and the repoint is safe without it. The risk is
+      accepted (D13):
+      - **Claude:** a same-name `marketplace add`, which keeps its plugins
+        installed (measured).
+      - **Codex:** `remove`, then `add`. Its plugins stay enabled across
+        it (measured); a session running through that brief window sees
+        them missing until the `add` lands. If the `add` fails, re-add the
         old root (which still exists) and report.
    4. Refresh the vendor caches (measured):
       - **Claude:** nothing, because it reads in place.
@@ -455,7 +461,7 @@ Choices taken without the operator, and those agreed in conversation, all for th
 | 4 | Build key includes UZE version, dialect, root and alias | Digest-only keys leave stale renders after a UZE upgrade. |
 | 5 | Build inspection by per-file digest; hook-added files ignored | Existence plus marker never yields `Drifted`, so `--purge` would delete an edit. |
 | 6 | Membership from the registry and builds; "bytes missing" is a state | Membership from bytes empties every catalogue when `sources/` is missing. |
-| 7 | Repoint only when the root differs and no session runs; Codex re-adds the old root on failure | Unconditional repoint briefly uninstalls Codex plugins mid-session. |
+| 7 | Repoint only when the root differs, once per machine, with no session guard; Codex re-adds the old root on failure | Unconditional repoint briefly uninstalls Codex plugins mid-session. A session guard needs a census of harness processes UZE does not have; Claude's same-name add keeps plugins and Codex's window is brief (D13). |
 | 8 | UZE's Codex hook groups always after the operator's | Removing them earlier in the array shifts the operator's trust keys. |
 | 9 | Installers delegate to `uze uninstall` | `install.ps1 -Purge` deleting `~/.uze` is exactly the unsupported path. |
 | 10 | Interactive uninstall asks keep-or-purge | A default with no binary left makes `--purge` unreachable without a reinstall. |

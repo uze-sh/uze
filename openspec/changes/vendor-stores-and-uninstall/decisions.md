@@ -257,3 +257,13 @@
 - decided:  `MarketplaceRecord::pinned_before_link` (plugin → commit, optional field, no shape bump) is filled by `link` from each installed plugin's Git provenance, the first pin standing on a relink, and kept by `unlink`. `link`/`unlink` now forget only the listing (`forget_listing`) and keep the mirror. `Plugins::restore_pinned` puts a pin back when the marketplace is unlinked and the Store still holds a linked ingest: `materialize_cached` reads that commit from the clone (one fetch only when the clone lacks the commit itself), then `replace_with`, so every build re-renders as `source: pinned`; `agents.lock` is never written. It runs first in `Plugins::update`, the machine and project `update` loops (reported as `Moved` to that commit), the project `install` (an install, or a skip), and `Health::maintain` before its lock, asking nobody (`NoTrustAuthority`; `PinRestored`/`NeedsNetwork` outcomes). When the clone lacks what it needs, or a local source is gone, it is `UzeError::PinNeedsNetwork` — `Held` in an update, a skip in an install, `NeedsNetwork` in maintenance — and the linked build stays; the pin is kept for the next resolution.
 - rejected: keeping the pins in a separate link record file (a second registry for one optional field); restoring in `unlink` itself (the freshness spec leaves the bytes alone until something asks); moving to the marketplace head after unlink (that is the next update's, not the restore's).
 - blast:    `state.rs` (record, `marketplace_link`, `marketplace_forget_pin`), `marketplace.rs`, `marketplace_catalogue.rs`, `lifecycle/update.rs`, `project_environment.rs`, `maintenance.rs`, `error.rs`.
+
+## D13 — The design accepts a repoint with no session guard
+
+- status:   pending
+- task:     3.5 (design follow-up of D8)
+- commit:
+- trigger:  design D5 step 3.3 and its decision row 7 still said "never while a session of that harness is running", which D8 found unimplementable (no census of harness processes UZE did not start) and did not implement.
+- decided:  design.md now says what runs: the repoint happens only when the registered root differs, once per machine, with no session guard, as an accepted risk — Claude's same-name `add` keeps its plugins installed, and Codex's `remove` then `add` leaves a brief window in which a running session sees its plugins missing, with the old root re-added if the `add` fails. The transparent-harness-attachment delta never required a guard, so it is unchanged.
+- rejected: keeping the guard in the design as an unmet promise; a guard over UZE's own agents only (a session started outside UZE would still pass).
+- blast:    design.md (D5 step 3.3, decision row 7).
