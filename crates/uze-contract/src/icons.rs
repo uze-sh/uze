@@ -1,8 +1,9 @@
 //! The icons the host draws for an extension's `Icon` node: one idea each,
-//! in every glyph set the operator may choose (`[appearance] glyphs`). The
-//! host keeps a glyph per set for each; an extension names the idea and
-//! never the glyph, which is how a Nerd Font icon never reaches a terminal
-//! without one.
+//! in the glyph set the operator chose (`[appearance] glyphs`). The host
+//! keeps a glyph per set for each, and the default Unicode set leaves blank
+//! the ones the default terminal fonts do not all carry at one size; an
+//! extension names the idea and never the glyph, which is how a Nerd Font
+//! icon never reaches a terminal without one.
 
 /// Each icon by name, and the idea it stands for.
 pub const ICONS: &[(&str, &str)] = &[
