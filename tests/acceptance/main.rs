@@ -21,4 +21,5 @@ mod session_continuity;
 mod store_ownership;
 mod uninstall;
 mod util;
+mod vendor_store_moves;
 mod workspace_health;

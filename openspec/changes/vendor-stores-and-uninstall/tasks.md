@@ -38,7 +38,7 @@
   - swap the catalogue last;
   - receipt `IntegrationOwned { kind: "build" }` per (vendor, package), inspected by per-file digest, where a hook-added file is not drift;
   - detached with the package's other receipts on removal.
-- [ ] 3.5 Registration:
+- [x] 3.5 Registration:
   - repoint only when the registered root differs, and never while a session of that harness runs;
   - Claude repoints with a same-name `add`;
   - Codex runs `remove` then `add`, re-adding the old root if `add` fails;
@@ -93,7 +93,7 @@
 
 ## 5b. Retiring `uze-local`
 
-- [ ] 5b.1 `uze-local` retirement (design D5 step 3.2):
+- [x] 5b.1 `uze-local` retirement (design D5 step 3.2):
   - `receipt_serves` matches `uze-store` by name;
   - each matched `@uze-local` receipt is detached and `@uze-store` attached;
   - a `Drifted` (disabled) Codex plugin is left and reported;
