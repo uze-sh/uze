@@ -126,6 +126,23 @@ to do.
 Do not try to deliver again yourself; UZE re-reads your checkout when your
 turn ends.
 
+## When the operator reviews your work
+
+The operator reads your branch against its target in the workspace and
+comments on its lines. When they send the review, UZE types one line into
+your session saying how many comments wait and which send they are. Then:
+
+```bash
+uze agent review show                           # every comment sent to you, in full
+uze agent review reply 3/1 "apply now refuses a taken branch"
+```
+
+`show` prints each comment as `<send>/<n>`, with its file, its lines quoted
+and what the operator wrote. Address each one, commit, and answer each with
+`reply`: what you changed, or why you did not. An answer is plain text, a
+few lines at most; the operator reads it under their comment. Only you can
+answer a comment sent to you.
+
 ## Give parallel subagents their own checkout
 
 Before two subagents write files, give each one its own checkout, and ask
