@@ -166,7 +166,13 @@ mod tests {
         let found = jsonl_records(&root.join("p"), 1, SystemTime::UNIX_EPOCH);
         let mut names: Vec<_> = found
             .iter()
-            .map(|record| record.id.rsplit('/').next().unwrap().to_owned())
+            .map(|record| {
+                Path::new(&record.id)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         names.sort();
         assert_eq!(names, ["a.jsonl", "b.jsonl"]);

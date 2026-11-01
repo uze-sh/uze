@@ -248,7 +248,10 @@ fn only_each_conversations_transcript_is_a_record_subagents_included() {
         .collect();
     ids.sort();
     assert_eq!(ids.len(), 2);
-    assert!(ids.iter().all(|id| id.ends_with("/logs/transcript.jsonl")));
+    assert!(
+        ids.iter()
+            .all(|id| std::path::Path::new(id).ends_with("logs/transcript.jsonl"))
+    );
 }
 
 #[test]

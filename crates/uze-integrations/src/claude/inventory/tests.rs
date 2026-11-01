@@ -21,6 +21,12 @@ fn inventory_of(root: &Path) -> Vec<FoundResource> {
     })
 }
 
+/// A path as a JSON string, escaped: a Windows path's backslashes would
+/// otherwise make the file the harness reads invalid JSON.
+fn json_path(path: &Path) -> String {
+    serde_json::to_string(path).unwrap()
+}
+
 fn named<'a>(found: &'a [FoundResource], name: &str) -> &'a FoundResource {
     found
         .iter()
@@ -88,8 +94,8 @@ fn hooks_are_named_by_what_they_run_and_uzes_engine_is_claimed() {
         &root.join(".claude/settings.json"),
         &format!(
             r#"{{"hooks":{{"PostToolUse":[{{"matcher":"Edit","hooks":[{{"type":"command","command":"bash ~/bin/format-on-save.sh"}}]}}],
-                "SessionStart":[{{"hooks":[{{"type":"command","command":"{}"}}]}}]}}}}"#,
-            engine.display()
+                "SessionStart":[{{"hooks":[{{"type":"command","command":{}}}]}}]}}}}"#,
+            json_path(&engine)
         ),
     );
     let found = inventory_of(root.path());
@@ -135,13 +141,13 @@ fn plugins_bring_their_resources_and_switched_off_ones_bring_nothing() {
         &root.join(".claude/plugins/installed_plugins.json"),
         &format!(
             r#"{{"version":2,"plugins":{{
-                "vercel@official":[{{"scope":"user","installPath":"{}"}}],
-                "code@uze-store":[{{"scope":"user","installPath":"{}"}}],
-                "off@official":[{{"scope":"user","installPath":"{}"}}],
+                "vercel@official":[{{"scope":"user","installPath":{}}}],
+                "code@uze-store":[{{"scope":"user","installPath":{}}}],
+                "off@official":[{{"scope":"user","installPath":{}}}],
                 "local@official":[{{"scope":"project","installPath":"/work"}}]}}}}"#,
-            vercel.display(),
-            code.display(),
-            off.display()
+            json_path(&vercel),
+            json_path(&code),
+            json_path(&off)
         ),
     );
     write(

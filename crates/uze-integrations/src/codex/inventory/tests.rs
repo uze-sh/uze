@@ -124,7 +124,7 @@ fn a_listed_plugin_missing_from_the_cache_is_reported() {
 fn an_agent_lists_its_description_and_loads_its_instructions() {
     let root = TempDir::new("codex-inventory-agents");
     write(
-        &root.join(".codex/agents/code:reviewer.toml"),
+        &root.join(".codex/agents/reviewer.toml"),
         "name = \"code:reviewer\"\ndescription = \"Reviews code.\"\ndeveloper_instructions = \"You are reviewing code.\"\n",
     );
     let found = inventory(&places(&root), &[]);
@@ -138,7 +138,7 @@ fn an_agent_lists_its_description_and_loads_its_instructions() {
     else {
         panic!("{:?}", found[0].definition);
     };
-    assert_eq!(file, &root.join(".codex/agents/code:reviewer.toml"));
+    assert_eq!(file, &root.join(".codex/agents/reviewer.toml"));
     assert!(per_session.contains("Reviews code."));
     assert_eq!(when_used.as_deref(), Some("You are reviewing code."));
 }

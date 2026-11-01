@@ -8,8 +8,11 @@ use crate::{
     },
 };
 
+/// A skill named by `relative`'s last part, kept in a directory every
+/// platform can name: a plugin's skill is `git:commit`, and Windows refuses
+/// a `:` in a file name.
 fn skill(root: &Path, relative: &str, description: &str) -> FoundResource {
-    let path = root.join(relative).join("SKILL.md");
+    let path = skill_dir(root, relative).join("SKILL.md");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let name = relative.rsplit('/').next().unwrap();
     fs::write(
@@ -18,6 +21,10 @@ fn skill(root: &Path, relative: &str, description: &str) -> FoundResource {
     )
     .unwrap();
     FoundResource::new(ResourceKind::Skill, name, Definition::Markdown(path))
+}
+
+fn skill_dir(root: &Path, relative: &str) -> std::path::PathBuf {
+    root.join(relative.replace(':', "-"))
 }
 
 fn harness(id: &str, found: Vec<FoundResource>) -> HarnessInventory {
@@ -45,7 +52,11 @@ fn tree_receipt(integration: &str, package: &str, path: &Path) -> AttachmentRece
 fn a_skill_a_receipt_put_there_is_uzes() {
     let root = uze_testkit::temp::TempDir::new("inventory-owned");
     let found = skill(root.path(), "a/skills/git:commit", "Write a commit.");
-    let receipt = tree_receipt("a", "git@uze", &root.join("a/skills/git:commit"));
+    let receipt = tree_receipt(
+        "a",
+        "git@uze",
+        &skill_dir(root.path(), "a/skills/git:commit"),
+    );
     let overview = assemble(vec![harness("a", vec![found])], &[receipt]);
     assert_eq!(
         overview.resources[0].origin,
@@ -67,7 +78,11 @@ fn a_path_that_only_looks_like_uzes_is_not() {
 fn a_receipt_of_another_harness_owns_nothing_here() {
     let root = uze_testkit::temp::TempDir::new("inventory-other-harness");
     let found = skill(root.path(), "a/skills/git:commit", "Write a commit.");
-    let receipt = tree_receipt("b", "git@uze", &root.join("a/skills/git:commit"));
+    let receipt = tree_receipt(
+        "b",
+        "git@uze",
+        &skill_dir(root.path(), "a/skills/git:commit"),
+    );
     let overview = assemble(vec![harness("a", vec![found])], &[receipt]);
     assert_eq!(overview.resources[0].origin, Origin::You);
 }
@@ -136,7 +151,11 @@ fn one_uze_skill_on_three_harnesses_is_one_row() {
             id,
             vec![skill(root.path(), &relative, description)],
         ));
-        receipts.push(tree_receipt(id, "git@uze", &root.join(&relative)));
+        receipts.push(tree_receipt(
+            id,
+            "git@uze",
+            &skill_dir(root.path(), &relative),
+        ));
     }
     let overview = assemble(harnesses, &receipts);
     assert_eq!(overview.resources.len(), 1);
