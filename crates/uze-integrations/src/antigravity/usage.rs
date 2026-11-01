@@ -55,7 +55,7 @@ impl Usage<'_> {
     pub(super) fn records(&self, since: SystemTime) -> Vec<UsageRecord> {
         transcript::jsonl_records(&self.cli_root.join("brain"), 3, since)
             .into_iter()
-            .filter(|record| record.id.ends_with(&format!("/{TRANSCRIPT}")))
+            .filter(|record| Path::new(&record.id).file_name() == Some(TRANSCRIPT.as_ref()))
             .collect()
     }
 

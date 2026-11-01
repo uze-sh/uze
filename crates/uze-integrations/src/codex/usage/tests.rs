@@ -252,3 +252,17 @@ fn only_rollouts_are_records() {
     assert_eq!(found.len(), 1);
     assert!(found[0].id.ends_with("rollout-2026-10-31T10-00-00-a.jsonl"));
 }
+
+#[test]
+fn a_skill_file_is_known_by_its_name_whatever_the_separators() {
+    assert!(super::is_skill_file(
+        "/home/me/.agents/skills/review/SKILL.md"
+    ));
+    assert!(super::is_skill_file("SKILL.md"));
+    assert!(!super::is_skill_file(
+        "/home/me/.agents/skills/review/NOTES.md"
+    ));
+    let native = ["home", "me", ".agents", "skills", "review", "SKILL.md"]
+        .join(std::path::MAIN_SEPARATOR_STR);
+    assert!(super::is_skill_file(&native), "{native}");
+}

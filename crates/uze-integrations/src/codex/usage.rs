@@ -268,8 +268,10 @@ fn words_naming_a_skill_file(command: &str) -> Vec<String> {
         .collect()
 }
 
+/// By its file name, in the platform's own separators: a shell on Windows
+/// writes `C:\Users\me\.agents\skills\x\SKILL.md`.
 fn is_skill_file(path: &str) -> bool {
-    path == "SKILL.md" || path.ends_with("/SKILL.md")
+    Path::new(path).file_name() == Some("SKILL.md".as_ref())
 }
 
 fn spawned(call: &Value) -> Option<String> {
