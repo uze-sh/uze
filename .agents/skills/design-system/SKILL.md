@@ -162,9 +162,10 @@ on "cancel" must not save first.
 - Anything that reveals itself on hover needs a hint saying what it means.
 
 **The review:**
-- Its door is the `+N -M` on the tab strip, and it is always there while
-  the review is on: a clean checkout reads `review`, held back, never
-  nothing. It counts the branch and nothing more: no drafts, answers or
+- Its door is the `+N -M` on the tab strip, and it stands only when the
+  checkout has changes against its target: a clean checkout has no door
+  (the operator asked for no `review` placeholder; its key still opens
+  it). It counts the branch and nothing more: no drafts, answers or
   working mark ride it (the operator took the `◆n` off); what waits is
   read inside the review, on the threads' walk. The door is drawn from
   the extension's own `door_badge`, never from a read the host makes.

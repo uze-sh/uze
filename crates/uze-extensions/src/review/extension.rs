@@ -1165,27 +1165,16 @@ impl Extension for ReviewExtension {
     }
 
     /// The branch's size against its target, and nothing more: what waits
-    /// in the review is the review's to say, inside it.
+    /// in the review is the review's to say, inside it. A checkout with
+    /// nothing changed has no door: there is nothing to review.
     fn door_badge(&self) -> Option<DoorBadge> {
-        let mut spans = Vec::new();
-        let totals = self.door.totals.filter(|totals| totals.files > 0);
-        match totals {
-            Some(totals) => {
-                spans.push(Span::new(
-                    format!("+{}", grouped(totals.additions)),
-                    Role::Success,
-                ));
-                spans.push(Span::new(" ", Role::Default));
-                spans.push(Span::new(
-                    format!("-{}", grouped(totals.deletions)),
-                    Role::Danger,
-                ));
-            }
-            None => spans.push(Span::new("review", Role::Muted)),
-        }
+        let totals = self.door.totals.filter(|totals| totals.files > 0)?;
         Some(DoorBadge {
-            spans,
-            quiet: totals.is_none(),
+            spans: vec![
+                Span::new(format!("+{}", grouped(totals.additions)), Role::Success),
+                Span::new(" ", Role::Default),
+                Span::new(format!("-{}", grouped(totals.deletions)), Role::Danger),
+            ],
         })
     }
 }

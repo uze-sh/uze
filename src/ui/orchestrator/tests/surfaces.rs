@@ -236,6 +236,7 @@ fn a_click_on_the_review_door_is_pressing_its_key() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-door"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
+    counted(&mut model, 3, 1);
     let mut driven = driven(model, &home);
     driven.frame();
     let door = |driven: &Driven<'_>| {
@@ -246,7 +247,7 @@ fn a_click_on_the_review_door_is_pressing_its_key() {
             .iter()
             .find(|(_, hit)| *hit == WorkspaceHit::OpenChanges)
             .map(|(rect, _)| *rect)
-            .expect("the review's door stands on a clean checkout")
+            .expect("the review's door stands on a checkout with changes")
     };
     let rect = door(&driven);
     driven.press(rect.x, rect.y);
@@ -900,10 +901,10 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
     );
 }
 
-/// The review's door stands on a clean checkout as on a busy one, and
-/// what it counts takes its room to the left: the code button sits at the
-/// same columns whether or not there is work to report, so it never moves
-/// under the pointer when a count arrives.
+/// The review's door stands only on a checkout with changes, and takes
+/// its room to the left: the code button sits at the same columns whether
+/// or not there is work to report, so it never moves under the pointer
+/// when a count arrives.
 #[test]
 fn the_review_door_counts_to_the_left_and_the_code_button_never_moves() {
     let (mut model, first, _second) = two_agents_with_shells();
@@ -921,8 +922,8 @@ fn the_review_door_counts_to_the_left_and_the_code_button_never_moves() {
     let clean =
         button(&model, WorkspaceHit::OpenFiles).expect("a clean checkout still offers its files");
     assert!(
-        button(&model, WorkspaceHit::OpenChanges).is_some(),
-        "and the review's door stands on a clean checkout too"
+        button(&model, WorkspaceHit::OpenChanges).is_none(),
+        "but a clean checkout has no review door"
     );
 
     counted(&mut model, 3, 1);

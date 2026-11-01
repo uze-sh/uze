@@ -102,9 +102,6 @@ pub enum Outcome {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DoorBadge {
     pub spans: Vec<Span>,
-    /// Nothing to say beyond the door being there: drawn held back, at the
-    /// strength of a door nobody needs yet.
-    pub quiet: bool,
 }
 
 /// What came of a write an extension asked of an agent: typed, refused
@@ -489,7 +486,7 @@ pub trait Extension: Send {
     }
 
     /// What the door of this extension's view says on the tab strip, for
-    /// the checkout it is focused on, or `None` for a door that is a name.
+    /// the checkout it is focused on, or `None` for no door there.
     fn door_badge(&self) -> Option<DoorBadge> {
         None
     }

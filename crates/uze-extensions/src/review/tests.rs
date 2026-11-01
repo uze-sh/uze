@@ -786,15 +786,13 @@ fn a_send_refused_or_declined_leaves_the_drafts_drafts() {
 fn the_door_counts_the_branch_and_nothing_else() {
     use crate::contract::Extension;
     let mut extension = sending_extension();
-    assert_eq!(badge(&extension), "review", "nothing counted yet");
-    assert!(extension.door_badge().unwrap().quiet);
+    assert!(extension.door_badge().is_none(), "nothing changed, no door");
     extension.counted(PathBuf::from("/w"), 14_714, 672, 3);
     assert_eq!(
         badge(&extension),
         "+14,714 -672",
         "a draft waits, and is not said"
     );
-    assert!(!extension.door_badge().unwrap().quiet);
     let view = extension.review_view_mut().unwrap();
     view.record.comments[0].status = CommentStatus::Answered;
     assert_eq!(badge(&extension), "+14,714 -672", "nor an answer");
