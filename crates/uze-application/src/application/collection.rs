@@ -127,6 +127,7 @@ impl UzeApplication {
             Box::new(super::extensions::CompiledViews(self)),
             Box::new(super::extensions::ExtensionScratch),
             Box::new(super::extensions::ExtensionPictures),
+            Box::new(super::extensions::DeliveredPackages),
             Box::new(super::marketplace_catalogue::MarketplaceMirrors),
             Box::new(super::maintenance::ConversationSessions),
             Box::new(super::setup::Retired),

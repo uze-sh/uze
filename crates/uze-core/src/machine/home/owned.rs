@@ -572,7 +572,8 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("delivered_package_dir", Generated, Directory, |home| {
         home.delivered_package_dir(&package())
-    }),
+    })
+    .swept(),
     owned(
         "runtime_sessions_dir",
         Generated,

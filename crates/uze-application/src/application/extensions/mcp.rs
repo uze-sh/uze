@@ -192,6 +192,71 @@ fn launch_of(call: &Call<'_>, server: &str) -> Result<McpLaunch, String> {
     })
 }
 
+/// The copies UZE's extension MCP launcher hands a server it starts
+/// (`UzeHome::delivered_package_dir`), kept while their package is
+/// installed and declares an MCP server (`mcp.json`), and while a receipt
+/// still names one, as an earlier release pointed every harness there; the
+/// rest are copies of the earlier layout nothing reads. One is made again
+/// on the next launch that needs it. Collects under the mutation lock,
+/// which keeps it from an install replacing the packages it judges by.
+pub(crate) struct DeliveredPackages;
+
+impl crate::application::Collectable for DeliveredPackages {
+    fn name(&self) -> &'static str {
+        "delivered packages"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["delivered_package_dir"]
+    }
+
+    fn collect(&self, home: &UzeHome) -> crate::application::Collected {
+        let Ok(entries) = std::fs::read_dir(home.delivered_packages_dir()) else {
+            return crate::application::Collected::removed(self.name(), Vec::new());
+        };
+        let _mutation = match uze_core::persistence::MutationLock::acquire(home) {
+            Ok(lock) => lock,
+            Err(error) => {
+                return crate::application::Collected::skipped(self.name(), error.to_string());
+            }
+        };
+        // Nothing is judged from a registry or a ledger that cannot be read.
+        let Ok(packages) = UzeStore::new(home.clone()).packages() else {
+            return crate::application::Collected::skipped(
+                self.name(),
+                "the installed packages could not be read",
+            );
+        };
+        let Ok(receipts) = uze_core::state::receipts(home, None) else {
+            return crate::application::Collected::skipped(
+                self.name(),
+                "the delivery ledger could not be read",
+            );
+        };
+        let named = serde_json::to_string(&receipts).unwrap_or_default();
+        let mut removed = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let serves = packages.iter().any(|package| {
+                home.delivered_package_dir(&package.id) == path
+                    && package.root.join("mcp.json").is_file()
+            });
+            if serves || named.contains(path.to_string_lossy().as_ref()) {
+                continue;
+            }
+            let gone = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+            if gone.is_ok() {
+                removed.push(path);
+            }
+        }
+        crate::application::Collected::removed(self.name(), removed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +345,57 @@ done
             .call(&call, "jira", "search", &serde_json::json!({}))
             .unwrap_err();
         assert!(absent.0.contains("no MCP server `jira`"), "{absent:?}");
+    }
+
+    /// The launcher's copy of a plugin with an MCP server stays; the
+    /// earlier layout's copies of one without, and of one gone, go.
+    #[test]
+    fn the_launchers_copies_are_kept_only_for_an_installed_mcp_server() {
+        use crate::application::Collectable as _;
+        let root = uze_testkit::temp::scratch("mcp-delivered-packages");
+        let home = UzeHome::at(root.join("home"));
+        let store = UzeStore::new(home.clone());
+        let mut installed = Vec::new();
+        for (name, serves) in [("served", true), ("plain", false)] {
+            let source = root.join(name);
+            std::fs::create_dir_all(&source).unwrap();
+            std::fs::write(
+                source.join("plugin.json"),
+                format!(r#"{{"name":"{name}"}}"#),
+            )
+            .unwrap();
+            if serves {
+                std::fs::write(
+                    source.join("mcp.json"),
+                    r#"{"mcpServers":{"rtc":{"command":"/bin/sh"}}}"#,
+                )
+                .unwrap();
+            }
+            let package = store
+                .ingest(
+                    &uze_core::acquisition::acquire(&uze_core::PackageSource::local(source))
+                        .unwrap(),
+                    "local",
+                    None,
+                )
+                .unwrap();
+            installed.push(home.delivered_package_dir(&package.id));
+        }
+        let gone = home.delivered_packages_dir().join("removed@local");
+        for copy in installed.iter().chain([&gone]) {
+            std::fs::create_dir_all(copy).unwrap();
+            std::fs::write(copy.join("plugin.json"), "{}").unwrap();
+        }
+
+        let collected = DeliveredPackages.collect(&home);
+
+        let mut removed = collected.removed.clone();
+        removed.sort();
+        let mut expected = vec![installed[1].clone(), gone.clone()];
+        expected.sort();
+        assert_eq!(removed, expected, "{collected:?}");
+        assert!(installed[0].is_dir(), "the MCP server's copy was swept");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
