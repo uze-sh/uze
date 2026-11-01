@@ -92,6 +92,17 @@ impl MarketplaceDialect for CodexMarketplace {
             .map(PathBuf::from)
     }
 
+    fn recorded_root(home: &Path, name: &str) -> Option<Option<PathBuf>> {
+        let known =
+            super::inventory::recorded_marketplaces(&home.join(".codex").join("config.toml"))?;
+        Some(
+            known
+                .into_iter()
+                .find(|(known_name, _)| known_name == name)
+                .map(|(_, root)| root),
+        )
+    }
+
     fn add_marketplace(executable: &Path, home: &Path, root: &Path) -> Result<()> {
         run_quiet(
             executable,

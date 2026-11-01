@@ -27,7 +27,10 @@ use uze_core::{
     capability::{CapabilityKind, Resource},
     exposure::{PackageEnvelope, PackageExposurePlan},
     home::UzeHome,
-    integration::{AttachmentInspection, AttachmentReceipt, ManagedArtifact, PublicationStatus},
+    integration::{
+        AttachmentInspection, AttachmentReceipt, ManagedArtifact, PublicationStatus,
+        RegistrationRead, VendorRegistration, VendorRegistrationKind,
+    },
     router::CompatibilityRoute,
     skill::SkillInvocationPolicy,
     store::StoredPackage,
@@ -104,6 +107,12 @@ pub(crate) trait MarketplaceDialect {
 
     /// The root the harness has a marketplace called `name` registered at.
     fn registered_root(executable: &Path, home: &Path, name: &str) -> Option<PathBuf>;
+    /// The same, read from the harness's own record as a file and never by
+    /// starting it: `None` when the record says nothing readable, and
+    /// `Some(None)` when it says the marketplace is not registered.
+    fn recorded_root(_home: &Path, _name: &str) -> Option<Option<PathBuf>> {
+        None
+    }
     fn add_marketplace(executable: &Path, home: &Path, root: &Path) -> Result<()>;
     /// Whether the harness already has `selector` installed, for a harness
     /// whose install is not relied on to be idempotent.
@@ -590,6 +599,46 @@ pub(crate) fn ensure_registered<D: MarketplaceDialect>(
             })
         }
     }
+}
+
+/// The harness's `uze-store` registration, read as `read` allows, beside
+/// the vendor store it should name; `None` when the read cannot observe it.
+pub(crate) fn registration<D: MarketplaceDialect>(
+    executable: &Path,
+    command_home: &Path,
+    uze_home: &UzeHome,
+    read: RegistrationRead,
+) -> Option<VendorRegistration> {
+    let registered = match read {
+        RegistrationRead::Recorded => D::recorded_root(command_home, MARKETPLACE)?,
+        RegistrationRead::Live => D::registered_root(executable, command_home, MARKETPLACE),
+    };
+    Some(VendorRegistration {
+        kind: VendorRegistrationKind::Marketplace,
+        name: MARKETPLACE.to_owned(),
+        expected: marketplace_root::<D>(uze_home),
+        registered,
+    })
+}
+
+/// Moves the harness's `uze-store` registration to its vendor store, the
+/// way delivery does ([`ensure_registered`]): only when it names another
+/// root, and with the old root registered again when the move fails.
+pub(crate) fn repoint<D: MarketplaceDialect>(
+    executable: &Path,
+    command_home: &Path,
+    uze_home: &UzeHome,
+    registration: &VendorRegistration,
+) -> Result<()> {
+    if registration.kind != VendorRegistrationKind::Marketplace || registration.name != MARKETPLACE
+    {
+        return Err(UzeError::ExposureUnavailable(format!(
+            "the {} keeps no registration called `{}`",
+            D::CATALOGUE_NOUN,
+            registration.name
+        )));
+    }
+    ensure_registered::<D>(executable, command_home, &marketplace_root::<D>(uze_home))
 }
 
 /// Installs a package's build through the marketplace and returns the

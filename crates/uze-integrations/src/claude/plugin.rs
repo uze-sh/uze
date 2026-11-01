@@ -96,11 +96,8 @@ impl MarketplaceDialect for ClaudeMarketplace {
                 })
                 .map(PathBuf::from)
         };
-        if let Some(known) = recorded_marketplaces(home) {
-            return known
-                .iter()
-                .find(|(known_name, _)| known_name == name)
-                .and_then(|(_, entry)| located(entry, &["source.path", "installLocation"]));
+        if let Some(recorded) = Self::recorded_root(home, name) {
+            return recorded;
         }
         let listing = json(
             executable,
@@ -113,6 +110,23 @@ impl MarketplaceDialect for ClaudeMarketplace {
             .iter()
             .find(|entry| entry.get("name").and_then(serde_json::Value::as_str) == Some(name))
             .and_then(|entry| located(entry, &["path", "installLocation"]))
+    }
+
+    fn recorded_root(home: &Path, name: &str) -> Option<Option<PathBuf>> {
+        let known = recorded_marketplaces(home)?;
+        Some(
+            known
+                .iter()
+                .find(|(known_name, _)| known_name == name)
+                .and_then(|(_, entry)| {
+                    ["source.path", "installLocation"].iter().find_map(|key| {
+                        key.split('.')
+                            .try_fold(entry, |value, part| value.get(part))
+                            .and_then(serde_json::Value::as_str)
+                            .map(PathBuf::from)
+                    })
+                }),
+        )
     }
 
     fn add_marketplace(executable: &Path, home: &Path, root: &Path) -> Result<()> {

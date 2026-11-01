@@ -226,6 +226,25 @@ fn agents_in(dir: &Path, plugin: Option<&str>) -> Vec<FoundResource> {
         .collect()
 }
 
+/// The marketplaces `config.toml` records, each `[marketplaces.<name>]`
+/// with the root its `source` names: read as a file, never by starting
+/// Codex, so a plain `doctor` can check a registration within its budget.
+/// `None` when the file holds no readable `marketplaces` table, which says
+/// nothing either way.
+pub(super) fn recorded_marketplaces(config: &Path) -> Option<Vec<(String, PathBuf)>> {
+    let config = read_config(config)?;
+    let table = config.get("marketplaces")?.as_table_like()?;
+    Some(
+        table
+            .iter()
+            .filter_map(|(name, entry)| {
+                let source = entry.as_table_like()?.get("source")?.as_str()?;
+                Some((name.to_owned(), PathBuf::from(source)))
+            })
+            .collect(),
+    )
+}
+
 fn read_config(path: &Path) -> Option<toml_edit::DocumentMut> {
     fs::read_to_string(path).ok()?.parse().ok()
 }

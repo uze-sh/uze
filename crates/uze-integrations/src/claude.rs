@@ -622,6 +622,34 @@ impl IntegrationPort for ClaudeIntegration {
         }
     }
 
+    fn registrations(
+        &self,
+        read: uze_core::integration::RegistrationRead,
+    ) -> Vec<uze_core::integration::VendorRegistration> {
+        let executable = self.provisioning_executable();
+        marketplace::registration::<ClaudeMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            read,
+        )
+        .into_iter()
+        .collect()
+    }
+
+    fn repoint_registration(
+        &self,
+        registration: &uze_core::integration::VendorRegistration,
+    ) -> Result<()> {
+        let executable = self.provisioning_executable();
+        marketplace::repoint::<ClaudeMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            registration,
+        )
+    }
+
     fn withdraw_registrations(&self) -> Result<Vec<String>> {
         let executable = self.provisioning_executable();
         crate::shared::withdraw::marketplaces::<ClaudeMarketplace>(

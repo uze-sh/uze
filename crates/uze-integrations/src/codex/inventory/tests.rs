@@ -276,3 +276,32 @@ fn the_oldest_session_says_how_far_back_the_records_reach() {
         .as_secs();
     assert_eq!(counts.oldest, Some(oldest));
 }
+
+/// A plain `doctor` checks where Codex has UZE's marketplace from
+/// `config.toml` alone: each `[marketplaces.<name>]` with the root its
+/// `source` names, and nothing said when there is no such table.
+#[test]
+fn marketplaces_are_read_from_the_config_without_codex() {
+    let root = TempDir::new("codex-recorded-marketplaces");
+    let config = root.join(".codex/config.toml");
+    write(
+        &config,
+        "[plugins.\"a@uze-store\"]\nenabled = true\n\n\
+         [marketplaces.uze-store]\nsource_type = \"local\"\nsource = \"/uze/store/codex\"\n\n\
+         [marketplaces.other]\nsource = \"/elsewhere\"\n",
+    );
+    assert_eq!(
+        super::recorded_marketplaces(&config),
+        Some(vec![
+            ("uze-store".to_owned(), "/uze/store/codex".into()),
+            ("other".to_owned(), "/elsewhere".into()),
+        ])
+    );
+
+    write(&config, "[plugins.\"a@uze-store\"]\nenabled = true\n");
+    assert_eq!(super::recorded_marketplaces(&config), None);
+    assert_eq!(
+        super::recorded_marketplaces(&root.join(".codex/missing.toml")),
+        None
+    );
+}

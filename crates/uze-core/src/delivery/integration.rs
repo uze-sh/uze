@@ -182,6 +182,54 @@ pub enum PublicationStatus {
     Unpublished(String),
 }
 
+/// A kind of registration UZE asks a harness to keep on its behalf, about
+/// UZE itself rather than about one package. Every kind has a health check
+/// (`every_owned_path_has_a_health_check`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VendorRegistrationKind {
+    /// The marketplace a harness installs UZE's plugins from: its vendor
+    /// store.
+    Marketplace,
+}
+
+impl VendorRegistrationKind {
+    pub const ALL: [VendorRegistrationKind; 1] = [VendorRegistrationKind::Marketplace];
+}
+
+/// How a registration may be read: what the cost of the read allows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RegistrationRead {
+    /// The harness's own record, read as a file and never by starting the
+    /// harness: what a plain `doctor` may afford. A harness whose record
+    /// says nothing readable answers nothing.
+    Recorded,
+    /// What the harness answers now, its CLI included: what a repair plans
+    /// from.
+    Live,
+}
+
+/// One registration UZE asked a harness to keep, as the harness has it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct VendorRegistration {
+    pub kind: VendorRegistrationKind,
+    pub name: String,
+    /// Where UZE keeps what the registration names.
+    pub expected: std::path::PathBuf,
+    /// Where the harness has it registered; `None` when it has no
+    /// registration of that name.
+    pub registered: Option<std::path::PathBuf>,
+}
+
+impl VendorRegistration {
+    /// Registered, and somewhere other than where UZE keeps it.
+    pub fn misplaced(&self) -> bool {
+        self.registered
+            .as_ref()
+            .is_some_and(|registered| registered != &self.expected)
+    }
+}
+
 /// How an integration's harness consumes a project's shared `AGENTS.md`
 /// context — the delivery half of the Context Manager's per-harness model
 /// (`agent context inspect|plan|reconcile`). The Core only defines the
@@ -1154,6 +1202,24 @@ pub trait IntegrationPort: Send + Sync {
     /// Answers the registrations withdrawn; one already gone is not named.
     fn withdraw_registrations(&self) -> Result<Vec<String>> {
         Ok(Vec::new())
+    }
+
+    /// The registrations UZE asked this harness to keep for it, read as
+    /// `read` allows. One the read cannot observe is left out rather than
+    /// guessed at.
+    fn registrations(&self, read: RegistrationRead) -> Vec<VendorRegistration> {
+        let _ = read;
+        Vec::new()
+    }
+
+    /// Registers `registration` again where UZE keeps what it names, the
+    /// way the harness's own CLI moves one (`uze doctor --repair`).
+    fn repoint_registration(&self, registration: &VendorRegistration) -> Result<()> {
+        Err(crate::error::UzeError::ExposureUnavailable(format!(
+            "{} keeps no registration called `{}` for uze",
+            self.id(),
+            registration.name
+        )))
     }
 
     /// Restores a receipt that has been inspected as `Missing`, but only for
