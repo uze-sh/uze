@@ -127,7 +127,12 @@ fn filter_chips(review: &ReviewView) -> Vec<Mode> {
         .map(|(filter, label)| Mode {
             label: label.to_owned(),
             active: review.filter == filter,
-            icon: RowIcon::None,
+            // What the branch differs by, and the part of it still being
+            // worked on: the marks the files and the map stand beside.
+            icon: match filter {
+                Filter::All => RowIcon::Changes,
+                Filter::Uncommitted => RowIcon::InFlight,
+            },
         })
         .collect()
 }
