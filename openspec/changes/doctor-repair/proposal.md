@@ -53,6 +53,28 @@ part.
   - set aside or rewrite an irreplaceable record (the receipt ledger,
     authorizations);
   - touch a project or unlanded work.
+- **One collector for `~/.uze`.** Ten independent mechanisms collect
+  garbage today, each with its own retention rule, its own trigger
+  (bootstrap, setup, the TUI, a first program run, a fetch) and its own
+  log. Collecting what the home no longer needs becomes one mechanism:
+  - **Policy:** every owned path declares a retention: rebuilt on demand,
+    by age, while something reaches it, or never.
+  - **Liveness:** each owner keeps answering only "what of mine is still
+    alive", with the reasoning it has today. For example, projections stay
+    reachability-based, because an age rule would collect the ones in use.
+  - **Collection:** one collector deletes the rest, only inside paths
+    declared disposable.
+
+  It runs inside the maintenance pass that `doctor` and the TUI already
+  trigger, and owners may call it inline at the moment they already do.
+  `doctor` reports the size and what was collected per tier.
+- **The home is compared with its schema.** `--repair` removes paths that an
+  earlier release retired, using a declared list that replaces the
+  hard-coded one in `setup`. It also removes empty directories in the
+  bytes, store and record tiers. Anything it does not recognise is only
+  reported, never deleted, because it may belong to a newer build. Records
+  set aside by the ladder are reported with their size, and leave only with
+  `--discard-leftovers`.
 - **Doctor never aborts on one bad record.** Each check isolates its own
   failure. `doctor` already does this for the ledger; it becomes a
   requirement, tested with every record corrupted in turn.
@@ -73,8 +95,22 @@ an explicit lane beside them. -->
 
 ## Impact
 
-- `crates/uze-core`: `UzeHome` becomes enumerable (each owned path with
-  its tier), so the catalogue and the coverage test read one list.
+- `crates/uze-core`: `UzeHome` becomes enumerable. Each owned path carries
+  its tier and its retention, and the list includes the paths earlier
+  releases retired. The catalogue, the collector and the coverage tests all
+  read this one list.
+- The existing collectors move behind the collector one by one, each
+  keeping its behaviour:
+  - `harness_runtime::prune_projections`;
+  - `rules_engine::sweep_rule_sessions`;
+  - `extensions::sweep_stale_scratch`;
+  - `prune_compiled_cache`;
+  - `marketplace_catalogue::prune_materialized`;
+  - `retire_records_of_earlier_releases`;
+  - the leftover report.
+
+  Process lifecycle (idle MCP servers, the terminal runtime's `retire`) and
+  project Git (`prune_integrated_branches`) stay where they are.
 - `crates/uze-application`:
   - the health catalogue, shared by `doctor`, `doctor --repair` and the TUI;
   - the repair service (plan, execute, observe again);

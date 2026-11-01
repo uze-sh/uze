@@ -85,6 +85,43 @@ such finding SHALL be reported with the command that resolves it.
 - **WHEN** `attachments.json` cannot be read
 - **THEN** repair leaves it untouched, changes no delivery, and reports the file, the reason and what the person can do
 
+### Requirement: Every owned path declares how it is collected
+Every path UZE owns SHALL declare a retention: rebuilt on demand, by age,
+while something reaches it, or never. One collector SHALL delete only what a
+declared disposable path's owner no longer reports alive. A path added
+without a retention SHALL fail the build.
+
+#### Scenario: A projection in use is kept
+- **WHEN** a runtime projection has not changed for months but a project still uses it
+- **THEN** the collector keeps it
+
+#### Scenario: A stale extension scratch
+- **WHEN** an extension program's scratch is older than its declared age
+- **THEN** the collector removes it, and doctor reports the space it freed
+
+#### Scenario: A new path without a retention
+- **WHEN** a path is added to the map of what UZE owns without a retention
+- **THEN** the coverage test fails naming it
+
+### Requirement: The home is compared with its schema
+`--repair` SHALL remove paths an earlier release retired, and empty
+directories outside the generated and remembered tiers, except declared
+paths. It SHALL report, and never delete, anything it does not recognise.
+It SHALL report records the ladder set aside with their size, and remove
+them only with `--discard-leftovers`.
+
+#### Scenario: A file of an earlier release
+- **WHEN** `state/profiles.json`, which an earlier release wrote and this one retired, is present
+- **THEN** repair removes it and reports it
+
+#### Scenario: Something unknown
+- **WHEN** `$UZE_HOME` holds a path that is neither declared nor retired
+- **THEN** repair leaves it and reports it as unknown, possibly from a newer build
+
+#### Scenario: A set-aside record
+- **WHEN** the ladder set a record aside
+- **THEN** repair reports its path and size and keeps it, and `--repair --discard-leftovers` removes it
+
 ### Requirement: Doctor reports every check even when one fails
 `uze doctor`, with or without `--repair`, SHALL run every check even when
 another check's record cannot be read, and SHALL report each failure as a
