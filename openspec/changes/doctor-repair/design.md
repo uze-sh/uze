@@ -65,7 +65,7 @@ an `observe` that yields findings, and a lane:
 | vendor-store builds | build manifest (vendor-stores D3) | `Missing` → automatic; `Drifted` → none |
 | package bytes (`sources/`) | registry entry with no directory ("bytes missing") | `--repair` (network, digest-verified) |
 | marketplace registration | registered root against its vendor store | `--repair` (repoint) |
-| terminal-runtime endpoint | endpoint present, no server answering | `--repair` |
+| terminal-runtime endpoint | `uze-terminal`'s own probe, run from `src/` | `--repair`, through `uze-terminal`'s clear under its workspace lock |
 | shims | each expected link present and pointing at this binary | `--repair` |
 | records (`state/`) | each record's load through its ladder | rebuildable classes → automatic (existing floor); ledger and authorizations → none |
 | generated and remembered | — | automatic (produced or observed again) |
@@ -147,87 +147,124 @@ It reads each vendor's registration file read-only instead:
 `doctor_meets_the_budget` covers the catalogue. `--repair` is
 `JustifiedSlow`.
 
-### D7. One collector, declared policy, owner-held liveness
+### D7. One collector: owners decide, one executor runs
 
-Today ten mechanisms collect garbage. Each has its own rule, trigger and log:
+There are fourteen collection mechanisms today, each with its own rule,
+trigger, lock and log:
 
-| mechanism | rule | trigger |
+| mechanism | rule | trigger, lock |
 |---|---|---|
-| `harness_runtime::prune_projections` | reachability (a tenant uses it), deliberately not age | the TUI's reads |
-| `rules_engine::sweep_rule_sessions` | age | `setup` |
-| `extensions::sweep_stale_scratch` | age (1 h) | the first program run in a process |
-| `prune_compiled_cache` | reachability (installed extension versions) | maintenance |
-| `marketplace_catalogue::prune_materialized` | the current commit plus age | a marketplace fetch |
-| `retire_records_of_earlier_releases` | a hard-coded list | `setup`, bootstrap |
-| `Store::prune_ghost_registrations` and orphans | registry hygiene | maintenance |
+| `harness_runtime::prune_projections` | any `runtime/` child that is not a tenant, and any project without a readable marker; deliberately not by age | the client's occupancy pass (`Health::prune_runtime_projections`); no lock |
+| `rules_engine::sweep_rule_sessions` | age (7 days) | `setup` |
+| `extensions::sweep_stale_scratch` | age (1 h); run dirs are `{pid}-…` | the first program run per process |
+| `extensions::keep_pictures` | count bound | the program run |
+| `prune_compiled_cache` | the newest file per installed identity, plus unparseable files | maintenance, `MutationLock` |
+| `marketplace_catalogue::prune_materialized` | the current commit OR touched within `MAX_AGE` | a fetch, `MirrorHold` |
+| `codex/runtime.rs` role-file sweep | the project's live agents | a Codex launch |
+| `conversation::forget` (`runtime/sessions/<integration>`) | the session ended; a killed harness leaks it | `uze-workspace` |
+| `telemetry::prune_to_size` (`logs/`) | size budget | `src/` |
+| `retire_records_of_earlier_releases` | a hard-coded list | every `setup` and bootstrap, `MutationLock` |
+| `store/superseded/` | nothing collects it | — |
 | `delivery/leftovers.rs` | report only | `doctor` |
-| MCP idle sweep, terminal `retire` | process lifecycle | timers, the runtime |
-| `checkout::prune_integrated_branches` | project Git | the workspace |
 
-The design separates three things that these mechanisms each mix
-differently:
-
-1. **Policy is data on `UzeHome`.** Each owned path carries its
-   `Retention`: `OnDemand`, `Age(Duration)`, `Reachable(Owner)` or
-   `Never`. `uze-core` holds it, next to the tier.
-2. **Liveness stays with the owner.** A `Reachable` path names an owner that
-   answers `alive(&UzeHome) -> set of paths`, with today's reasoning kept:
-   - projections answer by tenant marker, never mtime;
-   - compiled caches by installed extension identity;
-   - mirrors by each marketplace's current commit.
-
-   Owners live where the knowledge lives: `uze-core` for projections and
-   `uze-application` for extensions and mirrors. `uze-application` also
-   reaches `uze-workspace` paths through its existing dependency.
-   `uze-terminal`, which depends on nothing here by design, is never
-   called: its paths are declared with an `Age` or `OnDemand` retention and
-   collected by looking at the disk, as `leftovers.rs` already does.
-3. **One collector executes.** `uze-application`'s `collect(&UzeHome,
-   scope)` deletes only inside declared disposable paths, and only what
-   the owner did not report alive. Anything it does not recognise is
-   reported and never deleted, because two builds on one machine is this
-   repository's daily state, and a newer build's paths are unknown to an
-   older one.
-
-**Triggers.** The maintenance pass that `doctor` and the TUI already run
-calls `collect` with the stat-only scope, which stays inside `doctor`'s
-budget. Owners that collect at a natural moment today keep doing so by
-calling `collect(path)` for their own path, so no behaviour is delayed:
-
-- a marketplace fetch;
-- the first program run of a process.
-
-`--repair` adds the schema comparison (D8).
-
-**Out of scope, on purpose:**
+Out of scope, on purpose:
 - **Process lifecycle** (idle MCP servers, the terminal's `retire`): a
   process is alive or not, which is not a retention.
-- **Project Git** (`prune_integrated_branches`): it lives outside
-  `$UZE_HOME`, in the workspace's domain.
+- **Project Git** (`prune_integrated_branches`): outside `$UZE_HOME`.
 - **Registry hygiene** (`prune_ghost_registrations`): it decides ownership,
-  not disposal, and stays in maintenance under the "bytes missing" rule of
-  `vendor-stores-and-uninstall`.
+  not disposal, and stays in maintenance under vendor-stores' "bytes
+  missing" rule.
 
-### D8. The schema comparison
+**The shape.** One policy enum on `UzeHome` was the first draft. A reviewer
+showed it is too small for the rules the owners actually use: "current OR
+recently touched", "newest per identity", size and count budgets, process
+liveness. The shape adopted instead:
 
-`--repair` walks `$UZE_HOME` against the enumerable list and sorts each
-entry it finds:
+1. **`UzeHome` marks disposable roots.** Each owned path carries its tier,
+   and the generated and remembered paths that may be swept are flagged
+   *disposable*. `uze-core` holds no policy and names no owner.
+2. **Each owner implements `Collectable`** in the crate that knows its
+   rule:
+   - `roots()` names the disposable roots it owns;
+   - `collect(&UzeHome) -> Collected` decides and deletes under the
+     owner's **own** lock (`MirrorHold`, `MutationLock`, none for
+     projections), with today's rule kept exactly.
+
+   Owners in `uze-application` cover extensions, mirrors, rule sessions and
+   the retired list. Through `uze-application`, `uze-core` covers
+   projections, `uze-workspace` covers conversation sessions and
+   `uze-integrations` covers Codex role files. The binary (`src/`)
+   registers telemetry logs.
+3. **One registry runs them.** `uze-application` holds the registry. The
+   maintenance pass that `doctor` and the TUI already trigger runs every
+   collector, and owners keep their inline triggers by calling their own
+   `collect`. Every owner reports what it freed to one report.
+4. **Coverage.** `every_disposable_root_has_one_collector` requires exactly
+   one registered collector per disposable root. A disposable path added
+   with no collector fails the build. That gap is how the dispersion
+   started.
+
+**What changes for a collector:** only how it is called and how it reports.
+Its rule and its tests stay the same. The only behaviour that changes on
+purpose is extension scratch, which becomes **alive while its pid is
+alive** (through `uze-platform`'s process probe) instead of "younger than
+1 h". It now runs on every maintenance pass, not just the first program
+run, and an age rule there would delete the scratch of a long-running
+program.
+
+**What is never collected:**
+- **The terminal runtime's paths** (`state/terminal/…`: workspace record,
+  lock, operator key, endpoint, socket). That subtree is the one sanctioned
+  exception to `UzeHome`, and it holds live state: a never-unlinked
+  `flock`, the TERM-1 operator key, and the socket `spawn_endpoint_watch`
+  guards because a cleaner once removed it under a live server. The
+  subtree is declared opaque. Neither the collector nor the schema
+  comparison descends into it, except for the existing leftovers report.
+- **Unknown entries in the bytes, store, record and authored tiers.** In the
+  generated and remembered tiers, unknown entries remain the owner's to
+  sweep. Shipped releases already sweep unknown `runtime/` children, so no
+  future build may add a top-level `runtime/` entry and expect an older
+  build to leave it alone.
+
+**Retired paths keep their trigger.** `collect(retired)` runs on every
+`setup` and bootstrap under the mutation lock, as today. A path goes on the
+retired list only once deleting it costs every supported build nothing:
+
+- a generated or remembered path; or
+- a record no supported build still reads, in the same way a ladder step
+  becomes deletable once no machine is below it.
+
+A retired name is never reused.
+
+**`sources/superseded/`** (a failed restore's only copy) is reported as a
+leftover, with its size. It leaves only with `--discard-leftovers`.
+
+### D8. The schema comparison and the budget
+
+`--repair` walks `$UZE_HOME` against the enumerable list, skipping the
+opaque terminal subtree:
 
 | found | action |
 |---|---|
-| a declared path | handled by its health check and retention |
-| a path on the **retired list** (added by the release that stopped using it, replacing `retire_records_of_earlier_releases`) | removed and reported |
-| an empty directory in the bytes, store or record tiers that is not a declared path | removed |
-| a record the ladder set aside (`leftovers.rs`) | reported with its size; removed only with `--discard-leftovers` |
-| anything else | reported as unknown, possibly from a newer build; never deleted |
+| a declared path | its health check, and its collector if it is disposable |
+| a retired path still present | removed (normally bootstrap already did it) |
+| an empty directory in the bytes, store or record tiers, not declared | removed |
+| a set-aside record or `sources/superseded/` | reported with its size; removed only with `--discard-leftovers` |
+| unknown, in the bytes, store, record or authored tiers | reported as unknown, possibly from a newer build; never deleted |
 
-`doctor` reports, per tier, the size on disk and what the last collection
-freed.
+**Budget.**
+- **Plain `doctor`.** It runs the collectors with *bounded reads*: the
+  projection markers, the compiled views' headers and each mirror's
+  `meta.json`. These are named per owner and covered by
+  `doctor_meets_the_budget`. Sizes are never walked on plain `doctor`. It
+  shows the last recorded figure, kept in a declared remembered file
+  (`cache/collection.json`).
+- **`--repair`.** It measures the size per tier and refreshes that file.
 
-The coverage test `every_owned_path_has_a_health_check` also requires a
-`Retention` for each path. This is how the dispersion started: a new path
-was added and the decision of who cleans it was left for later. The test
-closes that gap.
+The release-upgrade proof (the nightly `journeys/07-upgrade` suite) only
+catches retirements that the previous release's scenarios exercise. A
+forgotten retirement costs disk, not data, because unknown entries are only
+reported.
 
 ## Risks / Trade-offs
 
@@ -236,15 +273,13 @@ closes that gap.
 - **[An unreadable ledger leaves the machine stuck until the person acts]**
   → this is intended (persisted-state). The report names the file and the
   error, and says that no delivery is touched meanwhile.
-- **[A retention declared wrong collects live data]** → only `Reachable`
-  and `Age` paths are ever collected, and every `Reachable` owner keeps its
-  existing tests. Each mechanism moves behind the collector in its own step,
-  with its current tests unchanged and green.
+- **[A collector moved wrong collects live data]** → each one moves in its
+  own step, keeps its rule and its lock, and keeps its current tests green.
+  The single deliberate change (scratch by pid) gets a test of its own with
+  a long-running program.
 - **[The retired list is forgotten when a release drops a path]** → the
-  release-upgrade proof (persisted-state: "A release proves its own upgrade
-  against the previous one") runs the previous release, then this one. It
-  fails on any path the previous release left that is neither declared nor
-  retired.
+  upgrade suite catches what N-1's scenarios exercise. The rest costs disk,
+  not data, because unknown entries are only reported.
 - **[The catalogue grows with every feature]** → the coverage test makes that
   growth explicit, which is the point.
 
@@ -261,7 +296,11 @@ closes that gap.
 | 7 | A flag on `doctor`, not a skill, an extension or a new verb | See D1. |
 | 8 | Embedded packages are re-ingested from the binary's snapshot, with no digest match required | A digest match would turn every post-upgrade restore of the bundled plugin into `NeedsHuman`. |
 | 9 | A read-only `config.toml` reader for Codex marketplaces | Spawning `codex plugin marketplace list` on plain `doctor` breaks its budget. |
-| 10 | One collector: policy on `UzeHome`, liveness kept by owners, execution central | Keeping ten mechanisms leaves no single answer to "what does UZE keep, and why". A fully central collector that judges liveness itself would need every domain's knowledge and would re-introduce the age rule that projections reject. |
+| 10 | A `Collectable` per owner, one registry, and coverage of every disposable root. `uze-core` only marks roots disposable. | A `Retention` enum on `UzeHome` cannot express "current OR recent", "newest per identity", budgets or pid liveness. A central collector that judges liveness itself would need every domain's knowledge. |
+| 15 | The terminal runtime's subtree is opaque and never collected; endpoint repair goes through `uze-terminal`'s own probe, called from `src/` | Collecting it by looking at the disk would delete a live socket, lock and operator key. `uze-application` does not depend on `uze-terminal`. |
+| 16 | "Never delete the unknown" applies to the bytes, store, record and authored tiers only | Applying it to generated and remembered would break the projection sweep, which shipped releases already rely on. |
+| 17 | Extension scratch lives while its pid lives | A 1 h age would delete a long-running program's scratch once the collector runs on every maintenance pass. |
+| 18 | Retired paths stay on the bootstrap trigger; only paths no supported build reads may be retired | Moving retirement to `--repair` alone would stop it from happening. Retiring a record an older build still reads breaks two builds on one machine. |
 | 11 | Process lifecycle, project Git and registry hygiene stay outside the collector | A process is not a path with a retention, branches live outside `$UZE_HOME`, and ghost pruning decides ownership, not disposal. |
 | 12 | Unknown entries are reported, never deleted | Two builds on one machine: a newer build's state is unknown to an older one. |
 | 13 | Set-aside records leave only with `--discard-leftovers` | Persisted-state keeps them because they may be the operator's lost work. |

@@ -85,34 +85,39 @@ such finding SHALL be reported with the command that resolves it.
 - **WHEN** `attachments.json` cannot be read
 - **THEN** repair leaves it untouched, changes no delivery, and reports the file, the reason and what the person can do
 
-### Requirement: Every owned path declares how it is collected
-Every path UZE owns SHALL declare a retention: rebuilt on demand, by age,
-while something reaches it, or never. One collector SHALL delete only what a
-declared disposable path's owner no longer reports alive. A path added
-without a retention SHALL fail the build.
+### Requirement: Every disposable path has exactly one collector
+Every generated or remembered path UZE may sweep SHALL be declared
+disposable, and SHALL have exactly one collector. That collector keeps its
+owner's rule and lock and reports what it freed to one report. A disposable
+path without a collector SHALL fail the build. The terminal runtime's state
+SHALL never be collected.
 
 #### Scenario: A projection in use is kept
 - **WHEN** a runtime projection has not changed for months but a project still uses it
 - **THEN** the collector keeps it
 
-#### Scenario: A stale extension scratch
-- **WHEN** an extension program's scratch is older than its declared age
-- **THEN** the collector removes it, and doctor reports the space it freed
+#### Scenario: A long-running program's scratch
+- **WHEN** an extension program has been running for hours
+- **THEN** its scratch is kept while its process is alive, and removed once it is gone
 
-#### Scenario: A new path without a retention
-- **WHEN** a path is added to the map of what UZE owns without a retention
+#### Scenario: The terminal runtime
+- **WHEN** maintenance or `--repair` runs while a workspace is open
+- **THEN** nothing under the terminal runtime's state is removed
+
+#### Scenario: A new disposable path without a collector
+- **WHEN** a disposable path is added to the map of what UZE owns without a collector
 - **THEN** the coverage test fails naming it
 
 ### Requirement: The home is compared with its schema
-`--repair` SHALL remove paths an earlier release retired, and empty
-directories outside the generated and remembered tiers, except declared
-paths. It SHALL report, and never delete, anything it does not recognise.
-It SHALL report records the ladder set aside with their size, and remove
-them only with `--discard-leftovers`.
+`--repair` SHALL remove retired paths still present, and undeclared empty
+directories in the bytes, store and record tiers. It SHALL report, and never
+delete, an unknown entry in those tiers or the authored ones. It SHALL report
+set-aside records with their size, removing them only with
+`--discard-leftovers`.
 
 #### Scenario: A file of an earlier release
 - **WHEN** `state/profiles.json`, which an earlier release wrote and this one retired, is present
-- **THEN** repair removes it and reports it
+- **THEN** it is removed by the next bootstrap, and `--repair` reports anything still present
 
 #### Scenario: Something unknown
 - **WHEN** `$UZE_HOME` holds a path that is neither declared nor retired

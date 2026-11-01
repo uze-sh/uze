@@ -18,20 +18,27 @@
 
 ## 3. One collector
 
-- [ ] 3.1 Add `Retention` (`OnDemand`, `Age`, `Reachable(Owner)`, `Never`) to every `UzeHome` path, plus the retired-paths list, seeded with `state/profiles.json`. `every_owned_path_has_a_health_check` also requires a retention.
-- [ ] 3.2 Add `collect(&UzeHome, scope)` in `uze-application`. It deletes only inside disposable paths, only what the owner did not report alive, and never anything unknown. Plain `doctor` uses the stat-only scope.
-- [ ] 3.3 Move each mechanism behind the collector in its own step, with its current tests unchanged and green:
-  - projections (owner: tenant markers);
-  - rule sessions (age);
-  - extension scratch (age);
-  - compiled cache (owner: installed extensions);
-  - marketplace mirrors (owner: current commits);
-  - retired records (the retired list).
+- [ ] 3.1 Mark disposable roots on `UzeHome` (generated or remembered paths UZE may sweep). Declare `state/terminal/` an opaque subtree that is never collected, and add `cache/collection.json` as a remembered path.
+- [ ] 3.2 Add the `Collectable` trait (`roots()`, `collect(&UzeHome) -> Collected`) and the registry in `uze-application`. Add `every_disposable_root_has_one_collector`. The binary registers the telemetry collector.
+- [ ] 3.3 Move each mechanism of design D7 behind its own collector in its own step, keeping its rule, its lock and its tests:
+  - projections;
+  - rule sessions;
+  - pictures;
+  - compiled cache;
+  - mirrors (current OR within `MAX_AGE`, under `MirrorHold`);
+  - Codex role files;
+  - conversation sessions (`uze-workspace`);
+  - telemetry logs;
+  - the retired list (bootstrap trigger kept).
 
-  Inline triggers call `collect(path)`.
-- [ ] 3.4 Add the schema comparison under `--repair`: retired paths, empty directories in the bytes, store and record tiers, set-aside records (report, or remove with `--discard-leftovers`), and unknown entries (report only).
-- [ ] 3.5 Make `doctor` report the size per tier and what the last collection freed, following the `design-system` skill.
-- [ ] 3.6 Extend the release-upgrade proof: after the previous release runs and this one runs over it, every path left in `$UZE_HOME` is declared or retired.
+  Inline triggers call the owner's own `collect`.
+- [ ] 3.4 Extension scratch: alive while its pid is alive, through `uze-platform`. Add a test with a long-running program.
+- [ ] 3.5 Schema comparison under `--repair` (design D8), skipping `state/terminal/`. `sources/superseded/` and set-aside records are reported with their size and removed only with `--discard-leftovers`.
+- [ ] 3.6 Budget:
+  - plain `doctor` runs collectors with the bounded reads named per owner, and shows the size figure recorded in `cache/collection.json`;
+  - `--repair` measures sizes per tier and refreshes that figure;
+  - `doctor_meets_the_budget` covers plain `doctor`.
+- [ ] 3.7 Write the retired-path rule into the `persistence-tiers` rule. A path is retired only when no supported build reads it, and a retired name is never reused.
 
 ## 4. Proof
 
@@ -45,6 +52,7 @@
   - touches a project;
   - deletes an unknown entry;
   - deletes a set-aside record without `--discard-leftovers`;
-  - collects a projection that is in use.
+  - collects a projection that is in use;
+  - touches `state/terminal/` while a workspace runs.
 - [ ] 4.3 Add a conformance check on every vertical. Delete `sources/`, register Codex's marketplace at an old root, and leave a stale endpoint. Then run `uze doctor --repair`. Plugins must load, a deny hook must deny, an `always_on` rule must reach the session, and every package's digest must be unchanged.
 - [ ] 4.4 Run `make check` and `openspec validate --all --strict`.

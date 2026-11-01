@@ -53,21 +53,16 @@ part.
   - set aside or rewrite an irreplaceable record (the receipt ledger,
     authorizations);
   - touch a project or unlanded work.
-- **One collector for `~/.uze`.** Ten independent mechanisms collect
-  garbage today, each with its own retention rule, its own trigger
-  (bootstrap, setup, the TUI, a first program run, a fetch) and its own
-  log. Collecting what the home no longer needs becomes one mechanism:
-  - **Policy:** every owned path declares a retention: rebuilt on demand,
-    by age, while something reaches it, or never.
-  - **Liveness:** each owner keeps answering only "what of mine is still
-    alive", with the reasoning it has today. For example, projections stay
-    reachability-based, because an age rule would collect the ones in use.
-  - **Collection:** one collector deletes the rest, only inside paths
-    declared disposable.
+- **One collector for `~/.uze`.** About a dozen independent mechanisms
+  collect garbage today, each with its own rule, trigger, lock and log.
+  They become one:
+  - `UzeHome` marks which paths are disposable;
+  - each owner implements a `Collectable` that keeps its rule and its lock;
+  - one registry runs them all in the maintenance pass that `doctor` and
+    the TUI already trigger, and reports what was freed in one place.
 
-  It runs inside the maintenance pass that `doctor` and the TUI already
-  trigger, and owners may call it inline at the moment they already do.
-  `doctor` reports the size and what was collected per tier.
+  A coverage test requires exactly one collector per disposable path. The
+  terminal runtime's live state is opaque and never collected.
 - **The home is compared with its schema.** `--repair` removes paths that an
   earlier release retired, using a declared list that replaces the
   hard-coded one in `setup`. It also removes empty directories in the
