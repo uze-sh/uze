@@ -47,9 +47,9 @@ has; content UZE renders for a harness SHALL NOT sit beside the records.
 ### Requirement: The package bytes move to their own directory, fenced against older builds
 A build that knows the store tier SHALL move each package's bytes from
 `store/` to `sources/` under the mutation lock, without copying them, and
-SHALL change the shape of the package registry and the receipt ledger in the
-same step, so an older build refuses both by name instead of writing into
-the new layout.
+SHALL first write the package registry and the receipt ledger at a new
+shape, so an older build refuses both by name instead of pruning, detaching
+or writing packages into the new layout.
 
 #### Scenario: An upgrade
 - **WHEN** a machine whose package bytes are in `store/` runs the new build
@@ -61,4 +61,9 @@ the new layout.
 
 #### Scenario: An older build afterwards
 - **WHEN** an older build runs on a machine the new build has moved
-- **THEN** it refuses the package registry and the receipt ledger as newer and names them, and writes nothing under `store/`
+- **THEN** it refuses the package registry and the receipt ledger as newer and names them, and no package or receipt is lost
+- **AND** the next run of the new build removes any empty directory the older build left under `store/`
+
+#### Scenario: Packages installed before the move
+- **WHEN** the move completes on a machine whose registry has no digests
+- **THEN** every moved package has a digest recorded

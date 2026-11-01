@@ -58,6 +58,9 @@ The code also writes ties outside the harness homes:
     and an `add` from the new root lists the plugin as enabled again.
   - `codex plugin add <id>` over an installed plugin rewrites its cache in
     place. A version bump replaces the cache directory.
+  - `codex plugin remove <id>` deletes `[plugins."<id>"]` and the cache.
+    `marketplace remove` then deletes `[marketplaces.<name>]`, which leaves
+    `config.toml` clean.
   - `file://` is refused.
 - **Antigravity 1.4.12**
   - `agy plugin install` copies into `config/plugins/<name>` and refuses a
@@ -122,7 +125,10 @@ The code also writes ties outside the harness homes:
   `generated/` and `.uze/`. *Rejected: merging the two marketplaces.* It
   renames `<p>@uze-local` and loses Claude's `enabledPlugins` and Codex's
   `[plugins."<id>"]`.
-- **The store tier**: deleting it uninstalls that harness's plugins. The
+- **The store tier**: deleting it uninstalls that harness's plugins. Its
+  `.uze/sessions` scratch is recreated on demand and is the only disposable
+  part of it. It lives here because the configuration that names it must
+  point into the store. The
   persisted-state requirement keeps every existing tier (authored included)
   and its rule that content generated for another program never sits beside
   the records.
@@ -150,10 +156,10 @@ skills and agents.
 | OpenCode | the root; skills and agents are copied to its discovery dirs | — |
 
 The Codex and Antigravity builds grow to the whole package through
-`shared::tree`, as Claude's does. Each package id has one build per vendor,
-shared by every scope that installs it. Its receipt is detached when the
-last scope referencing the package removes it, and the existing removal
-planning already counts those references.
+`shared::tree`, as Claude's does. Packages are machine-wide, with one registry entry each, so each package
+has one build per vendor and origin. Its receipt is detached with the
+package's other receipts when the package is removed (`take_off`). Nothing
+needs reference counting.
 
 *Rejected: a throwaway build cache* (measured to break Claude and Codex).
 *Rejected: a Git marketplace* (`file://` is refused by both).
@@ -179,7 +185,9 @@ the bytes.** A registry entry whose `sources/` directory is missing becomes
 
 - it stays in its catalogue with the build it has;
 - it is never pruned as a ghost and its receipts are never orphaned;
-- it is not rebuilt until the bytes return.
+- it is not rebuilt until the bytes return;
+- its origin (`local` or `generated`) is read from where its build sits,
+  never from the missing bytes.
 
 `prune_ghost_registrations` applies only to an entry that has neither bytes
 nor a build. This is what keeps "deleting the bytes leaves every delivery
@@ -204,23 +212,35 @@ Lookups of directories that moved:
   too, and the copies there resolve into `store/codex`.
 
 Codex hook groups are always written **after** the operator's own groups in
-each event array. Adding or removing them then never shifts the indices that
-key the operator's hook trust. Skills that call `uze` say they do not apply
+each event array. Adding or removing them then never shifts the trust keys of
+groups the operator placed first. Two shifts remain, both already true
+today:
+
+- removing one UZE package's groups shifts the UZE groups after them;
+- at purge, removing UZE's groups shifts operator groups added after them.
+
+Both are reported. Through `codex/trust.rs`, the report names every hook
+whose review Codex will ask for again. Skills that call `uze` say they do not apply
 when it is absent.
 
 ### D5. Migration, fenced against older builds
 
-1. **Fence.** The move bumps the shape of both `packages.json`
-   (`RawPackageRegistry::SHAPE`) and `attachments.json`, with a ladder rung
-   that carries every entry across. An older build then refuses both
-   documents by name (persisted-state: a newer record is never taken).
-   Without the fence, an older build's `ensure_layout` would recreate
-   `store/plugins` and write bytes the newer build never reads, and its
-   setup would move the receipts back to `runtime/`.
-2. **Move.** Once per package, under the mutation lock: whenever any
-   `store/plugins/<id>` exists it is renamed into `sources/<id>`, and the
-   same is done for `superseded/`. It is resumable, because each package
-   moves on its own.
+1. **Fence first.** Under the mutation lock, `packages.json` and
+   `attachments.json` are both written at their new shape
+   (`RawPackageRegistry::SHAPE` and the ledger shape are bumped, and a ladder
+   rung carries every entry across). Only then does anything move. An older
+   build then refuses both documents by name before it can prune or detach
+   anything (persisted-state: a newer record is never taken). The opposite
+   order would let an older build read a shape-1 registry with no bytes,
+   prune every entry as a ghost and detach its receipts.
+2. **Move and backfill.** Once per package, still under the lock:
+   whenever any `store/plugins/<id>` exists, it is renamed into
+   `sources/<id>`, and the same is done for `superseded/`. Its digest is
+   computed from the moved bytes and written into the registry. A ladder rung
+   is a pure function and cannot read disk, so the digest is backfilled
+   here. The step is resumable, because each package moves on its own.
+   An older build's `ensure_layout` may still leave an empty `store/plugins`
+   before it refuses. The new build removes it when it is empty.
 3. **Re-deliver.** On the next `setup`, `install` or `update`, for each
    harness:
    1. Publish the builds into `store/<vendor>/{local,generated}`.
@@ -239,8 +259,9 @@ when it is absent.
    hook reads as "Modified" and Codex holds it back. That includes deny
    guards, which then **stop enforcing until reviewed**. Install, `doctor`
    and the TUI carry a blocking notice naming each hook and the review to
-   do, until `codex/trust.rs` reads them as trusted. This is a one-time cost:
-   `store/<vendor>` paths do not move again.
+   do, until `codex/trust.rs` reads them as trusted. The wrapper move is a
+   one-time cost, because `store/<vendor>` paths do not move again. Index
+   shifts on later removals are the pre-existing cost described in D4.
 5. **Clean-up.** `runtime/attachments/*` and `runtime/packages` are deleted
    once no receipt names them.
 
@@ -342,6 +363,8 @@ the reinstall-then-purge path.
 | 9 | Installers delegate to `uze uninstall` | `install.ps1 -Purge` deleting `~/.uze` is exactly the unsupported path. |
 | 10 | Interactive uninstall asks keep-or-purge | A default with no binary left makes `--purge` unreachable without a reinstall. |
 | 11 | The ownership test walks configuration and discovery files, not transcripts | Transcripts legitimately quote expanded paths and are the vendor's history. |
+| 12 | Write both fenced documents, then move the bytes, then backfill digests during the move | Moving first lets an older build prune and detach. A ladder rung cannot compute digests from disk. |
+| 13 | No reference counting; one build per package per vendor and origin | Packages are machine-wide with one registry entry. A scope model does not exist and is not needed. |
 
 ## Candidate ADRs
 

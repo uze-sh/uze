@@ -86,7 +86,11 @@ Re-acquisition per source:
 | linked marketplace | read the link target again |
 | embedded (the bundled `uze` plugin) | the snapshot inside the binary, offline |
 
-The bytes are kept only when their digest equals the cached one.
+The bytes are kept only when their digest equals the cached one. The one
+exception is an embedded package. Its snapshot *is* this binary's own
+version of it, which after an upgrade legitimately differs from the cached
+digest. It is ingested again, recording the new digest, as bootstrap would
+do.
 
 - **A mismatch** → `NeedsHuman` with `uze update <id>`. The builds keep
   delivering what they have.
@@ -131,10 +135,17 @@ again, and that observation is the report.
 ### D6. Budget
 
 Plain `doctor` stays `Budgeted`. It observes through the inspection cache
-and the registry, and never spawns a vendor CLI just to check a
-registration; it reads the vendor's registration file through the
-integration's existing read-only parser. `doctor_meets_the_budget` covers
-the catalogue. `--repair` is `JustifiedSlow`.
+and the registry, and never spawns a vendor CLI just to check a registration.
+It reads each vendor's registration file read-only instead:
+
+- **Claude:** `known_marketplaces.json`, through the existing
+  `recorded_marketplaces`.
+- **Codex:** `[marketplaces.*]` in `config.toml`. This is a new read
+  alongside the existing `[plugins.*]` read in `codex/inventory.rs`, which
+  today spawns `codex plugin marketplace list` instead.
+
+`doctor_meets_the_budget` covers the catalogue. `--repair` is
+`JustifiedSlow`.
 
 ## Risks / Trade-offs
 
@@ -157,6 +168,8 @@ the catalogue. `--repair` is `JustifiedSlow`.
 | 5 | Re-acquire from registry provenance, kept only on a digest match | "The revision the receipt pins" does not exist; receipts carry no revision. |
 | 6 | No "re-adopt" command | None exists, and inventing one is out of scope. Findings point to existing commands. |
 | 7 | A flag on `doctor`, not a skill, an extension or a new verb | See D1. |
+| 8 | Embedded packages are re-ingested from the binary's snapshot, with no digest match required | A digest match would turn every post-upgrade restore of the bundled plugin into `NeedsHuman`. |
+| 9 | A read-only `config.toml` reader for Codex marketplaces | Spawning `codex plugin marketplace list` on plain `doctor` breaks its budget. |
 
 ## Candidate ADRs
 

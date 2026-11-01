@@ -31,6 +31,10 @@ fail the build.
 - **WHEN** a path is added to the map of what UZE owns without a health check
 - **THEN** the coverage test fails naming it
 
+#### Scenario: A new receipt kind
+- **WHEN** a receipt kind or a vendor registration kind is added without a health check
+- **THEN** the coverage test fails naming it
+
 ### Requirement: Missing package bytes are acquired again as they were
 `--repair` SHALL acquire missing package bytes again from the provenance the
 registry recorded, and SHALL keep them only when their digest equals the
@@ -51,8 +55,8 @@ needing the network.
 - **THEN** each package is reported as needing the network, every other repair still runs, and every delivery keeps working
 
 #### Scenario: The bundled plugin
-- **WHEN** the bundled `uze` plugin's bytes are missing
-- **THEN** they are restored from the snapshot inside the binary, offline
+- **WHEN** the bundled `uze` plugin's bytes are missing, including after an upgrade of the binary
+- **THEN** they are restored from the snapshot inside the binary, offline, and its recorded digest becomes the snapshot's
 
 ### Requirement: A marketplace registered elsewhere is repointed
 `--repair` SHALL repoint a marketplace UZE owns whose registered root is not

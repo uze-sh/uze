@@ -17,10 +17,15 @@
   - `delivered_packages_dir` kept only for `delivered_root::materialize` in UZE's own extension MCP launcher, documented as UZE-internal;
   - `ensure_layout` creates `sources/`, never `store/plugins`.
 - [ ] 2.2 Extend the owned-paths layering test (`every_path_uze_owns_is_named_in_the_map`) to cover `sources_dir` and `store_dir(vendor)`.
-- [ ] 2.3 The move: per package, under the mutation lock, rename `store/plugins/<id>` and `store/superseded/<id>` into `sources/`. It runs whenever any of them exists, so it is resumable.
-- [ ] 2.4 The fence: bump `RawPackageRegistry::SHAPE` and the `attachments.json` shape in the same step, each with a ladder rung that carries every entry across. Test that an older shape's reader refuses both by name.
-- [ ] 2.5 Cache the package digest in `packages.json` at ingest.
-- [ ] 2.6 "Bytes missing": catalogue membership comes from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
+- [ ] 2.3 Add the fence, which runs first. Bump `RawPackageRegistry::SHAPE` and the `attachments.json` shape, each with a ladder rung that carries every entry across, and write both documents before any byte moves. Test that an older shape's reader refuses both by name before it prunes or detaches anything.
+- [ ] 2.4 Add the move and backfill, under the mutation lock, per package:
+  - rename `store/plugins/<id>` and `store/superseded/<id>` into `sources/`;
+  - compute the digest from the moved bytes and write it into the registry;
+  - remove an empty `store/plugins` left by an older build.
+
+  The step runs whenever any such directory exists, so it is resumable.
+- [ ] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
+- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from where its build sits), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
 ## 3. Builds and publication
 
@@ -31,7 +36,7 @@
   - stage and swap only a build whose key differs;
   - swap the catalogue last;
   - receipt `IntegrationOwned { kind: "build" }` per (vendor, origin, package), inspected by per-file digest, where a hook-added file is not drift;
-  - detached when the last scope referencing the package removes it.
+  - detached with the package's other receipts on removal.
 - [ ] 3.5 Registration:
   - repoint only when the registered root differs, and never while a session of that harness runs;
   - Claude repoints with a same-name `add`;
@@ -49,7 +54,9 @@
 - [ ] 4.1 Move the wrapper (`exec`, `exec.ps1`) and the rules engine and its sessions to `store/<vendor>/.uze/`. Their existing receipts (`HookConfigEntry.wrapper`, `SETUP_OWNER`) name the new paths.
 - [ ] 4.2 Move OpenCode's hook and session documents to `store/opencode/.uze/`, and give `uze.ts` a receipt. The setup sweep and `uze-workspace/conversation.rs` ask the integration for the directory.
 - [ ] 4.3 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
-- [ ] 4.4 Codex: UZE's hook groups are always written after the operator's groups in each event array. Add a test that removing them leaves every operator trust key unchanged.
+- [ ] 4.4 Codex: UZE's hook groups are always written after the operator's groups in each event array.
+  - Test that the trust keys of operator groups placed first never change.
+  - Removing a package's groups, or purging, reports every hook whose trust key shifts, through `codex/trust.rs`.
 - [ ] 4.5 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
 - [ ] 4.6 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
 - [ ] 4.7 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
@@ -66,7 +73,15 @@
 - [ ] 5.5 `install.sh` and `install.ps1` uninstall delegates to `uze uninstall --yes [--purge]` when the binary is present. Otherwise it removes only what the installer placed and prints the reinstall-then-purge path. It never deletes `~/.uze` itself. Update their headers.
 - [ ] 5.6 Add the `uze uninstall [--yes] [--purge]` grammar, a report following the `design-system` skill, `JustifiedSlow` in `src/command_performance.rs`, and help text.
 - [ ] 5.7 Add `tests/acceptance/uninstall.rs` with one test per scenario in `specs/machine-uninstall/spec.md`, using fake harnesses and fake processes for the refusals.
-- [ ] 5.8 Add `tests/acceptance/migration.rs`: the move, an interrupted move, an older build refusing the fenced documents, and an upgraded install keeping every plugin enabled.
+- [ ] 5.8 Add `tests/acceptance/migration.rs` covering:
+  - the move and digest backfill;
+  - an interrupted move;
+  - an older shape refusing the fenced documents with no package or receipt lost, and the leftover empty `store/plugins` removed;
+  - an upgraded install keeping every plugin enabled.
+- [ ] 5.9 Add acceptance tests for the remaining scenarios:
+  - a Codex repoint whose `add` fails re-registers the old root (fake vendor CLI);
+  - a workspace launch puts its `$UZE_HOME` context only in the process's arguments;
+  - deleting one vendor store stops that harness's plugins until the next delivery.
 
 ## 6. Conformance
 
