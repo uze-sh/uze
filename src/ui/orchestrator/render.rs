@@ -720,6 +720,10 @@ fn open_extension(model: &WorkspaceModel, area: Rect) -> Option<OpenExtension> {
     };
     let scope = match &slot.owner {
         Owner::Builtin(id) if *id == uze_extensions::code::CATALOG.id => uze_keys::Scope::Code,
+        Owner::Builtin(id) if *id == uze_extensions::review::CATALOG.id && model.open_typing() => {
+            uze_keys::Scope::ReviewComposing
+        }
+        Owner::Builtin(id) if *id == uze_extensions::review::CATALOG.id => uze_keys::Scope::Review,
         Owner::Builtin(id) if *id == uze_extensions::architect::CATALOG.id => {
             uze_keys::Scope::Architect
         }

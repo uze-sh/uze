@@ -1768,6 +1768,7 @@ fn a_hosted_engines_jobs_run_off_the_frame_and_answer_it() {
         [
             uze_extensions::spec::CATALOG.id.to_owned(),
             uze_extensions::code::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
         ]
         .into(),
     );

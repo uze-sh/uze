@@ -398,6 +398,18 @@ impl ReviewExtension {
         });
     }
 
+    /// What a read of the door would have found for `root`: how the
+    /// host's tests stand in for Git.
+    pub fn counted(&mut self, root: PathBuf, additions: u32, deletions: u32, files: usize) {
+        self.door.root = Some(root);
+        self.door.totals = Some(Totals {
+            additions,
+            deletions,
+            files,
+        });
+        self.door.at = Some(Instant::now());
+    }
+
     fn record_for_door(&self) -> &ReviewRecord {
         match (&self.open, &self.focus) {
             (Some(view), Some(focus)) if view.root == focus.root => &view.record,

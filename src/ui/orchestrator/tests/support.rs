@@ -1242,3 +1242,17 @@ pub(super) fn spec_slot(model: &WorkspaceModel, surface: &str) -> u32 {
         .builtin_slot(uze_extensions::spec::CATALOG.id, surface)
         .expect("the spec has the slot")
 }
+
+/// The review's door says the checkout in front adds `additions` lines and
+/// removes `deletions`, as its read would have found.
+pub(super) fn counted(model: &mut WorkspaceModel, additions: u32, deletions: u32) {
+    let root = model.focused_cwd().unwrap_or_default();
+    if let Some(engine) = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    {
+        engine.review_counted(root, additions, deletions);
+    }
+}

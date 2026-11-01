@@ -7,7 +7,7 @@
 //! means one module under `crates/uze-extensions/src/` and one entry in
 //! `builtin` — nothing else in the product needs to know it exists.
 
-use crate::{architect, code, spec};
+use crate::{architect, code, review, spec};
 
 /// Catalog metadata for one built-in extension — what the Extensions
 /// screen renders. Built-ins are compiled into the binary (no loading or
@@ -37,7 +37,12 @@ impl ExtensionRegistry {
     /// of its own to root under.
     pub fn builtin() -> Self {
         Self {
-            extensions: vec![code::CATALOG, architect::CATALOG, spec::CATALOG],
+            extensions: vec![
+                review::CATALOG,
+                code::CATALOG,
+                architect::CATALOG,
+                spec::CATALOG,
+            ],
         }
     }
 

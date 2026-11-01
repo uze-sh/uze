@@ -915,6 +915,7 @@ fn opening_the_architect_reads_its_artifacts_as_a_job() {
         [
             uze_extensions::spec::CATALOG.id.to_owned(),
             uze_extensions::code::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
         ]
         .into(),
     );
@@ -945,7 +946,13 @@ fn opening_the_code_surface_lists_its_tree_as_jobs() {
     let root = uze_testkit::temp::scratch("orchestrator-code-jobs-checkout");
     std::fs::write(root.join("main.rs"), "fn main() {}\n").unwrap();
     let mut model = agent_session_in(root.to_str().unwrap());
-    model.follow_extension_switch([uze_extensions::spec::CATALOG.id.to_owned()].into());
+    model.follow_extension_switch(
+        [
+            uze_extensions::spec::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
     open_code(&mut model, uze_extensions::code::FILES);
     assert!(model.showing(uze_extensions::code::CATALOG.id));
     let (sender, receiver) = std::sync::mpsc::channel();
@@ -1041,7 +1048,13 @@ fn the_spec_summary_is_counted_as_a_job_for_the_checkout_in_front() {
         .targets
         .insert(super::evaluation_key(repository.root()), target);
     // The code reads the same checkout's history on the same pass.
-    model.follow_extension_switch([uze_extensions::code::CATALOG.id.to_owned()].into());
+    model.follow_extension_switch(
+        [
+            uze_extensions::code::CATALOG.id.to_owned(),
+            uze_extensions::review::CATALOG.id.to_owned(),
+        ]
+        .into(),
+    );
     let (sender, receiver) = std::sync::mpsc::channel();
     assert_eq!(model.schedule_engine_jobs(&home, &sender), 1);
     assert_eq!(

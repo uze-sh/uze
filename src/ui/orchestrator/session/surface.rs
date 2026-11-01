@@ -395,7 +395,7 @@ impl Attach<'_> {
             Action::ToggleSpec if self.model.showing(spec::CATALOG.id) => {
                 self.model.close_surface();
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleChanges => open_review(&mut self.model),
             Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),

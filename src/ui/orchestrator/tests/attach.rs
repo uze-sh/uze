@@ -3,7 +3,7 @@
 
 use super::WorkspaceHit;
 use super::support::*;
-use super::{Flow, GitBadge, WorkStateView, WorkspaceModel, answered_or};
+use super::{Flow, WorkStateView, WorkspaceModel, answered_or};
 use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ use uze_terminal::PaneId;
 /// a failure in it.
 #[test]
 fn a_read_that_panicked_answers_what_it_would_have_answered_empty() {
-    let silence: Option<GitBadge> = None;
+    let silence: Option<String> = None;
     assert!(
         answered_or(|| panic!("syntect, over whatever the tree listed"), silence).is_none(),
         "a panicked read answers, so its key is released"

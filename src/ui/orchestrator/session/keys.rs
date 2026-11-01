@@ -62,6 +62,10 @@ impl Attach<'_> {
         } else if self.model.inspector.edit.is_some() {
             // A source's input being edited takes text as a name does.
             Scope::Rename
+        } else if self.model.showing(review::CATALOG.id) && self.model.open_typing() {
+            Scope::ReviewComposing
+        } else if self.model.showing(review::CATALOG.id) {
+            Scope::Review
         } else if self.model.open_typing() {
             // A file or a new name taking text seals everything behind
             // it, the same way the action index does: nothing else may
@@ -96,6 +100,7 @@ impl Attach<'_> {
             surface,
             Scope::Pane
                 | Scope::Code
+                | Scope::Review
                 | Scope::Architect
                 | Scope::Spec
                 | Scope::Declared
@@ -310,7 +315,8 @@ impl Attach<'_> {
             // The step opens the new agent's popup on its directory.
             Action::NewAgent => self.model.directory_step.is_some(),
             Action::NextAgent => self.asked_for_a_tab,
-            Action::ToggleChanges | Action::ToggleFiles => self.model.showing(code::CATALOG.id),
+            Action::ToggleChanges => self.model.showing(review::CATALOG.id),
+            Action::ToggleFiles => self.model.showing(code::CATALOG.id),
             Action::ToggleRecent => self.model.recent.open,
             Action::OpenActionIndex => self.model.action_index.is_some(),
             _ => false,
@@ -492,7 +498,7 @@ impl Attach<'_> {
                     self.model.dirty = true;
                 }
             }
-            Action::ToggleChanges => open_code(&mut self.model, code::CHANGES),
+            Action::ToggleChanges => open_review(&mut self.model),
             Action::ToggleFiles => open_code(&mut self.model, code::FILES),
             Action::ToggleArchitect => open_architect(&mut self.model),
             Action::ToggleSpec => open_spec(&mut self.model),

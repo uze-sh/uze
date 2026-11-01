@@ -112,6 +112,10 @@ pub(super) trait Hosted: Extension {
     fn inspect(&self, _surface: &str) -> Inspection {
         Inspection::default()
     }
+    /// The review's door counts, as a read of them would have found them:
+    /// how the client's tests stand in for Git. Nothing by default.
+    #[cfg(test)]
+    fn review_counted(&mut self, _root: PathBuf, _additions: u32, _deletions: u32) {}
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -243,6 +247,13 @@ impl Hosted for DeclaredExtension {
 
 impl Hosted for uze_extensions::architect::ArchitectExtension {}
 impl Hosted for uze_extensions::spec::SpecExtension {}
+impl Hosted for uze_extensions::review::ReviewExtension {
+    #[cfg(test)]
+    fn review_counted(&mut self, root: PathBuf, additions: u32, deletions: u32) {
+        let files = usize::from(additions + deletions > 0);
+        self.counted(root, additions, deletions, files);
+    }
+}
 impl Hosted for code::CodeExtension {
     #[cfg(test)]
     fn code_view(&self) -> Option<&code::CodeView> {
@@ -258,6 +269,10 @@ impl Hosted for code::CodeExtension {
 /// The built-ins hosted on the slot path, each with its engine.
 fn builtins() -> Vec<(&'static str, Box<dyn Hosted>)> {
     vec![
+        (
+            uze_extensions::review::CATALOG.id,
+            Box::new(uze_extensions::review::ReviewExtension::default()),
+        ),
         (code::CATALOG.id, Box::new(code::CodeExtension::default())),
         (
             architect::CATALOG.id,

@@ -5,14 +5,13 @@ use super::WorkspaceHit;
 use super::support::*;
 use super::{EngineAnswer, Owner, code};
 use super::{
-    GitBadge, UpstreamSync, WorkStateView, WorkspaceModel, agent_activity_frame,
+    UpstreamSync, WorkStateView, WorkspaceModel, agent_activity_frame,
     render::{self, LeadingSlot, compute_layout, render_tab_strip},
 };
 use crate::ui::theme::{self, Token};
 use ratatui::layout::Rect;
 use ratatui::{Terminal, backend::TestBackend};
 use std::path::PathBuf;
-use std::time::Instant;
 use uze_core::UzeHome;
 
 /// The header is two zones, and the message is never allowed into the
@@ -23,14 +22,7 @@ use uze_core::UzeHome;
 #[test]
 fn a_message_never_moves_an_action() {
     let mut model = agent_with_task(WorkStateView::Ready, 3);
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo/.worktrees/ai"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 12,
-            deletions: 3,
-        }),
-        checked_at: Instant::now(),
-    });
+    counted(&mut model, 12, 3);
     let (_, quiet) = tab_strip(&model);
 
     model.set_busy_notice("delivering all".to_owned());

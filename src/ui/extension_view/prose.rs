@@ -12,7 +12,7 @@ pub(super) fn color(role: Role) -> Color {
 /// asked for two different things — the ink it draws in, and the hue it
 /// lends a ground — and both have to answer from one mapping or a
 /// selection stops matching what it is marking.
-pub(super) fn token(role: Role) -> Token {
+pub(crate) fn token(role: Role) -> Token {
     match role {
         Role::Default => Token::TextBright,
         Role::Muted => Token::TextMuted,

@@ -228,21 +228,17 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // could; holding it back and letting the pointer restore it says
     // "this answers you" without anything being drawn.
     //
-    // Absent for a clean checkout, hairline and all. It is a badge as
-    // much as a door, and a badge with nothing to say says nothing rather
-    // than zero — which costs no reachability, because the diff is one
-    // mode switch away inside the surface `code` opens.
+    // Always there while the review is on: it is the review's door, so a
+    // clean checkout still has one, held back and saying `review` rather
+    // than a count of nothing. What it says is the review's own answer
+    // (`door_badge`): the counts against the target, and what waits on
+    // the operator.
     //
     // What the checkout owes its upstream shares the zone, left of the
     // counts: it is the same checkout's git state. What a pull would bring
     // is the pull itself, as an editor's sync count is; what a push would
     // send is only reported.
-    let summary = model
-        .remembered
-        .git_badge
-        .as_ref()
-        .and_then(|badge| badge.summary)
-        .filter(|_| agent_context);
+    let badge = agent_context.then(|| model.review_door_badge()).flatten();
     let upstream = model
         .focused_cwd()
         .filter(|_| agent_context)
@@ -250,42 +246,29 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // No hairline against the surfaces: their group stands on a ground of
     // its own, and a rule beside a filled edge says it again. The counts'
     // own inset is the air between them.
-    if (summary.is_some() || upstream.is_some())
+    if (badge.is_some() || upstream.is_some())
         && let Some(edge) = surfaces_left
     {
         trailing_right = edge;
     }
-    if let Some(summary) = summary {
+    if let Some(badge) = &badge {
         let hit = WorkspaceHit::OpenChanges;
-        let (additions, deletions) = match chip_state(model, hit) {
-            ChipState::Resting => (
-                theme::color(Token::StateSuccessMuted),
-                theme::color(Token::StateDangerMuted),
-            ),
-            ChipState::Hovered | ChipState::Pressed => (
-                theme::color(Token::StateSuccess),
-                theme::color(Token::StateDanger),
-            ),
-        };
-        let text = format!("+{} -{}", summary.additions, summary.deletions);
-        let width = Span::raw(&text).width() as u16 + 2 * chip::PAD;
+        let full = model.showing(uze_extensions::review::CATALOG.id)
+            || !matches!(chip_state(model, hit), ChipState::Resting);
+        let mut spans = vec![Span::raw(" ")];
+        for span in &badge.spans {
+            let token = crate::ui::extension_view::token(span.role);
+            let colour = match (full, badge.quiet) {
+                (true, _) => theme::color(token),
+                (false, true) => theme::color(Token::TextMuted),
+                (false, false) => theme::color(held_back(token)),
+            };
+            spans.push(Span::styled(span.text.clone(), Style::default().fg(colour)));
+        }
+        spans.push(Span::raw(" "));
+        let width = spans.iter().map(Span::width).sum::<usize>() as u16;
         let rect = Rect::new(trailing_right.saturating_sub(width), inner.y, width, 1);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(
-                    format!("+{}", summary.additions),
-                    Style::default().fg(additions),
-                ),
-                Span::raw(" "),
-                Span::styled(
-                    format!("-{}", summary.deletions),
-                    Style::default().fg(deletions),
-                ),
-                Span::raw(" "),
-            ])),
-            rect,
-        );
+        frame.render_widget(Paragraph::new(Line::from(spans)), rect);
         hits.push((rect, hit));
         trailing_right = if upstream.is_none() {
             ZoneEdge::Bare.left_of(rect.x)
@@ -318,7 +301,7 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         // Two readings of numbers side by side (`↓9 +17 -7`) read as one,
         // so a separator stands between them; the changes' own inset is
         // the space after it.
-        let trailing = if summary.is_some() {
+        let trailing = if badge.is_some() {
             Span::styled(
                 theme::glyph(Symbol::HintSeparator).trim_end().to_owned(),
                 theme::fg(Token::TextFaint),
@@ -929,4 +912,14 @@ pub(super) fn render_notice_chip(
     let rect = Rect::new(actions_left.saturating_sub(width), inner.y, width, 1);
     frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     rect.x
+}
+
+/// A state hue held back to its resting strength.
+fn held_back(token: Token) -> Token {
+    match token {
+        Token::StateSuccess => Token::StateSuccessMuted,
+        Token::StateDanger => Token::StateDangerMuted,
+        Token::StateWarning => Token::StateWarningMuted,
+        other => other,
+    }
 }

@@ -4,8 +4,7 @@
 use super::WorkspaceHit;
 use super::support::*;
 use super::{
-    ExtensionHit, GitBadge, GitResolution, WorkStateView, WorkspaceModel, open_architect,
-    open_code, open_spec,
+    ExtensionHit, WorkStateView, WorkspaceModel, open_architect, open_code, open_spec,
     render::{LeadingSlot, render_tab_strip},
 };
 use crate::ui::theme::{self, Token};
@@ -14,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::{Terminal, backend::TestBackend};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use uze_core::UzeHome;
 use uze_terminal::{ClientEvent, ClientRequest};
 
@@ -161,24 +160,26 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
             code_view(model).map(CodeView::showing),
             model.showing(uze_extensions::architect::CATALOG.id),
             model.showing(uze_extensions::spec::CATALOG.id),
+            model.showing(uze_extensions::review::CATALOG.id),
         ) {
-            (Some(mode), false, false) => format!("code {mode:?}"),
-            (None, true, false) => "architect".to_owned(),
-            (None, false, true) => "spec".to_owned(),
-            (None, false, false) => "pane".to_owned(),
+            (Some(mode), false, false, false) => format!("code {mode:?}"),
+            (None, true, false, false) => "architect".to_owned(),
+            (None, false, true, false) => "spec".to_owned(),
+            (None, false, false, true) => "review".to_owned(),
+            (None, false, false, false) => "pane".to_owned(),
             _ => panic!("two surfaces at once"),
         }
     };
     for (key, expected) in [
         ('e', "code Contents"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('e', "code Contents"),
         ('a', "architect"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('a', "architect"),
         ('e', "code Contents"),
         ('e', "pane"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('g', "pane"),
         ('a', "architect"),
         ('a', "pane"),
@@ -187,7 +188,7 @@ fn the_surface_chords_walk_between_surfaces_without_closing_first() {
         ('x', "spec"),
         ('e', "code Contents"),
         ('x', "spec"),
-        ('g', "code Diff"),
+        ('g', "review"),
         ('x', "spec"),
         ('x', "pane"),
     ] {
@@ -368,6 +369,7 @@ fn every_extension_switched_off_takes_the_whole_button_group() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
     model.follow_extension_switch(switched_off(&[
+        uze_extensions::review::CATALOG.id,
         uze_extensions::code::CATALOG.id,
         uze_extensions::architect::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
@@ -399,29 +401,20 @@ fn every_extension_switched_off_takes_the_whole_button_group() {
 fn a_switched_off_extension_reads_nothing_for_the_sidebar() {
     let mut model = agent_session_in("/repo");
     model.follow_extension_switch(switched_off(&[
+        uze_extensions::review::CATALOG.id,
         uze_extensions::code::CATALOG.id,
         uze_extensions::spec::CATALOG.id,
     ]));
     let home = UzeHome::at(uze_testkit::temp::scratch(
         "orchestrator-switched-off-reads",
     ));
-    let (git, _git_answers) = std::sync::mpsc::channel();
     let (engines, _engine_answers) = std::sync::mpsc::channel();
 
-    model.schedule_git_read(&git);
     assert_eq!(
         model.schedule_engine_jobs(&home, &engines),
         0,
         "the spec counts nothing"
     );
-
-    assert!(model.remembered.git_pending.is_none());
-    assert!(!model.absorb_git_read(GitResolution {
-        cwd: PathBuf::from("/repo"),
-        summary: None,
-        took: Duration::ZERO,
-    }));
-    assert!(model.remembered.git_badge.is_none());
 }
 
 /// Switching back on puts it all back: the button returns and a key
@@ -808,14 +801,7 @@ fn a_button_group_is_divided_by_where_its_fill_changes_and_by_nothing_drawn() {
 #[test]
 fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
     let mut model = agent_with_task(WorkStateView::Ready, 3);
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 476,
-            deletions: 286,
-        }),
-        checked_at: Instant::now(),
-    });
+    counted(&mut model, 476, 286);
     let (_, hits) = tab_strip(&model);
     let rect = hits
         .iter()
@@ -887,23 +873,15 @@ fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
             .map(|(rect, _)| *rect)
     };
 
-    model.remembered.git_badge = None;
     full_frame(&mut model);
     let clean =
         button(&model, WorkspaceHit::OpenFiles).expect("a clean checkout still offers its files");
     assert!(
-        button(&model, WorkspaceHit::OpenChanges).is_none(),
-        "and says nothing about changes rather than saying zero"
+        button(&model, WorkspaceHit::OpenChanges).is_some(),
+        "and the review's door stands on a clean checkout too"
     );
 
-    model.remembered.git_badge = Some(GitBadge {
-        cwd: PathBuf::from("/repo/.worktrees/a"),
-        summary: Some(uze_extensions::code::ChangeSummary {
-            additions: 3,
-            deletions: 1,
-        }),
-        checked_at: Instant::now(),
-    });
+    counted(&mut model, 3, 1);
     full_frame(&mut model);
     let changes =
         button(&model, WorkspaceHit::OpenChanges).expect("work arriving brings the badge");
