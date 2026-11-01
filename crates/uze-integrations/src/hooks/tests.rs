@@ -1279,3 +1279,21 @@ fn an_exec_form_script_nothing_starts_here_is_reported_not_delivered() {
     );
     let _ = fs::remove_dir_all(package);
 }
+
+/// Core refuses a package shipping any path a build writes, and core cannot
+/// name this crate: its list is the one source, and every path the hooks
+/// write into a build has to be on it, or a package could ship its own.
+#[test]
+fn every_path_the_hooks_write_into_a_build_is_reserved_in_core() {
+    for written in [
+        <PosixWrapper as WrapperTemplate>::RELATIVE_PATH,
+        <PowerShellWrapper as WrapperTemplate>::RELATIVE_PATH,
+        OPENCODE_DOCUMENT,
+        crate::shared::package_root::CARRIED_DIR,
+    ] {
+        assert!(
+            uze_core::store::RESERVED_BUILD_PATHS.contains(&written),
+            "{written} is written into a build but not reserved in uze_core::store::RESERVED_BUILD_PATHS"
+        );
+    }
+}
