@@ -9,6 +9,14 @@
 # and installs it into the user binary directory. Pure POSIX sh; Linux and macOS, x86_64 and aarch64. Needs
 # OpenSSH's `ssh-keygen` (8.1 or later) to check the signature.
 #
+# Uninstall, through `uze uninstall` when the binary is here: by default
+# the program goes and every plugin it delivered keeps working; --purge
+# also uninstalls those plugins and removes ~/.uze. Without the binary,
+# only what this installer placed is removed, and ~/.uze is never deleted
+# by this script.
+#
+#   curl -fsSL https://uze.sh/i | sh -s -- --uninstall [--purge]
+#
 # Environment overrides:
 #   UZE_VERSION   Pin a release (e.g. 1.0.0-beta.1); default: latest.
 #   UZE_BASE_URL  Alternate download root (mirror or local test fixture).
@@ -164,6 +172,63 @@ step() {
 need() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
+
+# --- options ---------------------------------------------------------------------
+uninstall=0
+purge=0
+for option in "$@"; do
+  case "$option" in
+    --uninstall) uninstall=1 ;;
+    --purge) purge=1 ;;
+    *) die "unknown option: $option (the options are --uninstall and --purge)" ;;
+  esac
+done
+[ "$purge" = 0 ] || [ "$uninstall" = 1 ] || die "--purge goes with --uninstall"
+
+# Where the binary goes: the same answer for installing and for uninstalling.
+resolve_bin_dir() {
+  bin_dir="${UZE_BIN_DIR:-}"
+  if [ -z "$bin_dir" ]; then
+    if [ -n "${XDG_BIN_HOME:-}" ]; then
+      bin_dir="$XDG_BIN_HOME"
+    else
+      [ -n "${HOME:-}" ] || die "cannot determine an installation directory (set UZE_BIN_DIR)"
+      bin_dir="${HOME}/.local/bin"
+    fi
+  fi
+}
+
+# Where uze keeps its state, and with it the installer's receipt.
+resolve_receipt_home() {
+  receipt_home="${UZE_HOME:-}"
+  if [ -z "$receipt_home" ]; then
+    [ -n "${HOME:-}" ] || return 1
+    receipt_home="${HOME}/.uze"
+  fi
+}
+
+# --- uninstall ----------------------------------------------------------------
+# `uze uninstall` knows what uze delivered and how to take it back, so it
+# does the work whenever the binary is here. Without it, only the binary and
+# the receipt this installer wrote are its to remove; what uze delivered is
+# left in place, and the way to remove it is said.
+if [ "$uninstall" = 1 ]; then
+  resolve_bin_dir
+  binary="${bin_dir}/uze"
+  if [ -x "$binary" ]; then
+    if [ "$purge" = 1 ]; then
+      exec "$binary" uninstall --yes --purge
+    fi
+    exec "$binary" uninstall --yes
+  fi
+  if resolve_receipt_home && [ -f "${receipt_home}/state/install.json" ]; then
+    rm -f "${receipt_home}/state/install.json"
+    ok "Removed the install record"
+  fi
+  warn "no uze at ${binary}, so what it delivered is still in place"
+  note "to remove every trace, install uze again, then run: uze uninstall --purge"
+  exit 0
+fi
 
 # --- prerequisites -----------------------------------------------------------
 os="$(uname -s)"
@@ -336,15 +401,7 @@ verify() {
 step "Verifying checksum" "Checksum verified" verify
 
 # --- install ------------------------------------------------------------------
-bin_dir="${UZE_BIN_DIR:-}"
-if [ -z "$bin_dir" ]; then
-  if [ -n "${XDG_BIN_HOME:-}" ]; then
-    bin_dir="$XDG_BIN_HOME"
-  else
-    [ -n "${HOME:-}" ] || die "cannot determine an installation directory (set UZE_BIN_DIR)"
-    bin_dir="${HOME}/.local/bin"
-  fi
-fi
+resolve_bin_dir
 
 # The signature says the archive is one uze released, not that it is the
 # release asked for: archive names carry no version, so an older, genuinely
@@ -400,11 +457,7 @@ step "Installing into ${bin_dir}" "Installed ${bin_dir}/uze" place
 # and no other — a `uze` running from anywhere else was put there by
 # something else, and is that thing's to update.
 record_receipt() {
-  receipt_home="${UZE_HOME:-}"
-  if [ -z "$receipt_home" ]; then
-    [ -n "${HOME:-}" ] || return 0
-    receipt_home="${HOME}/.uze"
-  fi
+  resolve_receipt_home || return 0
   installed="$(cd "$bin_dir" && pwd -P)/uze"
   mkdir -p "${receipt_home}/state" || return 1
   printf '{\n  "binary": "%s",\n  "version": "%s"\n}\n' \

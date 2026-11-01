@@ -423,5 +423,33 @@ fi
 grep -q "unsupported OS: FreeBSD" "$work/out8.log"
 check "unsupported OS is diagnosed" $?
 
+# Uninstall delegates to the binary when it is here, with the same mode.
+mkdir -p "$work/bin-un"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"%s"\n' "$work/uninstall-args" >"$work/bin-un/uze"
+chmod +x "$work/bin-un/uze"
+env UZE_BIN_DIR="$work/bin-un" UZE_HOME="$work/home-un" sh "$keyed" --uninstall --purge >"$work/out-un.log" 2>&1
+check "uninstall with the binary present succeeds" $?
+grep -qx "uninstall --yes --purge" "$work/uninstall-args"
+check "and runs uze uninstall --yes --purge" $?
+env UZE_BIN_DIR="$work/bin-un" UZE_HOME="$work/home-un" sh "$keyed" --uninstall >"$work/out-un2.log" 2>&1
+grep -qx "uninstall --yes" "$work/uninstall-args"
+check "the default uninstall runs uze uninstall --yes" $?
+
+# Without the binary, only the installer's own record goes, never ~/.uze.
+mkdir -p "$work/home-gone/state" "$work/bin-gone"
+printf '{}\n' >"$work/home-gone/state/install.json"
+printf 'kept\n' >"$work/home-gone/state/packages.json"
+env UZE_BIN_DIR="$work/bin-gone" UZE_HOME="$work/home-gone" sh "$keyed" --uninstall >"$work/out-gone.log" 2>&1
+check "uninstall without the binary succeeds" $?
+[ ! -e "$work/home-gone/state/install.json" ] && [ -f "$work/home-gone/state/packages.json" ]
+check "and removes only the install record" $?
+grep -q "uze uninstall --purge" "$work/out-gone.log"
+check "and says how to remove every trace" $?
+if env UZE_BIN_DIR="$work/bin-gone" sh "$keyed" --purge >"$work/out-purge-alone.log" 2>&1; then
+  check "--purge alone is refused" 1
+else
+  check "--purge alone is refused" 0
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
