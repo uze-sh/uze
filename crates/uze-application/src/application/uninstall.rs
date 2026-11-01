@@ -22,7 +22,9 @@ use serde::Serialize;
 use uze_core::{
     Result, UzeError,
     exposure::ManagedArtifact,
-    integration::{AttachmentInspection, AttachmentReceipt, AttachmentState, IntegrationPort},
+    integration::{
+        AttachmentInspection, AttachmentReceipt, AttachmentState, IntegrationPort, RegistrationRead,
+    },
     provisioning::ProvisionAction,
     state,
 };
@@ -292,6 +294,9 @@ impl UzeApplication {
             None
         };
         still_clear()?;
+        if plan.mode == UninstallMode::Program && self.home.root().is_dir() {
+            self.converge_to_vendor_stores()?;
+        }
         // What the installer recorded is read before anything is removed:
         // `state/` goes with a purge, and the binary is removed after it.
         let plan = self.uninstall_plan(plan.mode);
@@ -367,6 +372,75 @@ impl UzeApplication {
             report.home_removed = true;
         }
         Ok(report)
+    }
+
+    /// Moves a machine still in the layout before vendor stores onto them
+    /// before the generated tier goes: its harnesses read `runtime/`, which
+    /// the default mode removes, and only a delivery moves them (`setup`,
+    /// `install`, `update`), which uninstall runs no bootstrap to reach.
+    /// Refuses, removing nothing, when a harness still reads it after.
+    fn converge_to_vendor_stores(&self) -> Result<()> {
+        if self.reads_the_runtime_tree().is_empty() {
+            return Ok(());
+        }
+        for integration in &self.integrations {
+            let detection = self.detect_cached(integration.as_ref());
+            if !detection.present {
+                continue;
+            }
+            if let Err(error) = integration.install(&self.home, &detection) {
+                tracing::warn!(integration = integration.id(), %error, "not prepared again");
+            }
+            if let Err(error) = self.attach_stored_packages_to(integration.as_ref()) {
+                tracing::warn!(integration = integration.id(), %error, "not delivered again");
+            }
+        }
+        let still = self.reads_the_runtime_tree();
+        if still.is_empty() {
+            return Ok(());
+        }
+        Err(UzeError::UninstallRefused {
+            reason: format!(
+                "nothing was removed: {} still read uze's generated files, which uninstall \
+                 removes, and could not be moved to their stores",
+                still.join(", ")
+            ),
+            next: "uze setup, then uze uninstall".to_owned(),
+        })
+    }
+
+    /// The harnesses that read something under `runtime/`: a receipt
+    /// naming the package copies every harness was once pointed at, or a
+    /// marketplace registered under the runtime tree, as an earlier
+    /// release left them.
+    fn reads_the_runtime_tree(&self) -> Vec<String> {
+        let copies = serde_json::to_string(&self.home.delivered_packages_dir().to_string_lossy())
+            .unwrap_or_default();
+        let copies = copies.trim_matches('"');
+        let receipts = state::receipts(&self.home, None).unwrap_or_default();
+        let mut harnesses: Vec<String> = Vec::new();
+        for integration in &self.integrations {
+            let named = receipts
+                .iter()
+                .filter(|receipt| receipt.integration == integration.id())
+                .any(|receipt| {
+                    serde_json::to_string(receipt).is_ok_and(|spelled| spelled.contains(copies))
+                });
+            let registered = self.detect_cached(integration.as_ref()).present
+                && integration
+                    .registrations(RegistrationRead::Live)
+                    .iter()
+                    .any(|registration| {
+                        registration
+                            .registered
+                            .as_ref()
+                            .is_some_and(|root| root.starts_with(self.home.runtime_dir()))
+                    });
+            if named || registered {
+                harnesses.push(integration.display_name().to_owned());
+            }
+        }
+        harnesses
     }
 
     fn harnesses_to_uninstall(&self, mode: UninstallMode) -> Vec<HarnessUninstall> {

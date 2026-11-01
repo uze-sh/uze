@@ -312,6 +312,56 @@ fn default_uninstall_leaves_every_harness_pointed_at_something_that_exists() {
     assert!(dangling.is_empty(), "pointed at what is gone: {dangling:?}");
 }
 
+/// A machine still in the layout before vendor stores — Codex's
+/// marketplace registered under `runtime/`, no builds yet — is moved onto
+/// its stores before the generated tier goes, so every harness reference
+/// still exists afterwards.
+#[test]
+fn default_uninstall_on_the_layout_before_vendor_stores_moves_it_first() {
+    use crate::vendor_store_moves::{forget_builds, rewrite_ledger, set_registered};
+    let env = delivered();
+    let earlier = env.uze_home.join("runtime/attachments/codex/generated");
+    copy_tree(&env.uze_home.join("store/codex"), &earlier);
+    set_registered(
+        &env,
+        "codex",
+        &[("uze-store".to_owned(), earlier.display().to_string())],
+    );
+    rewrite_ledger(&env, forget_builds);
+
+    let output = uninstall(&env, &["--yes"]);
+
+    assert!(output.status.success(), "{}", said(&output));
+    assert_eq!(
+        registered(&env, "codex"),
+        [(
+            "uze-store".to_owned(),
+            env.uze_home.join("store/codex").display().to_string()
+        )],
+        "{}",
+        said(&output)
+    );
+    let uze_home = env.uze_home.to_string_lossy().into_owned();
+    let dangling: Vec<_> = uze_home_references(&env)
+        .into_iter()
+        .filter(|(_, path)| !is_on_demand_scratch(path, &uze_home))
+        .filter(|(_, path)| !Path::new(path).exists())
+        .collect();
+    assert!(dangling.is_empty(), "pointed at what is gone: {dangling:?}");
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap().flatten() {
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
 #[test]
 fn reinstalled_after_a_default_uninstall_it_resumes_with_no_new_delivery() {
     let env = delivered();
