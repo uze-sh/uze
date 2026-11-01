@@ -607,6 +607,15 @@ impl IntegrationPort for ClaudeIntegration {
         }
     }
 
+    fn withdraw_registrations(&self) -> Result<Vec<String>> {
+        let executable = self.provisioning_executable();
+        crate::shared::withdraw::marketplaces::<ClaudeMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+        )
+    }
+
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
         marketplace::republish::<ClaudeMarketplace>(&self.uze_home, packages)
     }

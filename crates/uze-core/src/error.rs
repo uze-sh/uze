@@ -120,6 +120,11 @@ pub enum UzeError {
     Upgrade(String),
     #[error("setup incomplete: {0}")]
     ProvisioningIncomplete(String),
+    /// `uze uninstall` would not act, and changed nothing: something of
+    /// UZE's is still running, or nobody confirmed. `next` is what answers
+    /// it, for presentation to print under the reason.
+    #[error("{reason}")]
+    UninstallRefused { reason: String, next: String },
     /// A lifecycle mutation the safety check refused (ADR-009): drift or a
     /// conflicting receipt stopped it and nothing was removed or updated.
     /// Its own variant for the same reason `ProvisioningIncomplete` has

@@ -397,6 +397,19 @@ fn vendor_marketplace(
         write(&state_dir.join("root"), &root);
         let name = marketplace_name(Path::new(&root)).unwrap_or_else(|| "uze-store".to_owned());
         write(&state_dir.join("name"), &name);
+    } else if joined.starts_with("plugin marketplace remove") {
+        // Unregistering a marketplace uninstalls what was installed from it.
+        if let Some(removed) = arguments.get(3)
+            && name.as_deref() == Some(removed.as_str())
+        {
+            let _ = fs::remove_file(state_dir.join("root"));
+            let _ = fs::remove_file(state_dir.join("name"));
+            for selector in lines(&state_dir.join("installed")) {
+                if selector.rsplit_once('@').is_some_and(|(_, m)| m == removed) {
+                    drop_line(&state_dir.join("installed"), &selector);
+                }
+            }
+        }
     } else if joined.starts_with("plugin install") || joined.starts_with("plugin add") {
         if let Some(selector) = arguments.get(2).filter(|selector| !selector.is_empty()) {
             append_line(&state_dir.join("installed"), selector);

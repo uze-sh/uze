@@ -604,6 +604,15 @@ impl IntegrationPort for CodexIntegration {
         .map(Some)
     }
 
+    fn withdraw_registrations(&self) -> Result<Vec<String>> {
+        let executable = self.provisioning_executable();
+        crate::shared::withdraw::marketplaces::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+        )
+    }
+
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
         marketplace::republish::<CodexMarketplace>(&self.uze_home, packages)
     }

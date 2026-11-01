@@ -269,6 +269,13 @@ pub fn restart(home: &UzeHome) -> String {
     format!("{} could not be started: {error}", binary.display())
 }
 
+/// Whether a check or an install is under way in another process right
+/// now: what `uze uninstall` waits out rather than removes the binary from
+/// under.
+pub fn underway(home: &UzeHome) -> bool {
+    home.binary_check_lock_path().exists() && claim_check(home).is_none()
+}
+
 /// The site's changelog, where a command points after an update.
 pub fn changelog() -> &'static str {
     CHANGELOG
@@ -462,9 +469,11 @@ fn pass(
     let _span = tracing::info_span!("self_update.pass", running = RUNNING).entered();
     let stale = |ledger: &Ledger| now.saturating_sub(ledger.checked_at) >= CHECK_EVERY.as_secs();
     let mut ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
+    let mut claim = None;
     if (ask || stale(&ledger))
-        && let Some(_claim) = claim_check(home)
+        && let Some(held) = claim_check(home)
     {
+        claim = Some(held);
         // Read again under the claim: whoever held it last may have just
         // answered, and asking again would be the duplicate it prevents.
         ledger = read_json::<Ledger>(&ledger_path(home)).unwrap_or_default();
@@ -484,6 +493,9 @@ fn pass(
         (&mut receipt, settled(&ledger, now, channel), policy)
         && newer(&target, &owned.version)
     {
+        // Held across the install as well, so `uze uninstall` can tell a
+        // release is being put in place under it.
+        let _installing = claim.take().or_else(|| claim_check(home));
         match install_over(home, owned, &target, releases) {
             Ok(()) => ledger.installed = Some(target),
             Err(error) => tracing::warn!(%error, "the release could not be installed"),

@@ -29,3 +29,4 @@ pub(crate) mod skill;
 pub(crate) mod test_support;
 pub(crate) mod transcript;
 pub(crate) mod tree;
+pub(crate) mod withdraw;

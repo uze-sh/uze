@@ -62,6 +62,7 @@ mod runtime_shim;
 pub mod services;
 mod setup;
 mod theme;
+mod uninstall;
 
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use extensions::{
@@ -79,6 +80,10 @@ pub use rules::{ManifestSummary, NotARuleSummary, RuleSummary, RulesReport, Trig
 pub use rules_engine::RulesSetup;
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
+pub use uninstall::{
+    BinaryOutcome, BinaryPlan, HarnessUninstall, HomeEntry, ProjectWork, ReceiptFate,
+    ReceiptUninstall, UninstallMode, UninstallPlan, UninstallReport, UnlandedCheckout,
+};
 
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};
 pub use overview::{

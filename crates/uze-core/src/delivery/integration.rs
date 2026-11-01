@@ -1098,6 +1098,15 @@ pub trait IntegrationPort: Send + Sync {
         receipt.artifact.detach_standard()
     }
 
+    /// Withdraws what this harness was told about UZE itself rather than
+    /// about one package: the marketplaces UZE registered with it. Asked
+    /// only by a purge, once every receipt this harness holds has been
+    /// detached, so nothing installed through them is left to break.
+    /// Answers the registrations withdrawn; one already gone is not named.
+    fn withdraw_registrations(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
     /// Restores a receipt that has been inspected as `Missing`, but only for
     /// standard artifacts whose full desired state is carried by the receipt
     /// itself. Integrations must opt in explicitly for every other artifact:

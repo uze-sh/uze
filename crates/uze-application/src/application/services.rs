@@ -228,6 +228,7 @@ mod work;
 pub use artifacts::*;
 pub use checkouts::*;
 pub use declaration::*;
+pub(crate) use disk::measure;
 pub use disk::*;
 pub use overrides::*;
 pub use policy_commands::*;

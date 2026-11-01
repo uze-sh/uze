@@ -129,7 +129,7 @@ fn agents_checkouts(
 /// links are counted as themselves and never followed, and a checkout
 /// nested inside this one — a harness's own, kept under a slot — is left
 /// to its own row, so no byte is counted twice. `root` may be a file.
-pub(super) fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
+pub(crate) fn measure(root: &Path, others: &[PathBuf]) -> (u64, Option<SystemTime>) {
     let Ok(top) = std::fs::symlink_metadata(root) else {
         return (0, None);
     };
