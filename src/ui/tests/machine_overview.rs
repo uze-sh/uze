@@ -742,3 +742,18 @@ fn the_tokens_heading_names_its_unit_whole_beside_its_chevron() {
         "{drawn:#?}"
     );
 }
+
+#[test]
+fn a_description_reads_as_markdown_not_as_its_backticks() {
+    let mut model = model();
+    let mut overview = overview();
+    overview.resources[0].description = Some("Declares flags with `flag()` and ships.".into());
+    model.remembered.machine.overview = Some(overview);
+    on_resource(&mut model, ResourceKind::Skill, "git:commit");
+    let drawn = rows(&model);
+    assert!(drawn.iter().any(|row| row.contains("flag()")), "{drawn:#?}");
+    assert!(
+        !drawn.iter().any(|row| row.contains("`flag()`")),
+        "{drawn:#?}"
+    );
+}

@@ -928,11 +928,7 @@ fn render_panel(
     lines.push(Line::from(""));
     lines.push(Line::from(""));
     if let Some(description) = &detail.description {
-        lines.extend(
-            text::fold(description, room)
-                .into_iter()
-                .map(|row| Line::from(Span::styled(row, theme::fg(Token::TextTertiary)))),
-        );
+        lines.extend(description_rows(description, room));
         lines.push(Line::from(""));
         lines.push(Line::from(""));
     }
@@ -1206,6 +1202,38 @@ fn resource_detail(model: &TuiModel, resource: &OverviewResource) -> Detail {
         description: resource.description.clone(),
         fields,
     }
+}
+
+/// A description as the Marketplace's drawer draws one: Markdown, so a
+/// name in backticks reads as code rather than as its backticks.
+///
+/// Rendered once per text, theme and width rather than once per frame: the
+/// panel is redrawn on every key, pointer move and tick. One entry, because
+/// the panel shows one description.
+fn description_rows(description: &str, width: usize) -> Vec<Line<'static>> {
+    thread_local! {
+        static RENDERED: std::cell::RefCell<Option<(String, String, usize, Vec<Line<'static>>)>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    let theme = uze_theme::active().syntax_theme().to_owned();
+    RENDERED.with_borrow_mut(|cached| {
+        let current = cached
+            .as_ref()
+            .is_some_and(|(text, drawn_in, drawn_at, _)| {
+                text == description && *drawn_in == theme && *drawn_at == width
+            });
+        if !current {
+            let rows = uze_extensions::shared::markdown::render(description, &theme, width)
+                .iter()
+                .flat_map(|line| crate::ui::extension_view::prose_rows(line, width))
+                .collect();
+            *cached = Some((description.to_owned(), theme, width, rows));
+        }
+        cached
+            .as_ref()
+            .map(|(_, _, _, rows)| rows.clone())
+            .unwrap_or_default()
+    })
 }
 
 #[cfg(test)]
