@@ -170,7 +170,7 @@ Below it are three columns:
   always present, each with its count and a `!` mark for what in it is
   broken or duplicated;
 - the chosen section's table, with its own filter and the columns
-  `name · from · per session · uses · status`; `uses` is blank for hooks and
+  `name · from · tokens/session · uses · status`; `uses` is blank for hooks and
   rules, `?` where unknown, `~` before an estimate;
 - the fixed panel.
 

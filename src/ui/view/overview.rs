@@ -34,7 +34,8 @@ use super::FIELD_KEY_WIDTH;
 const NARROW: u16 = 64;
 const PAD: u16 = crate::ui::CONTENT_INSET_LEFT;
 const FROM_WIDTH: usize = 16;
-const TOKENS_WIDTH: usize = 15;
+/// Wide enough for its heading, `tokens/session`, and the chevron beside it.
+const TOKENS_WIDTH: usize = 17;
 const USES_WIDTH: usize = 8;
 const STATUS_GAP: &str = "  ";
 /// The status column: its gap, then its widest word (`! duplicate`), and

@@ -312,7 +312,7 @@ fn ten_harnesses_take_the_room_of_four() {
     let heading = |drawn: &[String]| {
         drawn
             .iter()
-            .find(|row| row.contains("name") && row.contains("per session"))
+            .find(|row| row.contains("name") && row.contains("tokens/session"))
             .cloned()
             .unwrap()
     };
@@ -478,7 +478,7 @@ fn the_column_ordered_by_carries_its_chevron() {
     let drawn = rows(&model);
     let heading = drawn
         .iter()
-        .find(|row| row.contains("name") && row.contains("per session"))
+        .find(|row| row.contains("name") && row.contains("tokens/session"))
         .unwrap();
     let ascending = crate::ui::theme::glyph(crate::ui::theme::Symbol::SortAscending);
     assert!(
@@ -496,7 +496,7 @@ fn an_empty_section_says_so_in_the_middle_of_its_room_with_no_headings() {
     assert!(
         !drawn
             .iter()
-            .any(|row| row.contains("per session") && row.contains("name")),
+            .any(|row| row.contains("tokens/session") && row.contains("name")),
         "nothing to head"
     );
     let at = drawn
@@ -540,7 +540,7 @@ fn each_skill_says_how_often_it_was_used_in_the_period() {
     let drawn = rows(&model);
     let header = drawn
         .iter()
-        .find(|row| row.contains("per session") && row.contains("status"))
+        .find(|row| row.contains("tokens/session") && row.contains("status"))
         .unwrap();
     assert!(header.contains("uses"), "{header}");
     let commit = drawn.iter().find(|row| row.contains("git:commit")).unwrap();
@@ -727,4 +727,18 @@ fn the_status_column_fits_its_widest_word_and_no_more() {
     // The cell's clear column, the row's trailing two, and the room before
     // the panel's divider: what every row ends with, and nothing more.
     assert!(table.len() - table.trim_end().len() <= 6, "{commit}");
+}
+
+#[test]
+fn the_tokens_heading_names_its_unit_whole_beside_its_chevron() {
+    let mut model = model();
+    click(&mut model, &Hit::MachineSort(Column::PerSession));
+    let drawn = rows(&model);
+    let chevron = crate::ui::theme::glyph(uze_theme::Symbol::SortDescending);
+    assert!(
+        drawn
+            .iter()
+            .any(|row| row.contains(&format!("tokens/session {chevron}"))),
+        "{drawn:#?}"
+    );
 }

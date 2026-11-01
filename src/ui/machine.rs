@@ -135,7 +135,7 @@ impl Column {
         match self {
             Self::Name => "name",
             Self::From => "from",
-            Self::PerSession => "per session",
+            Self::PerSession => "tokens/session",
             Self::Uses => "uses",
             Self::Status => "status",
         }
