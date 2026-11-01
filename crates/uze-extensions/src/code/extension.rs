@@ -14,20 +14,17 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::{
-    CATALOG, CodeHeld, CodeOutcome, CodePlace, CodeView, ContentMode, DiffAnswer, DiffRequest,
-    FileAnswer, FileRequest, Measure, RefreshedChanges, Timeline, fulfill, handle_command,
-    handle_hover, handle_mouse, handle_scroll, measure, scroll_to, text, timeline,
-    timeline_section, unanswered, view,
+    CATALOG, CodeHeld, CodeOutcome, CodePlace, CodeView, ContentMode, FileAnswer, FileRequest,
+    Measure, Timeline, fulfill, handle_command, handle_hover, handle_mouse, handle_scroll, measure,
+    scroll_to, text, timeline, timeline_section, unanswered, view,
 };
 use crate::contract::{
     Checkout, Entry, Extension, Job, Lanes, Opaque, Outcome, SurfaceInfo, SurfaceSlot,
 };
 use crate::view::{Command, Layout, ScrollDirection, ScrollTarget, Section, Size, View, ViewHit};
 
-/// The full-frame surface: the checkout's changes, files and map.
+/// The full-frame surface: the checkout's files and map.
 pub const SURFACE: &str = "code";
-/// The door that reviews: the changes, on their diff.
-pub const CHANGES: &str = "changes";
 /// The door that navigates: the tree, on a file's contents.
 pub const FILES: &str = "files";
 /// The sidebar's section: the recent history of the checkout in front.
@@ -56,16 +53,10 @@ pub struct FileRead {
     pub answer: FileAnswer,
 }
 
-/// The selection's diff, read alone because only the selection moved.
-pub struct DiffRead {
+/// The branch the open surface's checkout is on, for its caption.
+pub struct BranchRead {
     pub root: PathBuf,
-    pub answer: DiffAnswer,
-}
-
-/// The changes half, read again on its cadence.
-pub struct ChangesRead {
-    pub root: PathBuf,
-    pub refreshed: RefreshedChanges,
+    pub branch: String,
 }
 
 /// The checkout measured for the map; `None` outside a repository.
@@ -119,8 +110,8 @@ pub struct CodeExtension {
     awaiting: Awaiting,
     /// A read or write of a file is out: the next waits for it.
     file_pending: bool,
-    diff_pending: bool,
-    changes_pending: bool,
+    /// The branch of the open surface's checkout has been asked for.
+    branch_asked: Option<PathBuf>,
     /// The checkout the open surface last asked to have measured. A
     /// `git grep` over every file is not a read to repeat, and outside a
     /// repository the answer is nothing, which must not be asked again.
@@ -186,38 +177,30 @@ impl CodeExtension {
         }
     }
 
-    /// The selection's diff alone, the moment it moved.
-    fn diff_job(&mut self, jobs: &mut Vec<Job>) {
-        if self.diff_pending {
-            return;
-        }
-        let Some((root, request)) = self
-            .open
-            .as_ref()
-            .and_then(|view| Some((view.root().to_path_buf(), view.diff_request()?)))
-        else {
+    /// The branch the open surface's checkout is on, once per opening.
+    fn branch_job(&mut self, jobs: &mut Vec<Job>) {
+        let Some(root) = self.open.as_ref().map(|view| view.root().to_path_buf()) else {
             return;
         };
-        self.diff_pending = true;
-        jobs.push(diff_job(root, request));
-    }
-
-    /// The changes half again, on its own cadence. A moved selection is
-    /// the one-file read's, unless there is no list yet to find it in: the
-    /// first read is a whole one.
-    fn changes_job(&mut self, jobs: &mut Vec<Job>) {
-        if self.changes_pending {
+        if self.branch_asked.as_ref() == Some(&root) {
             return;
         }
-        let Some(view) = self.open.as_ref() else {
-            return;
-        };
-        let first = view.diff_pending() && view.diff_request().is_none();
-        if !first && !view.refresh_due() {
-            return;
-        }
-        self.changes_pending = true;
-        jobs.push(changes_job(view.root().to_path_buf(), view.placement()));
+        self.branch_asked = Some(root.clone());
+        let fallback_root = root.clone();
+        jobs.push(Job {
+            run: Box::new(move |host| {
+                Opaque::new(BranchRead {
+                    branch: crate::shared::checkout::branch_of(host, &root),
+                    root,
+                })
+            }),
+            fallback: Box::new(move || {
+                Opaque::new(BranchRead {
+                    root: fallback_root,
+                    branch: String::new(),
+                })
+            }),
+        });
     }
 
     /// The checkout's measurement, once per surface that shows the map
@@ -334,44 +317,6 @@ fn file_job(root: PathBuf, request: FileRequest) -> Job {
     }
 }
 
-fn diff_job(root: PathBuf, request: DiffRequest) -> Job {
-    let silence = DiffAnswer::failed(&request, "reading the diff failed".to_owned());
-    let fallback_root = root.clone();
-    Job {
-        run: Box::new(move |host| {
-            Opaque::new(DiffRead {
-                answer: CodeView::read_diff(host, &root, request),
-                root,
-            })
-        }),
-        fallback: Box::new(move || {
-            Opaque::new(DiffRead {
-                root: fallback_root,
-                answer: silence,
-            })
-        }),
-    }
-}
-
-fn changes_job(root: PathBuf, placement: super::ViewPlacement) -> Job {
-    let silence = RefreshedChanges::failed(placement.clone(), "reading the changes".to_owned());
-    let fallback_root = root.clone();
-    Job {
-        run: Box::new(move |host| {
-            Opaque::new(ChangesRead {
-                refreshed: CodeView::refresh(host, root.clone(), placement),
-                root,
-            })
-        }),
-        fallback: Box::new(move || {
-            Opaque::new(ChangesRead {
-                root: fallback_root,
-                refreshed: silence,
-            })
-        }),
-    }
-}
-
 fn history_job(focus: &Checkout) -> Job {
     let cwd = focus.root.clone();
     let target = focus.target.clone();
@@ -449,7 +394,6 @@ fn outcome(outcome: CodeOutcome) -> Outcome {
 /// The mode a door opens on.
 fn door_mode(door: &str) -> Option<ContentMode> {
     match door {
-        CHANGES => Some(ContentMode::Diff),
         FILES => Some(ContentMode::Contents),
         _ => None,
     }
@@ -615,8 +559,8 @@ impl Extension for CodeExtension {
                     Awaiting::Nothing,
                 )
             }
-            Some(Arrival::Return) => (ContentMode::Diff, None, Awaiting::Held),
-            None => (ContentMode::Diff, None, Awaiting::Place),
+            Some(Arrival::Return) => (ContentMode::Contents, None, Awaiting::Held),
+            None => (ContentMode::Contents, None, Awaiting::Place),
         };
         if let Some(mut view) = self.kept.remove(&checkout.root) {
             // Everything it held stands as it was left; a door still says
@@ -650,6 +594,9 @@ impl Extension for CodeExtension {
     }
 
     fn close(&mut self, surface: &str) {
+        if surface == SURFACE {
+            self.branch_asked = None;
+        }
         if surface == SURFACE
             && let Some(view) = self.open.take()
             && view.has_unsaved()
@@ -702,8 +649,7 @@ impl Extension for CodeExtension {
 
     fn jobs(&mut self) -> Vec<Job> {
         let mut jobs = Vec::new();
-        self.diff_job(&mut jobs);
-        self.changes_job(&mut jobs);
+        self.branch_job(&mut jobs);
         self.file_jobs(&mut jobs);
         self.measure_job(&mut jobs);
         self.history_job(&mut jobs);
@@ -719,21 +665,10 @@ impl Extension for CodeExtension {
             Ok(read) => return self.absorb_file(*read),
             Err(other) => other,
         };
-        let answer = match answer.downcast::<DiffRead>() {
+        let answer = match answer.downcast::<BranchRead>() {
             Ok(read) => {
-                self.diff_pending = false;
                 if let Some(view) = self.open.as_mut().filter(|view| view.root() == read.root) {
-                    view.absorb_diff(read.answer);
-                }
-                return Outcome::Stay;
-            }
-            Err(other) => other,
-        };
-        let answer = match answer.downcast::<ChangesRead>() {
-            Ok(read) => {
-                self.changes_pending = false;
-                if let Some(view) = self.open.as_mut().filter(|view| view.root() == read.root) {
-                    view.absorb_changes(read.refreshed);
+                    view.set_branch(read.branch);
                 }
                 return Outcome::Stay;
             }
