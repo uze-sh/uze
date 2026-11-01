@@ -677,17 +677,26 @@ impl Extension for ReviewExtension {
         let Some((root, sending)) = self.sending.take() else {
             return;
         };
-        let Some(view) = self.open.as_mut().filter(|view| view.root == root) else {
+        let open = self.open.as_mut().filter(|view| view.root == root);
+        if written == AgentWritten::Typed {
+            let sent = Change::Sent {
+                ids: sending.ids,
+                agent: sending.agent.clone(),
+            };
+            // Typed is typed: the drafts are sent whether or not the review
+            // still stands to show it.
+            match open {
+                Some(view) => view.change(sent),
+                None => self.waiting.push((root.clone(), vec![sent])),
+            }
+            self.working = Some((sending.agent, root));
+            return;
+        }
+        let Some(view) = open else {
             return;
         };
         match written {
-            AgentWritten::Typed => {
-                view.change(Change::Sent {
-                    ids: sending.ids,
-                    agent: sending.agent.clone(),
-                });
-                self.working = Some((sending.agent, root.clone()));
-            }
+            AgentWritten::Typed => {}
             AgentWritten::Refused(reason) => {
                 view.notice = Some(Span::new(format!("not sent: {reason}"), Role::Warning));
             }

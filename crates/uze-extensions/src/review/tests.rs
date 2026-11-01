@@ -546,3 +546,22 @@ fn the_working_mark_is_the_sent_checkouts_and_goes_with_its_agent() {
     extension.agents(&serde_json::json!([]));
     assert_ne!(badge(&extension), working, "an agent gone takes its mark");
 }
+
+#[test]
+fn a_send_typed_after_the_review_closed_still_sends_its_drafts() {
+    use crate::contract::{AgentWritten, Extension};
+    let mut extension = sending_extension();
+    extension.command(SURFACE, Command::Send, SPACE);
+    extension.close(SURFACE);
+    extension.agent_write("review-send", AgentWritten::Typed);
+    let host = Keeping(std::sync::Mutex::new(ReviewRecord::default()));
+    for _ in 0..2 {
+        for job in extension.jobs() {
+            let answer = (job.run)(&host);
+            extension.absorb(answer);
+        }
+    }
+    let kept = host.0.lock().unwrap();
+    assert_eq!(kept.comments[0].status, CommentStatus::Sent);
+    assert_eq!(kept.comments[0].agent.as_deref(), Some("a1"));
+}
