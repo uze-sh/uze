@@ -10,6 +10,10 @@ use crate::{
     store::PackageId,
 };
 
+mod owned;
+
+pub use owned::{Form, OwnedPath, Standing, Tier};
+
 /// The sole authority for UZE-owned filesystem locations.
 ///
 /// The CLI resolves `UZE_HOME` once through `from_env`. Tests and embedded

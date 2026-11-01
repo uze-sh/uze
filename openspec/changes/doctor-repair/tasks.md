@@ -1,6 +1,6 @@
 ## 1. The catalogue
 
-- [ ] 1.1 Make `UzeHome` enumerable: one list of owned paths, each with its tier (bytes, store, record, authored, generated, remembered). `every_path_uze_owns_is_named_in_the_map` reads this list.
+- [x] 1.1 Make `UzeHome` enumerable: one list of owned paths, each with its tier (bytes, store, record, authored, generated, remembered). `every_path_uze_owns_is_named_in_the_map` reads this list.
 - [ ] 1.2 Add the `HealthCheck` catalogue in `uze-application`, with the subjects, observations and lanes of design D2.
 - [ ] 1.3 Add `every_owned_path_has_a_health_check`, covering every `UzeHome` path, every `ManagedArtifact` kind and every vendor registration kind.
 - [ ] 1.4 Plain `doctor`, `doctor --repair` and the TUI read the catalogue. The automatic lane keeps exactly its ADR-037 subset. A finding whose lane is `--repair` shows `uze doctor --repair` as its action.

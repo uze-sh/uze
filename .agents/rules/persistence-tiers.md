@@ -8,7 +8,8 @@ deleting it costs**, never by which module wrote it:
 
 | tier | where | deleting it costs |
 |---|---|---|
-| bytes | `store/` | the packages, until they are acquired again |
+| bytes | `sources/` | the packages, until they are acquired again |
+| store | `store/` | what each harness reads: its plugins, until they are built again |
 | record | `state/` | the operator: nothing else knows it |
 | authored | the root: `config.toml`, `keys.json`, `theme-overrides.json`, `themes/` | the operator's own text |
 | generated | `runtime/`, `shims/` | nothing: it is produced again |
@@ -25,10 +26,11 @@ no shape either: they grow by additive keys, an unknown value reads as the
 default, and one that does not parse is reported and never written over.
 A new document declares its tier by where `UzeHome` puts it and, if it is a
 record, its shape and ladder by implementing `uze_document::Shaped`.
-**Every path UZE owns is named in `UzeHome`**:
+**Every path UZE owns is named in `UzeHome`**, and listed with its tier
+in `UzeHome::owned_paths()` (`machine/home/owned.rs`):
 `every_path_uze_owns_is_named_in_the_map` in
 `tests/architecture/layering.rs` fails the build over a path composed
-anywhere else. `uze-terminal` is the one sanctioned exception (the
+anywhere else, or a builder the list leaves out. `uze-terminal` is the one sanctioned exception (the
 `terminal-runtime` rule).
 
 Inside a repository's Git directory, named in the workspace's worktree
