@@ -183,3 +183,26 @@ fn the_bundled_plugin_is_delivered_with_receipts_and_remove_refuses_it() {
     );
     assert_eq!(ledger(), before, "nothing it delivered was taken off");
 }
+
+/// OpenCode's `uze.ts` is delivered by setup on no package's account, and
+/// owned by a receipt like everything else UZE delivers.
+#[test]
+fn opencodes_runtime_plugin_is_owned_by_a_receipt() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run_ok(uze_bin(), &["setup"]);
+    let text = std::fs::read_to_string(env.uze_home.join("state/attachments.json")).unwrap();
+    let ledger: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert!(
+        ledger["receipts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|receipt| {
+                receipt["integration"] == "opencode"
+                    && receipt["package_id"] == "setup"
+                    && receipt["artifact"]["INTEGRATION_OWNED"]["kind"] == "runtime-plugin"
+            }),
+        "{text}"
+    );
+}

@@ -217,3 +217,13 @@
 - decided:  `merge_event_entry` replaces an earlier version of a group where it stands and appends a new one after every group present, so an operator group placed first never moves. `codex::trust::shifted_by_removal` names each later handler Codex holds a trust record for; the Codex detach of a hook entry logs them as a warning and appends them to the detach inspection's reason. Shifted UZE hooks then show in "Waiting on you" through the existing held-back notes.
 - rejected: a new field on every removal report for one harness's consequence (CLI and TUI changes outside this group); re-sorting UZE's groups to the end on every merge (moves operator groups added after them).
 - blast:    `hooks/event_entry.rs`, `codex/trust.rs`, `codex.rs`.
+
+## D10 — Setup's own deliveries get receipts through one port method
+
+- status:   pending
+- task:     4.3
+- commit:
+- trigger:  `uze.ts` needs a receipt, and is written by OpenCode's `install`, which returns none; the rules engine's receipts already ride `attach_rules_engine`, but `uze.ts` carries more than rules.
+- decided:  `IntegrationPort::setup_artifacts()` (default empty) names what setup delivered on no package's account; setup records each under `state::SETUP_OWNER` with identity `setup:<selector>`, after the rules engine. OpenCode answers `uze.ts` (`IntegrationOwned { kind: "runtime-plugin" }`), inspected by its owned header and detached by removing the file. The rules engine's own lookups now take only `rules:` receipts.
+- rejected: folding `uze.ts` into the rules engine's receipts (removing the rules route would then remove the hooks and agent context the plugin also carries).
+- blast:    `integration.rs`, `opencode.rs`, `opencode/runtime_plugin.rs`, `rules_engine.rs`.

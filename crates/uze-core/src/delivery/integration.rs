@@ -1036,6 +1036,14 @@ pub trait IntegrationPort: Send + Sync {
         Ok(None)
     }
 
+    /// What machine setup has delivered to this harness on no package's
+    /// account, beyond the rules engine: one artifact each, which setup
+    /// records under `state::SETUP_OWNER` so an uninstall that purges finds
+    /// it by its receipt. Empty for a harness that has none.
+    fn setup_artifacts(&self) -> Vec<ManagedArtifact> {
+        Vec::new()
+    }
+
     /// Whether the person switched off, inside the harness itself, what this
     /// receipt delivered. Their choice, not a change to anything UZE wrote:
     /// the receipt still inspects as matched, and delivering the package

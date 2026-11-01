@@ -45,6 +45,9 @@ impl UzeApplication {
             }
             Ok(())
         });
+        if let Err(error) = self.record_setup_artifacts(integration) {
+            tracing::warn!(integration = integration.id(), %error, "setup's own delivery went unrecorded");
+        }
         RulesSetup {
             route,
             delivered: recorded.is_ok(),
@@ -87,7 +90,15 @@ impl UzeApplication {
 
     /// Every receipt machine setup holds for the rules engine.
     fn rules_receipts(&self) -> Result<Vec<AttachmentReceipt>> {
-        state::receipts(&self.home, Some(state::SETUP_OWNER))
+        Ok(state::receipts(&self.home, Some(state::SETUP_OWNER))?
+            .into_iter()
+            .filter(|receipt| {
+                receipt
+                    .resource_identity
+                    .as_deref()
+                    .is_none_or(|identity| identity.starts_with("rules:"))
+            })
+            .collect())
     }
 
     /// Whether setup delivered the rules engine to `integration`: a receipt
@@ -159,6 +170,30 @@ fn missing_dependency(
             delivered_to.join(", ")
         ),
     })
+}
+
+impl UzeApplication {
+    /// Records what setup delivered to `integration` on no package's
+    /// account beyond the rules engine (OpenCode's `uze.ts`), each under its
+    /// own receipt.
+    pub(crate) fn record_setup_artifacts(&self, integration: &dyn IntegrationPort) -> Result<()> {
+        for artifact in integration.setup_artifacts() {
+            let selector = match &artifact {
+                ManagedArtifact::IntegrationOwned { selector, .. } => selector.clone(),
+                _ => String::new(),
+            };
+            state::record_receipt(
+                &self.home,
+                AttachmentReceipt {
+                    package_id: state::SETUP_OWNER.to_owned(),
+                    resource_identity: Some(format!("setup:{selector}")),
+                    integration: integration.id().to_owned(),
+                    artifact,
+                },
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn rules_receipt(integration: &str, artifact: ManagedArtifact) -> AttachmentReceipt {

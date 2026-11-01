@@ -213,6 +213,18 @@ impl IntegrationPort for OpenCodeIntegration {
         crate::rules::adapted_route(hooks::RULES_REASON)
     }
 
+    /// `uze.ts`, once setup has written it: delivered on no package's
+    /// account, and owned by a receipt like anything else UZE delivers.
+    fn setup_artifacts(&self) -> Vec<ManagedArtifact> {
+        if self.plugin_state() == runtime_plugin::PluginState::Installed {
+            vec![runtime_plugin::artifact(&runtime_plugin::path(
+                self.config_root(),
+            ))]
+        } else {
+            Vec::new()
+        }
+    }
+
     /// The rules section rides UZE's plugin, so an operator's file at its
     /// path refuses the delivery rather than recording one nothing runs.
     fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
@@ -582,6 +594,9 @@ impl IntegrationPort for OpenCodeIntegration {
         if crate::shared::build::is_build(&receipt.artifact) {
             return crate::shared::build::inspect(receipt);
         }
+        if let Some(path) = runtime_plugin_path(&receipt.artifact) {
+            return runtime_plugin::inspect(&path);
+        }
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
             return self.inspect_hook_bridge(receipt, &self.hook_place(receipt, path));
         }
@@ -605,6 +620,9 @@ impl IntegrationPort for OpenCodeIntegration {
         if crate::shared::build::is_build(&receipt.artifact) {
             return crate::shared::build::detach(receipt);
         }
+        if let Some(path) = runtime_plugin_path(&receipt.artifact) {
+            return runtime_plugin::detach(&path);
+        }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
                 return self.detach_hook_bridge(receipt, &self.hook_place(receipt, path));
@@ -614,6 +632,16 @@ impl IntegrationPort for OpenCodeIntegration {
             });
         };
         mcp::detach_mcp_config(&self.config_path, &entry)
+    }
+}
+
+/// The file a runtime-plugin receipt records.
+fn runtime_plugin_path(artifact: &ManagedArtifact) -> Option<PathBuf> {
+    match artifact {
+        ManagedArtifact::IntegrationOwned { kind, detail, .. } if kind == runtime_plugin::KIND => {
+            detail.get("path")?.as_str().map(PathBuf::from)
+        }
+        _ => None,
     }
 }
 
