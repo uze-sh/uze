@@ -617,7 +617,10 @@ pub(super) fn render_line(
     wrapped: bool,
     light: LineLight,
 ) {
-    let number = light.number();
+    let number = match line.marked {
+        true => Token::TextBright,
+        false => light.number(),
+    };
     let (marker_style, background) = match line.tone {
         LineTone::Neutral => (theme::fg(Token::TextFaint), light.band().map(theme::color)),
         LineTone::Added => (
@@ -628,6 +631,12 @@ pub(super) fn render_line(
             theme::fg(Token::StateDanger),
             Some(theme::color(Token::StateDiffRemoved)),
         ),
+    };
+    // A marked run is the reader's own, and it reads over the diff's wash:
+    // the selection's ground, the sign keeping the change's hue.
+    let background = match line.marked {
+        true => Some(theme::color(Token::SurfaceSelected)),
+        false => background,
     };
     let mut content_spans: Vec<TextSpan<'static>> = line.spans.iter().map(styled).collect();
     if let Some(background) = background {

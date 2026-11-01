@@ -147,6 +147,7 @@ fn plain_line(text: String) -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -598,6 +599,7 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
                                     .collect()
                             })
                             .unwrap_or_else(|| vec![Span::new(text.clone(), Role::Default)]),
+                        marked: false,
                     },
                 )
             })

@@ -199,6 +199,7 @@ impl Canvas {
                 number: String::new(),
                 tone: LineTone::Neutral,
                 spans: self.spans(row, 0, self.width),
+                marked: false,
             })
             .collect()
     }

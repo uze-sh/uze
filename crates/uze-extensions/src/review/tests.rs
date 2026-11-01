@@ -290,3 +290,28 @@ fn the_filter_stays_on_offer_when_nothing_is_uncommitted() {
     handle_hit(&mut view, ViewHit::SelectSubject(0), SPACE);
     assert_eq!(view.filter, Filter::All);
 }
+
+#[test]
+fn marked_lines_say_so_whatever_their_tone() {
+    let mut view = reviewing();
+    view.focus = surface::Focus::Content;
+    handle_command(
+        &mut view,
+        Command::ExtendMark(crate::view::ScrollDirection::Down),
+        SPACE,
+    );
+    handle_command(
+        &mut view,
+        Command::ExtendMark(crate::view::ScrollDirection::Down),
+        SPACE,
+    );
+    let Content::Lines { lines, .. } = super::view(&view, SPACE).content else {
+        panic!("lines");
+    };
+    let marked: Vec<bool> = lines.iter().take(4).map(|line| line.marked).collect();
+    assert_eq!(
+        marked,
+        [true, true, true, false],
+        "a removal and an addition among them"
+    );
+}

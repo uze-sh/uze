@@ -1040,6 +1040,7 @@ fn wrapped(spans: &[Span], width: u16) -> Vec<Line<'static>> {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: spans.to_vec(),
+        marked: false,
     };
     prose_rows(&line, usize::from(width))
 }

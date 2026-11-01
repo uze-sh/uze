@@ -184,6 +184,7 @@ impl Document {
                     number: String::new(),
                     tone: LineTone::Neutral,
                     spans: vec![Span::new("─".repeat(48), Role::Faint)],
+                    marked: false,
                 });
                 self.lines.push(blank());
             }
@@ -346,6 +347,7 @@ impl Document {
                 number: String::new(),
                 tone: LineTone::Neutral,
                 spans,
+                marked: false,
             });
         }
     }
@@ -401,6 +403,7 @@ impl Document {
             number: String::new(),
             tone: LineTone::Neutral,
             spans,
+            marked: false,
         });
     }
 
@@ -552,6 +555,7 @@ impl Document {
                     number: String::new(),
                     tone: LineTone::Neutral,
                     spans,
+                    marked: false,
                 });
             }
         }
@@ -669,6 +673,7 @@ fn border(text: String) -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Faint)],
+        marked: false,
     }
 }
 
@@ -678,6 +683,7 @@ fn blank() -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: Vec::new(),
+        marked: false,
     }
 }
 

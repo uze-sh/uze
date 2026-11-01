@@ -1075,6 +1075,9 @@ pub struct ContentLine {
     pub number: String,
     pub tone: LineTone,
     pub spans: Vec<Span>,
+    /// Marked by the reader, as a run to act on: drawn on the selection's
+    /// ground, over whatever wash its tone has, with its number lit.
+    pub marked: bool,
 }
 
 impl ContentLine {

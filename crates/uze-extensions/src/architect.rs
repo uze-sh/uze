@@ -1281,6 +1281,7 @@ fn source_lines(source: &str, first: usize, count: usize) -> Vec<ContentLine> {
             number: (index + 1).to_string(),
             tone: LineTone::Neutral,
             spans: vec![Span::new(line, Role::Default)],
+            marked: false,
         })
         .collect()
 }

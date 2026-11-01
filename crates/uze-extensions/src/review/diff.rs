@@ -206,6 +206,7 @@ pub(crate) fn content_line(cell: &DiffCell) -> ContentLine {
                 italic: false,
             })
             .collect(),
+        marked: false,
     }
 }
 

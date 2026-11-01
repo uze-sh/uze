@@ -86,6 +86,7 @@ impl Building {
                 number: String::new(),
                 tone: LineTone::Neutral,
                 spans: self.spans,
+                marked: false,
             },
             acts: self.acts,
         }
@@ -332,11 +333,7 @@ pub(crate) fn lines(review: &ReviewView) -> Vec<Drawn> {
         }
         let in_mark = marked.is_some_and(|(from, to)| (from..=to).contains(&index));
         let at_cursor = review.focus == Focus::Content && index == review.cursor;
-        if in_mark || (at_cursor && marked.is_none()) {
-            for span in &mut content.spans {
-                span.ground = Some(Role::Bright);
-            }
-        }
+        content.marked = in_mark || (at_cursor && marked.is_none());
         drawn.push(Drawn {
             line: Line::Cell(index),
             content,

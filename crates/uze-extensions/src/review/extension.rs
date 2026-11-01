@@ -776,9 +776,15 @@ impl Extension for ReviewExtension {
         let totals = self.door.totals.filter(|totals| totals.files > 0);
         match totals {
             Some(totals) => {
-                spans.push(Span::new(format!("+{}", totals.additions), Role::Success));
+                spans.push(Span::new(
+                    format!("+{}", grouped(totals.additions)),
+                    Role::Success,
+                ));
                 spans.push(Span::new(" ", Role::Default));
-                spans.push(Span::new(format!("-{}", totals.deletions), Role::Danger));
+                spans.push(Span::new(
+                    format!("-{}", grouped(totals.deletions)),
+                    Role::Danger,
+                ));
             }
             None => spans.push(Span::new("review", Role::Muted)),
         }
@@ -791,5 +797,29 @@ impl Extension for ReviewExtension {
             spans.push(Span::new(format!(" ◆{answered}"), Role::Success));
         }
         Some(DoorBadge { spans, quiet })
+    }
+}
+
+/// `n` with its thousands set apart, so a large branch's count is read at
+/// a glance: `14,714`.
+fn grouped(n: u32) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_count_sets_its_thousands_apart() {
+        assert_eq!(super::grouped(672), "672");
+        assert_eq!(super::grouped(14_714), "14,714");
+        assert_eq!(super::grouped(1_000_000), "1,000,000");
     }
 }

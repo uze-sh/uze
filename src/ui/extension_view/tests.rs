@@ -403,6 +403,7 @@ fn sample() -> View {
                     bold: false,
                     italic: false,
                 }],
+                marked: false,
             }],
         },
         footer: vec![Command::Close],
@@ -797,6 +798,7 @@ fn the_navigation_is_the_bars_and_does_not_move_with_the_layout() {
                 number: "1".to_owned(),
                 tone: LineTone::Neutral,
                 spans: vec![Span::new("fn main() {}", Role::Default)],
+                marked: false,
             }],
             caret: None,
             editable: false,
@@ -1192,6 +1194,7 @@ fn a_board_click_resolves_in_the_space_the_frame_drew_in() {
                 number: String::new(),
                 tone: LineTone::Neutral,
                 spans: vec![Span::new("x".repeat(space.width as usize), Role::Default)],
+                marked: false,
             })
             .collect();
         let view = View {
@@ -1739,6 +1742,7 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
             bold: false,
             italic: false,
         }],
+        marked: false,
     };
 
     let mut view = sample();
@@ -1896,12 +1900,14 @@ fn unnumbered_lines_are_not_indented_by_an_empty_gutter() {
         number: "12".to_owned(),
         tone: LineTone::Added,
         spans: vec![Span::new("code", Role::Default)],
+        marked: false,
     }];
     let prose = [ContentLine {
         gutter: " ".to_owned(),
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new("a paragraph", Role::Default)],
+        marked: false,
     }];
 
     assert_eq!(gutter_width(&numbered), GUTTER_WIDTH);
@@ -2009,6 +2015,7 @@ fn prose_breaks_at_words_and_each_character_is_recorded_where_it_was_drawn() {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }];
 
     let (buffer, rendered) = drawn_rows(&view);
@@ -2036,6 +2043,7 @@ fn prose(text: &str) -> ContentLine {
         number: String::new(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -2217,6 +2225,7 @@ fn code_line(text: &str) -> ContentLine {
         number: "1".to_owned(),
         tone: LineTone::Neutral,
         spans: vec![Span::new(text, Role::Default)],
+        marked: false,
     }
 }
 
@@ -2379,6 +2388,7 @@ fn a_line_too_long_for_the_column_occupies_more_than_one_row() {
         number: "1".to_owned(),
         tone: LineTone::Neutral,
         spans: vec![Span::new("abcdefgh", Role::Default)],
+        marked: false,
     };
     assert_eq!(line_height(&line, GUTTER_WIDTH + 4, GUTTER_WIDTH), 2);
     assert_eq!(line_height(&line, GUTTER_WIDTH + 8, GUTTER_WIDTH), 1);
@@ -2907,6 +2917,7 @@ fn an_editable_line_is_banded_under_the_pointer_and_at_the_caret() {
             number: number.to_owned(),
             tone: LineTone::Neutral,
             spans: vec![Span::new(text, Role::Default)],
+            marked: false,
         };
         view.content = Content::Lines {
             first: 0,
@@ -3137,6 +3148,7 @@ fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
         number: number.to_owned(),
         tone: LineTone::Neutral,
         spans: Vec::new(),
+        marked: false,
     };
     assert_eq!(gutter_width(&[line("", "1"), line("", "26")]), 5);
     assert_eq!(
