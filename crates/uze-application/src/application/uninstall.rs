@@ -99,6 +99,10 @@ pub struct HarnessUninstall {
     /// registrations are left and never edited by hand.
     pub cli_present: bool,
     pub receipts: Vec<ReceiptUninstall>,
+    /// Its vendor stores a purge keeps, because something left reads them:
+    /// a registration never outlives the root it names, nor an entry the
+    /// build it runs.
+    pub keeps: Vec<PathBuf>,
 }
 
 /// One thing UZE delivered, as uninstall sees it.
@@ -345,8 +349,19 @@ impl UzeApplication {
                 report.removed.push(entry.path.clone());
             }
         }
+        let kept: Vec<PathBuf> = plan
+            .harnesses
+            .iter()
+            .flat_map(|harness| harness.keeps.iter().cloned())
+            .collect();
+        if plan.mode == UninstallMode::Purge && plan.home_present && !kept.is_empty() {
+            // What is left still reads these stores: everything else goes,
+            // and the home stays to hold them.
+            self.remove_all_but(&kept, &mut report)?;
+            report.kept.extend(kept.iter().cloned());
+        }
         drop(lock);
-        if plan.mode == UninstallMode::Purge && plan.home_present {
+        if plan.mode == UninstallMode::Purge && plan.home_present && kept.is_empty() {
             remove_path(&plan.home)?;
             report.removed.push(plan.home.clone());
             report.home_removed = true;
@@ -374,6 +389,7 @@ impl UzeApplication {
                         cli_present: mode == UninstallMode::Program
                             || integration.is_some_and(|integration| integration.detect().present),
                         receipts: Vec::new(),
+                        keeps: Vec::new(),
                     });
                     harnesses.len() - 1
                 }
@@ -382,7 +398,48 @@ impl UzeApplication {
             let planned = plan_receipt(mode, integration, harness, receipt);
             harness.receipts.push(planned);
         }
+        for harness in &mut harnesses {
+            harness.keeps = self.stores_kept_for(harness);
+        }
         harnesses
+    }
+
+    /// The vendor stores what `harness` leaves still reads: those its
+    /// receipts name, once any receipt left reads a build.
+    fn stores_kept_for(&self, harness: &HarnessUninstall) -> Vec<PathBuf> {
+        let reads_a_build = harness.receipts.iter().any(|receipt| {
+            receipt.fate == ReceiptFate::Leave && reads_builds(&receipt.receipt.artifact)
+        });
+        if !reads_a_build {
+            return Vec::new();
+        }
+        let named = serde_json::to_string(
+            &harness
+                .receipts
+                .iter()
+                .map(|receipt| &receipt.receipt)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+        let mut stores: Vec<PathBuf> = fs::read_dir(self.home.store_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|store| {
+                // Spelled as the ledger's JSON spells it, so a Windows
+                // path's separators compare as written there.
+                let spelled = serde_json::to_string(&store.to_string_lossy()).unwrap_or_default();
+                let spelled = spelled.trim_matches('"');
+                named.contains(&format!("{spelled}/")) || named.contains(&format!("{spelled}\\\\"))
+            })
+            .collect();
+        if stores.is_empty() {
+            // Nothing names one: every store is kept rather than guessed at.
+            stores.push(self.home.store_dir());
+        }
+        stores.sort();
+        stores
     }
 
     /// A purge's first step: per harness, every delivery that still matches
@@ -404,7 +461,9 @@ impl UzeApplication {
             // A reader that would not detach still reads what follows it:
             // a plugin its marketplace, any entry the builds it names.
             let mut plugin_kept = false;
-            let mut reader_kept = false;
+            let mut reader_failed = false;
+            // What the plan leaves reads the builds as well.
+            let mut reader_kept = !harness.keeps.is_empty();
             for receipt in order {
                 let reads = Reads::of(&receipt.receipt.artifact);
                 if !withdrawn && reads > Reads::Delivery {
@@ -440,13 +499,14 @@ impl UzeApplication {
                 failures.push(failure);
                 if reads != Reads::Material {
                     reader_kept = true;
+                    reader_failed = true;
                     plugin_kept |= installed_through_a_marketplace(&receipt.receipt.artifact);
                 }
             }
             if !withdrawn && !plugin_kept {
                 self.withdraw(integration, harness, report, &mut failures);
             }
-            if reader_kept {
+            if reader_failed {
                 failures.push(format!(
                     "what {} still reads of uze's is kept until that is removed",
                     harness.name
@@ -471,6 +531,7 @@ impl UzeApplication {
                 name: integration.display_name().to_owned(),
                 cli_present: true,
                 receipts: Vec::new(),
+                keeps: Vec::new(),
             };
             self.withdraw(integration.as_ref(), &harness, report, &mut failures);
         }
@@ -493,10 +554,10 @@ impl UzeApplication {
         failures: &mut Vec<String>,
     ) {
         if !harness.cli_present
-            || harness
-                .receipts
-                .iter()
-                .any(|receipt| receipt.fate == ReceiptFate::Leave)
+            || harness.receipts.iter().any(|receipt| {
+                receipt.fate == ReceiptFate::Leave
+                    && installed_through_a_marketplace(&receipt.receipt.artifact)
+            })
         {
             return;
         }
@@ -506,6 +567,27 @@ impl UzeApplication {
                 .extend(names.into_iter().map(|name| (harness.name.clone(), name))),
             Err(error) => failures.push(format!("{}: {error}", harness.name)),
         }
+    }
+
+    /// Removes every entry of the home but `kept` and the directories
+    /// that hold them.
+    fn remove_all_but(&self, kept: &[PathBuf], report: &mut UninstallReport) -> Result<()> {
+        let mut pending = vec![self.home.root().to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in fs::read_dir(&directory).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if kept.contains(&path) {
+                    continue;
+                }
+                if kept.iter().any(|keep| keep.starts_with(&path)) {
+                    pending.push(path);
+                    continue;
+                }
+                remove_path(&path)?;
+                report.removed.push(path);
+            }
+        }
+        Ok(())
     }
 
     fn home_entries(&self, mode: UninstallMode) -> Vec<HomeEntry> {
@@ -693,6 +775,23 @@ fn installed_through_a_marketplace(artifact: &ManagedArtifact) -> bool {
         artifact,
         ManagedArtifact::IntegrationOwned { kind, .. } if kind != "build" && kind != "rules-engine"
     )
+}
+
+/// Whether `artifact`, left where it is, still reads a build in its
+/// harness's vendor store: a plugin installed from it, an entry or hook
+/// that runs from it, or the build itself. A copy in a discovery root
+/// reads nothing there.
+fn reads_builds(artifact: &ManagedArtifact) -> bool {
+    match artifact {
+        ManagedArtifact::IntegrationOwned { .. }
+        | ManagedArtifact::VendorConfigEntry { .. }
+        | ManagedArtifact::ManagedTextRegion { .. }
+        | ManagedArtifact::ManagedHookFile { .. }
+        | ManagedArtifact::HookConfigEntry { .. } => true,
+        ManagedArtifact::SymlinkReference { .. }
+        | ManagedArtifact::GeneratedFile { .. }
+        | ManagedArtifact::GeneratedTree { .. } => false,
+    }
 }
 
 fn plan_receipt(

@@ -208,6 +208,16 @@ pub(crate) fn render_plan(plan: &UninstallPlan) -> String {
             ]
         })
         .collect();
+    let mut keep: Vec<Vec<String>> = keep;
+    for harness in &plan.harnesses {
+        for store in &harness.keeps {
+            keep.push(vec![
+                progress::path(store),
+                progress::label(format!("what is left on {} still reads it", harness.name)),
+                String::new(),
+            ]);
+        }
+    }
     section(&mut text, "Keep", keep);
     if plan.mode == UninstallMode::Purge {
         let agents = plan
@@ -372,6 +382,19 @@ pub(crate) fn render_report(report: &UninstallReport) -> String {
             subject,
             Some(&format!("left on {harness}: {reason}")),
         ));
+    }
+    if report.mode == UninstallMode::Purge {
+        for path in report
+            .kept
+            .iter()
+            .filter(|path| path.starts_with(&report.home))
+        {
+            lines.push_str(&progress::change(
+                progress::Change::Attention,
+                &progress::path(path),
+                Some("kept: what is left still reads it"),
+            ));
+        }
     }
     for step in &report.manual {
         lines.push_str(&progress::change(

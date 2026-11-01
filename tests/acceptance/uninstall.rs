@@ -506,6 +506,67 @@ fn a_purge_leaves_an_edited_skill_and_lists_it() {
     assert!(vendor_state(&env, "claude").0.trim().is_empty());
 }
 
+/// Every marketplace a fake vendor CLI lists whose root is gone: a
+/// registration that outlived what it names.
+fn dangling_registrations(env: &TestEnvironment) -> Vec<(String, String, String)> {
+    ["claude", "codex", "agy", "opencode"]
+        .into_iter()
+        .flat_map(|vendor| {
+            registered(env, vendor)
+                .into_iter()
+                .map(move |(name, root)| (vendor.to_owned(), name, root))
+        })
+        .filter(|(_, _, root)| !Path::new(root).exists())
+        .collect()
+}
+
+#[test]
+fn a_purge_that_leaves_an_edited_skill_leaves_no_registration_behind_its_root() {
+    let env = delivered();
+    let edited = a_delivered_skill_copy(&env).expect("a skill was copied into a harness");
+    fs::write(edited.join("SKILL.md"), "edited by hand\n").unwrap();
+
+    let output = uninstall(&env, &["--yes", "--purge"]);
+
+    assert!(output.status.success(), "{}", said(&output));
+    let dangling = dangling_registrations(&env);
+    assert!(dangling.is_empty(), "{dangling:?}: {}", said(&output));
+}
+
+/// A build edited by hand is left, and so is the store that holds it,
+/// named in the plan and the report; no registration names a root that
+/// is gone.
+#[test]
+fn a_purge_keeps_an_edited_build_and_the_store_that_holds_it() {
+    let env = delivered();
+    let build = env.uze_home.join("store/claude/store-tie@test");
+    let edited = fs::read_dir(build.join("skills"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path().join("SKILL.md"))
+        .find(|path| path.is_file())
+        .expect("the build carries a skill");
+    fs::write(&edited, "edited by hand\n").unwrap();
+
+    let output = uninstall(&env, &["--yes", "--purge"]);
+
+    assert!(output.status.success(), "{}", said(&output));
+    assert_eq!(fs::read_to_string(&edited).unwrap(), "edited by hand\n");
+    let store = env.uze_home.join("store/claude");
+    assert!(
+        said(&output).contains(&store.display().to_string()),
+        "{}",
+        said(&output)
+    );
+    let dangling = dangling_registrations(&env);
+    assert!(dangling.is_empty(), "{dangling:?}: {}", said(&output));
+    assert!(
+        !env.uze_home.join("sources").exists() && !env.uze_home.join("state").exists(),
+        "the rest of the home was kept: {:?}",
+        home_entries(&env)
+    );
+}
+
 #[test]
 fn a_purge_interrupted_on_opencode_leaves_it_whole_or_without_uze_ts() {
     let env = delivered();
