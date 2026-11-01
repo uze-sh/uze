@@ -51,10 +51,12 @@ fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
 /// which says where the file is and nothing about what runs it.
 #[test]
 fn nothing_in_a_delivered_template_names_the_packager() {
+    // The templates name the engine with `/` on every platform.
     let engine_path = crate::opencode::RULES
         .engine_path(&golden_home())
         .display()
-        .to_string();
+        .to_string()
+        .replace('\\', "/");
     for (what, source) in [
         ("engine", engine::SOURCE.to_owned()),
         ("plugin", golden_plugin().replace(&engine_path, "<engine>")),
