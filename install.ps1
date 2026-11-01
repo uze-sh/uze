@@ -162,13 +162,34 @@ public static extern IntPtr SendMessageTimeout(
             $ErrorActionPreference = 'Stop'
             if ($code -ne 0) { throw "uze uninstall did not finish (exit $code)" }
         } else {
+            # The receipt names the file this installer placed, which may sit
+            # elsewhere than the directory asked about now: that uze does the
+            # work, and the receipt goes only once the binary it names is gone.
+            $recorded = $null
             if (Test-Path -LiteralPath $receipt) {
-                Step 'Removing the install record' "Removed $receipt" {
-                    Remove-Item -LiteralPath $receipt -Force
+                try {
+                    $recorded = (Get-Content -Raw -LiteralPath $receipt -ErrorAction Stop | ConvertFrom-Json).binary
+                } catch {
+                    Write-Verbose "the install record could not be read: $_"
                 }
             }
-            Warn "no uze at $binary, so what it delivered is still in place"
-            Note 'to remove every trace, install uze again, then run: uze uninstall --purge'
+            if ($recorded -and (Test-Path -LiteralPath $recorded -PathType Leaf)) {
+                $arguments = @('uninstall', '--yes')
+                if ($Purge) { $arguments += '--purge' }
+                $ErrorActionPreference = 'Continue'
+                & $recorded @arguments
+                $code = $LASTEXITCODE
+                $ErrorActionPreference = 'Stop'
+                if ($code -ne 0) { throw "uze uninstall did not finish (exit $code)" }
+            } else {
+                if (Test-Path -LiteralPath $receipt) {
+                    Step 'Removing the install record' "Removed $receipt" {
+                        Remove-Item -LiteralPath $receipt -Force
+                    }
+                }
+                Warn "no uze at $binary, so what it delivered is still in place"
+                Note 'to remove every trace, install uze again, then run: uze uninstall --purge'
+            }
         }
         # The Path entry is this installer's own, whoever took the binary.
         $userPath = Get-UserPath

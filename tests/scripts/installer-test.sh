@@ -445,6 +445,20 @@ check "uninstall without the binary succeeds" $?
 check "and removes only the install record" $?
 grep -q "uze uninstall --purge" "$work/out-gone.log"
 check "and says how to remove every trace" $?
+# A receipt naming a binary elsewhere than the directory asked about: that
+# binary does the work, and the receipt stays for it.
+mkdir -p "$work/home-moved/state" "$work/bin-moved" "$work/bin-elsewhere"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"%s"\n' "$work/moved-args" >"$work/bin-elsewhere/uze"
+chmod +x "$work/bin-elsewhere/uze"
+printf '{\n  "binary": "%s",\n  "version": "1.0.0"\n}\n' "$work/bin-elsewhere/uze" \
+  >"$work/home-moved/state/install.json"
+env UZE_BIN_DIR="$work/bin-moved" UZE_HOME="$work/home-moved" sh "$keyed" --uninstall --purge >"$work/out-moved.log" 2>&1
+check "uninstall with the recorded binary elsewhere succeeds" $?
+grep -qx "uninstall --yes --purge" "$work/moved-args"
+check "and runs the binary the receipt names" $?
+[ -f "$work/home-moved/state/install.json" ]
+check "and keeps the receipt for it" $?
+
 if env UZE_BIN_DIR="$work/bin-gone" sh "$keyed" --purge >"$work/out-purge-alone.log" 2>&1; then
   check "--purge alone is refused" 1
 else

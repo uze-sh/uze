@@ -269,6 +269,15 @@ Describe 'install.ps1' {
         $home_ | Should -Exist -Because 'the stand-in removed nothing, and the script deletes no state'
     }
 
+    It 'uninstalls through the binary its record names when it sits elsewhere, keeping the record' {
+        (Invoke-Installer).Code | Should -Be 0
+        $elsewhere = Join-Path $root ("bin-elsewhere-" + [Guid]::NewGuid().ToString('N'))
+        $run = Invoke-Installer -Arguments @('-Uninstall', '-Purge') -Environment @{ UZE_BIN_DIR = $elsewhere }
+        $run.Code | Should -Be 0 -Because $run.Output
+        Get-Content -Raw (Join-Path $home_ 'uninstall-args.txt') | Should -Be 'uninstall --yes --purge'
+        Join-Path $home_ 'state\install.json' | Should -Exist
+    }
+
     It 'without the binary removes only its own record, and says how to remove the rest' {
         (Invoke-Installer).Code | Should -Be 0
         Remove-Item -LiteralPath (Join-Path $bin 'uze.exe') -Force

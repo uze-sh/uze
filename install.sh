@@ -222,6 +222,17 @@ if [ "$uninstall" = 1 ]; then
     exec "$binary" uninstall --yes
   fi
   if resolve_receipt_home && [ -f "${receipt_home}/state/install.json" ]; then
+    # The receipt names the file this installer placed, which may sit
+    # elsewhere than the directory asked about now: that uze does the work,
+    # and the receipt goes only once the binary it names is gone.
+    recorded="$(sed -n 's/^[[:space:]]*"binary"[[:space:]]*:[[:space:]]*"\(.*\)",\{0,1\}[[:space:]]*$/\1/p' \
+      "${receipt_home}/state/install.json" | head -n 1)"
+    if [ -n "$recorded" ] && [ -x "$recorded" ]; then
+      if [ "$purge" = 1 ]; then
+        exec "$recorded" uninstall --yes --purge
+      fi
+      exec "$recorded" uninstall --yes
+    fi
     rm -f "${receipt_home}/state/install.json"
     ok "Removed the install record"
   fi
