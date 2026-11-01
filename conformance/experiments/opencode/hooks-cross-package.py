@@ -30,7 +30,8 @@ from shared import common
 
 MARK = "UZE_XP_PROBE"
 LOG = "/work/observed.log"
-DOCUMENTS = "/work/home/.uze/runtime/attachments/opencode/hook-groups"
+STORE = "/work/home/.uze/store/opencode"
+DOCUMENT = "hooks/uze-groups.json"
 
 GIT = (
     "git -c init.defaultBranch=main -c user.name=lab -c user.email=lab@uze.invalid "
@@ -120,7 +121,7 @@ sleep 2
 timeout 180 opencode run "UZE_XP_TURN_B shell please"
 uze remove nn-late -m >/dev/null 2>&1
 echo C > /work/phase
-printf '{{' > {DOCUMENTS}/zz-observe@xp.json
+printf '{{' > {STORE}/zz-observe@xp/{DOCUMENT}
 sleep 2
 timeout 180 opencode run "UZE_XP_TURN_C shell please"
 opencode service stop >/dev/null 2>&1
@@ -201,6 +202,6 @@ def run(cfg, prov_ip):
     )
     common.check(
         "unreadable-document-refuses-the-call",
-        answered("UZE_XP_TURN_C", "zz-observe@xp.json cannot be read"),
+        answered("UZE_XP_TURN_C", f"zz-observe@xp/{DOCUMENT} cannot be read"),
         "the call after the corruption is refused, naming the document",
     )
