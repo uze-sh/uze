@@ -18,5 +18,6 @@ mod portable_commands;
 mod project_rules;
 mod runtime_shim;
 mod session_continuity;
+mod store_ownership;
 mod util;
 mod workspace_health;

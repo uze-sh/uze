@@ -1,4 +1,4 @@
-## 1. Evidence first (MR1)
+## 1. Evidence first
 
 - [ ] 1.1 Make the 2026-11-01 sandbox measurements re-runnable as `conformance/experiments/{claude,codex,antigravity}/source-tie.py` (design.md, Context):
   - Claude loads in place, and a same-name `add` repoints it.
@@ -6,9 +6,9 @@
   - `codex plugin add` over an installed plugin refreshes its cache.
   - `file://` is refused on both.
 - [ ] 1.2 Record each fact from 1.1, and Codex's command-and-index-keyed hook trust (`codex/trust.rs`), as a `HarnessFact` with the version it was measured on.
-- [ ] 1.3 Write `tests/integrations/vendor_neutral.rs::no_harness_artifact_names_outside_its_store`. After the canonical fixtures are installed, it walks every configuration and discovery file under the fake home, not transcripts. It must be red on the current code.
+- [x] 1.3 Write `tests/integrations/vendor_neutral.rs::no_harness_artifact_names_outside_its_store`. After the canonical fixtures are installed, it walks every configuration and discovery file under the fake home, not transcripts. It must be red on the current code.
 
-## 2. Tiers, layout and the fenced move (MR1)
+## 2. Tiers, layout and the fenced move
 
 - [ ] 2.1 `UzeHome`:
   - `sources_dir()` and `sources/superseded/`;
@@ -28,7 +28,7 @@
 - [ ] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
 - [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build receipt), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
-## 3. Builds and publication (MR2)
+## 3. Builds and publication
 
 - [ ] 3.1 The Codex and Antigravity builds mirror the whole package through `shared::tree`, with the exclusions Claude's build uses.
 - [ ] 3.2 `shared::package_root` resolves `${PLUGIN_ROOT}` to the build directory on every route and file kind of a harness.
@@ -56,7 +56,7 @@
   - an edited file is `Drifted` and is kept on update;
   - a UZE upgrade re-renders.
 
-## 4. Hooks, rules, OpenCode, the bundled plugin (MR2)
+## 4. Hooks, rules, OpenCode, the bundled plugin
 
 - [ ] 4.1 Hook wrapper (`uze-exec`, `uze-exec.ps1`) goes inside every build that has hooks, at the reserved `hooks/uze-exec`. Ingest refuses a package with a file at that path. Each entry names its own build's wrapper. Order the build before its entries on attach, and the reverse on detach. `materialize_wrapper`/`prune_shared_wrapper` and the "last entry" logic go.
 - [ ] 4.2 Rules engine: becomes a real file of `plugins/uze`, rendered into its build. The `SETUP_OWNER` entries name it there. Rule sessions stay in `runtime/rules/sessions` as the declared on-demand scratch exception.
@@ -70,7 +70,7 @@
 - [ ] 4.8 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
 - [ ] 4.9 `no_harness_artifact_names_outside_its_store` (1.3) is green.
 
-## 5. `uze uninstall` (MR3)
+## 5. `uze uninstall`
 
 - [ ] 5.1 Skip bootstrap, like `upgrade` in `src/main.rs`. Refuse inside a workspace pane and while agents, clients, the terminal runtime with panes, or a background upgrade are alive.
 - [ ] 5.2 Add `UzeApplication::uninstall_plan(purge)`, the read model of design D6. Run interactively without flags, it asks which mode.
@@ -91,7 +91,7 @@
   - a workspace launch puts its `$UZE_HOME` context only in the process's arguments or environment;
   - deleting one vendor store stops that harness's plugins until the next delivery.
 
-## 5b. Retiring `uze-local` (MR2)
+## 5b. Retiring `uze-local`
 
 - [ ] 5b.1 `uze-local` retirement (design D5 step 3.2):
   - `receipt_serves` matches `uze-store` by name;
@@ -102,7 +102,7 @@
   Add tests for each case, and a changelog line saying enablement is not carried.
 - [ ] 5b.2 Turn the 2026-11-01 measurement that mixes origins in one marketplace into `conformance/experiments/{claude,codex}/marketplace-merge.py`, and record it as a `HarnessFact`.
 
-## 6. Conformance (each check ships with the MR it proves)
+## 6. Conformance
 
 - [ ] 6.1 Contract check, every vertical: with `runtime/` and `cache/` moved away, plugins list and load, a deny hook denies, and an `always_on` rule reaches the session.
 - [ ] 6.2 The same contract check with `sources/` moved away.
@@ -110,7 +110,7 @@
 - [ ] 6.4 Contract check, every vertical: after `uze uninstall --yes --purge`, no configuration or discovery file names `$UZE_HOME`, and no vendor registry lists a UZE entry.
 - [ ] 6.5 Contract check: an install made by the previous release keeps every plugin installed and enabled once upgraded and installed again.
 
-## 7. Docs and diagrams (with each MR)
+## 7. Docs and diagrams
 
 - [ ] 7.1 Update `docs/architecture/containers.mmd`, `core-components.mmd`, `install-pipeline.mmd`, `install-sequence.mmd` and `attachment-lifecycle.mmd`:
   - harnesses read `store/<vendor>`;
