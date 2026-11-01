@@ -595,6 +595,7 @@ fn contents_content(code: &CodeView, space: Size) -> Content {
                                         ground: None,
                                         bold: false,
                                         italic: false,
+                                        pressable: false,
                                     })
                                     .collect()
                             })

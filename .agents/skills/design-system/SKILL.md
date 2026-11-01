@@ -178,7 +178,10 @@ on "cancel" must not save first.
 - A comment stands under the lines it is about, set in from the edge,
   never in a box the extension draws: its first line says where and what
   state (`◆ L52–56 · draft`), with its actions as words on that line
-  (`edit`, `delete`, `resolve`). A fenced block in it is drawn as code,
+  (`edit`, `delete`, `resolve`). Words of a line that act are
+  `Span::pressable`: the host makes each a target of its own and lifts it
+  under the pointer in its own hue (`ViewHit::Press`), never text a press
+  happens to land on, which has no hover. A fenced block in it is drawn as code,
   coloured as the file is, on a faint ground; a backticked span in the
   badge hue.
 - The composer is the comment's place, typed into in the design system's

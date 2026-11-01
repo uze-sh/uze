@@ -215,6 +215,22 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
                 view.mark_cell(cell, extend);
             }
         }
+        ViewHit::Press { line, span } => {
+            // The span's words are an act's: where they start is where
+            // the line's acts are told apart.
+            let cell = render::lines(view)
+                .get(line)
+                .map(|drawn| {
+                    drawn.content.spans[..span.min(drawn.content.spans.len())]
+                        .iter()
+                        .map(|span| unicode_width::UnicodeWidthStr::width(span.text.as_str()))
+                        .sum()
+                })
+                .unwrap_or(0);
+            if let (_, Some(act)) = render::act_at(view, line, cell) {
+                perform(view, act, space);
+            }
+        }
         ViewHit::PlaceCaret { line, cell } => {
             let (what, act) = render::act_at(view, line, cell);
             match (what, act) {

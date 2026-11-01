@@ -402,6 +402,7 @@ fn sample() -> View {
                     ground: None,
                     bold: false,
                     italic: false,
+                    pressable: false,
                 }],
                 marked: false,
             }],
@@ -1741,6 +1742,7 @@ fn unnumbered_content_is_inset_where_numbered_content_leans_on_its_gutter() {
             ground: None,
             bold: false,
             italic: false,
+            pressable: false,
         }],
         marked: false,
     };
@@ -3208,5 +3210,78 @@ fn a_marked_line_wears_the_comment_gold_over_the_diffs_wash() {
     assert_eq!(
         drawn_with_caret(&line, 20, 99)[at].bg,
         theme::color(Token::StateDiffMarked)
+    );
+}
+
+/// Words a line declares pressable are a target of their own, ahead of
+/// the text's, and lift under the pointer in their own hue, as a button
+/// does; the words beside them stay as they were.
+#[test]
+fn a_pressable_span_is_its_own_target_and_lifts_under_the_pointer() {
+    let mut view = sample();
+    let Content::Lines { lines, .. } = &mut view.content else {
+        unreachable!("the sample is lines")
+    };
+    lines.push(ContentLine {
+        gutter: String::new(),
+        number: String::new(),
+        tone: LineTone::Neutral,
+        spans: vec![
+            Span::new("draft  ", Role::Muted),
+            Span::new("delete", Role::Faint).pressable(),
+        ],
+        marked: false,
+    });
+    let draw = |sliding: Option<(ViewHit, usize)>| {
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| {
+                render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    };
+    let pressed = ViewHit::Press { line: 1, span: 1 };
+    let (rest, hits) = draw(None);
+    let (rect, _) = *hits
+        .iter()
+        .find(|(_, hit)| *hit == pressed)
+        .expect("the pressable words are a target");
+    let first_match = hits
+        .iter()
+        .find(|(area, _)| area.contains((rect.x, rect.y).into()))
+        .map(|(_, hit)| *hit);
+    assert_eq!(first_match, Some(pressed), "ahead of the line's text");
+    let (hovered, _) = draw(Some((pressed, 0)));
+    let at = (rect.x, rect.y);
+    assert_eq!(hovered[at].symbol(), "d");
+    assert_eq!(
+        hovered[at].fg,
+        theme::lifted_ink(rest[at].fg),
+        "lifted in its own hue"
+    );
+    assert_eq!(hovered[at].modifier, rest[at].modifier, "the weight kept");
+    let before = (rect.x - 2, rect.y);
+    assert_eq!(
+        hovered[before].fg, rest[before].fg,
+        "the words beside it stay"
     );
 }

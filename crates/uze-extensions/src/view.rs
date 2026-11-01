@@ -92,6 +92,11 @@ pub struct Span {
     /// difference: `*this*` and `**this**` mean different things and must
     /// look different, whatever the palette says.
     pub italic: bool,
+    /// A press on it acts, as a button's does: in a [`ContentLine`], the
+    /// host makes it a target of its own ([`ViewHit::Press`]) and lifts it
+    /// under the pointer. Words of a line that act (a comment's `edit`)
+    /// are this, never text a press happens to land on.
+    pub pressable: bool,
 }
 
 impl Span {
@@ -106,6 +111,7 @@ impl Span {
             ground: None,
             bold: false,
             italic: false,
+            pressable: false,
         }
     }
 
@@ -123,6 +129,12 @@ impl Span {
 
     pub fn italic(mut self) -> Self {
         self.italic = true;
+        self
+    }
+
+    /// See [`Span::pressable`].
+    pub fn pressable(mut self) -> Self {
+        self.pressable = true;
         self
     }
 
@@ -1245,6 +1257,12 @@ pub enum ViewHit {
     LineNumber {
         line: usize,
         extend: bool,
+    },
+    /// A [`Span::pressable`] span of a content line, pressed: by the
+    /// line's index and the span's, in the order the extension gave them.
+    Press {
+        line: usize,
+        span: usize,
     },
     /// A [`Content::Tree`] node, acted on — by the node's own id.
     Node {

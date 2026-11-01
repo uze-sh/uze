@@ -25,6 +25,9 @@ pub(super) struct Lines<'a> {
     /// The line under the pointer, when a click there would place a
     /// caret: its number is lit, the hover of a line that answers one.
     pub(super) pointed: Option<usize>,
+    /// The pressable span under the pointer, by line and span: lifted, as
+    /// a button is.
+    pub(super) pressing: Option<(usize, usize)>,
     pub(super) medium: Medium,
     pub(super) selection: Option<&'a TextSelection>,
     pub(super) modes: &'a [Mode],
@@ -44,6 +47,7 @@ pub(super) fn render_lines(
         total,
         caret,
         pointed,
+        pressing,
         medium,
         selection,
         modes,
@@ -142,6 +146,15 @@ pub(super) fn render_lines(
             }
             drawn.extend(rows);
         }
+        // Words that act are targets of their own, ahead of the text's
+        // hit, which the first match wins over: a press on them acts and
+        // never starts a selection.
+        for (span, cells) in pressable_cells(line, row, gutter, text_width) {
+            if pressing == Some((offset, span)) {
+                lift_cells(frame, cells);
+            }
+            hits.push((cells, ViewHit::Press { line: offset, span }));
+        }
         // The number is about the line rather than its text: a press on
         // it marks the line, where one on the text would select text. Ahead
         // of the text's own hit, which the first match wins over.
@@ -178,6 +191,43 @@ pub(super) fn render_lines(
     let at_end = at_end && first + lines.len() >= total;
     let bar = render_scrollbar(frame, bar, scroll, hits, ViewHit::DragContentScrollbar);
     (bar, at_end, drawn)
+}
+
+/// Where each pressable span of `line` stands on its first row, by its
+/// index among the line's spans. A span that would run past the first row
+/// is not offered there: the pressable words of a line are its few
+/// actions, drawn where they fit.
+fn pressable_cells(
+    line: &ContentLine,
+    row: Rect,
+    gutter: u16,
+    text_width: usize,
+) -> Vec<(usize, Rect)> {
+    use unicode_width::UnicodeWidthStr as _;
+    let mut at = 0usize;
+    let mut cells = Vec::new();
+    for (index, span) in line.spans.iter().enumerate() {
+        let width = span.text.width();
+        if span.pressable && width > 0 && at + width <= text_width {
+            let x = row.x.saturating_add(gutter).saturating_add(at as u16);
+            cells.push((index, Rect::new(x, row.y, width as u16, 1)));
+        }
+        at += width;
+    }
+    cells
+}
+
+/// Draws the cells of `area` again in their own ink lifted, the hover of
+/// words that act: colour only, the weight kept.
+fn lift_cells(frame: &mut ratatui::Frame<'_>, area: Rect) {
+    let buffer = frame.buffer_mut();
+    let area = area.intersection(buffer.area);
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let cell = &mut buffer[(x, y)];
+            cell.fg = theme::lifted_ink(cell.fg);
+        }
+    }
 }
 
 // What an empty surface says is the widget vocabulary's, shared with the

@@ -73,7 +73,7 @@ impl Building {
 
     fn act(self, words: &str, act: Act, role: Role) -> Self {
         let start = self.width;
-        let mut built = self.push(Span::new(words, role));
+        let mut built = self.push(Span::new(words, role).pressable());
         built.acts.push((start..built.width, act));
         built
     }

@@ -916,3 +916,43 @@ fn a_record_read_while_a_write_is_out_keeps_what_it_writes() {
         "and once only"
     );
 }
+
+/// A draft's `edit` and `delete` are words that act: pressable, so the
+/// host lifts them under the pointer, and a press on `delete` deletes.
+#[test]
+fn a_drafts_actions_are_pressed_as_buttons_are() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    handle_command(&mut view, Command::Type('x'), SPACE);
+    handle_command(&mut view, Command::AddComment, SPACE);
+    let drawn = render::lines(&view);
+    let (line, head) = drawn
+        .iter()
+        .enumerate()
+        .find(|(_, drawn)| matches!(drawn.line, surface::Line::CardHeader(_)))
+        .expect("the draft stands under its lines");
+    let pressable: Vec<&str> = head
+        .content
+        .spans
+        .iter()
+        .filter(|span| span.pressable)
+        .map(|span| span.text.as_str())
+        .collect();
+    assert_eq!(pressable, ["edit", "delete"]);
+    let delete = head
+        .content
+        .spans
+        .iter()
+        .position(|span| span.text == "delete")
+        .unwrap();
+    handle_hit(&mut view, ViewHit::Press { line, span: delete }, SPACE);
+    assert!(view.drafts().is_empty(), "pressed, it deleted");
+}

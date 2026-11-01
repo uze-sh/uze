@@ -355,6 +355,10 @@ fn render_surface(
                         Some((ViewHit::PlaceCaret { line, .. }, _)) if *editable => Some(line),
                         _ => None,
                     },
+                    pressing: match held.sliding {
+                        Some((ViewHit::Press { line, span }, _)) => Some((line, span)),
+                        _ => None,
+                    },
                     medium: *medium,
                     selection,
                     modes: column_modes,
