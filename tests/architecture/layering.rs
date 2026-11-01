@@ -1013,6 +1013,48 @@ const PACKAGE_MANAGER_APPLICATION: &[&str] = &[
 /// is a package command that could fail, change or wait over the
 /// workspace, which is what a person who only installs plugins must never
 /// meet.
+/// The machine Overview reads every harness's files and spawns a
+/// harness's own statistics command: that cost is paid only by the
+/// workspace, on its own thread — the Overview's worker when it is asked,
+/// and the workspace's background sync — never by a CLI command, the
+/// runtime shim or a launch. The application is the one place it is
+/// defined.
+#[test]
+fn only_the_workspace_collects_what_the_harnesses_carry() {
+    let root = repository_root();
+    let allowed = [
+        "crates/uze-application/src/application/machine_overview.rs",
+        "src/ui/worker.rs",
+        "src/ui/orchestrator/reads.rs",
+    ];
+    let mut failures = Vec::new();
+    // The integrations answer the two questions; everything that could ask
+    // them is here.
+    for scope in [
+        "src",
+        "crates/uze-core",
+        "crates/uze-application",
+        "crates/uze-workspace",
+    ] {
+        for (file, contents) in production_sources(&root.join(scope)) {
+            let relative = file.strip_prefix(&root).unwrap_or(&file).to_path_buf();
+            let relative = relative.to_string_lossy().replace('\\', "/");
+            let calls = occurrences(&contents, "collect_machine_overview(")
+                + occurrences(&contents, ".machine_inventory(")
+                + occurrences(&contents, ".session_counts(");
+            if calls > 0 && !allowed.contains(&relative.as_str()) {
+                failures.push(format!("  {relative} collects ({calls} call(s))"));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "the machine inventory is collected outside the workspace. Ask for it through \
+         `Intent::CollectMachineOverview` or the workspace's background sync:\n{}",
+        failures.join("\n")
+    );
+}
+
 #[test]
 fn the_package_manager_never_names_the_workspace() {
     let root = repository_root();

@@ -635,6 +635,33 @@ impl UzeHome {
         self.cache_dir().join("shell.json")
     }
 
+    /// The last machine Overview collected (see `machine::inventory`):
+    /// observed again whenever it is missing or cannot be read.
+    pub fn machine_overview_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-overview.json")
+    }
+
+    /// The uses the machine Overview read from records a harness has since
+    /// deleted (see `machine::usage::Archive`): a record, the only place
+    /// they are left.
+    pub fn machine_usage_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.json")
+    }
+
+    /// The guard one reading of the harnesses' records takes, so two
+    /// workspaces never read and move the same records at once. A lock, not
+    /// a record.
+    pub fn machine_usage_lock_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.lock")
+    }
+
+    /// What the machine Overview kept of each harness's session records
+    /// between readings (see `machine::usage`): read again from the start
+    /// whenever it is missing or cannot be read.
+    pub fn machine_usage_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-usage.json")
+    }
+
     /// Cross-invocation cache of per-receipt attachment *read* results
     /// (see `application::inspection_cache` and ADR 018). Same
     /// reconstructable-optimization caveat as the detection cache: never

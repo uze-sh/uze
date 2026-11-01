@@ -183,7 +183,10 @@ impl ManagementMemory {
     /// Keeps what an opening resolved and arranged for the next one, and
     /// hands back what the workspace owns of it: the shape the layout
     /// file keeps, and the first-steps list the two surfaces share.
-    pub(crate) fn close(&mut self, model: TuiModel) -> (ManagementLayout, FirstStepsLayout) {
+    pub(crate) fn close(&mut self, mut model: TuiModel) -> (ManagementLayout, FirstStepsLayout) {
+        // A closed modal asks the machine nothing: an Overview collection
+        // in flight stops here.
+        model.remembered.machine.leave();
         self.in_flight = model.maintenance_in_flight;
         let layout = model.management_layout();
         let first_steps = FirstStepsLayout {
@@ -221,7 +224,8 @@ impl ManagementMemory {
         } else {
             model.drawer_inspect_intent()
         };
-        for missing in [drawer, model.settings_intent()] {
+        let machine = model.machine_intent(Instant::now());
+        for missing in [drawer, model.settings_intent(), machine] {
             if missing != Intent::None {
                 dispatch(missing, home, &self.sender, model);
                 changed = true;
@@ -472,12 +476,7 @@ fn render_header(
     let routes = model::routes();
     let strip: Vec<(Tab, Route)> = routes
         .iter()
-        .map(|&route| {
-            (
-                Tab::new(route.label()).badge(route.badge(), Token::StateWarning),
-                route,
-            )
-        })
+        .map(|&route| (Tab::new(route.label()), route))
         .collect();
     let open = routes.iter().position(|&route| route == model.route);
     let row = Rect::new(x, area.y, room_end.saturating_sub(x), area.height);
@@ -573,6 +572,20 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     if model.route == Route::Plugins {
         hints = hints.run(Action::FocusContent, Action::FocusSidebar, "expand");
     }
+    if model.route == Route::Overview {
+        hints = match model.remembered.machine.field {
+            crate::ui::machine::Field::List => match model.remembered.machine.pane {
+                crate::ui::machine::Pane::Menu => hints,
+                crate::ui::machine::Pane::Table => hints.named(Action::FocusSidebar, "back"),
+            },
+            crate::ui::machine::Field::Harness => {
+                hints.run(Action::FocusContent, Action::FocusSidebar, "harness")
+            }
+            crate::ui::machine::Field::Columns => {
+                hints.run(Action::FocusContent, Action::FocusSidebar, "column")
+            }
+        };
+    }
     if let Some(label) = activate_label(model) {
         hints = hints.named(Action::Activate, label);
     }
@@ -581,6 +594,15 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
     }
     if model.route == Route::Plugins {
         hints = hints.named(Action::AddMarketplace, "add");
+    }
+    if model.route == Route::Overview {
+        let next = match model.remembered.machine.field {
+            crate::ui::machine::Field::List => "harness",
+            crate::ui::machine::Field::Harness => "order",
+            crate::ui::machine::Field::Columns => "screens",
+        };
+        hints = hints.named(Action::FocusNext, next);
+        hints = hints.named(Action::Refresh, "refresh");
     }
     let screens = model::routes().len().min(9) as u8;
     hints.run(Action::SelectTab(1), Action::SelectTab(screens), "section")
@@ -628,7 +650,8 @@ fn activate_label(model: &TuiModel) -> Option<String> {
                 None
             }
         }),
-        Route::Overview | Route::Harnesses => None,
+        Route::Overview => model.machine_activate_label(),
+        Route::Harnesses => None,
     }
 }
 

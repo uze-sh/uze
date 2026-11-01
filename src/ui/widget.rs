@@ -107,7 +107,6 @@ pub(crate) mod screen_header;
 pub(crate) mod scrim;
 pub(crate) mod scrollbar;
 pub(crate) mod segmented;
-pub(crate) mod stat;
 pub(crate) mod surface;
 pub(crate) mod tabs;
 pub(crate) mod text;

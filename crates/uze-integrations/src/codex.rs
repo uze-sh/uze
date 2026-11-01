@@ -34,12 +34,14 @@ mod digest;
 mod flags;
 mod generate;
 mod hooks;
+mod inventory;
 mod mcp;
 mod plugin;
 mod runtime;
 mod session;
 mod skills;
 mod trust;
+mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
 pub use mcp::detach_mcp_entry;
@@ -124,6 +126,14 @@ impl CodexIntegration {
     /// touched; everything else, including comments, is preserved.
     fn config_toml_path(&self) -> PathBuf {
         self.command_home.join(".codex").join("config.toml")
+    }
+
+    /// Where the machine Overview reads what Codex carries.
+    fn inventory_places(&self) -> inventory::CodexPlaces {
+        inventory::CodexPlaces {
+            agents_skills: self.skills_dir.clone(),
+            codex_home: self.command_home.join(".codex"),
+        }
     }
 
     /// Env-based constructor for the CLI composition root (`registry.rs`).
@@ -380,6 +390,34 @@ impl IntegrationPort for CodexIntegration {
 
     fn managed_environment(&self) -> &'static [&'static str] {
         flags::MANAGED_ENVIRONMENT
+    }
+
+    fn machine_inventory(&self) -> Option<Vec<uze_core::inventory::FoundResource>> {
+        let receipts: Vec<AttachmentReceipt> = state::receipts(&self.uze_home, None)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|receipt| receipt.integration == self.id())
+            .collect();
+        Some(inventory::inventory(&self.inventory_places(), &receipts))
+    }
+
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
+        Some(inventory::session_counts(&self.inventory_places()))
+    }
+
+    fn usage_records(
+        &self,
+        since: std::time::SystemTime,
+    ) -> Option<Vec<uze_core::usage::UsageRecord>> {
+        Some(usage::records(&self.sessions_dir(), since))
+    }
+
+    fn read_usage(
+        &self,
+        record: &uze_core::usage::UsageRecord,
+        from: uze_core::usage::Resume,
+    ) -> Option<uze_core::usage::UsageRead> {
+        usage::read(record, from, &self.config_toml_path())
     }
 
     fn conversation_digest(

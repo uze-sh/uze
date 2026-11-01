@@ -548,6 +548,12 @@ Toasts:
   gives up in the catalog's own words. Those words are what is lost, a
   noun phrase the detail's verb completes (`-c turns off uze's own value
   for this key`), never a sentence of their own.
+- A table's status column: the danger and warning hues for what is
+  wrong, a held-back tone for what nobody uses, and the success hue for
+  every row that is sound (the operator kept the green over a neutral
+  tone). Each status says one thing (`in use` for a resource used and
+  sound, `ok` only where uses are not counted), never one word answering
+  two questions.
 - A focused or selected container gets a subtle, slightly darker overlay.
 - The sidebar is transparent: only the space in front is lifted onto the
   panel, every other space stands on the column itself, and the row in
@@ -567,6 +573,10 @@ Toasts:
 - A selection container is inset one column on each side and centred on
   its parent.
 - Never double an indent. Columns line up across rows.
+- A column of marks and words (a status) stands against its left edge,
+  so every mark lines up whatever the word's length; a figure stands
+  against its right. The two never touch: a status column keeps two
+  cells of air after a figure.
 - Check every edge before handing back: "desalinhado" is the most frequent
   visual correction.
 
@@ -589,9 +599,8 @@ operator rather than assume.
 **Chrome:**
 - Dividers are thin, dim and one colour. Use few separators: inside a line
   separate with ` · `, not more bars.
-- No heavy frames. No small caps, save a tab's badge (`text::small_caps`),
-  the one place the vocabulary keeps them: never for a title, a label or a
-  hint.
+- No heavy frames. No small caps: never for a title, a label, a badge or
+  a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
   only under the nerd scheme.
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares

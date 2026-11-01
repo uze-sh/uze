@@ -43,12 +43,14 @@ mod agent_context;
 mod distribution;
 mod flags;
 mod hooks;
+mod inventory;
 mod mcp;
 mod project_agents;
 mod provision;
 pub(crate) mod runtime_plugin;
 mod session;
 mod skills;
+mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
 
@@ -272,6 +274,38 @@ impl IntegrationPort for OpenCodeIntegration {
     /// person starts from inside the TUI.
     fn flag_catalog(&self) -> uze_core::flag_catalog::FlagCatalog {
         flags::CATALOG
+    }
+
+    fn machine_inventory(&self) -> Option<Vec<uze_core::inventory::FoundResource>> {
+        Some(inventory::inventory(self.config_root(), &self.config_path))
+    }
+
+    fn session_counts(&self) -> Option<uze_core::inventory::SessionCounts> {
+        let (executable, home) = self.session_query()?;
+        inventory::session_counts(&executable, &home)
+    }
+
+    fn usage_records(
+        &self,
+        since: std::time::SystemTime,
+    ) -> Option<Vec<uze_core::usage::UsageRecord>> {
+        let (executable, home) = self.session_query()?;
+        usage::records(&executable, &home, since)
+    }
+
+    /// An export is rewritten as its session grows, so it is read whole.
+    fn read_usage(
+        &self,
+        record: &uze_core::usage::UsageRecord,
+        _from: uze_core::usage::Resume,
+    ) -> Option<uze_core::usage::UsageRead> {
+        let (executable, home) = self.session_query()?;
+        let servers: Vec<String> = inventory::inventory(self.config_root(), &self.config_path)
+            .into_iter()
+            .filter(|found| found.kind == uze_core::inventory::ResourceKind::Mcp)
+            .map(|found| found.name)
+            .collect();
+        usage::read(&executable, &home, &record.id, &servers)
     }
 
     fn managed_environment(&self) -> &'static [&'static str] {

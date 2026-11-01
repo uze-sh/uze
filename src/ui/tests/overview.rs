@@ -284,7 +284,7 @@ fn overview_render_does_not_mutate_project_state() {
     assert_eq!(std::fs::read(root.join("AGENTS.md")).unwrap(), agents_md);
     // The machine dashboard still renders while leaving the project untouched.
     assert!(rows.iter().any(|row| row.contains("Overview")));
-    assert!(rows.iter().any(|row| row.contains("Harnesses detected")));
+    assert!(rows.iter().any(|row| row.contains("skills")));
     std::fs::remove_dir_all(&base).ok();
 }
 

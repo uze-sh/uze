@@ -153,11 +153,11 @@ fn a_task_mark_is_pinned_to_the_sidebars_right_column() {
         row.right() - 1 - crate::ui::widget::TRAILING_PAD,
         "one right-hand column: {rows:#?}"
     );
-    let alias = crate::ui::widget::text::small_caps("agent");
+    let alias = "ᴀɢᴇɴᴛ";
     // Past the header block — its label and its count name the column,
     // not a harness.
     assert!(
-        !rows.iter().skip(3).any(|row| row.contains(&alias)),
+        !rows.iter().skip(3).any(|row| row.contains(alias)),
         "the harness is not named in the sidebar: {rows:#?}"
     );
 }

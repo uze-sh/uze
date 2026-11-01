@@ -253,7 +253,7 @@ scenes:
 
   - scene: and then the operator turns the preference off in the Extensions screen, and the band and the row are drawn without the names
     when:
-      - click: "="
+      - click: "≡"
         say: cross to the management modal by the sidebar's own control
         in: sidebar
         expect: Marketplace

@@ -128,6 +128,10 @@ FC_NAME = os.environ.get("TOOL_NAME", "call_mcp_tool")
 TOOL_SEQUENCE = json.loads(os.environ.get("TOOL_SEQUENCE", "null") or "null") or [
     {"name": FC_NAME, "args": FC_ARGS}
 ]
+#: Calls a dispatched agent's own conversation is answered with, in order
+#: (opt-in, for an experiment that measures what a subagent's tool use
+#: reaches); unset, a subagent is answered with text as before.
+SUBAGENT_SEQUENCE = json.loads(os.environ.get("SUBAGENT_SEQUENCE", "null") or "null")
 
 ISOLATION_MARKERS = ["already isolated", "UZE_CONFORMANCE_REBASE"]
 #: One turn each. A single request carrying both is what proves a relaunched
@@ -220,7 +224,7 @@ def sse(obj):
     return f"data: {json.dumps(obj)}\n\n".encode()
 
 
-def scripted_step(body_text):
+def scripted_step(body_text, sequence=None):
     """The index of the call this request is answered with, or None once
     the sequence is done.
 
@@ -240,20 +244,17 @@ def scripted_step(body_text):
         for part in content.get("parts", [])
         if isinstance(part, dict) and isinstance(part.get("functionCall"), dict)
     ]
+    sequence = TOOL_SEQUENCE if sequence is None else sequence
     step = 0
     for name in made:
         following = next(
-            (
-                i
-                for i in range(step, len(TOOL_SEQUENCE))
-                if TOOL_SEQUENCE[i]["name"] == name
-            ),
+            (i for i in range(step, len(sequence)) if sequence[i]["name"] == name),
             None,
         )
         if following is None:
             continue
         step = following + 1
-    return step if step < len(TOOL_SEQUENCE) else None
+    return step if step < len(sequence) else None
 
 
 def unwrap_consumer_request(body_text):
@@ -380,9 +381,19 @@ def model_payload(body_text):
         if MODE == "toolcall" and is_user_turn(body_text)
         else None
     )
-    step = capture.next_scriptable(body_text, TOOL_SEQUENCE, due)
+    sequence = TOOL_SEQUENCE
+    if (
+        due is None
+        and MODE == "toolcall"
+        and SUBAGENT_SEQUENCE
+        and not is_user_turn(body_text)
+        and "<SYSTEM_MESSAGE>" in body_text
+    ):
+        sequence = SUBAGENT_SEQUENCE
+        due = scripted_step(body_text, sequence)
+    step = capture.next_scriptable(body_text, sequence, due)
     if step is not None:
-        call = TOOL_SEQUENCE[step]
+        call = sequence[step]
         fc = {"functionCall": {"name": call["name"], "args": call["args"]}}
         return sse(
             {

@@ -419,6 +419,16 @@ vocabulary! {
         StepDecrease = "step.decrease",
         /// Adds one to a number.
         StepIncrease = "step.increase",
+        /// A table ordered by this column, least first.
+        SortAscending = "sort.ascending",
+        /// A table ordered by this column, most first.
+        SortDescending = "sort.descending",
+        /// Nothing is wrong with it, and nobody used it in the period
+        /// shown.
+        MarkUnused = "mark.unused",
+        /// Nothing is wrong with it, and it was used: the filled pair of
+        /// [`MarkUnused`](Self::MarkUnused).
+        MarkInUse = "mark.in-use",
         /// A section that is folded shut.
         ChevronCollapsed = "chevron.collapsed",
         /// A section that is open.

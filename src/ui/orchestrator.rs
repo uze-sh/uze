@@ -119,6 +119,14 @@ const AGENT_ACTIVITY_TICK: Duration = Duration::from_millis(120);
 /// seen at a glance, short enough that it reads as the press itself and
 /// never as a state the control got stuck in.
 const PRESS_FLASH: Duration = Duration::from_millis(140);
+
+/// How long after the workspace opens the machine Overview is first
+/// collected in the background: past the opening's own reads.
+const MACHINE_SYNC_FIRST: Duration = Duration::from_secs(20);
+
+/// How often the machine Overview is collected in the background from then
+/// on: often enough to read a harness's records before it deletes them.
+const MACHINE_SYNC: Duration = crate::ui::machine::SYNC_EVERY;
 /// The least time between two rings of the bell. Agents started together
 /// tend to finish together, and one sound says "go look" as well as four.
 const CHIME_COOLDOWN: Duration = Duration::from_secs(4);
@@ -1620,6 +1628,8 @@ struct Channels {
     proposal_answers: Answers<ProposalAnswerResolution>,
     /// The names a harness launched through a shim runs under, asked once.
     launchers: Answers<Vec<String>>,
+    /// The machine Overview, collected in the background on [`MACHINE_SYNC`].
+    machine_syncs: Answers<MachineSynced>,
     /// The operator's names for projects, read when the client opens and
     /// again after one is written.
     project_labels: Answers<ProjectLabelsRead>,
@@ -1809,6 +1819,10 @@ struct Remembered {
     /// under, once the registry has answered, and whether it was asked.
     launchers: Option<Vec<String>>,
     launchers_asked: bool,
+    /// When the machine Overview is next collected in the background, and
+    /// whether a collection is out.
+    machine_sync_due: Option<Instant>,
+    machine_sync_pending: bool,
     /// The operator's names for projects, by root; how many times they
     /// were asked for, so only the latest answer is kept; and whether they
     /// were found unreadable, which is said once.

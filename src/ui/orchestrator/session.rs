@@ -338,6 +338,7 @@ impl Attach<'_> {
         self.absorb_unspelled_gates();
         self.absorb_command_approvals();
         self.absorb_launchers();
+        self.absorb_machine_syncs();
         self.absorb_project_labels();
         self.type_agent_writes();
         self.follow_agent_focus();

@@ -73,7 +73,7 @@ pub(crate) fn is_cli_safe_token(value: &str) -> bool {
 pub fn capture<S: AsRef<OsStr>>(program: &Path, home: &Path, args: &[S]) -> io::Result<Output> {
     // Anything run outside `json` may change what an inspection answers.
     forget_inspections_of(program);
-    run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
+    run_captured(program, Some(home), None, args, VENDOR_CLI_TIMEOUT)
 }
 
 /// [`capture`] for a verb that only reads, which leaves the inspections
@@ -84,7 +84,20 @@ pub(crate) fn capture_read_only<S: AsRef<OsStr>>(
     home: &Path,
     args: &[S],
 ) -> io::Result<Output> {
-    run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
+    run_captured(program, Some(home), None, args, VENDOR_CLI_TIMEOUT)
+}
+
+/// [`capture_read_only`] from `directory`, bounded by `timeout`: for a verb
+/// whose answer depends on where it is asked from, asked from somewhere
+/// that is no project.
+pub(crate) fn capture_read_only_from<S: AsRef<OsStr>>(
+    program: &Path,
+    home: &Path,
+    directory: &Path,
+    args: &[S],
+    timeout: Duration,
+) -> io::Result<Output> {
+    run_captured(program, Some(home), Some(directory), args, timeout)
 }
 
 /// How long an inspection verb's answer stands for the next identical
@@ -144,7 +157,7 @@ fn inspect_json<S: AsRef<OsStr>>(
     args: &[S],
     label: &str,
 ) -> std::result::Result<serde_json::Value, String> {
-    let output = run_captured(program, Some(home), args, VENDOR_CLI_TIMEOUT)
+    let output = run_captured(program, Some(home), None, args, VENDOR_CLI_TIMEOUT)
         .map_err(|error| format!("failed to run `{label}`: {error}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -174,8 +187,13 @@ pub(crate) enum VersionToken {
 /// Detects a harness binary by its `--version`, run under the caller's own
 /// `HOME`: present only when that exits successfully.
 pub(crate) fn detect_version(program: &str, token: VersionToken) -> HarnessDetection {
-    let Ok(output) = run_captured(Path::new(program), None, &["--version"], VENDOR_CLI_TIMEOUT)
-    else {
+    let Ok(output) = run_captured(
+        Path::new(program),
+        None,
+        None,
+        &["--version"],
+        VENDOR_CLI_TIMEOUT,
+    ) else {
         return HarnessDetection::default();
     };
     if !output.status.success() {
@@ -200,7 +218,7 @@ fn capture_with_timeout<S: AsRef<OsStr>>(
     args: &[S],
     timeout: Duration,
 ) -> io::Result<Output> {
-    run_captured(program, Some(home), args, timeout)
+    run_captured(program, Some(home), None, args, timeout)
 }
 
 /// The subcommand a vendor CLI was asked to run (`mcp add`, `plugin
@@ -224,6 +242,7 @@ fn verb<S: AsRef<OsStr>>(args: &[S]) -> String {
 fn run_captured<S: AsRef<OsStr>>(
     program: &Path,
     home: Option<&Path>,
+    directory: Option<&Path>,
     args: &[S],
     timeout: Duration,
 ) -> io::Result<Output> {
@@ -239,6 +258,9 @@ fn run_captured<S: AsRef<OsStr>>(
         for variable in uze_platform::home::VARIABLES {
             command.env(variable, home);
         }
+    }
+    if let Some(directory) = directory {
+        command.current_dir(directory);
     }
     command
         .args(args)

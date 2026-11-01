@@ -455,6 +455,37 @@ pub(super) fn spawn_proposal_answer(
     });
 }
 
+/// A background collection of the machine Overview: what it found and
+/// when, or nothing when another process held the collection or it failed.
+pub(super) struct MachineSynced {
+    pub(super) collected: Option<(
+        uze_application::machine_overview::MachineOverview,
+        std::time::SystemTime,
+    )>,
+}
+
+/// Reads what every harness carries and has recorded, off the frame, so the
+/// Overview never waits on it and uses are read before a harness deletes
+/// the records they are in. Cheap past the first reading: only what a
+/// record gained since is read.
+pub(super) fn spawn_machine_sync(home: &UzeHome, sender: mpsc::Sender<MachineSynced>) {
+    let home = home.clone();
+    let parent = tracing::Span::current();
+    thread::spawn(move || {
+        let _pass = crate::telemetry::background_pass!("tui.machine_sync", parent: &parent);
+        let collected = answered_or(
+            || {
+                let app = tui_application(home).ok()?;
+                let never = std::sync::atomic::AtomicBool::new(false);
+                let overview = app.collect_machine_overview(&never, |_| {})?;
+                Some((overview, std::time::SystemTime::now()))
+            },
+            None,
+        );
+        let _ = sender.send(MachineSynced { collected });
+    });
+}
+
 /// Asks the registry, once, which names a harness launched through a shim
 /// runs under. Off the frame: composing the application reads the machine.
 pub(super) fn spawn_launcher_names(home: &UzeHome, sender: mpsc::Sender<Vec<String>>) {

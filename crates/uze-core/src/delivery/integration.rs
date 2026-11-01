@@ -534,6 +534,44 @@ pub trait IntegrationPort: Send + Sync {
         None
     }
 
+    /// What this harness reads at machine level — skills, agents, MCP
+    /// servers, hooks, instruction files — whoever put them there, as the
+    /// harness's own files and configuration say. Read only: nothing is
+    /// written, run or started to answer. `None` is "this harness cannot
+    /// list what it carries", and the Overview says so for it alone.
+    fn machine_inventory(&self) -> Option<Vec<crate::inventory::FoundResource>> {
+        None
+    }
+
+    /// How many sessions this harness still keeps records of, subagents
+    /// excluded, from its records' metadata or its published statistics —
+    /// never from what a session said. `None` is unknown.
+    fn session_counts(&self) -> Option<crate::inventory::SessionCounts> {
+        None
+    }
+
+    /// The records this harness kept of sessions active since `since`,
+    /// subagents' included, from their metadata alone: nothing is opened to
+    /// answer. `None` is "this harness's uses are not known".
+    fn usage_records(
+        &self,
+        _since: std::time::SystemTime,
+    ) -> Option<Vec<crate::usage::UsageRecord>> {
+        None
+    }
+
+    /// The skills, agents and MCP servers used in `record`, read from
+    /// `from` on, each named the way this harness's inventory names it, and
+    /// where the next reading resumes. Only which resource, by whom and
+    /// when is taken. `None`: a shape this build cannot read.
+    fn read_usage(
+        &self,
+        _record: &crate::usage::UsageRecord,
+        _from: crate::usage::Resume,
+    ) -> Option<crate::usage::UsageRead> {
+        None
+    }
+
     /// The flags this harness's launch takes that are worth offering an
     /// operator, which of them UZE composes itself, and the grammar the
     /// harness reads them in. Kept to the
@@ -1449,6 +1487,14 @@ mod tests {
             }),
             None
         );
+    }
+
+    /// A fifth harness appears in the Overview before anyone has taught it
+    /// to list anything: as a harness that cannot say, never as an empty one.
+    #[test]
+    fn an_integration_that_declares_nothing_reports_no_inventory_and_no_sessions() {
+        assert!(UndeclaredIntegration.machine_inventory().is_none());
+        assert!(UndeclaredIntegration.session_counts().is_none());
     }
 
     /// An override for a harness nobody has catalogued is the operator's

@@ -1,0 +1,136 @@
+//! The machine Overview: what every detected harness carries, collected
+//! on demand and remembered in the cache tier.
+//!
+//! Collection is read only and on demand. The caller decides when — the
+//! workspace does so only while its Overview is in front — and it answers
+//! as it goes, so a screen can fill in harness by harness. Nothing here is
+//! reached by a CLI command, the runtime shim or a launch.
+
+use std::{
+    collections::BTreeMap,
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+    time::SystemTime,
+};
+
+use uze_core::{
+    UzeHome,
+    integration::IntegrationPort,
+    inventory::{self, HarnessInventory, MachineOverview},
+    persistence::FileLock,
+    usage,
+};
+
+use super::UzeApplication;
+
+impl UzeApplication {
+    /// The last Overview collected and when, if one can be read.
+    pub fn machine_overview_snapshot(&self) -> Option<(MachineOverview, SystemTime)> {
+        inventory::load_snapshot(&self.home)
+    }
+
+    /// Collects the Overview: every detected harness's inventory first,
+    /// one at a time, then their session counts, then their uses from
+    /// their session records. `answer` is handed the Overview after each
+    /// harness's inventory, once more with the sessions, and after each
+    /// harness's uses. Returns `None` when `cancelled` was set before the
+    /// end, what is complete then left unsaved, or when another process is
+    /// collecting: one collection reads and moves the records at a time.
+    pub fn collect_machine_overview(
+        &self,
+        cancelled: &AtomicBool,
+        mut answer: impl FnMut(&MachineOverview),
+    ) -> Option<MachineOverview> {
+        // A short wait, not none: a process another thread starts holds the
+        // lock's descriptor for the instant between its fork and its exec.
+        // A collection in another workspace takes longer, and this one
+        // then skips its turn.
+        let _collecting = FileLock::acquire(
+            &self.home.machine_usage_lock_path(),
+            Duration::from_secs(2),
+            Duration::from_millis(50),
+        )
+        .ok()?;
+        let receipts = uze_core::state::receipts(&self.home, None).unwrap_or_default();
+        let detected: Vec<&dyn IntegrationPort> = self
+            .integrations
+            .iter()
+            .map(AsRef::as_ref)
+            .filter(|integration| self.detect_cached(*integration).present)
+            .collect();
+        let mut gathered: Vec<HarnessInventory> = Vec::new();
+        for integration in &detected {
+            if cancelled.load(Ordering::Relaxed) {
+                return None;
+            }
+            gathered.push(HarnessInventory {
+                id: integration.id().to_owned(),
+                name: integration.display_name().to_owned(),
+                found: answered(|| integration.machine_inventory()),
+                sessions: None,
+            });
+            answer(&inventory::assemble(gathered.clone(), &receipts));
+        }
+        let now = SystemTime::now();
+        for (index, integration) in detected.iter().enumerate() {
+            if cancelled.load(Ordering::Relaxed) {
+                return None;
+            }
+            gathered[index].sessions = answered(|| integration.session_counts());
+        }
+        let mut overview = inventory::assemble(gathered.clone(), &receipts);
+        answer(&overview);
+        let mut ledger = usage::Ledger::load(&self.home);
+        let mut archive = usage::Archive::load(&self.home);
+        let mut tallies = BTreeMap::new();
+        for (index, integration) in detected.iter().enumerate() {
+            let carried = gathered[index].found.as_deref().unwrap_or_default();
+            let read =
+                answered(|| Some(ledger.read(archive.as_mut(), *integration, carried, cancelled)));
+            if cancelled.load(Ordering::Relaxed) {
+                keep(&self.home, &ledger, archive.as_ref());
+                return None;
+            }
+            tallies.insert(integration.id().to_owned(), read.flatten());
+            usage::count_uses(&mut overview, &tallies);
+            if let Some(archive) = &archive {
+                usage::date_archives(&mut overview, archive);
+            }
+            answer(&overview);
+        }
+        keep(&self.home, &ledger, archive.as_ref());
+        if let Err(error) = inventory::save_snapshot(&self.home, &overview, now) {
+            tracing::warn!("machine overview not remembered: {error}");
+        }
+        Some(overview)
+    }
+}
+
+/// What was read is kept even when the collection stops part way: each
+/// record in it is whole, so the next reading continues from there. The
+/// archive is written first: a record left in both is archived again under
+/// the same name, never counted twice, while one in neither would be lost.
+fn keep(home: &UzeHome, ledger: &usage::Ledger, archive: Option<&usage::Archive>) {
+    if let Some(archive) = archive
+        && let Err(error) = archive.save(home)
+    {
+        tracing::warn!("machine usage archive not written: {error}");
+        return;
+    }
+    if let Err(error) = ledger.save(home) {
+        tracing::warn!("machine usage not remembered: {error}");
+    }
+}
+
+/// A harness whose reader panics answers "not known", and the rest of the
+/// Overview is collected as if it had.
+fn answered<T>(read: impl FnOnce() -> Option<T>) -> Option<T> {
+    catch_unwind(AssertUnwindSafe(read)).unwrap_or_else(|_| {
+        tracing::error!("a harness's machine inventory reader panicked");
+        None
+    })
+}
+
+#[cfg(test)]
+mod tests;

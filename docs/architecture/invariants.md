@@ -598,7 +598,8 @@ holding the pipe open is swept once before the reader is given up on.
 harness detection (`harness_detection.json`), requirement version probes
 (`requirements.json`), the shell's observed refusals (`shell.json`),
 attachment inspection (`inspection.json`), the last appearance seen
-(`appearance`), the installed release's notes (`release-notes.md`) and, for
+(`appearance`), the installed release's notes (`release-notes.md`), the last
+machine Overview collected (`machine-overview.json`) and, for
 every marketplace registered by URL, a mirror of its repository (`marketplaces/<name>/repo`, which remembers in
 `transport.json` how it was last reached) with whatever plugins have
 been asked about written out beside it (`marketplaces/<name>/plugins`).
@@ -618,6 +619,7 @@ which is what every harness reads and what must stand with this gone.
 > `crates/uze-application/src/application/marketplace_catalogue.rs::tests::nothing_is_materialized_until_a_plugin_is_asked_about`
 > `crates/uze-core/src/package/acquisition/mirror.rs::tests::a_mirror_of_another_repository_is_replaced_not_fetched_into`
 > `crates/uze-application/src/application/doctor.rs::tests::installation_invalidates_the_inspection_cache`
+> `crates/uze-application/src/application/machine_overview/tests.rs::deleting_the_snapshot_costs_only_a_collection`
 
 ---
 
@@ -3415,32 +3417,6 @@ outside what UZE delivers, and the code site names that decision.
 > `conformance/tests/test_lint.py::PromptsAreDecidedTest`
 > `conformance/tests/test_lint.py::FixturesAnswerNothingTest`
 > `conformance/tests/test_lint.py::LaunchesAreAPersonsTest`
-
-## Unfinished surfaces
-
-### What a person downloads carries no half-built screen
-
-A surface the product has not committed to is named in
-`uze_core::features`: off in a release build, on in a development one, and
-overridable either way by `UZE_FEATURES`. Resolved at runtime rather than
-through a Cargo feature, because the vocabularies it gates (a route, a
-scope, an action) are exhaustive enums that tests walk, and a build that
-stopped compiling the hidden code would stop testing it — a flag whose
-purpose is to defer a decision must not delete the evidence that decision
-needs.
-
-> `uze-core::machine::features::tests::what_a_person_downloads_carries_no_unfinished_surface`
-> `uze-core::machine::features::tests::the_environment_answers_either_way`
-
-### A screen behind a feature is absent or whole
-
-The sidebar, the walk from one screen to the next, the id a layout file
-remembers and the Shortcuts screen that documents a surface all read the
-same list. A build where three of them agree and the fourth still offers a
-way in is the failure mode a runtime flag has in place of a compile error,
-so it is the one this guards.
-
-> `src/ui/tests/navigation.rs::a_screen_behind_a_feature_is_absent_or_whole`
 
 ## Decisions deliberately *not* taken
 
