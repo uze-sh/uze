@@ -615,3 +615,17 @@ fn a_review_is_not_sent_where_two_agents_share_the_checkout() {
     let asked = extension.command(SURFACE, Command::Send, SPACE);
     assert_eq!(asked, Outcome::Stay, "nothing is typed into either");
 }
+
+#[test]
+fn a_comment_on_a_line_that_repeats_stands_under_the_one_it_was_written_on() {
+    let path = PathBuf::from("/w/new.rs");
+    let text = "@@ -0,0 +1,5 @@\n+fn a() {\n+}\n+fn b() {\n+}\n+\n";
+    let cells = diff_of(&path, text).cells;
+    let rows = vec![surface::row_of(&cells[3])];
+    assert_eq!(rows[0].text, "}");
+    assert_eq!(
+        surface::locate(&rows, &cells),
+        Some(3),
+        "the second brace, not the first"
+    );
+}

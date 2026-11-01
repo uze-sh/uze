@@ -609,17 +609,20 @@ pub(crate) fn cell_text(cell: &DiffCell) -> String {
 }
 
 /// The cell `rows` end on in `cells`, found by their text rather than their
-/// numbers: a commit above them moves the numbers and not the lines.
+/// numbers: a commit above them moves the numbers and not the lines. Where
+/// the same lines stand more than once (a closing brace, a blank line),
+/// the run nearest the line they were on wins.
 pub(crate) fn locate(rows: &[Row], cells: &[DiffCell]) -> Option<usize> {
     if rows.is_empty() || rows.len() > cells.len() {
         return None;
     }
     (0..=cells.len() - rows.len())
-        .find(|start| {
+        .filter(|start| {
             rows.iter()
                 .zip(&cells[*start..])
                 .all(|(row, cell)| row_of(cell).kind == row.kind && cell_text(cell) == row.text)
         })
+        .min_by_key(|start| cells[*start].line_no.abs_diff(rows[0].line))
         .map(|start| start + rows.len() - 1)
 }
 
