@@ -17,15 +17,15 @@
   - `delivered_packages_dir` kept only for `delivered_root::materialize` in UZE's own extension MCP launcher, documented as UZE-internal;
   - `ensure_layout` creates `sources/`, never `store/plugins`;
   - `delivered_package_dir_of` (today it recognises only `store/plugins`) and `services/disk.rs` (`HomeTier::Packages`) follow `sources_dir`.
-- [ ] 2.2 Extend the owned-paths layering test (`every_path_uze_owns_is_named_in_the_map`) to cover `sources_dir` and `store_dir(vendor)`.
-- [ ] 2.3 Add the fence, which runs first. Bump `RawPackageRegistry::SHAPE` and the `attachments.json` shape, each with a ladder rung that carries every entry across, and write both documents before any byte moves. Test that an older shape's reader refuses both by name before it prunes or detaches anything.
-- [ ] 2.4 Add the move and backfill, under the mutation lock, per package:
+- [x] 2.2 Extend the owned-paths layering test (`every_path_uze_owns_is_named_in_the_map`) to cover `sources_dir` and `store_dir(vendor)`.
+- [x] 2.3 Add the fence, which runs first. Bump `RawPackageRegistry::SHAPE` and the `attachments.json` shape, each with a ladder rung that carries every entry across, and write both documents before any byte moves. Test that an older shape's reader refuses both by name before it prunes or detaches anything.
+- [x] 2.4 Add the move and backfill, under the mutation lock, per package:
   - rename `store/plugins/<id>` and `store/superseded/<id>` into `sources/`;
   - compute the digest from the moved bytes and write it into the registry;
   - remove an empty `store/plugins` left by an older build.
 
   The step runs whenever any such directory exists, so it is resumable.
-- [ ] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
+- [x] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
 - [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build receipt), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
 ## 3. Builds and publication

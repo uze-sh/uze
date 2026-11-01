@@ -893,7 +893,7 @@ fn a_plugin_named_outside_the_rule_is_refused_at_install() {
         "an uppercase name must be refused"
     );
     assert!(stderr.contains("try `flow`"), "{stderr}");
-    let stored = home.join("store/plugins/test");
+    let stored = home.join("sources/plugins/test");
     assert!(
         !stored.exists() || std::fs::read_dir(&stored).unwrap().next().is_none(),
         "nothing reached the Store"
@@ -919,7 +919,7 @@ fn two_spellings_of_one_name_are_one_package() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let stored: Vec<String> = std::fs::read_dir(home.join("store/plugins/test"))
+    let stored: Vec<String> = std::fs::read_dir(home.join("sources/plugins/test"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();

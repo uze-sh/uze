@@ -322,7 +322,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
         report["plugin"]["store_path"]
             .as_str()
             .unwrap()
-            .contains(&uze_testkit::process::native("store/plugins")),
+            .contains(&uze_testkit::process::native("sources/plugins")),
         "store_path should live under the Store's plugins dir, got {}",
         report["plugin"]["store_path"]
     );
@@ -382,7 +382,7 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
 #[test]
 fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
     let home = temporary_home("cli-doctor-unregistered-bytes");
-    let stray = home.join("store/plugins/local/stray");
+    let stray = home.join("sources/plugins/local/stray");
     std::fs::create_dir_all(&stray).unwrap();
     std::fs::write(stray.join("plugin.json"), r#"{"name":"stray"}"#).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -1582,7 +1582,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
     uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
     uze(&["add", "-m", "greet@tools"]);
     let stored_skill = || {
-        let store = uze_home.join("store/plugins");
+        let store = uze_home.join("sources/plugins");
         [store.join("tools/greet"), store.join("greet")]
             .iter()
             .map(|root| root.join("skills/greet/SKILL.md"))
@@ -1892,7 +1892,7 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
         .expect("the agent's receipt");
     state::forget_receipt(&uze, &receipt).unwrap();
     fs::remove_file(&labelled).unwrap();
-    let store_definition = fs::read_dir(uze.store_dir().join("plugins"))
+    let store_definition = fs::read_dir(uze.plugins_dir())
         .unwrap()
         .flat_map(|market| fs::read_dir(market.unwrap().path()).unwrap())
         .map(|plugin| plugin.unwrap().path().join("agents/reviewer.md"))

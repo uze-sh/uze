@@ -56,7 +56,7 @@ impl Workspace<'_> {
             .filter(|root| root.is_dir())
             .collect();
         let tiers: Vec<(HomeTier, Vec<PathBuf>)> = vec![
-            (HomeTier::Packages, vec![home.store_dir()]),
+            (HomeTier::Packages, vec![home.sources_dir()]),
             (HomeTier::Records, vec![home.state_dir()]),
             (
                 HomeTier::Generated,

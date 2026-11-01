@@ -362,7 +362,17 @@ pub struct UzeStore {
 
 #[derive(Clone, Debug, Serialize)]
 struct PackageRegistry {
+    schema_version: u32,
     packages: BTreeMap<PackageId, Registration>,
+}
+
+impl PackageRegistry {
+    fn empty() -> Self {
+        Self {
+            schema_version: <RawPackageRegistry as uze_document::Shaped>::SHAPE,
+            packages: BTreeMap::new(),
+        }
+    }
 }
 
 /// The on-disk shape of `packages.json`, read with plain `String` keys and
@@ -376,9 +386,23 @@ struct RawPackageRegistry {
     packages: BTreeMap<String, serde_json::Value>,
 }
 
+/// Shape 2 is shape 1 written by a build that keeps the package bytes in
+/// `sources/` and caches each package's digest. A shape-1 build would
+/// otherwise go on recreating `store/plugins` and installing into it, bytes
+/// this build never reads, so it must refuse the registry as newer than
+/// itself; the step up carries every entry unchanged, and the digests are
+/// backfilled by the move (`package::sources`), which can read the disk.
 impl uze_document::Shaped for RawPackageRegistry {
-    const SHAPE: u32 = uze_document::FIRST_SHAPE;
+    const SHAPE: u32 = 2;
     const KIND: &'static str = "packages";
+
+    fn ladder() -> uze_document::Ladder {
+        &[uze_document::Step {
+            from: 1,
+            to: 2,
+            climb: Ok,
+        }]
+    }
 }
 
 /// A `packages.json` entry this UZE cannot read, and why.
@@ -414,6 +438,13 @@ struct Registration {
     /// [`UzeStore::digest`]; absent from every entry that has none.
     #[serde(default, skip_serializing_if = "crate::digest::Links::is_empty")]
     links: crate::digest::Links,
+    /// The digest of the package's bytes as ingested, so delivery can tell
+    /// a changed package from an unchanged one without walking its tree,
+    /// and a restore can tell the bytes it fetched are the ones it lost.
+    /// Absent only on an entry a build before shape 2 wrote and the move
+    /// has not reached yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    digest: Option<String>,
 }
 
 impl UzeStore {
@@ -536,6 +567,8 @@ impl UzeStore {
 
         let ingested = (|| {
             copy_tree(source, &destination)?;
+            let digest = crate::digest::tree_sha256_with_links(&destination, package.links())
+                .map_err(UzeError::read(&destination))?;
             registry.packages.insert(
                 id.clone(),
                 Registration {
@@ -544,6 +577,7 @@ impl UzeStore {
                         .filter(|alias| *alias != name)
                         .map(str::to_owned),
                     links: package.links().clone(),
+                    digest: Some(digest),
                 },
             );
             self.save_registry(&registry)
@@ -778,12 +812,7 @@ impl UzeStore {
     fn read_registry(&self) -> Result<(PackageRegistry, Vec<QuarantinedRegistration>)> {
         let path = self.home.registry_path();
         if !path.exists() {
-            return Ok((
-                PackageRegistry {
-                    packages: BTreeMap::new(),
-                },
-                Vec::new(),
-            ));
+            return Ok((PackageRegistry::empty(), Vec::new()));
         }
         // A record: what the operator registered, which nothing else on the
         // machine knows. Read through the one rule, so a shape this build
@@ -812,7 +841,45 @@ impl UzeStore {
                 }),
             }
         }
-        Ok((PackageRegistry { packages }, quarantined))
+        Ok((
+            PackageRegistry {
+                packages,
+                ..PackageRegistry::empty()
+            },
+            quarantined,
+        ))
+    }
+
+    /// The digest recorded for `id` at ingest, without walking its bytes;
+    /// `None` for an id that is not registered or whose entry predates the
+    /// cache.
+    pub fn recorded_digest(&self, id: &PackageId) -> Result<Option<String>> {
+        Ok(self
+            .load_registry()?
+            .packages
+            .get(id)
+            .and_then(|registration| registration.digest.clone()))
+    }
+
+    /// Writes the registry back in the shape this build writes, recording a
+    /// digest for every entry that has bytes and none yet. The fence and the
+    /// backfill of the move to `sources/`: an older build refuses a registry
+    /// it finds in this shape before it can prune or install anything.
+    pub fn rewrite_registry_with_digests(&self) -> Result<()> {
+        if !self.home.registry_path().exists() {
+            return Ok(());
+        }
+        let mut registry = self.load_registry()?;
+        for (id, registration) in &mut registry.packages {
+            let root = self.home.plugin_dir(id);
+            if registration.digest.is_none() && root.is_dir() {
+                registration.digest = Some(
+                    crate::digest::tree_sha256_with_links(&root, &registration.links)
+                        .map_err(UzeError::read(&root))?,
+                );
+            }
+        }
+        self.save_registry(&registry)
     }
 
     fn save_registry(&self, registry: &PackageRegistry) -> Result<()> {
@@ -1172,6 +1239,27 @@ mod tests {
         home.ensure_layout().unwrap();
         fs::write(home.registry_path(), "bad json").unwrap();
         assert!(store.package_ids().is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_registry_from_a_newer_build_is_refused_and_nothing_is_pruned() {
+        // The fence of the move to `sources/`, seen from the other side: a
+        // build meeting a registry in a shape it does not know refuses it by
+        // name instead of reading it as empty and pruning every entry as a
+        // ghost.
+        let root = uze_testkit::temp::scratch("registry-newer");
+        let home = UzeHome::at(&root);
+        let store = UzeStore::new(home.clone());
+        home.ensure_layout().unwrap();
+        let newer = <RawPackageRegistry as uze_document::Shaped>::SHAPE + 1;
+        let written = format!(r#"{{"schema_version":{newer},"packages":{{"flow@ai":{{}}}}}}"#);
+        fs::write(home.registry_path(), &written).unwrap();
+
+        let refused = store.package_ids().unwrap_err().to_string();
+        assert!(refused.contains("packages"), "{refused}");
+        assert!(store.prune_ghost_registrations().is_err());
+        assert_eq!(fs::read_to_string(home.registry_path()).unwrap(), written);
         let _ = fs::remove_dir_all(root);
     }
 

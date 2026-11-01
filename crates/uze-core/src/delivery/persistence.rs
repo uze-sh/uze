@@ -417,7 +417,11 @@ impl MutationLock {
         // is who to go and look at, and no process outlives the page cache.
         let _ = file.set_len(0);
         let _ = writeln!(file, "pid={}", std::process::id());
-        Ok(Self { _file: file })
+        let lock = Self { _file: file };
+        // Every mutation passes here, so this is where a machine still on
+        // the layout before `sources/` is carried across: once, held.
+        crate::package::sources::carry_into_sources(home)?;
+        Ok(lock)
     }
 }
 

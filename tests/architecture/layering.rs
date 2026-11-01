@@ -1581,7 +1581,13 @@ fn every_path_uze_owns_is_named_in_the_map() {
             // this test missed exactly one that way.
             let source: String = source.split_whitespace().collect::<Vec<_>>().join(" ");
             let source = source.replace(" .join(", ".join(").replace("() .", "().");
-            for anchor in ["state_dir()", "cache_dir()", "runtime_dir()"] {
+            for anchor in [
+                "state_dir()",
+                "cache_dir()",
+                "runtime_dir()",
+                "sources_dir()",
+                "store_dir()",
+            ] {
                 let joined = format!("{anchor}.join(");
                 let mut rest = source.as_str();
                 while let Some(at) = rest.find(&joined) {

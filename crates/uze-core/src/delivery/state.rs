@@ -56,8 +56,12 @@ mod shapes {
     /// cannot read — a whole generated file, a session-start hook entry — so
     /// that build refuses the ledger as newer than itself rather than as
     /// unreadable; the step up carries every shape-2 receipt unchanged.
+    /// Shape 4 is shape 3 written by a build that keeps package bytes in
+    /// `sources/`: a shape-3 build would otherwise move the receipts a
+    /// vendor store owns back under `runtime/`, so it must refuse the ledger
+    /// as newer; the step up carries every receipt unchanged.
     impl uze_document::Shaped for AttachmentLedger {
-        const SHAPE: u32 = 3;
+        const SHAPE: u32 = 4;
         const KIND: &'static str = "attachments";
 
         fn ladder() -> uze_document::Ladder {
@@ -78,6 +82,11 @@ mod shapes {
                 uze_document::Step {
                     from: 2,
                     to: 3,
+                    climb: Ok,
+                },
+                uze_document::Step {
+                    from: 3,
+                    to: 4,
                     climb: Ok,
                 },
             ]
@@ -203,8 +212,19 @@ fn update_receipts(home: &UzeHome, change: impl FnOnce(&mut Vec<AttachmentReceip
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let path = attachments_path(home);
     let mut ledger: AttachmentLedger = read_json_or_default(&path)?;
+    ledger.schema_version = <AttachmentLedger as uze_document::Shaped>::SHAPE;
     change(&mut ledger.receipts);
     write_json(&path, &ledger)
+}
+
+/// Writes the receipt ledger back in the shape this build writes, changing
+/// no receipt: the fence of the move to `sources/`, so an older build
+/// refuses the ledger before it can rewrite what this one owns.
+pub fn rewrite_ledger(home: &UzeHome) -> Result<()> {
+    if !attachments_path(home).exists() {
+        return Ok(());
+    }
+    update_receipts(home, |_| {})
 }
 
 /// The harnesses each installed package failed to reach, keyed by package

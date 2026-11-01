@@ -177,9 +177,9 @@ fn a_scaffolded_plugin_is_installable_before_any_second_commit() {
         String::from_utf8_lossy(&install.stderr)
     );
     assert!(
-        root.join("uze/store/plugins/tools/greet/plugin.json")
+        root.join("uze/sources/plugins/tools/greet/plugin.json")
             .is_file()
-            || root.join("uze/store/plugins/greet/plugin.json").is_file(),
+            || root.join("uze/sources/plugins/greet/plugin.json").is_file(),
         "the Store carries the package"
     );
 }

@@ -584,7 +584,7 @@ fn the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store() {
             named.display()
         );
         assert!(
-            !named.starts_with(uze_home.store_dir()),
+            !named.starts_with(uze_home.sources_dir()),
             "{}",
             named.display()
         );

@@ -48,15 +48,42 @@ impl UzeHome {
     }
 
     /// Root of the installed packages' bytes, and of nothing else: no
-    /// harness reads from here. What a harness reads is materialized into
-    /// the generated tier, so the one tier whose loss costs the packages is
-    /// never a path another program holds open.
+    /// harness reads from here. Losing it costs the packages until they are
+    /// acquired again, never a delivery: what a harness reads is its own
+    /// vendor store ([`Self::vendor_store_dir`]).
+    pub fn sources_dir(&self) -> PathBuf {
+        self.root.join("sources")
+    }
+
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.sources_dir().join("plugins")
+    }
+
+    /// The parent of every vendor store: what the harnesses read, one
+    /// directory per vendor. Deleting it uninstalls their plugins.
     pub fn store_dir(&self) -> PathBuf {
         self.root.join("store")
     }
 
-    pub fn plugins_dir(&self) -> PathBuf {
-        self.store_dir().join("plugins")
+    /// What one harness reads: the one marketplace UZE registers with it,
+    /// holding one build per package. Named by the integration's vendor
+    /// word, the same one [`Self::generated_attachments_dir`] takes.
+    pub fn vendor_store_dir(&self, vendor: &str) -> PathBuf {
+        self.store_dir().join(vendor)
+    }
+
+    /// Where the package bytes lived before they had a directory of their
+    /// own, `store/plugins` and `store/superseded`: read by the move that
+    /// carries them to [`Self::sources_dir`], and by nothing else.
+    /// Removable once no machine can be on that layout.
+    pub fn pre_sources_layout(&self) -> [(PathBuf, PathBuf); 2] {
+        [
+            (self.store_dir().join("plugins"), self.plugins_dir()),
+            (
+                self.store_dir().join("superseded"),
+                self.sources_dir().join("superseded"),
+            ),
+        ]
     }
 
     pub fn plugin_dir(&self, id: &PackageId) -> PathBuf {
@@ -543,8 +570,8 @@ impl UzeHome {
         self.state_dir().join("install.json")
     }
 
-    /// Where an update keeps the revision of `id` it is replacing: in the
-    /// Store, because a restore that failed leaves the only copy of that
+    /// Where an update keeps the revision of `id` it is replacing: with the
+    /// sources, because a restore that failed leaves the only copy of that
     /// revision here, and that is bytes, not a record; beside
     /// [`Self::plugins_dir`] rather than in it, so nothing that reads the
     /// installed packages may mistake it for one.
@@ -552,7 +579,7 @@ impl UzeHome {
     /// One per package, so an update of another package is never what
     /// sweeps it away.
     pub fn superseded_dir(&self, id: &PackageId) -> PathBuf {
-        self.store_dir().join("superseded").join(id.as_str())
+        self.sources_dir().join("superseded").join(id.as_str())
     }
 
     /// One project's prompt history, beside its other records.

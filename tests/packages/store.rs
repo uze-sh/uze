@@ -48,8 +48,10 @@ fn uze_home_derives_every_owned_path_from_one_root() {
     let home = UzeHome::at(&root);
 
     assert_eq!(home.root(), root.as_path());
+    assert_eq!(home.sources_dir(), root.join("sources"));
+    assert_eq!(home.plugins_dir(), root.join("sources/plugins"));
     assert_eq!(home.store_dir(), root.join("store"));
-    assert_eq!(home.plugins_dir(), root.join("store/plugins"));
+    assert_eq!(home.vendor_store_dir("claude"), root.join("store/claude"));
     assert_eq!(home.state_dir(), root.join("state"));
     assert_eq!(home.cache_dir(), root.join("cache"));
     assert_eq!(home.runtime_dir(), root.join("runtime"));
@@ -90,7 +92,7 @@ fn store_installs_one_agent_plugin_once_without_a_uze_manifest() {
 
 /// ADR-036's Store layout is unchanged: two same-named plugins from distinct
 /// marketplaces can always coexist as *bytes*, each under its own
-/// `store/plugins/<marketplace>/<plugin>` directory and registry entry.
+/// `sources/plugins/<marketplace>/<plugin>` directory and registry entry.
 /// ADR-036 adds a second, independent layer on top: at most one of them may
 /// be *active* under that bare name at a time (the name a harness actually
 /// invokes) — ingesting a second one under the same default name is refused,
@@ -135,11 +137,11 @@ fn store_keeps_same_named_plugins_from_distinct_marketplaces_separate_but_only_o
     assert_ne!(from_alpha.root, from_beta.root);
     assert_eq!(
         from_alpha.root,
-        root.join("store/plugins/alpha/uze-agent-skill-conformance")
+        root.join("sources/plugins/alpha/uze-agent-skill-conformance")
     );
     assert_eq!(
         from_beta.root,
-        root.join("store/plugins/beta/uze-agent-skill-conformance")
+        root.join("sources/plugins/beta/uze-agent-skill-conformance")
     );
     assert_eq!(registered(&home), 2);
     assert_eq!(
