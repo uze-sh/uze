@@ -192,7 +192,9 @@ pub fn agent_of_checkout(
             })
             .map(|agent| agent.id.clone())
             .collect();
-        Some((root.to_path_buf(), here))
+        // A store that places no agent here is not this checkout's: the
+        // lookup goes on up.
+        (!here.is_empty()).then(|| (root.to_path_buf(), here))
     });
     match found {
         Some((root, mut here)) if here.len() == 1 => Ok((root, here.remove(0))),
@@ -503,6 +505,35 @@ mod tests {
             Some(&7),
             "and the person's change lands"
         );
+    }
+
+    /// The agent's own checkout holds a store of its own, which places no
+    /// agent there: the project above it still answers for it.
+    #[test]
+    fn a_store_inside_the_checkout_that_places_nobody_is_passed_by() {
+        use crate::checkout::CheckoutId;
+        use crate::task::{Base, Isolation};
+        let home = UzeHome::at(uze_testkit::temp::scratch("review-climb"));
+        let root = uze_testkit::temp::scratch("review-climb-project")
+            .canonical()
+            .unwrap();
+        let mut agent = Agent::in_the_root("claude-code");
+        let mut isolation = Isolation::cut(
+            &agent.id,
+            Base::Ref("main".into()),
+            "0".repeat(40),
+            "main".into(),
+        );
+        isolation.checkout = Some(CheckoutId::adopted("x"));
+        agent.isolation = Some(isolation);
+        let id = agent.id.clone();
+        let checkout = agent.own_directory(&root).unwrap();
+        std::fs::create_dir_all(&checkout).unwrap();
+        let mut store = AgentStore::default();
+        store.upsert(agent);
+        task::save(&home, &root, &store).unwrap();
+        task::save(&home, &checkout, &AgentStore::default()).unwrap();
+        assert_eq!(agent_of_checkout(&home, &checkout), Ok((root, id)));
     }
 
     #[test]
