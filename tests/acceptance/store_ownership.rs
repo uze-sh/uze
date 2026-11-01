@@ -293,6 +293,43 @@ fn every_path_a_build_names_is_a_file_it_holds() {
 /// hook it holds back and the review to do, and `doctor` says it again.
 #[test]
 fn the_install_and_doctor_name_each_hook_codex_holds_back() {
+
+/// Every file under `root`, relative to it, with its bytes.
+fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    files_under(root, &[], &mut files);
+    let mut tree: Vec<_> = files
+        .into_iter()
+        .map(|file| {
+            let bytes = std::fs::read(&file).unwrap_or_default();
+            (file.strip_prefix(root).unwrap().to_path_buf(), bytes)
+        })
+        .collect();
+    tree.sort();
+    tree
+}
+
+/// The `delivered` cell `uze doctor` gives one harness, e.g. `✓ 9/9`.
+fn delivered_cell(doctor: &str, harness: &str) -> String {
+    doctor
+        .lines()
+        .find(|line| line.trim_start().starts_with(harness))
+        .and_then(|line| {
+            line.split_whitespace()
+                .rev()
+                .nth(1)
+                .zip(line.split_whitespace().last())
+        })
+        .map(|(mark, count)| format!("{mark} {count}"))
+        .unwrap_or_default()
+}
+
+/// The vendor store is a tier of its own: deleting one harness's stops
+/// that harness's plugins — its marketplace now names a directory that is
+/// gone — and leaves every other harness's alone, until the next delivery
+/// renders it again, byte for byte.
+#[test]
+fn deleting_one_vendor_store_stops_that_harness_until_the_next_delivery() {
     let env = TestEnvironment::isolated();
     let _harnesses = install_fake_harnesses(&env);
     env.run(uze_bin(), &["setup"]);
@@ -323,4 +360,64 @@ fn the_install_and_doctor_name_each_hook_codex_holds_back() {
         );
         assert!(said.contains("hook review"), "the review to do: {said}");
     }
+
+    env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let claude_store = env.uze_home.join("store/claude");
+    let codex_store = env.uze_home.join("store/codex");
+    let claude_before = tree(&claude_store);
+    let codex_before = tree(&codex_store);
+    assert!(
+        claude_before
+            .iter()
+            .any(|(path, _)| path.starts_with("store-tie@test")),
+        "the package has a Claude build to lose: {:?}",
+        claude_before.iter().map(|(p, _)| p).collect::<Vec<_>>()
+    );
+    let doctor = |env: &TestEnvironment| {
+        String::from_utf8_lossy(&env.run(uze_bin(), &["doctor"]).stdout).into_owned()
+    };
+    let whole = doctor(&env);
+
+    std::fs::remove_dir_all(&claude_store).unwrap();
+
+    let without = doctor(&env);
+    let registered = std::fs::read_to_string(env.root().join("fake-state/claude/marketplaces"))
+        .unwrap_or_default();
+    assert!(
+        registered.contains(&format!("uze-store\t{}", claude_store.display())),
+        "Claude's marketplace still names the store that is gone: {registered}"
+    );
+    assert!(
+        delivered_cell(&without, "Claude Code").starts_with('×'),
+        "Claude's deliveries are gone: {without}"
+    );
+    for harness in ["Codex", "OpenCode", "Antigravity"] {
+        assert_eq!(
+            delivered_cell(&without, harness),
+            delivered_cell(&whole, harness),
+            "{harness} is untouched: {without}"
+        );
+    }
+    assert_eq!(
+        tree(&codex_store),
+        codex_before,
+        "Codex's store is untouched"
+    );
+
+    env.run_ok(uze_bin(), &["setup"]);
+
+    assert_eq!(
+        tree(&claude_store),
+        claude_before,
+        "the next delivery renders Claude's store again"
+    );
+    let again = doctor(&env);
+    assert_eq!(
+        delivered_cell(&again, "Claude Code"),
+        delivered_cell(&whole, "Claude Code"),
+        "{again}"
+    );
 }

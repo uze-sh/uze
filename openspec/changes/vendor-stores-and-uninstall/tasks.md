@@ -86,10 +86,10 @@
   - an interrupted move;
   - an older shape refusing the fenced documents with no package or receipt lost, and the leftover empty `store/plugins` removed;
   - an upgraded install keeping every plugin enabled.
-- [ ] 5.9 Add acceptance tests for the remaining scenarios:
-  - a Codex repoint whose `add` fails re-registers the old root (fake vendor CLI);
-  - a workspace launch puts its `$UZE_HOME` context only in the process's arguments or environment;
-  - deleting one vendor store stops that harness's plugins until the next delivery.
+- [x] 5.9 Add acceptance tests for the remaining scenarios:
+  - a Codex repoint whose `add` fails re-registers the old root (fake vendor CLI): `vendor_store_moves::a_codex_repoint_whose_add_fails_registers_the_earlier_root_again`;
+  - a workspace launch puts its `$UZE_HOME` context only in the process's arguments or environment: `session_continuity::a_launchs_context_under_the_home_reaches_only_that_process`;
+  - deleting one vendor store stops that harness's plugins until the next delivery: `store_ownership::deleting_one_vendor_store_stops_that_harness_until_the_next_delivery`.
 
 ## 5b. Retiring `uze-local`
 
