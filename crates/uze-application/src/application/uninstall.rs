@@ -453,6 +453,27 @@ impl UzeApplication {
                 ));
             }
         }
+        // A harness no receipt names any more may still list UZE's
+        // marketplace, when an earlier run forgot its receipts and then
+        // failed to withdraw it: asked of every harness whose CLI is here,
+        // since only a root inside the home is ever withdrawn.
+        for integration in &self.integrations {
+            if plan
+                .harnesses
+                .iter()
+                .any(|harness| harness.id == integration.id())
+                || !integration.detect().present
+            {
+                continue;
+            }
+            let harness = HarnessUninstall {
+                id: integration.id().to_owned(),
+                name: integration.display_name().to_owned(),
+                cli_present: true,
+                receipts: Vec::new(),
+            };
+            self.withdraw(integration.as_ref(), &harness, report, &mut failures);
+        }
         if failures.is_empty() {
             return Ok(());
         }

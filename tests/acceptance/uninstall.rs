@@ -656,6 +656,51 @@ fn a_plugin_that_would_not_detach_keeps_its_marketplace_and_its_build() {
     );
 }
 
+/// A run that forgot every receipt of a harness and then failed to
+/// withdraw its marketplace leaves the next run that marketplace to
+/// withdraw, though no receipt names the harness any more.
+#[test]
+fn a_marketplace_left_by_a_run_that_forgot_its_receipts_is_withdrawn_by_the_next() {
+    let env = delivered();
+    let claude_state = env.root().join("fake-state").join("claude");
+    let claude = |refusing: bool| {
+        let mut fake =
+            FakeHarness::new(&env.fake_bin, "claude").version_line("9.9.9 (Fake Claude)");
+        if refusing {
+            fake = fake.on_prefix(
+                ["plugin", "marketplace", "remove"],
+                Action::Refuse {
+                    reason: "interrupted".to_owned(),
+                },
+            );
+        }
+        fake.on_prefix(
+            ["plugin"],
+            Action::VendorMarketplace {
+                state_dir: claude_state.clone(),
+                vendor: MarketplaceVendor::Claude,
+            },
+        )
+        .build();
+    };
+    claude(true);
+    let first = uninstall(&env, &["--yes", "--purge"]);
+    assert!(!first.status.success(), "{}", said(&first));
+    assert!(!registered(&env, "claude").is_empty(), "{}", said(&first));
+
+    claude(false);
+    let second = uninstall(&env, &["--yes", "--purge"]);
+
+    assert!(second.status.success(), "{}", said(&second));
+    assert!(!env.uze_home.exists());
+    assert_eq!(
+        registered(&env, "claude"),
+        Vec::<(String, String)>::new(),
+        "{}",
+        said(&second)
+    );
+}
+
 // --- Uninstall refuses while UZE runs --------------------------------------
 
 #[test]
