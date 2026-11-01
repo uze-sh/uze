@@ -32,7 +32,7 @@
 
 - status:   pending
 - task:     6.5, 7.1
-- commit:   (the commit after 8210ec7d)
+- commit:   efd4319a
 - trigger:  `no_chrome_glyph_is_written_where_it_is_drawn` refuses ✓ ● ○ × │ in an extension: the host draws chrome
 - decided:  the list's detail says `viewed` or `changed since viewed`, the chip says `viewed`, `mark viewed` or `changed since viewed`, a comment's actions are `edit`, `delete`, `resolve`, and a comment is set in by air rather than a drawn rule; only the comment mark (◆, `view::COMMENT_MARK`) is drawn by the host
 - rejected: a `RowMark`-like kind for the navigator's trailing marker, which changes every `NavigatorRow::Item` in the tree for one surface
@@ -42,7 +42,7 @@
 
 - status:   pending
 - task:     9.4
-- commit:   (the commit after 8210ec7d)
+- commit:   efd4319a
 - trigger:  a bullet on reading and answering a review pushed the longest launch instructions past their 2,000-byte share (`the_longest_policy_fits_its_share_uncut`)
 - decided:  the one line a send types names `uze agent review show` and `reply <send>/<n>`, which is where an agent meets them; the `uze:worktree` skill explains them
 - rejected: raising `INSTRUCTIONS_SHARE`, which takes room from the briefing and memory every launch carries, for a verb only a reviewed agent uses
