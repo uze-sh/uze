@@ -810,10 +810,7 @@ mod tests {
         std::fs::create_dir_all(fresh.join(SCRATCH)).unwrap();
         let past_the_cap =
             std::time::SystemTime::now() - SCRATCH_AGE_CAP - std::time::Duration::from_secs(60);
-        std::fs::File::open(&reused)
-            .unwrap()
-            .set_modified(past_the_cap)
-            .unwrap();
+        uze_platform::fs::set_modified(&reused, past_the_cap).unwrap();
 
         let removed = sweep_scratch(&home, STALE_SCRATCH, |_| Some(true));
 
