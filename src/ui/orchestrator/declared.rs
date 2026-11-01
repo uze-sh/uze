@@ -120,6 +120,10 @@ pub(super) trait Hosted: Extension {
     /// have found it. Nothing by default.
     #[cfg(test)]
     fn review_drafted(&mut self, _root: PathBuf, _path: &str, _text: &str) {}
+    /// The review open on `root`, listing `diffs` and showing the first,
+    /// as Git would have answered. Nothing by default.
+    #[cfg(test)]
+    fn review_showing(&mut self, _root: PathBuf, _diffs: &[(&str, &str)]) {}
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -260,6 +264,10 @@ impl Hosted for uze_extensions::review::ReviewExtension {
     #[cfg(test)]
     fn review_drafted(&mut self, root: PathBuf, path: &str, text: &str) {
         self.drafted(root, path, text);
+    }
+    #[cfg(test)]
+    fn review_showing(&mut self, root: PathBuf, diffs: &[(&str, &str)]) {
+        self.showing(root, diffs);
     }
 }
 impl Hosted for code::CodeExtension {

@@ -603,6 +603,52 @@ impl ReviewExtension {
         .apply(record);
     }
 
+    /// The review open on `root` with `files` listed, each with its diff
+    /// read from `diffs` (Git's text), the first selected and on show: the
+    /// client's tests' stand-in for Git, as `counted` is for the door.
+    #[doc(hidden)]
+    pub fn showing(&mut self, root: PathBuf, diffs: &[(&str, &str)]) {
+        let files: Vec<crate::shared::git_status::ChangedFile> = diffs
+            .iter()
+            .map(|(path, _)| crate::shared::git_status::ChangedFile {
+                status: crate::shared::git_status::FileStatus::Modified,
+                path: root.join(path),
+                renamed_from: None,
+            })
+            .collect();
+        let mut view = ReviewView::opening(root.clone(), root.display().to_string());
+        view.absorb_listing(
+            super::Filter::All,
+            Base::default(),
+            String::new(),
+            Ok(Listing {
+                files,
+                uncommitted: Default::default(),
+                partners: Default::default(),
+                stamps: Default::default(),
+                head: None,
+            }),
+        );
+        if let Some((path, text)) = diffs.first() {
+            let path = root.join(path);
+            let diff = FileDiff {
+                cells: super::diff::read(
+                    text,
+                    &path,
+                    crate::shared::highlight::FALLBACK_SYNTAX_THEME,
+                ),
+                fingerprint: git::fingerprint(text),
+                binary: false,
+                picture: None,
+                path: path.clone(),
+            };
+            view.absorb_diff(path, Ok(diff), String::new());
+        }
+        self.listing = true;
+        self.listed_at = Some(Instant::now());
+        self.open = Some(view);
+    }
+
     /// Lets a failed write be tried again at once, as the clock would.
     #[cfg(test)]
     pub(crate) fn retry_now(&mut self) {
@@ -1191,6 +1237,34 @@ mod tests {
         );
         extension.focus(Some(&checkout("/a")));
         assert_eq!(drafts(&extension), 1, "a's again at once, before its read");
+    }
+
+    /// The sent agent's turn ending is when its answers are read: the
+    /// door and the list are asked again at once, not on their next pass.
+    #[test]
+    fn the_sent_agents_turn_ending_reads_the_review_again_at_once() {
+        use crate::contract::AgentHappened;
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/w"), "a.rs", "check");
+        extension.counted(PathBuf::from("/w"), 1, 0, 1);
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        let _ = extension.send();
+        extension.agent_write(super::SEND_ACTION, AgentWritten::Typed);
+        extension.listed_at = Some(std::time::Instant::now());
+        let finished = |agent: &str| AgentHappened {
+            agent: agent.to_owned(),
+            event: uze_contract::AgentEvent::TurnFinished,
+            harness: String::new(),
+            checkout: PathBuf::from("/w"),
+            detail: serde_json::Value::Null,
+        };
+        extension.agent_events(&[finished("other")], std::time::Instant::now());
+        assert!(
+            extension.door.at.is_some(),
+            "another agent's turn is not news"
+        );
+        extension.agent_events(&[finished("a1")], std::time::Instant::now());
+        assert!(extension.door.at.is_none() && extension.listed_at.is_none());
     }
 
     /// What the drawer says of one checkout's send stays that checkout's:

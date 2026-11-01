@@ -1500,7 +1500,10 @@ fn a_draft_waiting_rides_the_bar_and_opens_the_comments() {
         "nothing waits, nothing drawn"
     );
 
+    assert!(!model.has_bar(), "an empty bundled item takes no row");
+    assert!(!model.reserved().bar);
     drafted(&mut model, "src/naming.rs");
+    assert!(model.reserved().bar, "a draft waiting stands the bar up");
     let mut driven = driven(model, &home);
     // Room for the comments beside the pane, which a narrow window
     // refuses to open.
@@ -1531,4 +1534,121 @@ fn a_draft_waiting_rides_the_bar_and_opens_the_comments() {
         .slot(drawer)
         .unwrap();
     assert_eq!(comments.surface.id, uze_extensions::review::COMMENTS);
+}
+
+const TWO_FILES: [(&str, &str); 2] = [
+    (
+        "naming.rs",
+        "diff --git a/naming.rs b/naming.rs\n--- a/naming.rs\n+++ b/naming.rs\n@@ -1,1 +1,4 @@\n fn a() {}\n+fn b() {}\n+fn c() {}\n+fn d() {}\n",
+    ),
+    ("tests.rs", ""),
+];
+
+/// A right-click on a row of the review's list opens that file's actions,
+/// as Alt+. does: the host turns the gesture into the surface's own hit,
+/// whichever surface it is.
+#[test]
+fn a_right_click_on_the_reviews_list_opens_that_files_actions() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    use uze_extensions::{ExtensionHit, view::ViewHit};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-row-menu"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    reviewing(&mut model, &TWO_FILES);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let row = driven.hit(|hit| {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::SelectItem(1),
+                ..
+            })
+        )
+    });
+    driven.mouse(row.x + 1, row.y, MouseEventKind::Down(MouseButton::Right));
+    let menu = review_on_show(&driven.attach.model)
+        .navigator
+        .and_then(|navigator| navigator.menu)
+        .expect("the row's actions are open");
+    assert_eq!(menu.entries[0], "Open file", "{menu:?}");
+}
+
+/// A press with a key held on a diff line's text carries the mark there,
+/// as one on its number does: the terminal may keep shift for itself, and
+/// ctrl reaches.
+#[test]
+fn a_held_key_on_a_diff_lines_text_carries_the_mark_there() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEventKind};
+    use uze_extensions::{
+        ExtensionHit,
+        view::{Content, ViewHit},
+    };
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-mark-text"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    reviewing(&mut model, &TWO_FILES);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let number = driven.hit(|hit| {
+        matches!(
+            hit,
+            WorkspaceHit::Extension(ExtensionHit {
+                hit: ViewHit::LineNumber { line: 0, .. },
+                ..
+            })
+        )
+    });
+    driven.press(number.x, number.y);
+    // Marked, the run grows a line under it: the frame is drawn again
+    // before the next press, as the operator sees it.
+    driven.frame();
+    let Content::Lines { lines, .. } = review_on_show(&driven.attach.model).content else {
+        panic!("a diff")
+    };
+    let third = lines
+        .iter()
+        .position(|line| line.text().contains("fn c"))
+        .expect("the third line of the diff");
+    let text = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| {
+            matches!(
+                hit,
+                WorkspaceHit::Extension(ExtensionHit {
+                    hit: ViewHit::PlaceCaret { line, cell: 0 },
+                    ..
+                }) if *line == third
+            )
+        })
+        .map(|(rect, _)| *rect)
+        .expect("the third line's text is drawn");
+    let gutter = driven.attach.model.surface_frame.content_gutter;
+    driven.mouse_holding(
+        text.x + gutter + 2,
+        text.y,
+        MouseEventKind::Down(MouseButton::Left),
+        KeyModifiers::CONTROL,
+    );
+    driven.mouse(
+        text.x + gutter + 2,
+        text.y,
+        MouseEventKind::Up(MouseButton::Left),
+    );
+    let Content::Lines { lines, .. } = review_on_show(&driven.attach.model).content else {
+        panic!("a diff")
+    };
+    let marked: Vec<String> = lines
+        .iter()
+        .filter(|line| line.marked)
+        .map(|line| line.text())
+        .collect();
+    assert_eq!(
+        marked.len(),
+        3,
+        "the run carried to the text pressed: {marked:?}"
+    );
 }
