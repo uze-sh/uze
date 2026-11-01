@@ -311,7 +311,7 @@ fn a_files_menu_opens_copies_and_offers_a_discard_only_where_it_can() {
     handle_command(&mut view, Command::OpenMenu, SPACE);
     assert!(matches!(
         handle_hit(&mut view, ViewHit::MenuEntry(1), SPACE),
-        Asked::Copy(path) if path == "/w/tests.rs"
+        Asked::Copy(path) if path == PathBuf::from("/w").join("tests.rs").to_string_lossy()
     ));
 }
 
