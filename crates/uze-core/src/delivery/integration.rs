@@ -594,6 +594,15 @@ pub trait IntegrationPort: Send + Sync {
     /// given per launch is simply not given again.
     fn withdraw_context(&self, _home: &UzeHome, _session: Option<&SessionId>) {}
 
+    /// Removes what this integration generated inside its own runtime
+    /// projections (`UzeHome::runtime_projection_dir`) that nothing needs
+    /// any more, by its own rule, and answers what it removed. A launch
+    /// refreshes a projection and keeps what it wrote; this is what clears
+    /// what a project stopped asking for between launches.
+    fn collect_runtime(&self, _home: &UzeHome) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+
     /// What `session`'s transcript says the conversation was about, read
     /// from this harness's own records, keeping only what was said at or
     /// after `since_unix` when it is given. `None` — no transcript, a shape

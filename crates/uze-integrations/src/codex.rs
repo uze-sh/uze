@@ -263,6 +263,10 @@ impl IntegrationPort for CodexIntegration {
         runtime::projection_would_activate(ctx, &self.config_toml_path())
     }
 
+    fn collect_runtime(&self, home: &UzeHome) -> Vec<std::path::PathBuf> {
+        runtime::collect_role_files(home, self.id())
+    }
+
     /// Codex runs its `notify` program when a turn completes, with the
     /// turn's JSON as its last argument; set for this launch alone with
     /// `-c`, which overrides `config.toml` without writing it. Codex runs
