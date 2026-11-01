@@ -141,6 +141,11 @@ fn vendor_state(env: &TestEnvironment, vendor: &str) -> (String, Option<String>)
     )
 }
 
+/// The marketplaces a fake vendor CLI has registered, as `(name, root)`.
+fn registered(env: &TestEnvironment, vendor: &str) -> Vec<(String, String)> {
+    crate::vendor_store_moves::registered(env, vendor)
+}
+
 /// A copy of the binary at `directory`, recorded by the installer as the
 /// file it placed (`state/install.json`), so uninstall may remove it.
 fn placed_by_the_installer(env: &TestEnvironment, directory: &Path) -> PathBuf {
@@ -606,6 +611,49 @@ fn an_interrupted_purge_finishes_when_run_again() {
     assert!(!binary.exists());
     assert!(!env.uze_home.exists());
     assert!(vendor_state(&env, "claude").0.trim().is_empty());
+}
+
+/// A plugin its harness would not uninstall still reads its marketplace
+/// and its build: both stay, the run fails, and the home is kept.
+#[test]
+fn a_plugin_that_would_not_detach_keeps_its_marketplace_and_its_build() {
+    let env = delivered();
+    let claude_state = env.root().join("fake-state").join("claude");
+    FakeHarness::new(&env.fake_bin, "claude")
+        .version_line("9.9.9 (Fake Claude)")
+        .on_prefix(
+            ["plugin", "uninstall"],
+            Action::Refuse {
+                reason: "interrupted".to_owned(),
+            },
+        )
+        .on_prefix(
+            ["plugin"],
+            Action::VendorMarketplace {
+                state_dir: claude_state,
+                vendor: MarketplaceVendor::Claude,
+            },
+        )
+        .build();
+    let build = env.uze_home.join("store/claude/store-tie@test");
+    assert!(build.is_dir(), "Claude was never given a build");
+
+    let output = uninstall(&env, &["--yes", "--purge"]);
+
+    assert!(!output.status.success(), "{}", said(&output));
+    assert!(env.uze_home.exists());
+    let (installed, _) = vendor_state(&env, "claude");
+    assert!(installed.contains("store-tie"), "{installed}");
+    assert!(
+        !registered(&env, "claude").is_empty(),
+        "the marketplace of a plugin still installed was withdrawn: {}",
+        said(&output)
+    );
+    assert!(
+        build.is_dir(),
+        "the build a plugin still reads was removed: {}",
+        said(&output)
+    );
 }
 
 // --- Uninstall refuses while UZE runs --------------------------------------

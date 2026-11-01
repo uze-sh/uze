@@ -401,17 +401,26 @@ impl UzeApplication {
                 .collect();
             order.sort_by_key(|receipt| Reads::of(&receipt.receipt.artifact));
             let mut withdrawn = false;
+            // A reader that would not detach still reads what follows it:
+            // a plugin its marketplace, any entry the builds it names.
+            let mut plugin_kept = false;
+            let mut reader_kept = false;
             for receipt in order {
                 let reads = Reads::of(&receipt.receipt.artifact);
                 if !withdrawn && reads > Reads::Delivery {
                     withdrawn = true;
-                    self.withdraw(integration, harness, report, &mut failures);
+                    if !plugin_kept {
+                        self.withdraw(integration, harness, report, &mut failures);
+                    }
+                }
+                if reads == Reads::Material && reader_kept {
+                    continue;
                 }
                 if receipt.fate == ReceiptFate::Gone {
                     state::forget_receipt(&self.home, &receipt.receipt)?;
                     continue;
                 }
-                match integration.detach_receipt(&receipt.receipt) {
+                let failure = match integration.detach_receipt(&receipt.receipt) {
                     Ok(AttachmentInspection {
                         state: AttachmentState::Missing,
                         ..
@@ -420,18 +429,28 @@ impl UzeApplication {
                         report
                             .detached
                             .push((harness.name.clone(), receipt.subject.clone()));
+                        continue;
                     }
-                    Ok(inspection) => failures.push(format!(
+                    Ok(inspection) => format!(
                         "{} on {}: {}",
                         receipt.subject, harness.name, inspection.reason
-                    )),
-                    Err(error) => {
-                        failures.push(format!("{} on {}: {error}", receipt.subject, harness.name))
-                    }
+                    ),
+                    Err(error) => format!("{} on {}: {error}", receipt.subject, harness.name),
+                };
+                failures.push(failure);
+                if reads != Reads::Material {
+                    reader_kept = true;
+                    plugin_kept |= installed_through_a_marketplace(&receipt.receipt.artifact);
                 }
             }
-            if !withdrawn {
+            if !withdrawn && !plugin_kept {
                 self.withdraw(integration, harness, report, &mut failures);
+            }
+            if reader_kept {
+                failures.push(format!(
+                    "what {} still reads of uze's is kept until that is removed",
+                    harness.name
+                ));
             }
         }
         if failures.is_empty() {
@@ -644,6 +663,15 @@ impl Reads {
             ManagedArtifact::HookConfigEntry { .. } => Self::Hook,
         }
     }
+}
+
+/// Whether `artifact` is a plugin the harness installed through UZE's
+/// marketplace, which withdrawing that marketplace would break.
+fn installed_through_a_marketplace(artifact: &ManagedArtifact) -> bool {
+    matches!(
+        artifact,
+        ManagedArtifact::IntegrationOwned { kind, .. } if kind != "build" && kind != "rules-engine"
+    )
 }
 
 fn plan_receipt(
