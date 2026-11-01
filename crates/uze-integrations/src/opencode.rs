@@ -881,7 +881,12 @@ impl OpenCodeIntegration {
         let references: Vec<&PortableHook> = groups.iter().collect();
         uze_core::persistence::write_atomic(
             bridge_path,
-            hook_projection::opencode_hook_document(HOOKS, &references, package_root).as_bytes(),
+            hook_projection::opencode_hook_document(
+                HOOKS,
+                &references,
+                STORE.root_of(package_root).path(),
+            )
+            .as_bytes(),
         )?;
         if self.plugin_reads_documents() {
             self.retire_package_bridge(package_id)?;
@@ -1026,7 +1031,11 @@ impl OpenCodeIntegration {
         };
         let references: Vec<&PortableHook> = groups.iter().collect();
         let legacy = self.is_legacy_bridge(bridge_path);
-        let expected = hook_projection::opencode_hook_document(HOOKS, &references, &package_root);
+        let expected = hook_projection::opencode_hook_document(
+            HOOKS,
+            &references,
+            STORE.root_of(&package_root).path(),
+        );
         let carries = |text: &str| {
             if legacy {
                 hook_projection::bridge_carries_groups(HOOKS, text, &references, &package_root)
@@ -1121,8 +1130,12 @@ impl OpenCodeIntegration {
                 hook_projection::opencode_document_path(&self.uze_home, HOOKS, package_id);
             uze_core::persistence::write_atomic(
                 &document,
-                hook_projection::opencode_hook_document(HOOKS, &references, &package_root)
-                    .as_bytes(),
+                hook_projection::opencode_hook_document(
+                    HOOKS,
+                    &references,
+                    STORE.root_of(&package_root).path(),
+                )
+                .as_bytes(),
             )?;
         }
         Ok(AttachmentInspection {

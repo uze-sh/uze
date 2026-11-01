@@ -289,11 +289,6 @@ fn every_path_a_build_names_is_a_file_it_holds() {
     );
 }
 
-/// Codex runs no hook it has not reviewed, so the install names each UZE
-/// hook it holds back and the review to do, and `doctor` says it again.
-#[test]
-fn the_install_and_doctor_name_each_hook_codex_holds_back() {
-
 /// Every file under `root`, relative to it, with its bytes.
 fn tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut files = Vec::new();
@@ -341,25 +336,6 @@ fn deleting_one_vendor_store_stops_that_harness_until_the_next_delivery() {
         uze_bin(),
         &market.iter().map(String::as_str).collect::<Vec<_>>(),
     );
-
-    let installed = env.run_ok(
-        uze_bin(),
-        &add.iter().map(String::as_str).collect::<Vec<_>>(),
-    );
-    let doctor = env.run(uze_bin(), &["doctor"]);
-
-    for output in [&installed, &doctor] {
-        let said = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            said.contains("guard of store-tie@test held back"),
-            "the held-back hook is named: {said}"
-        );
-        assert!(said.contains("hook review"), "the review to do: {said}");
-    }
 
     env.run_ok(
         uze_bin(),
@@ -420,4 +396,77 @@ fn deleting_one_vendor_store_stops_that_harness_until_the_next_delivery() {
         delivered_cell(&whole, "Claude Code"),
         "{again}"
     );
+}
+
+/// OpenCode's hook document names the root its handlers run in, and runs
+/// them there with `PLUGIN_ROOT` set to it: that root is the package's
+/// build, so a hook keeps running with the sources gone.
+#[test]
+fn opencodes_hook_handlers_run_in_the_build() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run(uze_bin(), &["setup"]);
+    let (market, add) = uze_testkit::marketplace::marketplace_add_args(
+        env.root(),
+        &fixtures::canonical("store-tie"),
+    );
+    env.run_ok(
+        uze_bin(),
+        &market.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+
+    let store = env.uze_home.join("store/opencode");
+    let mut documents = Vec::new();
+    files_under(&store, &[], &mut documents);
+    let document = documents
+        .into_iter()
+        .find(|path| path.ends_with("hooks/uze-groups.json"))
+        .expect("store-tie's hooks reach OpenCode as a document in its build");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&document).unwrap()).unwrap();
+    let root = parsed["root"].as_str().unwrap();
+    assert!(
+        Path::new(root).starts_with(&store),
+        "OpenCode runs the handlers in {root}, outside its vendor store"
+    );
+}
+
+/// Codex runs no hook it has not reviewed, so the install names each UZE
+/// hook it holds back and the review to do, and `doctor` says it again.
+#[test]
+fn the_install_and_doctor_name_each_hook_codex_holds_back() {
+    let env = TestEnvironment::isolated();
+    let _harnesses = install_fake_harnesses(&env);
+    env.run(uze_bin(), &["setup"]);
+    let (market, add) = uze_testkit::marketplace::marketplace_add_args(
+        env.root(),
+        &fixtures::canonical("store-tie"),
+    );
+    env.run_ok(
+        uze_bin(),
+        &market.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+
+    let installed = env.run_ok(
+        uze_bin(),
+        &add.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    let doctor = env.run(uze_bin(), &["doctor"]);
+
+    for output in [&installed, &doctor] {
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            said.contains("guard of store-tie@test held back"),
+            "the held-back hook is named: {said}"
+        );
+        assert!(said.contains("hook review"), "the review to do: {said}");
+    }
 }
