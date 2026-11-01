@@ -277,3 +277,73 @@
 - decided:  `HeldBackNote` carries the hook's own name (its group id); install's "Waiting on you" names each (`guard, format of p held back`, the review under it) and is printed by the default summary too, not only `--verbose`; `doctor` names a held-back capability by the same name. The TUI's health alerts (`view::health::actionable_alerts`, the footer status and its dialog) gain one `High` alert per harness, plugin and review — `Codex holds back guard of p` with the review as its detail — read from the doctor report's delivery findings, so `src/` names no harness and the alert is gone the moment `codex/trust.rs` reads the hook as trusted. Nothing is written for the person: the review stays Codex's.
 - rejected: a new widget or toast (the alerts list is the TUI's place for what waits on a person; a toast is for what happened); `Medium` severity (a held-back deny guard enforces nothing until reviewed).
 - blast:    `read_models.rs`, `doctor.rs`, `src/cli/status.rs`, `src/cli/install.rs`, `src/ui/view/health.rs`. The rules engine's own Codex hooks (setup-owned, no package resource) are not in the notes; they were not before either.
+
+## P1 — The older-build refusal is proven on this build, one shape ahead
+
+- status:   pending
+- task:     5.8
+- commit:   3f00d84d
+- trigger:  "an older build afterwards" needs an older binary meeting the fenced documents; the acceptance suite runs only this build.
+- decided:  `migration::a_build_older_than_the_documents_refuses_them_by_name_and_loses_nothing` asserts both documents are written past the shapes the release before `sources/` reads (packages 1, attachments 3), then proves the one rule that fences it on this build: a registry or ledger one shape ahead is refused naming the file, with `sources/`, `state/` (but the lock's pid) and `store/` byte-for-byte unchanged; the empty `store/plugins` an older layout step leaves is removed by the next run. The previous release itself meets the new layout in the Lab (6.5).
+- rejected: building the previous release inside the deterministic suite (a Docker or cargo build per test run).
+- blast:    `tests/acceptance/migration.rs`; `vendor_store_moves.rs` helpers made `pub(crate)` for reuse.
+
+## P2 — "Plugins list and load" is the Skill reaching the model; the vendor listing is read where it exists
+
+- status:   pending
+- task:     6.1, 6.2, 6.3, 6.5
+- commit:
+- trigger:  the conditions ask that plugins "list and load"; two harnesses (OpenCode, and Antigravity for the Lab's `flow`) hold the Lab's plugins as loose files, with nothing in a vendor registry to list.
+- decided:  `contract/stores.py` measures loading as the installed plugin's Skill (`flow:commit`) offered to the model in a headless turn, beside the `always_on` rule's body, under each condition. The vendor's own listing is read through two new bindings, `registry_listing` (purge: nothing of UZE's listed) and `plugin_listing` + `plugin_enabled` (upgrade: installed and enabled), set for Claude and Codex (and `registry_listing` for Antigravity); a harness with neither is measured by the model request alone.
+- rejected: asserting UZE's own report (`uze doctor`).
+- blast:    `contract/{stores,upgrade}.py`, `contract/bindings.py`, three `bindings.py`.
+
+## P3 — After the default uninstall, the Lab's `uze` stays on `PATH`
+
+- status:   pending
+- task:     6.3
+- commit:
+- trigger:  the image places `/usr/local/bin/uze` (root-owned directory); `uze uninstall --yes` leaves a binary the installer did not place, and says so ("not placed by the installer").
+- decided:  the condition is the default uninstall as a person in that container gets it: `runtime/` and `cache/` are gone and the stores kept, which is what the hook wrapper, the rules engine and the builds are proven not to need. That a hook works with no `uze` binary at all is not proven by this condition; the wrapper never calls `uze` (portable-hooks spec, deterministic suite).
+- rejected: shadowing `/usr/local/bin` out of `PATH` (it also holds `node`, which some harnesses need).
+- blast:    none beyond the contract.
+
+## P4 — Claude's own plugin cache is vendor residue of a purge
+
+- status:   pending
+- task:     6.4
+- commit:
+- trigger:  after `uze uninstall --yes --purge`, Claude Code 2.1.316 keeps `~/.claude/plugins/cache/uze-store/<plugin>/<version>/` (measured: `flow`'s and the bundled `uze`'s), whose `SKILL.md` quote the expanded `$UZE_HOME/store/claude/...` root. `claude plugin uninstall` leaves that copy by itself, as `lifecycle.VENDOR_KEEPS` already measured on 2.1.290.
+- decided:  `stores-purged-no-file-names-the-home` excludes `lifecycle.VENDOR_KEEPS` and nothing else. The copy is not configuration Claude loads (the plugin and marketplace are gone from `claude plugin list` / `marketplace list`, both `[]`).
+- rejected: deleting a vendor's cache from UZE (vendor bookkeeping UZE leaves alone, design D5).
+- blast:    one tuple.
+
+## P5 — The previous release is built from its tag inside the Lab's Rust image
+
+- status:   pending
+- task:     6.5
+- commit:
+- trigger:  6.5 needs the release a user upgrades from, in the harness container (Debian bookworm, glibc 2.36); a host build does not run there, and a download counts as an install of the release.
+- decided:  `conformance/shared/previous.py` builds the newest `v*` tag reachable from HEAD (`git describe`, today `v1.0.0-beta.22`) from `git archive` in `rust:1.97-bookworm`, with its own target cache id, keeps the binary in `~/.cache/uze-lab/previous/<tag>/uze`, and mounts it at `/opt/uze-previous/uze` while `contract/upgrade.py` runs. The contract purges the run's own setup first, lets that release install `flow`, then this build `setup`s and installs again. Both binaries report `1.0.0-beta.22` (the version is bumped only on release), so `upgrade-two-releases-met` compares their digests, and `upgrade-bytes-moved-to-sources` proves the earlier layout was there and moved. The first run on a machine pays one release build (about five minutes here).
+- rejected: a declared limitation (the release is obtainable offline from the local tag); a fixture document (proves a rung, not two binaries meeting).
+- blast:    `shared/previous.py`, `shared/common.py` (`Config.previous_uze`, one mount in `docker_base`), `contract/upgrade.py`.
+
+## P6 — Finding: OpenCode hook handlers run in the package's `sources/` directory
+
+- status:   pending (finding, blocks 6.2 on OpenCode)
+- task:     6.2
+- commit:
+- trigger:  Lab, OpenCode v2.2.5, `--contract stores`: with `sources/` moved away, `stores-sources-away-deny-guard-ran`, `-reason-relayed` and `-tool-blocked` fail. The session shows `refused by a hook: handler failed to start: /work/home/.uze/store/opencode/hook-effects@uze-lab/scripts/probe effect-guard deny-marked — ENOENT: no such file or directory, posix_spawn 'sh'`. The same scene passes on Claude Code, Codex and Antigravity, and on OpenCode with `runtime/`+`cache/` moved or after the default uninstall.
+- evidence: the build's `hooks/uze-groups.json` holds `"root": "/work/home/.uze/sources/plugins/uze-lab/hook-effects"` while each handler's command names the build (`.../store/opencode/hook-effects@uze-lab/scripts/probe`). `hooks/bridge.rs::opencode_hook_document` writes `root` from the `plugin_root` it is given (the package's sources), and `uze.ts` spawns every handler with `cwd: env.PLUGIN_ROOT` set from it (`bridge.rs` ~386, ~425). With `sources/` gone the spawn fails, the deny group fails closed (the call is still refused) but the guard never runs, and the handler's `$PLUGIN_ROOT` is outside the vendor store. `store_ownership::no_harness_artifact_names_outside_its_store` misses it because the document lives under `$UZE_HOME`, which the walk skips.
+- decided:  the checks stay as written and failing; delivery code is not changed here (owned by the parallel delivery work). The fix is to pass the build root (`VendorStore::root_of`) as the document's `root`.
+- blast:    OpenCode hooks only.
+
+## P7 — Finding: `uze.ts` written by implicit preparation has no receipt, so a purge leaves it
+
+- status:   pending (finding)
+- task:     6.4, 4.3
+- commit:
+- trigger:  Lab sandbox, OpenCode v2.2.5: `uze market add` then `uze add flow@uze-lab -m` (no `uze setup`, no workspace) writes `~/.config/opencode/plugins/uze.ts`, the ledger holds no `setup` receipt, and `uze uninstall --yes --purge` leaves `uze.ts`, which names `$UZE_HOME`.
+- evidence: `prepare_detected_integrations` (`uze-application/src/application/setup.rs`) calls `integration.install`, whose OpenCode body runs `runtime_plugin::ensure`; `record_setup_artifacts` is called only from `deliver_rules_engine` (`rules_engine.rs`), i.e. on an explicit setup, and after its early return when the route needs no engine. The contract's purge world runs the workspace setup first, so `stores-purged-no-file-names-the-home` passes on OpenCode; the gap is the add-only machine.
+- decided:  recorded, not fixed here (delivery code). The fix records the setup receipts wherever `install` runs, independently of the rules route.
+- blast:    OpenCode purge after add-only installs.
