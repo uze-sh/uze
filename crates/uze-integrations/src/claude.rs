@@ -1,9 +1,9 @@
-//! Claude Code peer integration. Its transparent-attachment strategy is a
-//! UZE-managed "skills-dir plugin" reference at `<claude_home>/skills/<name>`
-//! (see ADR-006): Claude auto-loads any directory there containing
-//! `.claude-plugin/plugin.json` + `SKILL.md` at the start of every session,
-//! with no per-session flag. Until `uze setup` has completed, a Skill is
-//! reported Unsupported with that instruction.
+//! Claude Code peer integration. A package reaches Claude as a plugin of the
+//! one marketplace UZE registers with it, its vendor store
+//! (`store/claude`), which Claude reads in place; a capability a plugin
+//! cannot carry is a directory of its own, copied, under
+//! `<claude_home>/skills/<name>`. Until `uze setup` has completed, a Skill
+//! is reported Unsupported with that instruction.
 //!
 //! Split by concern: [`mcp`] (MCP server registration/inspection),
 //! [`skills`] (the managed skills-dir shim), [`plugin`] (the native

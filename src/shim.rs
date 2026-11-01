@@ -16,9 +16,8 @@
 //! kept out of this hot path.
 //!
 //! `RUNTIME INFRASTRUCTURE`, not `CONTEXT DELIVERY POLICY` — this file
-//! neither knows nor cares whether runtime projection ever replaces the
-//! existing persistent `CLAUDE.md` bridge; it only launches
-//! whatever the integration decided.
+//! decides nothing about what a launch carries; it only launches whatever
+//! the integration decided.
 
 use std::{
     env,
