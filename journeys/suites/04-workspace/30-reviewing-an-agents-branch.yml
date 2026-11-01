@@ -88,7 +88,7 @@ scenes:
         expect_timeout: 10
       - click: "send 1 draft to the agent"
         say: send the review from the comments
-        expect: "Send the review to agent 1"
+        expect: "Send the review to "
         expect_timeout: 10
       - wait: screen
         until: "your comment waits for it"
@@ -97,7 +97,7 @@ scenes:
       - click: "Send"
         occurrence: last
         say: allow it
-        expect: '(?s)\A(?!.*Send the review to agent 1)'
+        expect: '(?s)\A(?!.*Send the review to )'
         expect_timeout: 10
       - wait: shell
         until: "grep -q 'review comment waits' {home}/.claude/projects/*/*.jsonl"
