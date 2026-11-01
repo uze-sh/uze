@@ -413,6 +413,19 @@ fn the_agent_surface_meets_the_budget() {
             })
             .ok()
     });
+    // An agent reading and answering its review: refused here, by the
+    // same claim read either takes before its one small read or write.
+    let claim = || uze_workspace::conversation::Claim {
+        id: "budget",
+        key: "budget",
+        cwd: &world.project,
+    };
+    world.within_budget("agent review show", |app| {
+        app.workspace().review_show(claim()).ok()
+    });
+    world.within_budget("agent review reply", |app| {
+        app.workspace().review_reply(claim(), "1/1", "done").ok()
+    });
     // Every hook of a harness runs it: refused here, by the same claim
     // read a report takes before its one appended line.
     world.within_budget("agent report", |app| {

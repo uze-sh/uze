@@ -1,6 +1,7 @@
 //! An agent reporting about itself, for the workspace's agent bridge.
 
 use super::*;
+use uze_workspace::review::ReviewRecord;
 
 impl Workspace<'_> {
     /// Appends `report` to the journal of the agent a claim identifies,
@@ -30,5 +31,36 @@ impl Workspace<'_> {
         uze_workspace::reports::Cursor,
     ) {
         uze_workspace::reports::read_from(&self.0.home, agent, cursor)
+    }
+}
+
+impl Workspace<'_> {
+    /// The review the operator keeps for the agent working in `checkout`.
+    pub fn review_of_checkout(&self, checkout: &std::path::Path) -> Result<ReviewRecord> {
+        uze_workspace::review::of_checkout(&self.0.home, checkout)
+    }
+
+    /// Edits the review of the agent working in `checkout` under the
+    /// review lock, answering what was written.
+    pub fn update_review(
+        &self,
+        checkout: &std::path::Path,
+        change: impl FnOnce(&mut ReviewRecord),
+    ) -> Result<ReviewRecord> {
+        uze_workspace::review::update_checkout(&self.0.home, checkout, change)
+    }
+
+    /// What `uze agent review show` prints for the agent a claim
+    /// identifies: the comments sent to it, in full.
+    #[tracing::instrument(name = "workspace.review_show", skip_all, fields(agent = %claim.id), err)]
+    pub fn review_show(&self, claim: Claim<'_>) -> Result<String> {
+        uze_workspace::review::show(&self.0.home, claim)
+    }
+
+    /// Attaches an answer to a comment sent to the agent a claim
+    /// identifies.
+    #[tracing::instrument(name = "workspace.review_reply", skip_all, fields(agent = %claim.id), err)]
+    pub fn review_reply(&self, claim: Claim<'_>, reference: &str, answer: &str) -> Result<()> {
+        uze_workspace::review::reply(&self.0.home, claim, reference, answer)
     }
 }

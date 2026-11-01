@@ -280,6 +280,7 @@ impl Workspace<'_> {
         checkout::empty_trash(primary);
         for agent in &collected.forgotten {
             conversation::forget(&self.0.home, primary, agent);
+            uze_workspace::review::forget(&self.0.home, primary, agent);
         }
         let collected: Vec<String> = collected
             .branches
@@ -326,6 +327,7 @@ impl Workspace<'_> {
             // kept working is revived by reconciliation, and it would come
             // back without the conversation it never left.
             conversation::forget(&self.0.home, &primary, &agent_id);
+            uze_workspace::review::forget(&self.0.home, &primary, &agent_id);
             Ok(())
         })
     }
@@ -349,6 +351,7 @@ impl Workspace<'_> {
             let agent_id = agent.id.clone();
             store.agents.retain(|recorded| recorded.id != agent_id);
             conversation::forget(&self.0.home, &root, &agent_id);
+            uze_workspace::review::forget(&self.0.home, &root, &agent_id);
             Ok(true)
         })
     }
@@ -388,6 +391,7 @@ impl Workspace<'_> {
                 .agents
                 .retain(|recorded| recorded.id.as_str() != task_id);
             conversation::forget(&self.0.home, project, &agent_id);
+            uze_workspace::review::forget(&self.0.home, project, &agent_id);
             Ok(())
         })
     }

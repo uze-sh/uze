@@ -56,6 +56,10 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
     // Run by every hook a harness fires inside the workspace: one claim
     // read and one appended line, and a turn waits on it.
     ("agent report", PerformanceClass::Budgeted),
+    // The agent reading its review and answering one comment: a claim read
+    // and one small record read, or written under its lock, and no Git.
+    ("agent review show", PerformanceClass::Budgeted),
+    ("agent review reply", PerformanceClass::Budgeted),
     // One small file read or written under a lock, plus the front matter of
     // the few facts a scope keeps; an agent waiting on it is not working.
     ("agent memory remember", PerformanceClass::Budgeted),
@@ -270,6 +274,14 @@ pub const BUDGETED_COMMAND_TESTS: &[(&str, &str)] = &[
     ),
     (
         "agent report",
+        "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
+    ),
+    (
+        "agent review show",
+        "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
+    ),
+    (
+        "agent review reply",
         "crates/uze-application/tests/performance.rs::the_agent_surface_meets_the_budget",
     ),
     (

@@ -295,6 +295,26 @@ pub(crate) enum AgentAction {
         /// one as an argument rather than on standard input
         payload: Option<String>,
     },
+    /// The review the operator sent you: read its comments, and answer
+    /// each one where it was asked
+    Review {
+        #[command(subcommand)]
+        action: AgentReviewAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AgentReviewAction {
+    /// Print every review comment sent to you and not yet answered: its
+    /// file and lines, the lines quoted, and what the operator wrote
+    Show,
+    /// Answer one comment, by the `<send>/<n>` `show` printed for it
+    Reply {
+        /// The comment, as `<send>/<n>`
+        comment: String,
+        /// What you did about it, or why not
+        answer: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

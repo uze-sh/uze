@@ -641,6 +641,33 @@ impl uze_extensions::Host for EngineHost {
             .and_then(|policy| policy.target)
     }
 
+    /// The review the operator keeps for the agent working in `checkout`.
+    fn review_record(&self, checkout: &Path) -> Result<review::ReviewRecord, String> {
+        let app = super::tui_application(self.home.clone()).map_err(|error| error.to_string())?;
+        app.workspace()
+            .review_of_checkout(checkout)
+            .map(|record| from_kept(&record))
+            .map_err(|error| error.to_string())
+    }
+
+    /// Applies `change` to that review under its lock: what the operator
+    /// changed is laid over whatever the agent answered in between.
+    fn update_review_record(
+        &self,
+        checkout: &Path,
+        change: &mut dyn FnMut(&mut review::ReviewRecord),
+    ) -> Result<review::ReviewRecord, String> {
+        let app = super::tui_application(self.home.clone()).map_err(|error| error.to_string())?;
+        app.workspace()
+            .update_review(checkout, |kept| {
+                let mut record = from_kept(kept);
+                change(&mut record);
+                into_kept(&record, kept);
+            })
+            .map(|record| from_kept(&record))
+            .map_err(|error| error.to_string())
+    }
+
     fn artifact_source(&self, project: &Path) -> uze_extensions::ArtifactSource {
         WorkspaceHost.artifact_source(project)
     }
@@ -1191,4 +1218,107 @@ mod tests {
             "a file that cannot be read counts as nothing, never as an error"
         );
     }
+}
+
+use uze_extensions::review;
+
+/// The review as the extension reads it.
+fn from_kept(kept: &uze_application::ReviewRecord) -> review::ReviewRecord {
+    review::ReviewRecord {
+        comments: kept
+            .comments
+            .iter()
+            .map(|comment| review::Comment {
+                id: comment.id,
+                path: comment.path.clone(),
+                rows: comment
+                    .rows
+                    .iter()
+                    .map(|row| review::Row {
+                        kind: match row.kind {
+                            uze_application::ReviewRowKind::Context => review::RowKind::Context,
+                            uze_application::ReviewRowKind::Added => review::RowKind::Added,
+                            uze_application::ReviewRowKind::Removed => review::RowKind::Removed,
+                        },
+                        line: row.line,
+                        text: row.text.clone(),
+                    })
+                    .collect(),
+                excerpt: comment.excerpt.clone(),
+                text: comment.text.clone(),
+                status: match comment.status {
+                    uze_application::ReviewCommentStatus::Draft => review::CommentStatus::Draft,
+                    uze_application::ReviewCommentStatus::Sent => review::CommentStatus::Sent,
+                    uze_application::ReviewCommentStatus::Answered => {
+                        review::CommentStatus::Answered
+                    }
+                    uze_application::ReviewCommentStatus::Resolved => {
+                        review::CommentStatus::Resolved
+                    }
+                },
+                sent: comment.sent,
+                agent: comment.agent.clone(),
+                answers: comment.answers.clone(),
+            })
+            .collect(),
+        viewed: kept.viewed.clone(),
+        next_send: kept.next_send,
+        next_comment: kept.next_comment,
+    }
+}
+
+/// Writes what the extension changed back into the kept record. The
+/// answers are the agent's, so they are carried over from what was kept,
+/// never from what the extension handed back.
+fn into_kept(record: &review::ReviewRecord, kept: &mut uze_application::ReviewRecord) {
+    let answers: std::collections::BTreeMap<u64, Vec<String>> = kept
+        .comments
+        .iter()
+        .map(|comment| (comment.id, comment.answers.clone()))
+        .collect();
+    let answered: std::collections::BTreeSet<u64> = kept
+        .comments
+        .iter()
+        .filter(|comment| comment.status == uze_application::ReviewCommentStatus::Answered)
+        .map(|comment| comment.id)
+        .collect();
+    kept.comments = record
+        .comments
+        .iter()
+        .map(|comment| uze_application::ReviewComment {
+            id: comment.id,
+            path: comment.path.clone(),
+            rows: comment
+                .rows
+                .iter()
+                .map(|row| uze_application::ReviewRow {
+                    kind: match row.kind {
+                        review::RowKind::Context => uze_application::ReviewRowKind::Context,
+                        review::RowKind::Added => uze_application::ReviewRowKind::Added,
+                        review::RowKind::Removed => uze_application::ReviewRowKind::Removed,
+                    },
+                    line: row.line,
+                    text: row.text.clone(),
+                })
+                .collect(),
+            excerpt: comment.excerpt.clone(),
+            text: comment.text.clone(),
+            status: match comment.status {
+                review::CommentStatus::Draft => uze_application::ReviewCommentStatus::Draft,
+                // A send the agent already answered stays answered.
+                review::CommentStatus::Sent if answered.contains(&comment.id) => {
+                    uze_application::ReviewCommentStatus::Answered
+                }
+                review::CommentStatus::Sent => uze_application::ReviewCommentStatus::Sent,
+                review::CommentStatus::Answered => uze_application::ReviewCommentStatus::Answered,
+                review::CommentStatus::Resolved => uze_application::ReviewCommentStatus::Resolved,
+            },
+            sent: comment.sent,
+            agent: comment.agent.clone(),
+            answers: answers.get(&comment.id).cloned().unwrap_or_default(),
+        })
+        .collect();
+    kept.viewed = record.viewed.clone();
+    kept.next_send = record.next_send;
+    kept.next_comment = record.next_comment;
 }

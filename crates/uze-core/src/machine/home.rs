@@ -133,6 +133,16 @@ impl UzeHome {
             .join(format!("{task_id}.json"))
     }
 
+    /// What the operator wrote reviewing one agent's work: comments, the
+    /// agent's answers to them and which files were viewed. A record, per
+    /// agent rather than per branch, because naming the work renames the
+    /// branch and the review must outlive that.
+    pub fn review_path(&self, project_id: &str, task_id: &str) -> PathBuf {
+        self.project_dir(project_id)
+            .join("reviews")
+            .join(format!("{task_id}.json"))
+    }
+
     /// Every agent's recorded conversations in one project.
     pub fn conversations_dir(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("conversations")
@@ -477,6 +487,13 @@ impl UzeHome {
     /// behind here.
     pub fn conversations_lock_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("conversations.lock")
+    }
+
+    /// The guard every read-modify-write of a project's reviews takes: the
+    /// workspace client writes what the operator did, and the agent writes
+    /// its answers from its own process. A lock, not a record.
+    pub fn review_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("reviews.lock")
     }
 
     /// The guard a project's prompt history is appended and compacted

@@ -120,6 +120,10 @@ pub use uze_workspace::{
     prompt_history::{PromptAge, PromptClock, PromptEntry, PromptOrigin},
     reports::Cursor as AgentReportCursor,
     reports::Report as AgentReport,
+    review::{
+        Comment as ReviewComment, CommentStatus as ReviewCommentStatus, ReviewRecord,
+        Row as ReviewRow, RowKind as ReviewRowKind,
+    },
     worktree::{CompletionBehavior, PolicyStep, isolated_checkout},
 };
 
