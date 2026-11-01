@@ -900,15 +900,12 @@ fn the_changes_count_answers_with_its_hue_and_never_with_a_ground() {
     );
 }
 
-/// The changes badge is a count that is also a door: it says how much
-/// changed, so with nothing to say it says nothing. Two things that
-/// must not cost: reachability — the code button never leaves the
-/// pair, and the diff is one mode switch away inside the surface it
-/// opens — and steadiness, since the badge comes and goes on a Git
-/// read nobody asked for. It takes its room to the left, so the pair
-/// sits at the same columns whether or not there is work to report.
+/// The review's door stands on a clean checkout as on a busy one, and
+/// what it counts takes its room to the left: the code button sits at the
+/// same columns whether or not there is work to report, so it never moves
+/// under the pointer when a count arrives.
 #[test]
-fn the_changes_badge_comes_with_the_work_and_the_code_button_never_leaves() {
+fn the_review_door_counts_to_the_left_and_the_code_button_never_moves() {
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
 

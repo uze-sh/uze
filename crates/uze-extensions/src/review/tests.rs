@@ -256,7 +256,7 @@ fn only_a_file_with_uncommitted_work_offers_a_discard() {
 }
 
 #[test]
-fn a_changed_image_is_drawn_and_a_deleted_one_says_it_has_no_lines() {
+fn a_changed_image_is_drawn_and_a_binary_without_a_picture_says_it_has_no_lines() {
     let mut view = reviewing();
     let image = PathBuf::from("/w/naming.rs");
     let picture = crate::view::Picture {

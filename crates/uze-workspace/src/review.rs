@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn a_review_follows_its_agent_however_the_branch_is_named() {
+    fn a_review_is_kept_by_its_agent_and_forgotten_with_it() {
         let (home, root, first, _) = two_agents("review-renamed");
         sent_to(&home, &root, &first.0);
         let path = store_path(&home, &root, &first.0);
