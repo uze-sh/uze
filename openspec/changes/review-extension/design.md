@@ -99,10 +99,10 @@ pumped every pass whether or not their view is visible, so the door stays
 current. `GitBadge`, its spawn and its absorb are deleted, and the
 `offers_extension(code)` gate moves to review.
 
-The review answers `+a -d`, `◆n` (drafts), `◆n` in the success hue
-(answers to read), a working mark, or `review`. The working mark runs from
-the bridge reporting the send typed (§6) until that agent's next
-`turn.finished`, which the built-in learns through `agent_events`.
+The review answers `+a -d`, or `review` (D12: what waits in the review is
+not on the door). From the bridge reporting a send typed (§6) until that
+agent's next `turn.finished`, which the built-in learns through
+`agent_events`, the review reads its record again as soon as the turn ends.
 
 This reverses the tab strip's "absent on a clean checkout" behaviour. That
 rule lives in the `tab_strip.rs` comment and the test

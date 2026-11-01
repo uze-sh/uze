@@ -30,23 +30,15 @@ surface in front.
 - **WHEN** the operator switches the review off for the workspace
 - **THEN** no door is drawn for it, and its key does nothing
 
-### Requirement: The door says what waits on the operator
-The door SHALL add `◆n` for n unsent drafts and `◆n` in the success hue for
-n answered comments not yet resolved, drafts taking precedence. From the
-moment a send is typed until that agent's next finished turn, it SHALL
-show a working mark instead.
+### Requirement: The door counts the branch alone
+The door SHALL say how many lines the branch adds and removes against its
+target, and nothing more: what waits in the review (drafts, answers, an
+agent at work on a send) SHALL be said inside the review, never on the
+door.
 
-#### Scenario: Drafts waiting to be sent
-- **WHEN** the operator has written two comments and sent none
-- **THEN** the door reads `+81 -16 ◆2`
-
-#### Scenario: Answers waiting to be read
-- **WHEN** the agent answered three sent comments and none is resolved or drafted
-- **THEN** the door shows `◆3` in the success hue
-
-#### Scenario: The agent is on the review
-- **WHEN** a send was typed and the agent's turn has not finished
-- **THEN** the door shows the working mark, which gives way when the turn finishes
+#### Scenario: Drafts waiting are not on the door
+- **WHEN** the operator has written two comments and sent none on a branch adding 81 lines and removing 16
+- **THEN** the door reads `+81 -16`
 
 ### Requirement: The review diffs the branch against its target
 The review SHALL show, per changed file, the difference between the merge

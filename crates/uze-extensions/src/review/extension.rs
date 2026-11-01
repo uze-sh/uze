@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use super::change::{self, Change};
 use super::git::{self, Base, FileDiff, Listing, Totals};
-use super::record::{CommentStatus, ReviewRecord};
+use super::record::ReviewRecord;
 use super::surface::{Focus, Sending};
 use super::{Asked, CATALOG, ReviewView, handle_command, handle_hit, handle_scroll, outcome};
 use crate::contract::{
@@ -63,7 +63,8 @@ pub struct ReviewExtension {
     agents: Vec<(String, PathBuf)>,
     sending: Option<(PathBuf, Sending)>,
     /// The agent a send was typed into and the checkout it works in, until
-    /// its turn finishes or it is gone: only that checkout's door says so.
+    /// its turn finishes or it is gone: the turn's end is when its answers
+    /// are read, without waiting for the next pass.
     working: Option<(String, PathBuf)>,
     listing: bool,
     listed_at: Option<Instant>,
@@ -502,13 +503,6 @@ impl ReviewExtension {
             .map(|(_, changes)| changes.clone())
             .unwrap_or_default()
     }
-
-    fn record_for_door(&self) -> &ReviewRecord {
-        match (&self.open, &self.focus) {
-            (Some(view), Some(focus)) if view.root == focus.root => &view.record,
-            _ => &self.door.record,
-        }
-    }
 }
 
 impl Extension for ReviewExtension {
@@ -927,18 +921,9 @@ impl Extension for ReviewExtension {
         true
     }
 
+    /// The branch's size against its target, and nothing more: what waits
+    /// in the review is the review's to say, inside it.
     fn door_badge(&self) -> Option<DoorBadge> {
-        let record = self.record_for_door();
-        let drafts = record
-            .comments
-            .iter()
-            .filter(|comment| comment.status == CommentStatus::Draft)
-            .count();
-        let answered = record
-            .comments
-            .iter()
-            .filter(|comment| comment.status == CommentStatus::Answered)
-            .count();
         let mut spans = Vec::new();
         let totals = self.door.totals.filter(|totals| totals.files > 0);
         match totals {
@@ -955,19 +940,10 @@ impl Extension for ReviewExtension {
             }
             None => spans.push(Span::new("review", Role::Muted)),
         }
-        let working = self
-            .working
-            .as_ref()
-            .is_some_and(|(_, root)| self.focus.as_ref().map(|focus| &focus.root) == Some(root));
-        let quiet = totals.is_none() && drafts == 0 && answered == 0 && !working;
-        if working {
-            spans.push(Span::new(" ◐", Role::Info));
-        } else if drafts > 0 {
-            spans.push(Span::new(format!(" ◆{drafts}"), Role::Warning));
-        } else if answered > 0 {
-            spans.push(Span::new(format!(" ◆{answered}"), Role::Success));
-        }
-        Some(DoorBadge { spans, quiet })
+        Some(DoorBadge {
+            spans,
+            quiet: totals.is_none(),
+        })
     }
 }
 

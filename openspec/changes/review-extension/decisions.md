@@ -107,3 +107,13 @@
 - decided:  one control, `{ } code block`, inserting an empty block fenced with the file's extension (`` ```rs ``) on lines of its own, the caret on its empty line; inline code is typed with backticks and still drawn as code
 - rejected: keeping the marked lines in the block, which the operator then deletes to write the fix, and the inline control, a pair of backticks a key already types
 - blast:    the spec's "A comment carries code" requirement
+
+## D12 — The door counts the branch alone
+
+- status:   pending
+- task:     4.2
+- commit:   
+- trigger:  the operator, reading `+9,560 -3,112 ◆2` on the tab strip, asked for the gold count to go and the diff's count alone to stay
+- decided:  `door_badge` answers `+a -d`, or `review` held back, and nothing else; drafts, answers and the working mark are not on the door. What waits is read inside the review, from the threads' walk beside `viewed`
+- rejected: keeping answers alone on the door, which brings back the mark the operator asked to take off
+- blast:    the spec's door requirement; the turn's end still reads the review again at once

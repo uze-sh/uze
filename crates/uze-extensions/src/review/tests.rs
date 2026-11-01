@@ -621,35 +621,6 @@ fn badge(extension: &ReviewExtension) -> String {
 }
 
 #[test]
-fn the_working_mark_is_the_sent_checkouts_and_goes_with_its_agent() {
-    use crate::contract::{AgentWritten, Checkout, Extension, Outcome};
-    let mut extension = sending_extension();
-    let asked = extension.command(SURFACE, Command::Send, SPACE);
-    assert!(matches!(asked, Outcome::Agent(_)), "{asked:?}");
-    extension.agent_write("review-send", AgentWritten::Typed);
-    let working = badge(&extension);
-    let elsewhere = Checkout {
-        root: PathBuf::from("/other"),
-        display: "/other".to_owned(),
-        target: None,
-    };
-    extension.focus(Some(&elsewhere));
-    assert_ne!(
-        badge(&extension),
-        working,
-        "another checkout's door is not the sent one's"
-    );
-    extension.focus(Some(&Checkout {
-        root: PathBuf::from("/w"),
-        display: "/w".to_owned(),
-        target: None,
-    }));
-    assert_eq!(badge(&extension), working);
-    extension.agents(&serde_json::json!([]));
-    assert_ne!(badge(&extension), working, "an agent gone takes its mark");
-}
-
-#[test]
 fn a_send_typed_after_the_review_closed_still_sends_its_drafts() {
     use crate::contract::{AgentWritten, Extension};
     let mut extension = sending_extension();
@@ -809,28 +780,24 @@ fn a_send_refused_or_declined_leaves_the_drafts_drafts() {
     }
 }
 
+/// The door says how large the branch is against its target, and nothing
+/// more: a draft or an answer waiting is the review's to say, inside it.
 #[test]
-fn the_door_counts_the_branch_and_says_what_waits() {
+fn the_door_counts_the_branch_and_nothing_else() {
     use crate::contract::Extension;
     let mut extension = sending_extension();
-    assert!(
-        badge(&extension).starts_with("review"),
-        "nothing counted yet: {}",
-        badge(&extension)
-    );
+    assert_eq!(badge(&extension), "review", "nothing counted yet");
+    assert!(extension.door_badge().unwrap().quiet);
     extension.counted(PathBuf::from("/w"), 14_714, 672, 3);
-    let drafts = badge(&extension);
-    assert!(drafts.starts_with("+14,714 -672"), "{drafts}");
-    assert!(drafts.ends_with('1'), "one draft waits: {drafts}");
+    assert_eq!(
+        badge(&extension),
+        "+14,714 -672",
+        "a draft waits, and is not said"
+    );
+    assert!(!extension.door_badge().unwrap().quiet);
     let view = extension.review_view_mut().unwrap();
     view.record.comments[0].status = CommentStatus::Answered;
-    let answered = extension.door_badge().unwrap();
-    let last = answered.spans.last().unwrap();
-    assert_eq!(
-        last.role,
-        crate::view::Role::Success,
-        "an answer waits, in the success hue"
-    );
+    assert_eq!(badge(&extension), "+14,714 -672", "nor an answer");
 }
 
 #[test]
@@ -956,17 +923,21 @@ fn discarding_a_rename_from_its_old_name_says_which_side_goes() {
     assert!(body.contains("named.rs goes"), "{body}");
 }
 
+/// Put away before its write landed, the review opened again shows the
+/// draft it held.
 #[test]
-fn the_door_counts_a_draft_made_just_before_the_review_closed() {
-    use crate::contract::Extension;
+fn a_draft_made_just_before_the_review_closed_is_there_when_it_opens_again() {
+    use crate::contract::{Checkout, Extension};
     let mut extension = sending_extension();
     extension.counted(PathBuf::from("/w"), 3, 1, 1);
     extension.close(SURFACE);
-    assert!(
-        badge(&extension).ends_with('1'),
-        "one draft waits: {}",
-        badge(&extension)
-    );
+    let checkout = Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+    };
+    extension.open(SURFACE, &checkout);
+    assert_eq!(extension.review_view().unwrap().drafts().len(), 1);
 }
 
 /// The list's record arrives while the write of a new draft is still out:

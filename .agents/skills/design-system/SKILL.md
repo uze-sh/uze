@@ -164,10 +164,10 @@ on "cancel" must not save first.
 **The review:**
 - Its door is the `+N -M` on the tab strip, and it is always there while
   the review is on: a clean checkout reads `review`, held back, never
-  nothing. What waits on the operator rides it: `◆n` in the warning hue
-  for drafts, in the success hue for answers not yet resolved, a working
-  mark while the agent is on a send. The door is drawn from the
-  extension's own `door_badge`, never from a read the host makes.
+  nothing. It counts the branch and nothing more: no drafts, answers or
+  working mark ride it (the operator took the `◆n` off); what waits is
+  read inside the review, on the threads' walk. The door is drawn from
+  the extension's own `door_badge`, never from a read the host makes.
 - A line is marked by its number: a press on the number column marks it,
   a drag down the numbers or a press with any key held, on a number or
   on the line's text, carries the mark (shift, ctrl or alt: Windows
