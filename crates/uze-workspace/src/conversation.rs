@@ -365,6 +365,79 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
     let _ = fs::remove_dir_all(context);
 }
 
+/// The documents of conversations that ended without [`forget`] reaching
+/// them — a harness or a workspace killed, a conversation a relaunch
+/// replaced — and answers what it removed. A document is kept while any
+/// agent's record still names its conversation: a launch records the
+/// conversation it assigned before it writes the document, so one being
+/// started is never taken. When any record cannot be read, or a project's
+/// records are still in the layout before they were gathered, nothing is
+/// removed: that record may be what names a document.
+pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
+    if home
+        .scattered_project_records("")
+        .directories
+        .iter()
+        .any(|directory| directory.exists())
+    {
+        return Vec::new();
+    }
+    let mut named: std::collections::BTreeSet<(String, String)> = Default::default();
+    for project in fs::read_dir(home.projects_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let project = project.file_name().to_string_lossy().into_owned();
+        for entry in fs::read_dir(home.conversations_dir(&project))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = entry.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            let Ok(carried) = uze_document::read::<ConversationRecord>(&path) else {
+                return Vec::new();
+            };
+            for (integration, harness) in carried.record().into_iter().flat_map(|r| r.harnesses) {
+                if let Some(session) = harness.conversation {
+                    named.insert((integration, session.as_str().to_owned()));
+                }
+            }
+        }
+    }
+    let mut removed = Vec::new();
+    for integration in fs::read_dir(home.runtime_sessions_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let name = integration.file_name().to_string_lossy().into_owned();
+        for document in fs::read_dir(home.session_context_dir(&name))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let path = document.path();
+            let Some(session) = path
+                .file_name()
+                .and_then(|file| file.to_str())
+                .and_then(|file| file.strip_suffix(".md"))
+            else {
+                continue;
+            };
+            if !named.contains(&(name.clone(), session.to_owned()))
+                && fs::remove_file(&path).is_ok()
+            {
+                removed.push(path);
+            }
+        }
+    }
+    removed
+}
+
 /// Removes the links a context channel made to `context` in the project's
 /// `.worktrees/` (beside a slot as `<id>~uze`, or under `~uze/`). Taken here,
 /// when the agent ends, and never by a launch: a launch cannot tell a link
