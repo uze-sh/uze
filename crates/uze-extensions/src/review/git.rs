@@ -108,6 +108,9 @@ pub(crate) struct Listing {
     /// Each listed file's content as it stands, as one number: what a
     /// viewed mark holds for, whichever filter took the diff.
     pub(crate) stamps: std::collections::BTreeMap<PathBuf, u64>,
+    /// The commit checked out: a diff of what is not committed moves with
+    /// it though no file on disk does.
+    pub(crate) head: Option<String>,
 }
 
 /// Every file that differs from `base` in the working tree, untracked ones
@@ -134,6 +137,7 @@ pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Resul
             uncommitted,
             partners,
             stamps,
+            head: head(host, root),
         });
     };
     let named = host.git(
@@ -162,12 +166,22 @@ pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Resul
         uncommitted,
         partners,
         stamps,
+        head: head(host, root),
     })
+}
+
+fn head(host: &dyn Host, root: &Path) -> Option<String> {
+    host.git(root, &["rev-parse", "--verify", "-q", "HEAD"], &[1])
+        .ok()
+        .map(|out| out.trim().to_owned())
+        .filter(|head| !head.is_empty())
 }
 
 /// Each file's content as one number: Git's object id for what is on disk,
 /// in one `hash-object` for all of them, and the path alone for a file
-/// that is gone. A file Git cannot hash has none, and reads as unviewed.
+/// that is gone. When Git refuses one of them (a submodule, a nested
+/// repository) the rest are asked one by one, and the one refused has
+/// none: it cannot be marked viewed.
 fn stamps(
     host: &dyn Host,
     root: &Path,
@@ -202,9 +216,19 @@ fn stamps(
     if present.is_empty() {
         return stamps;
     }
-    if let Ok(ids) = host.git(root, &args, &[]) {
-        for (file, id) in present.iter().zip(ids.lines()) {
-            stamps.insert(file.path.clone(), fingerprint(id));
+    match host.git(root, &args, &[]) {
+        Ok(ids) => {
+            for (file, id) in present.iter().zip(ids.lines()) {
+                stamps.insert(file.path.clone(), fingerprint(id));
+            }
+        }
+        Err(_) => {
+            for (file, relative) in present.iter().zip(&relative) {
+                let one = ["hash-object", "--no-filters", "--", relative.as_str()];
+                if let Ok(id) = host.git(root, &one, &[]) {
+                    stamps.insert(file.path.clone(), fingerprint(id.trim()));
+                }
+            }
         }
     }
     stamps
@@ -441,6 +465,20 @@ mod tests {
         );
         std::fs::write(root.join("a.rs"), "fn a() { b() }\n").unwrap();
         assert_ne!(stamp(None), first, "another content, another stamp");
+    }
+
+    #[test]
+    fn a_path_git_cannot_hash_leaves_the_others_stamped() {
+        let repository = uze_testkit::git::Repository::new("review-stamp-nested");
+        let root = repository.root();
+        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+        let inner = root.join("inner");
+        std::fs::create_dir(&inner).unwrap();
+        std::fs::write(inner.join("b.rs"), "fn b() {}\n").unwrap();
+        DiskHost.git(&inner, &["init", "-q"], &[]).unwrap();
+        DiskHost.git(&inner, &["add", "b.rs"], &[]).unwrap();
+        let stamps = listing(&DiskHost, root, None).unwrap().stamps;
+        assert!(stamps.contains_key(&root.join("a.rs")), "{stamps:?}");
     }
 
     #[test]

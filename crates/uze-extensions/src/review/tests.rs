@@ -60,8 +60,11 @@ pub(super) fn reviewing() -> ReviewView {
             uncommitted: [path.clone()].into(),
             partners: Default::default(),
             stamps: [(path.clone(), 1), (root.join("tests.rs"), 1)].into(),
+            head: None,
         }),
     );
+    // Asked as the diff job asks it, against what the list read.
+    view.asking = view.diff_key(&path).map(|key| (path.clone(), key));
     view.absorb_diff(path.clone(), Ok(diff_of(&path, NAMING)), "x".to_owned());
     view
 }
@@ -151,6 +154,7 @@ fn relisted(view: &mut ReviewView, naming: u64) {
             uncommitted: Default::default(),
             partners: Default::default(),
             stamps: [(root.join("naming.rs"), naming), (root.join("tests.rs"), 1)].into(),
+            head: None,
         }),
     );
 }
@@ -472,6 +476,7 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
             uncommitted: Default::default(),
             partners: Default::default(),
             stamps: Default::default(),
+            head: None,
         }),
     );
     handle_command(&mut view, Command::AddComment, SPACE);
@@ -801,4 +806,57 @@ fn a_discard_is_asked_first_and_only_then_handed_to_the_host() {
     handle_command(&mut view, Command::Activate, SPACE);
     handle_hit(&mut view, ViewHit::Answer(true), SPACE);
     assert_eq!(view.restore, Some(vec![PathBuf::from("/w/naming.rs")]));
+}
+
+/// The file moved while its diff was out: the answer is of the content
+/// before, and the next list reads it again.
+#[test]
+fn a_diff_answered_after_its_file_moved_is_read_again() {
+    let mut view = reviewing();
+    let path = PathBuf::from("/w/naming.rs");
+    view.asking = view.diff_key(&path).map(|key| (path.clone(), key));
+    relisted(&mut view, 2);
+    view.absorb_diff(path.clone(), Ok(diff_of(&path, NAMING)), "x".to_owned());
+    relisted(&mut view, 2);
+    assert!(
+        view.diff_pending,
+        "the diff on show is of the content before"
+    );
+}
+
+#[test]
+fn a_diff_is_read_again_once_the_commit_checked_out_moves() {
+    let mut view = reviewing();
+    view.filter = Filter::Uncommitted;
+    let files = view.files.clone();
+    let path = PathBuf::from("/w/naming.rs");
+    view.diffed = view.diff_key(&path).map(|key| (path.clone(), key));
+    view.absorb_listing(
+        Filter::Uncommitted,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files,
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps: [(path.clone(), 1)].into(),
+            head: Some("c0ffee".to_owned()),
+        }),
+    );
+    assert!(
+        view.diff_pending,
+        "a hunk committed moves the diff, not the file"
+    );
+}
+
+#[test]
+fn a_file_git_cannot_stamp_reads_changed_and_cannot_be_marked() {
+    let mut view = reviewing();
+    let path = PathBuf::from("/w/naming.rs");
+    handle_command(&mut view, Command::MarkViewed, SPACE);
+    view.stamps.remove(&path);
+    assert_eq!(view.viewed(&path), surface::Viewed::Changed);
+    view.select_file(0);
+    handle_command(&mut view, Command::MarkViewed, SPACE);
+    assert!(view.notice.is_some(), "says why it is not marked");
 }

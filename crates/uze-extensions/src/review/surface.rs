@@ -74,7 +74,11 @@ pub struct ReviewView {
     pub(crate) stamps: std::collections::BTreeMap<PathBuf, u64>,
     /// The content the diff on show was read for: the diff is read again
     /// only once the file moved.
-    pub(crate) diffed: Option<(PathBuf, u64)>,
+    pub(crate) diffed: Option<(PathBuf, DiffKey)>,
+    /// What the diff being read was asked against, set as it is asked.
+    pub(crate) asking: Option<(PathBuf, DiffKey)>,
+    /// The commit checked out, as the list last read it.
+    pub(crate) head: Option<String>,
     /// The list has been read at least once.
     pub(crate) listed: bool,
     pub(crate) list_error: Option<String>,
@@ -125,6 +129,8 @@ impl ReviewView {
             partners: std::collections::BTreeMap::new(),
             stamps: std::collections::BTreeMap::new(),
             diffed: None,
+            asking: None,
+            head: None,
             listed: false,
             list_error: None,
             selected: None,
@@ -209,6 +215,7 @@ impl ReviewView {
                 self.uncommitted = listing.uncommitted;
                 self.partners = listing.partners;
                 self.stamps = listing.stamps;
+                self.head = listing.head;
             }
         }
         if self.selected_index().is_none() && self.composer.is_none() {
@@ -217,11 +224,12 @@ impl ReviewView {
             self.cursor = 0;
             self.mark = None;
         }
-        // Read the diff again only when the file it is of moved.
+        // Read the diff again only once the file, the commit or the base
+        // it is taken against moved.
         let now = self
             .selected
-            .as_ref()
-            .and_then(|path| Some((path.clone(), *self.stamps.get(path)?)));
+            .clone()
+            .and_then(|path| Some((path.clone(), self.diff_key(&path)?)));
         if self.selected.is_some() && (self.diff.is_none() || now.is_none() || now != self.diffed) {
             self.diff_pending = true;
         }
@@ -239,7 +247,9 @@ impl ReviewView {
         }
         self.diff_pending = false;
         self.theme = theme;
-        self.diffed = self.stamps.get(&path).map(|stamp| (path.clone(), *stamp));
+        // What it was asked against, not what stands now: a file that
+        // moved while the read was out is read again.
+        self.diffed = self.asking.take().filter(|(asked, _)| *asked == path);
         match diff {
             Ok(diff) => {
                 let moved = self.diff.as_ref().is_none_or(|shown| {
@@ -358,6 +368,18 @@ impl ReviewView {
             self.diff = None;
             self.diffed = None;
         }
+    }
+
+    /// What the diff of `path` depends on, as the list last read it.
+    pub(crate) fn diff_key(&self, path: &Path) -> Option<DiffKey> {
+        Some(DiffKey {
+            stamp: *self.stamps.get(path)?,
+            base: match self.filter {
+                Filter::All => self.base.commit.clone(),
+                Filter::Uncommitted => None,
+            },
+            head: self.head.clone(),
+        })
     }
 
     // --- Marking ----------------------------------------------------------
@@ -502,8 +524,9 @@ impl ReviewView {
             return Viewed::No;
         };
         match self.stamps.get(path) {
-            Some(stamp) if stamp != mark => Viewed::Changed,
-            _ => Viewed::Yes,
+            Some(stamp) if stamp == mark => Viewed::Yes,
+            // Changed, or a content nothing can vouch for any more.
+            _ => Viewed::Changed,
         }
     }
 
@@ -514,6 +537,10 @@ impl ReviewView {
             return;
         };
         let Some(fingerprint) = self.stamps.get(&path).copied() else {
+            self.notice = Some(Span::new(
+                "Git cannot say what this file holds, so it cannot be marked viewed",
+                crate::view::Role::Muted,
+            ));
             return;
         };
         let viewed = self.viewed(&path) == Viewed::Yes;
@@ -596,6 +623,15 @@ pub(crate) enum Viewed {
     Yes,
     /// Marked, on a diff that has moved since.
     Changed,
+}
+
+/// What a file's diff was read against: its content, the base, the commit
+/// checked out.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DiffKey {
+    stamp: u64,
+    base: Option<String>,
+    head: Option<String>,
 }
 
 /// A kept comment's text and answers, highlighted, and what they were

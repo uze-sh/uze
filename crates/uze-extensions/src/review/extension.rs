@@ -317,6 +317,9 @@ impl ReviewExtension {
             return;
         };
         self.reading_diff = true;
+        view.asking = view
+            .diff_key(&file.path)
+            .map(|key| (file.path.clone(), key));
         let root = view.root.clone();
         let base = match view.filter {
             super::Filter::All => view.base.commit.clone(),
