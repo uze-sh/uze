@@ -3207,9 +3207,12 @@ fn a_marked_line_wears_the_comment_gold_over_the_diffs_wash() {
         theme::color(Token::StateDiffAdded)
     );
     line.marked = true;
+    let marked = drawn_with_caret(&line, 20, 99);
+    assert_eq!(marked[at].bg, theme::color(Token::StateDiffMarked));
     assert_eq!(
-        drawn_with_caret(&line, 20, 99)[at].bg,
-        theme::color(Token::StateDiffMarked)
+        marked[(0, 0)].bg,
+        theme::color(Token::StateDiffMarked),
+        "the sign and the number marked with it"
     );
 }
 

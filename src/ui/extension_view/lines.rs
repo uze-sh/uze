@@ -686,17 +686,18 @@ pub(super) fn render_line(
             Some(theme::color(Token::SurfaceRaised)),
         ),
     };
-    // A card stands in the text's column; the numbers beside it stay on
-    // the content's ground.
-    let gutter_ground = match line.tone {
-        LineTone::Card => None,
-        _ => background,
-    };
     // A marked run is the reader's own, and it reads over the diff's wash:
     // the gold of a draft comment, the sign keeping the change's hue.
     let background = match line.marked {
         true => Some(theme::color(Token::StateDiffMarked)),
         false => background,
+    };
+    // A marked run is the whole line, its sign and number with it; a card
+    // stands in the text's column, the numbers beside it on the content's
+    // ground.
+    let gutter_ground = match line.tone {
+        LineTone::Card if !line.marked => None,
+        _ => background,
     };
     let mut content_spans: Vec<TextSpan<'static>> = line.spans.iter().map(styled).collect();
     if let Some(background) = background {

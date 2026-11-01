@@ -175,7 +175,7 @@ on "cancel" must not save first.
   opens a comment on it (`◆ comment on 3 lines`), the affordance a
   pointer needs where the key is `c`. The marked run wears
   `state.diff-marked`, a draft comment's gold held faint, over the diff's
-  red and green; never the list's `SurfaceSelected`, which the operator
+  red and green, across the whole line, its sign and number included; never the list's `SurfaceSelected`, which the operator
   could not tell from a line passed over.
 - A comment stands under the lines it is about, set in from the edge,
   never in a box the extension draws: its first line says where and what
