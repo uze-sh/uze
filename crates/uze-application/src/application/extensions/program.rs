@@ -39,6 +39,11 @@ static RUNS: AtomicU64 = AtomicU64::new(0);
 /// process that made it still runs: far past any program's time limit.
 const STALE_SCRATCH: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 
+/// How long a run's scratch may live even while a process with its pid
+/// answers alive: a pid is reused, and no program a view waits on runs for
+/// a week, so past this the process answering is another one.
+const SCRATCH_AGE_CAP: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
 /// The scratch directories a killed process left are swept once, by its
 /// successor's first run: a process that lives removes its own runs'.
 static SWEPT: std::sync::Once = std::sync::Once::new();
@@ -61,9 +66,10 @@ fn scratch_for_run(home: &UzeHome) -> PathBuf {
 /// Every run's scratch directory: alive while the process whose id names
 /// it (`{pid}-{run}`) is alive, so a program that runs for hours keeps its
 /// scratch however old it grows. A directory whose process the platform
-/// cannot answer for falls back to its age ([`STALE_SCRATCH`]). Takes no
-/// lock: only a process that is gone, or one too old to be running, loses
-/// its scratch.
+/// cannot answer for falls back to its age ([`STALE_SCRATCH`]), and one
+/// older than [`SCRATCH_AGE_CAP`] goes whatever its pid answers, since the
+/// pid may have been reused. Takes no lock: only a process that is gone,
+/// or one too old to be running, loses its scratch.
 pub(crate) struct ExtensionScratch;
 
 impl crate::application::Collectable for ExtensionScratch {
@@ -84,7 +90,8 @@ impl crate::application::Collectable for ExtensionScratch {
 }
 
 /// Removes every run's scratch directory whose process `alive` says is
-/// gone, or, where it cannot say, last changed more than `older_than` ago.
+/// gone, or, where it cannot say, last changed more than `older_than` ago;
+/// and any last changed more than [`SCRATCH_AGE_CAP`] ago.
 fn sweep_scratch(
     home: &UzeHome,
     older_than: std::time::Duration,
@@ -103,12 +110,15 @@ fn sweep_scratch(
             .to_str()
             .and_then(|name| name.split_once('-'))
             .and_then(|(pid, _)| pid.parse::<u32>().ok());
-        let gone = match process.and_then(&alive) {
-            Some(alive) => !alive,
-            None => entry
+        let older = |than: std::time::Duration| {
+            entry
                 .metadata()
                 .and_then(|meta| meta.modified())
-                .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= older_than)),
+                .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= than))
+        };
+        let gone = match process.and_then(&alive) {
+            Some(alive) => !alive || older(SCRATCH_AGE_CAP),
+            None => older(older_than),
         };
         if gone && std::fs::remove_dir_all(entry.path()).is_ok() {
             removed.push(entry.path());
@@ -785,6 +795,31 @@ mod tests {
         let collected = ExtensionScratch.collect(&home);
         assert!(!running.exists(), "a gone program's scratch was left");
         assert_eq!(collected.removed, [running]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A pid reused by another process keeps answering alive: past the
+    /// cap, the run's scratch goes anyway.
+    #[test]
+    fn scratch_past_the_age_cap_goes_though_its_pid_answers_alive() {
+        let root = uze_testkit::temp::scratch("program-scratch-age-cap");
+        let home = UzeHome::at(root.clone());
+        let reused = home.extension_scratch_dir("4242-0");
+        std::fs::create_dir_all(reused.join(SCRATCH)).unwrap();
+        let fresh = home.extension_scratch_dir("4242-1");
+        std::fs::create_dir_all(fresh.join(SCRATCH)).unwrap();
+        let past_the_cap =
+            std::time::SystemTime::now() - SCRATCH_AGE_CAP - std::time::Duration::from_secs(60);
+        std::fs::File::open(&reused)
+            .unwrap()
+            .set_modified(past_the_cap)
+            .unwrap();
+
+        let removed = sweep_scratch(&home, STALE_SCRATCH, |_| Some(true));
+
+        assert_eq!(removed, std::slice::from_ref(&reused));
+        assert!(!reused.exists());
+        assert!(fresh.exists(), "a live run's scratch was swept");
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -278,3 +278,13 @@
 - decided:  the requirement says repair SHALL NOT change a *pinned* revision, and that restoring the commit pinned before a marketplace link is not a change: `agents.lock` never moves, and the restore puts back the revision it records.
 - rejected: dropping the restore from repair (a machine left on a link's working tree would need `uze update`, which moves pins).
 - blast:    `specs/machine-repair/spec.md`.
+
+## R29 — Scratch past a week goes whatever its pid answers
+
+- status:   pending
+- task:     review
+- commit:   (the commit recording this)
+- trigger:  the review found R21's rule keeps a run's scratch as long as a process with its pid answers alive, so a reused pid keeps a dead run's scratch forever.
+- decided:  an age cap: a run's scratch last changed more than seven days ago is swept even while its pid answers alive (`SCRATCH_AGE_CAP` in `program.rs`). No program a view waits on runs for a week, so past that the process answering is another one.
+- rejected: comparing the process's start time with the directory's (`uze-platform` answers a start time only on Windows today, and a new platform concept belongs to its own change).
+- blast:    `program.rs`.
