@@ -212,7 +212,7 @@
 
 - status:   pending
 - task:     3.5
-- commit:   (this commit)
+- commit:   48eb83c6
 - trigger:  D8's table leaves open how a parameterised path matches, where the walk stops, and how the result is reported.
 - decided:  `OwnedPath::pattern/matches/lies_under` treat each `{…}` (and the placeholder package's segments) as any text within one segment. The walk skips the generated and remembered tiers and the opaque terminal subtree; a declared directory is entered only when a declared path lies under it (a package's bytes, a build, a memory directory are their owner's content). Set-aside names are found anywhere walked. An undeclared directory is entered when a declared path lies under it; otherwise an empty one in bytes, store or record is removed, and anything else is `unknown`. A retired path that a step still carries is passed over. Results are `RepairReport.home` (`SchemaEntry`: path, tier, finding, size for leftovers, removed), shown under "Home"; they do not change the exit status.
 - rejected: reporting each unknown as a `HealthFinding` (it would make the exit status 1 for a newer build's file).
@@ -222,7 +222,7 @@
 
 - status:   pending
 - task:     3.6
-- commit:   (this commit)
+- commit:   48eb83c6
 - trigger:  D8 asks plain `doctor` to show a recorded figure and `--repair` to refresh it.
 - decided:  `CollectionRecord { measured_at_unix, tiers }` in `cache/collection.json`, measured per tier by each top-level entry's tier (`Tier::of`, read-only, terminal state counted as a record). `--repair` writes it after its second observation and reports it as `size`; plain `doctor` reads it into `DoctorReport.collection` and shows a `size` row only when one was recorded. Plain `doctor`'s collectors read only what each owner's rule needs (markers, compiled headers, mirror `catalogue.json`, directory listings); `doctor_meets_the_budget` stays green.
 - rejected: measuring on plain `doctor` (a walk of every package's bytes).
@@ -242,8 +242,29 @@
 
 - status:   pending
 - task:     4.2
-- commit:   (this commit)
+- commit:   48eb83c6
 - trigger:  R2 left the spec's "A running session" scenario, the requirement's "unless a session … is running" and design D4 promising a guard nothing implements.
 - decided:  the requirement now says repair repoints through the harness's own CLI and does not wait for or look for a session; the scenario is removed; design D4, its risk line, the proposal and task 2.3 say the same; the "repoints during a session" negative test is dropped from 4.2.
 - rejected: keeping the scenario as a declared limitation (it would be a requirement nothing meets).
 - blast:    `specs/machine-repair/spec.md`, `design.md`, `proposal.md`, `tasks.md`.
+
+## R26 — The Lab's repair contract, and the bug it found
+
+- status:   pending
+- task:     4.3
+- commit:   7e5139bb, feec1e1a, 5f068a92
+- trigger:  4.3 asks for the repair proven on every vertical; the vendor-stores contract module the brief points to (`conformance/contract/stores.py`) is on `feat/clean-uninstall` and not in this branch.
+- decided:  `conformance/contract/repair.py`, written in the same shape and naming no vendor: after `uze add flow@uze-lab`, `sources/` is deleted, the binding's `misplace_registration` runs (Codex: `[marketplaces.uze-store] source` pointed at `runtime/attachments/codex`, holding a copy of the store, as an earlier release left it), and a `uze terminal serve` is killed with `SIGKILL` so its endpoint stays. Doctor's JSON before must name `package_bytes`, `terminal_endpoint` (and `registrations` where misplaced); `uze doctor --repair` must exit 0; doctor after names none of them; every digest in `packages.json` is unchanged; the turn offers `flow:commit` and carries the `always_on` rule; the deny scene denies; where the binding has a `plugin_listing`, the vendor lists the plugin installed and enabled. `Bindings` gains `misplace_registration`, `plugin_listing`, `plugin_enabled` and `json_documents` (the same names the vendor-stores branch adds). The Codex run found that repair looked a mirror up by the registered name, failing for a plugin a marketplace lists under another (`mcp-plugin` vs `uze-mcp-conformance`): fixed in 5f068a92 with `a_plugin_listed_under_another_name_comes_back`.
+- result:   `python3 conformance/lab.py --harness <h> --contract repair`: claude 20/20, codex 20/20 (after the fix), opencode 21/21, antigravity 21/21 (these three on the image before the fix, which only changes the entry lookup).
+- rejected: cherry-picking the vendor-stores conformance commits into this branch (they are delivered with that change).
+- blast:    `conformance/contract/{repair,bindings,__init__}.py`, `conformance/harnesses/codex/bindings.py`, `repair.rs`.
+
+## R27 — The gate's findings on code an earlier group wrote
+
+- status:   pending
+- task:     4.4
+- commit:   c958e63e, (the commit recording this)
+- trigger:  `make check` failed on two things group 2 left: clippy 1.99's `type_complexity` on a test array in `catalogue.rs`, and `vendor_neutral` scans refusing `PackageSource`/`ResolvedSource` in `store.rs` (a test helper of `restore_bytes`).
+- decided:  a type alias in the catalogue test; the store test builds its provenance through `Provenance::of_local_path`, a `#[cfg(test)]` constructor in `acquisition.rs`, so `store.rs` names no source mechanism.
+- result:   `make check` (with `UZE_AGENT`, `UZE_AGENT_KEY`, `UZE_PANE` unset): fmt, lint, deny, telemetry tests, python fmt/lint and artifacts pass; `test` fails only on the known environment failures — `command_approval::approving_needs_a_person_at_a_terminal`, `extensions::an_install_of_what_the_project_declares_says_the_same`, `extensions::an_install_off_a_terminal_leaves_a_script_extension_disabled_and_says_where_to_enable_it`, `uze-terminal` `foreground_status_*` (2) — plus one `uze-theme` test (`the_bundled_tables_and_the_themes_directory_agree`) that did not find its themes directory once and passed on rerun. `openspec validate --all --strict`: 101 passed.
+- blast:    `catalogue.rs`, `store.rs`, `acquisition.rs`.

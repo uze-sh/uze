@@ -1199,15 +1199,7 @@ mod tests {
         fs::create_dir_all(root.join("skills/flow")).unwrap();
         fs::write(root.join("plugin.json"), "{\"name\":\"flow\"}\n").unwrap();
         fs::write(root.join("skills/flow/SKILL.md"), body).unwrap();
-        let provenance = Provenance {
-            requested: crate::PackageSource::Local {
-                path: root.to_path_buf(),
-            },
-            resolved: crate::ResolvedSource::Local {
-                path: root.to_path_buf(),
-            },
-        };
-        MaterializedPackage::borrowed(root.to_path_buf(), provenance)
+        MaterializedPackage::borrowed(root.to_path_buf(), Provenance::of_local_path(root))
     }
 
     /// Bytes acquired again are kept only when they are the ones recorded

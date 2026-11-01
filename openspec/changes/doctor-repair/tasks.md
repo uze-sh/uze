@@ -53,5 +53,5 @@
   - deletes a set-aside record without `--discard-leftovers`;
   - collects a projection that is in use;
   - touches `state/terminal/` while a workspace runs.
-- [ ] 4.3 Add a conformance check on every vertical. Delete `sources/`, register Codex's marketplace at an old root, and leave a stale endpoint. Then run `uze doctor --repair`. Plugins must load, a deny hook must deny, an `always_on` rule must reach the session, and every package's digest must be unchanged.
-- [ ] 4.4 Run `make check` and `openspec validate --all --strict`.
+- [x] 4.3 Add a conformance check on every vertical. Delete `sources/`, register Codex's marketplace at an old root, and leave a stale endpoint. Then run `uze doctor --repair`. Plugins must load, a deny hook must deny, an `always_on` rule must reach the session, and every package's digest must be unchanged.
+- [x] 4.4 Run `make check` and `openspec validate --all --strict`.
