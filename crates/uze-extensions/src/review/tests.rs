@@ -603,3 +603,15 @@ fn a_draft_laid_again_over_a_record_holding_it_is_not_kept_twice() {
     draft.apply(&mut record);
     assert_eq!(record.comments.len(), 1);
 }
+
+#[test]
+fn a_review_is_not_sent_where_two_agents_share_the_checkout() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = sending_extension();
+    extension.agents(&serde_json::json!([
+        { "id": "a1", "checkout": "/w" },
+        { "id": "a2", "checkout": "/w" },
+    ]));
+    let asked = extension.command(SURFACE, Command::Send, SPACE);
+    assert_eq!(asked, Outcome::Stay, "nothing is typed into either");
+}

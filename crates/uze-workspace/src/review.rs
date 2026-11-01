@@ -166,33 +166,63 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
     let _ = std::fs::remove_file(store_path(home, project_root, agent));
 }
 
-/// The project and agent whose checkout `checkout` is: the agent the
-/// nearest project's records place there.
-pub fn agent_of_checkout(home: &UzeHome, checkout: &Path) -> Option<(std::path::PathBuf, AgentId)> {
+/// The project and agent whose checkout `checkout` is: the one agent the
+/// nearest project's records place there. Several agents working in one
+/// directory have no checkout of their own, and a review kept for one of
+/// them could be sent to another, so they have none.
+pub fn agent_of_checkout(
+    home: &UzeHome,
+    checkout: &Path,
+) -> std::result::Result<(std::path::PathBuf, AgentId), NoReview> {
     let checkout = checkout
         .canonical()
         .unwrap_or_else(|_| checkout.to_path_buf());
-    checkout.ancestors().find_map(|root| {
+    let found = checkout.ancestors().find_map(|root| {
         if !task::store_path(home, root).exists() {
             return None;
         }
         let store = task::load(home, root).ok()?;
-        store
+        let here: Vec<AgentId> = store
             .agents
             .iter()
-            .rev()
-            .find(|agent| {
+            .filter(|agent| {
                 agent
                     .own_directory(root)
                     .is_some_and(|own| own.canonical().unwrap_or(own) == checkout)
             })
-            .map(|agent| (root.to_path_buf(), agent.id.clone()))
-    })
+            .map(|agent| agent.id.clone())
+            .collect();
+        Some((root.to_path_buf(), here))
+    });
+    match found {
+        Some((root, mut here)) if here.len() == 1 => Ok((root, here.remove(0))),
+        Some((_, here)) if here.len() > 1 => Err(NoReview::Shared(here.len())),
+        _ => Err(NoReview::NoAgent),
+    }
+}
+
+/// Why a checkout keeps no review.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoReview {
+    NoAgent,
+    /// So many agents work in it.
+    Shared(usize),
+}
+
+impl From<NoReview> for UzeError {
+    fn from(reason: NoReview) -> Self {
+        UzeError::AgentWork(match reason {
+            NoReview::NoAgent => "no agent UZE launched works in this checkout".to_owned(),
+            NoReview::Shared(many) => format!(
+                "{many} agents work in this checkout; a review is kept for an agent with a checkout of its own"
+            ),
+        })
+    }
 }
 
 /// The review of the agent working in `checkout`, for the review surface.
 pub fn of_checkout(home: &UzeHome, checkout: &Path) -> Result<ReviewRecord> {
-    let (project, agent) = agent_of_checkout(home, checkout).ok_or_else(no_agent)?;
+    let (project, agent) = agent_of_checkout(home, checkout)?;
     load(home, &project, &agent)
 }
 
@@ -202,12 +232,8 @@ pub fn update_checkout(
     checkout: &Path,
     change: impl FnOnce(&mut ReviewRecord),
 ) -> Result<ReviewRecord> {
-    let (project, agent) = agent_of_checkout(home, checkout).ok_or_else(no_agent)?;
+    let (project, agent) = agent_of_checkout(home, checkout)?;
     update(home, &project, &agent, change).map(|(record, ())| record)
-}
-
-fn no_agent() -> UzeError {
-    UzeError::AgentWork("no agent UZE launched works in this checkout".to_owned())
 }
 
 /// What `uze agent review show` prints for the agent making `claim`: each
@@ -423,6 +449,14 @@ mod tests {
         let record = load(&home, &root, &first.0).unwrap();
         assert!(record.comments[0].answers.is_empty());
         assert_eq!(record.comments[0].status, CommentStatus::Sent);
+    }
+
+    #[test]
+    fn a_checkout_two_agents_share_keeps_no_review() {
+        let (home, root, _, _) = two_agents("review-shared");
+        assert_eq!(agent_of_checkout(&home, &root), Err(NoReview::Shared(2)));
+        assert!(of_checkout(&home, &root).is_err());
+        assert!(update_checkout(&home, &root, |record| record.next_send = 1).is_err());
     }
 
     #[test]

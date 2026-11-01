@@ -141,11 +141,14 @@ impl ReviewExtension {
         (surface == SURFACE).then_some(self.open.as_mut()).flatten()
     }
 
+    /// The one agent working in `root`. Several have no checkout of their
+    /// own, and the review is kept for none of them.
     fn agent_of(&self, root: &Path) -> Option<String> {
-        self.agents
-            .iter()
-            .find(|(_, checkout)| checkout == root)
-            .map(|(id, _)| id.clone())
+        let mut here = self.agents.iter().filter(|(_, checkout)| checkout == root);
+        match (here.next(), here.next()) {
+            (Some((id, _)), None) => Some(id.clone()),
+            _ => None,
+        }
     }
 
     fn act(&mut self, asked: Asked) -> Outcome {
