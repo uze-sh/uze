@@ -376,11 +376,19 @@ impl UzeApplication {
                 uze_core::acquisition::acquire(&PackageSource::Local { path: path.clone() })
                     .map_err(|error| gone(format!("where it came from cannot be read: {error}")))?
             }
-            (ResolvedSource::Git { commit, .. }, Some(record)) => {
+            (
+                ResolvedSource::Git {
+                    commit,
+                    subdirectory,
+                    ..
+                },
+                Some(record),
+            ) => {
+                let entry = self.marketplace_entry(marketplace, &record.source, subdirectory);
                 MarketplaceRequest::of(&record.source)
                     .and_then(|request| {
                         request.materialize_cached(
-                            plugin,
+                            entry.as_deref().unwrap_or(plugin),
                             MirrorAt {
                                 home: &self.home,
                                 marketplace,
@@ -413,6 +421,32 @@ impl UzeApplication {
             }
         };
         Ok((materialized, RecordedDigest::Kept))
+    }
+
+    /// The name `marketplace`'s manifest lists the plugin under whose bytes
+    /// sit at `subdirectory` of its repository: a package is registered by
+    /// the name its own manifest gives, which a marketplace may list under
+    /// another. `None` when the catalogue cannot be read or names none.
+    fn marketplace_entry(
+        &self,
+        marketplace: &str,
+        source: &PackageSource,
+        subdirectory: &Option<PathBuf>,
+    ) -> Option<String> {
+        let subdirectory = subdirectory.as_ref()?;
+        let catalogue = self.marketplace_catalogues.read(marketplace, source).ok()?;
+        catalogue
+            .manifest
+            .plugins
+            .iter()
+            .find(|entry| {
+                uze_core::acquisition::marketplace::plugin_subdirectory(
+                    &catalogue.manifest,
+                    &entry.name,
+                )
+                .is_ok_and(|within| subdirectory.ends_with(within.trim_start_matches("./")))
+            })
+            .map(|entry| entry.name.clone())
     }
 
     /// Moves the registrations of the harness `about` names back to where

@@ -663,3 +663,33 @@ fn the_terminal_runtime_is_untouched_while_a_workspace_runs() {
     assert_eq!(after, before);
     assert!(terminal.join("empty").is_dir());
 }
+
+/// A marketplace may list a plugin under another name than its own
+/// manifest gives: its bytes are found again by where they sat in the
+/// marketplace, not by the name they are registered under.
+#[test]
+fn a_plugin_listed_under_another_name_comes_back() {
+    let env = TestEnvironment::isolated();
+    install_fake_harnesses(&env);
+    env.run(uze_bin(), &["setup"]);
+    let market = env.root().join("listed-market");
+    let manifest = serde_json::json!({
+        "name": "test",
+        "plugins": [{ "name": "listed-tie", "source": "./plugins/listed-tie" }],
+    });
+    uze_testkit::marketplace::stage(
+        &market,
+        &manifest.to_string(),
+        &[("listed-tie".to_owned(), fixtures::canonical("store-tie"))],
+    );
+    env.run_ok(uze_bin(), &["market", "add", &market.to_string_lossy()]);
+    env.run_ok(uze_bin(), &["add", "-m", "listed-tie@test"]);
+    let digest = recorded_digest(&env, PACKAGE);
+    fs::remove_dir_all(env.uze_home.join("sources")).unwrap();
+
+    let output = repair(&env);
+
+    assert_eq!(output.status.code(), Some(0), "{}", said(&output));
+    assert!(package_bytes(&env, PACKAGE).join("plugin.json").is_file());
+    assert_eq!(recorded_digest(&env, PACKAGE), digest);
+}
