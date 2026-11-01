@@ -114,7 +114,10 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
 /// very process runs; a file already gone is removed. Unix unlinks it at
 /// once, and the running process keeps the inode it started from. Windows
 /// refuses to delete a running image but lets it be renamed, so it steps
-/// aside and a detached process deletes it once this one has exited.
+/// aside and a detached process deletes it once this one has exited; where
+/// the host would end that process with itself (a job that forbids
+/// breakaway), the error names the renamed file for the operator to
+/// remove.
 pub fn remove_running(path: &Path) -> io::Result<()> {
     imp::remove_running(path)
 }
@@ -348,7 +351,10 @@ mod imp {
 
     /// Only this process's own image is in its way: any other is deleted
     /// now. The one it runs is renamed aside, and a hidden PowerShell waits
-    /// for this process to end before deleting it.
+    /// for this process to end before deleting it. A host that keeps that
+    /// PowerShell in its job ends it with itself, possibly before the
+    /// deletion: said as an error naming the renamed file, since an `Ok`
+    /// would claim a removal nothing guarantees.
     pub(super) fn remove_running(path: &Path) -> io::Result<()> {
         if !path.exists() {
             return Ok(());
@@ -377,7 +383,15 @@ mod imp {
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
-        crate::process::spawn_detached(&mut command).map(|_| ())
+        let deletion = crate::process::spawn_detached(&mut command)?;
+        if deletion.outlives_host {
+            return Ok(());
+        }
+        Err(io::Error::other(format!(
+            "renamed to {aside}, which is deleted after uze exits only while this \
+             terminal stays open: remove {aside} yourself",
+            aside = aside.display()
+        )))
     }
 
     pub(super) fn sweep_replaced(running: &Path) {
