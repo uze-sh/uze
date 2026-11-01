@@ -70,6 +70,11 @@ pub struct ReviewView {
     pub(crate) files: Vec<ChangedFile>,
     pub(crate) uncommitted: BTreeSet<PathBuf>,
     pub(crate) partners: std::collections::BTreeMap<PathBuf, PathBuf>,
+    /// Each listed file's content, as the list last read it.
+    pub(crate) stamps: std::collections::BTreeMap<PathBuf, u64>,
+    /// The content the diff on show was read for: the diff is read again
+    /// only once the file moved.
+    pub(crate) diffed: Option<(PathBuf, u64)>,
     /// The list has been read at least once.
     pub(crate) listed: bool,
     pub(crate) list_error: Option<String>,
@@ -116,6 +121,8 @@ impl ReviewView {
             files: Vec::new(),
             uncommitted: BTreeSet::new(),
             partners: std::collections::BTreeMap::new(),
+            stamps: std::collections::BTreeMap::new(),
+            diffed: None,
             listed: false,
             list_error: None,
             selected: None,
@@ -198,6 +205,7 @@ impl ReviewView {
                 self.files = listing.files;
                 self.uncommitted = listing.uncommitted;
                 self.partners = listing.partners;
+                self.stamps = listing.stamps;
             }
         }
         if self.selected_index().is_none() && self.composer.is_none() {
@@ -206,8 +214,14 @@ impl ReviewView {
             self.cursor = 0;
             self.mark = None;
         }
-        // The diff on show may have moved with the list: read it again.
-        self.diff_pending = self.selected.is_some();
+        // Read the diff again only when the file it is of moved.
+        let now = self
+            .selected
+            .as_ref()
+            .and_then(|path| Some((path.clone(), *self.stamps.get(path)?)));
+        if self.selected.is_some() && (self.diff.is_none() || now.is_none() || now != self.diffed) {
+            self.diff_pending = true;
+        }
     }
 
     /// A read of one file's diff.
@@ -222,6 +236,7 @@ impl ReviewView {
         }
         self.diff_pending = false;
         self.theme = theme;
+        self.diffed = self.stamps.get(&path).map(|stamp| (path.clone(), *stamp));
         match diff {
             Ok(diff) => {
                 let moved = self.diff.as_ref().is_none_or(|shown| {
@@ -329,6 +344,9 @@ impl ReviewView {
             self.filter = filter;
             self.relist = true;
             self.listed = false;
+            // Taken against another base, the diff on show is another diff.
+            self.diff = None;
+            self.diffed = None;
         }
     }
 
@@ -464,8 +482,8 @@ impl ReviewView {
         let Some(mark) = self.record.viewed.get(&self.relative(path)) else {
             return Viewed::No;
         };
-        match self.diff.as_ref().filter(|diff| diff.path == path) {
-            Some(diff) if diff.fingerprint != *mark => Viewed::Changed,
+        match self.stamps.get(path) {
+            Some(stamp) if stamp != mark => Viewed::Changed,
             _ => Viewed::Yes,
         }
     }
@@ -473,15 +491,12 @@ impl ReviewView {
     /// Marks the file on show viewed and moves on to the next one not
     /// viewed, or unmarks it.
     pub(crate) fn toggle_viewed(&mut self, advance: bool) {
-        let Some(diff) = self
-            .diff
-            .as_ref()
-            .filter(|diff| Some(&diff.path) == self.selected.as_ref())
-        else {
+        let Some(path) = self.selected.clone() else {
             return;
         };
-        let path = diff.path.clone();
-        let fingerprint = diff.fingerprint;
+        let Some(fingerprint) = self.stamps.get(&path).copied() else {
+            return;
+        };
         let viewed = self.viewed(&path) == Viewed::Yes;
         self.change(Change::Viewed {
             path: self.relative(&path),

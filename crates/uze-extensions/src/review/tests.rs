@@ -59,6 +59,7 @@ pub(super) fn reviewing() -> ReviewView {
             ],
             uncommitted: [path.clone()].into(),
             partners: Default::default(),
+            stamps: [(path.clone(), 1), (root.join("tests.rs"), 1)].into(),
         }),
     );
     view.absorb_diff(path.clone(), Ok(diff_of(&path, NAMING)), "x".to_owned());
@@ -137,6 +138,23 @@ fn an_empty_comment_is_not_kept() {
     assert!(view.drafts().is_empty());
 }
 
+/// The list as the agent left it: naming.rs at content `naming`.
+fn relisted(view: &mut ReviewView, naming: u64) {
+    let root = PathBuf::from("/w");
+    let files = view.files.clone();
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files,
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps: [(root.join("naming.rs"), naming), (root.join("tests.rs"), 1)].into(),
+        }),
+    );
+}
+
 #[test]
 fn viewed_marks_the_file_and_moves_on_and_falls_away_when_it_changes() {
     let mut view = reviewing();
@@ -144,14 +162,36 @@ fn viewed_marks_the_file_and_moves_on_and_falls_away_when_it_changes() {
     handle_command(&mut view, Command::MarkViewed, SPACE);
     assert_eq!(view.selected.as_deref(), Some(Path::new("/w/tests.rs")));
     assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
-    view.select_file(0);
-    view.absorb_diff(
-        naming.clone(),
-        Ok(diff_of(&naming, &NAMING.replace("rename();", "rename()?;"))),
-        "x".to_owned(),
+    assert_eq!(view.viewed_count(), 1);
+    // The agent changes naming.rs while tests.rs is on show.
+    relisted(&mut view, 2);
+    assert_eq!(
+        view.viewed(&naming),
+        surface::Viewed::Changed,
+        "though not on show"
     );
-    assert_eq!(view.viewed(&naming), surface::Viewed::Changed);
     assert_eq!(view.viewed_count(), 0);
+}
+
+#[test]
+fn switching_the_filter_keeps_what_was_viewed() {
+    let mut view = reviewing();
+    let naming = PathBuf::from("/w/naming.rs");
+    handle_command(&mut view, Command::MarkViewed, SPACE);
+    handle_hit(&mut view, ViewHit::SelectSubject(1), SPACE);
+    handle_hit(&mut view, ViewHit::SelectSubject(0), SPACE);
+    relisted(&mut view, 1);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+}
+
+#[test]
+fn a_diff_is_read_again_only_once_its_file_moved() {
+    let mut view = reviewing();
+    assert!(!view.diff_pending, "read once");
+    relisted(&mut view, 1);
+    assert!(!view.diff_pending, "nothing moved, nothing is read");
+    relisted(&mut view, 2);
+    assert!(view.diff_pending, "the file moved");
 }
 
 #[test]
@@ -421,6 +461,7 @@ fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
             }],
             uncommitted: Default::default(),
             partners: Default::default(),
+            stamps: Default::default(),
         }),
     );
     handle_command(&mut view, Command::AddComment, SPACE);

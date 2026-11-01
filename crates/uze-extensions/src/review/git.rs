@@ -105,6 +105,9 @@ pub(crate) struct Listing {
     /// Each side of an uncommitted rename, by the other: throwing one
     /// away puts both back.
     pub(crate) partners: std::collections::BTreeMap<PathBuf, PathBuf>,
+    /// Each listed file's content as it stands, as one number: what a
+    /// viewed mark holds for, whichever filter took the diff.
+    pub(crate) stamps: std::collections::BTreeMap<PathBuf, u64>,
 }
 
 /// Every file that differs from `base` in the working tree, untracked ones
@@ -125,10 +128,12 @@ pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Resul
         }
     }
     let Some(base) = base else {
+        let stamps = stamps(host, root, &uncommitted_files);
         return Ok(Listing {
             files: uncommitted_files,
             uncommitted,
             partners,
+            stamps,
         });
     };
     let named = host.git(
@@ -151,11 +156,58 @@ pub(crate) fn listing(host: &dyn Host, root: &Path, base: Option<&str>) -> Resul
         )
     });
     files.dedup_by(|a, b| a.path == b.path);
+    let stamps = stamps(host, root, &files);
     Ok(Listing {
         files,
         uncommitted,
         partners,
+        stamps,
     })
+}
+
+/// Each file's content as one number: Git's object id for what is on disk,
+/// in one `hash-object` for all of them, and the path alone for a file
+/// that is gone. A file Git cannot hash has none, and reads as unviewed.
+fn stamps(
+    host: &dyn Host,
+    root: &Path,
+    files: &[ChangedFile],
+) -> std::collections::BTreeMap<PathBuf, u64> {
+    let mut stamps = std::collections::BTreeMap::new();
+    let present: Vec<&ChangedFile> = files
+        .iter()
+        .filter(|file| file.status != FileStatus::Deleted)
+        .collect();
+    for file in files
+        .iter()
+        .filter(|file| file.status == FileStatus::Deleted)
+    {
+        stamps.insert(
+            file.path.clone(),
+            fingerprint(&format!("deleted {}", file.path.display())),
+        );
+    }
+    let relative: Vec<String> = present
+        .iter()
+        .map(|file| {
+            file.path
+                .strip_prefix(root)
+                .unwrap_or(&file.path)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let mut args = vec!["hash-object", "--no-filters", "--"];
+    args.extend(relative.iter().map(String::as_str));
+    if present.is_empty() {
+        return stamps;
+    }
+    if let Ok(ids) = host.git(root, &args, &[]) {
+        for (file, id) in present.iter().zip(ids.lines()) {
+            stamps.insert(file.path.clone(), fingerprint(id));
+        }
+    }
+    stamps
 }
 
 /// `git diff --name-status -z`: a status letter, then the path, each
@@ -373,6 +425,22 @@ mod tests {
                 "its source is discardable"
             );
         }
+    }
+
+    #[test]
+    fn a_files_stamp_follows_its_content_whatever_the_base() {
+        let repository = uze_testkit::git::Repository::new("review-stamps");
+        let root = repository.root();
+        std::fs::write(root.join("a.rs"), "fn a() {}\n").unwrap();
+        let stamp = |base| listing(&DiskHost, root, base).unwrap().stamps[&root.join("a.rs")];
+        let first = stamp(None);
+        assert_eq!(
+            stamp(Some("HEAD")),
+            first,
+            "the same content under either filter"
+        );
+        std::fs::write(root.join("a.rs"), "fn a() { b() }\n").unwrap();
+        assert_ne!(stamp(None), first, "another content, another stamp");
     }
 
     #[test]
