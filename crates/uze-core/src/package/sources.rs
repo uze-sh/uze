@@ -5,11 +5,12 @@
 //! vendor store each. This is the rung for that release, run under the
 //! mutation lock by every mutation until no machine is on the old layout.
 //!
-//! **The fence comes first.** The package registry and the receipt ledger
-//! are written in the shape this build writes *before* any byte moves, so
-//! an older build that runs afterwards refuses both by name instead of
-//! reading a registry whose bytes are gone, pruning every entry as a ghost
-//! and detaching its receipts as orphans.
+//! **The fence comes first.** The package registry, the receipt ledger and
+//! the marketplace registry are written in the shape this build writes
+//! *before* any byte moves, so an older build that runs afterwards refuses
+//! them by name instead of reading a registry whose bytes are gone, pruning
+//! every entry as a ghost, detaching its receipts as orphans, or rewriting
+//! the marketplaces without the pins this build records there.
 //!
 //! **Then each directory moves on its own.** A rename per marketplace and
 //! per superseded revision, so an interruption leaves some moved and some
@@ -38,6 +39,7 @@ pub(crate) fn carry_into_sources(home: &UzeHome) -> Result<()> {
     let store = UzeStore::new(home.clone());
     store.rewrite_registry_with_digests()?;
     state::rewrite_ledger(home)?;
+    state::rewrite_marketplaces(home)?;
     for (old, new) in &layout {
         carry_entries(old, new)?;
         // Empty once everything in it has moved; an older build that ran
@@ -191,6 +193,29 @@ mod tests {
         let written: serde_json::Value =
             serde_json::from_slice(&fs::read(home.attachments_path()).unwrap()).unwrap();
         assert_eq!(written["schema_version"], 4, "{written}");
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn the_marketplace_registry_is_fenced() {
+        let home = home("marketplaces-fence");
+        old_package(&home, "ai", "flow");
+        fs::create_dir_all(home.state_dir()).unwrap();
+        fs::write(
+            home.marketplaces_path(),
+            r#"{"marketplaces":{"ai":{"source":{"LOCAL":{"path":"/m"}}}}}"#,
+        )
+        .unwrap();
+
+        carry_into_sources(&home).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.marketplaces_path()).unwrap()).unwrap();
+        assert_eq!(written["schema_version"], 2, "{written}");
+        assert_eq!(
+            written["marketplaces"]["ai"]["source"]["LOCAL"]["path"], "/m",
+            "{written}"
+        );
         fs::remove_dir_all(home.root()).unwrap();
     }
 

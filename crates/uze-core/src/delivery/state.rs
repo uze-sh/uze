@@ -46,8 +46,25 @@ mod shapes {
 
     first_shape! {
         ProvisioningRegistry => "provisioning",
-        MarketplaceRegistry => "marketplaces",
         UndeliveredRegistry => "undelivered packages",
+    }
+
+    /// Shape 2 is shape 1 with each marketplace's `pinned_before_link`: a
+    /// shape-1 build rewriting the registry (its `market add`) would drop
+    /// the pins without a word, and with them the commit an unlinked
+    /// plugin goes back to, so it must refuse the registry as newer; the
+    /// step up carries every marketplace unchanged.
+    impl uze_document::Shaped for MarketplaceRegistry {
+        const SHAPE: u32 = 2;
+        const KIND: &'static str = "marketplaces";
+
+        fn ladder() -> uze_document::Ladder {
+            &[uze_document::Step {
+                from: 1,
+                to: 2,
+                climb: Ok,
+            }]
+        }
     }
 
     /// Shape 1 keyed its receipts by a string built from three of their own
@@ -110,6 +127,20 @@ fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> T {
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let payload = serde_json::to_vec_pretty(value).expect("ledger serialization is infallible");
     crate::persistence::write_atomic(path, &payload)
+}
+
+/// [`write_json`], unless the file already holds `value`: a warm command
+/// that re-records what is already recorded must leave the home untouched.
+/// Compared with the bytes on disk, not with what was read, so a record
+/// carried up from an older shape is still written in this one.
+fn write_json_if_changed(path: &Path, value: &impl Serialize) -> Result<()> {
+    let on_disk = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    if on_disk.is_some() && on_disk == serde_json::to_value(value).ok() {
+        return Ok(());
+    }
+    write_json(path, value)
 }
 
 /// Who owns what UZE put on a harness's disk.
@@ -214,17 +245,7 @@ fn update_receipts(home: &UzeHome, change: impl FnOnce(&mut Vec<AttachmentReceip
     let mut ledger: AttachmentLedger = read_json_or_default(&path)?;
     ledger.schema_version = <AttachmentLedger as uze_document::Shaped>::SHAPE;
     change(&mut ledger.receipts);
-    // A change that changes nothing writes nothing: a warm command that
-    // re-records what is already recorded must leave the home untouched.
-    // Compared with the bytes on disk, not with what was read, so a ledger
-    // carried up from an older shape is still written in this one.
-    let on_disk = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
-    if on_disk.is_some() && on_disk == serde_json::to_value(&ledger).ok() {
-        return Ok(());
-    }
-    write_json(&path, &ledger)
+    write_json_if_changed(&path, &ledger)
 }
 
 /// Writes the receipt ledger back in the shape this build writes, changing
@@ -422,8 +443,8 @@ pub struct MarketplaceRecord {
     /// marketplace was linked, by plugin name: a linked ingest records the
     /// checkout as its provenance, so this is what says which bytes to put
     /// back once it is unlinked. Kept across `unlink` until the next
-    /// resolution has restored that commit; optional for the reason `link`
-    /// is.
+    /// resolution has restored that commit. What an older build would drop
+    /// on rewriting the registry, which is why it is shape 2.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub pinned_before_link: BTreeMap<String, String>,
 }
@@ -439,9 +460,32 @@ impl MarketplaceRecord {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct MarketplaceRegistry {
+    schema_version: u32,
     marketplaces: BTreeMap<String, MarketplaceRecord>,
+}
+
+impl Default for MarketplaceRegistry {
+    fn default() -> Self {
+        Self {
+            schema_version: <Self as uze_document::Shaped>::SHAPE,
+            marketplaces: BTreeMap::new(),
+        }
+    }
+}
+
+/// Writes the marketplace registry back in the shape this build writes,
+/// changing no marketplace, and only when the file is in another one: the
+/// fence of the move to `sources/`, so an older build refuses the registry
+/// before it can drop what this one records there.
+pub fn rewrite_marketplaces(home: &UzeHome) -> Result<()> {
+    let path = home.marketplaces_path();
+    if !path.exists() {
+        return Ok(());
+    }
+    let registry: MarketplaceRegistry = read_json_or_default(&path)?;
+    write_json_if_changed(&path, &registry)
 }
 
 /// Registers a marketplace under `name`. Idempotent, mirroring
@@ -793,6 +837,75 @@ mod tests {
             uze_document::Carried::Current(_)
         ));
         fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    /// The marketplace registry as a build before `pinned_before_link`
+    /// read it: shape 1, every field it knew.
+    #[derive(Debug, Deserialize)]
+    struct ShapeOneMarketplaces {
+        #[allow(dead_code)]
+        marketplaces: BTreeMap<String, serde_json::Value>,
+    }
+
+    impl uze_document::Shaped for ShapeOneMarketplaces {
+        const SHAPE: u32 = 1;
+        const KIND: &'static str = "marketplaces";
+    }
+
+    /// A registry on shape 1, as the release before the pins wrote it.
+    fn shape_one_marketplaces(home: &UzeHome) -> serde_json::Value {
+        marketplace_add(home, "ai", crate::PackageSource::local(home.root())).unwrap();
+        let mut registry: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.marketplaces_path()).unwrap()).unwrap();
+        registry.as_object_mut().unwrap().remove("schema_version");
+        fs::write(
+            home.marketplaces_path(),
+            serde_json::to_vec(&registry).unwrap(),
+        )
+        .unwrap();
+        registry
+    }
+
+    /// A build that does not know the pins must refuse the registry rather
+    /// than rewrite it without them.
+    #[test]
+    fn a_written_marketplace_registry_is_refused_by_a_build_before_the_pins() {
+        let home = temp_home("marketplaces-shape");
+        marketplace_add(&home, "ai", crate::PackageSource::local(home.root())).unwrap();
+
+        let refused =
+            uze_document::read::<ShapeOneMarketplaces>(&home.marketplaces_path()).unwrap_err();
+        assert!(refused.written_by_a_newer_build(), "{refused}");
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn rewriting_the_marketplaces_carries_every_one_into_this_shape() {
+        let home = temp_home("marketplaces-rewrite");
+        let before = shape_one_marketplaces(&home);
+
+        rewrite_marketplaces(&home).unwrap();
+
+        let written: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.marketplaces_path()).unwrap()).unwrap();
+        assert_eq!(
+            written["schema_version"],
+            <MarketplaceRegistry as uze_document::Shaped>::SHAPE
+        );
+        assert_eq!(written["marketplaces"], before["marketplaces"]);
+        // Already in this shape: left exactly as it is, spelling and all.
+        let compact = serde_json::to_vec(&written).unwrap();
+        fs::write(home.marketplaces_path(), &compact).unwrap();
+        rewrite_marketplaces(&home).unwrap();
+        assert_eq!(fs::read(home.marketplaces_path()).unwrap(), compact);
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn rewriting_no_marketplace_registry_writes_none() {
+        let home = temp_home("marketplaces-absent");
+        rewrite_marketplaces(&home).unwrap();
+        assert!(!home.marketplaces_path().exists());
     }
 
     #[test]
