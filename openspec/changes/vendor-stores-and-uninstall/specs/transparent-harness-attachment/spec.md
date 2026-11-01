@@ -50,11 +50,7 @@ recording its origin. Publishing SHALL replace only builds whose key changed.
 
 #### Scenario: An earlier install moves without losing its plugins
 - **WHEN** a machine with plugins under `uze-local` and `uze-store`, pointing into `runtime/`, is upgraded and installs again
-- **THEN** every plugin is installed from the vendor store's one marketplace, and every enabled or disabled state on Claude Code is kept
-
-#### Scenario: A disabled Codex plugin during the merge
-- **WHEN** the operator had disabled a Codex plugin installed under `uze-local`
-- **THEN** it is not installed again under the merged marketplace, and the report names it with the command that installs it
+- **THEN** every plugin is installed from the vendor store's one marketplace, and no receipt still names `uze-local`
 
 #### Scenario: A repoint that fails on Codex
 - **WHEN** re-adding Codex's marketplace from the vendor store fails

@@ -302,23 +302,18 @@ not apply when it is absent.
 3. **Re-deliver.** On the next `setup`, `install` or `update`, for each
    harness:
    1. Publish the builds into `store/<vendor>/{local,generated}`.
-   2. Merge `uze-local` into `uze-store`. Each explicit plugin moves from
-      `<p>@uze-local` to `<p>@uze-store`; both moves were measured on
-      2026-11-01.
-      - **Claude:** install the new selector, carry the disabled state with
-        `claude plugin disable`, uninstall the old selector, then remove the
-        `uze-local` marketplace. `enabledPlugins` ends up holding only the
-        new selector, with its state carried.
-      - **Codex:** `codex plugin add` the new selector, then
-        `codex plugin remove` the old one and `marketplace remove uze-local`.
-        `config.toml` ends up clean. Codex has no CLI to disable a plugin,
-        and UZE does not edit its TOML (ADR-009). So a plugin the operator
-        had disabled under `@uze-local` is removed and **not** re-added,
-        and the report names it with the command that re-adds it. The
-        operator's intent that it not run is kept.
-      - Each vendor keeps an empty `cache/uze-local` directory of its own.
-        That is vendor bookkeeping; UZE leaves it alone and does not report
-        it.
+   2. Retire `uze-local` through the existing generic rule. No bespoke
+      merge code: "a receipt from an earlier shape is retired before the
+      current one is attached" (`transparent-harness-attachment`) handles it.
+      - Each matched `<p>@uze-local` receipt is detached through the vendor
+        CLI (uninstall the plugin, then remove the marketplace).
+      - `<p>@uze-store` is then attached.
+
+      Because UZE is in beta and carries no legacy paths, enable/disable
+      state is **not** carried. An author-enveloped plugin that the
+      operator had disabled comes back enabled once on both vendors, and the
+      changelog says so. Each vendor keeps an empty `cache/uze-local` of
+      its own, which is vendor bookkeeping UZE leaves alone.
    3. Repoint each marketplace only when its registered root differs, and
       never while a session of that harness is running:
       - **Claude:** a same-name `marketplace add`.
@@ -444,7 +439,7 @@ the reinstall-then-purge path.
 | 19 | No `.uze/` in the store: the wrapper goes in each build, the rules engine in the bundled plugin's build, sessions in `$TMPDIR`, OpenCode documents in builds or the launch environment (revision 5, with the operator) | A nested `.uze/` mixed disposable scratch into the store tier and kept the wrapper shared, which needed "removed with the last entry" bookkeeping. |
 | 21 | The build's key, origin, source and file digests live in its receipt; the build holds only the plugin | A `.uze-build` file duplicates the receipt and leaks into every vendor copy. |
 | 22 | A linked source keeps the build's identity; unlinking re-ingests the pinned commit from the cached clone | Reading the checkout in place forks delivery, which `plugin-freshness` rejected for containment. A separate linked snapshot in `$UZE_HOME` is redundant with the build. |
-| 20 | A Codex plugin the operator disabled under `@uze-local` is not re-added during the merge, and is reported | Re-adding enables it, because Codex has no disable verb. Editing `config.toml` breaks ADR-009. |
+| 20 | `uze-local` is retired by the generic earlier-shape rule; enablement is not carried (beta, no legacy paths) | A bespoke merge (carrying disabled state on Claude, skipping on Codex) is legacy code for a beta-only population. Editing Codex's TOML breaks ADR-009. |
 
 ## Candidate ADRs
 

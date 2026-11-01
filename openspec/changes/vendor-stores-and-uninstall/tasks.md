@@ -94,11 +94,10 @@
   - a workspace launch puts its `$UZE_HOME` context only in the process's arguments;
   - deleting one vendor store stops that harness's plugins until the next delivery.
 
-## 5b. Merging `uze-local` into `uze-store`
+## 5b. Retiring `uze-local`
 
-- [ ] 5b.1 Claude: install `<p>@uze-store`, carry the disabled state with `claude plugin disable`, uninstall `<p>@uze-local`, then remove the `uze-local` marketplace.
-- [ ] 5b.2 Codex: run `codex plugin add <p>@uze-store` and `codex plugin remove <p>@uze-local`, then remove the `uze-local` marketplace. A plugin the operator had disabled is not re-added, and the report names it with the command that re-adds it.
-- [ ] 5b.3 Turn the 2026-11-01 measurements (mixed origins in one marketplace, and both merges) into `conformance/experiments/{claude,codex}/marketplace-merge.py`. Record them as `HarnessFact`s.
+- [ ] 5b.1 Add tests that the existing earlier-shape retirement detaches every matched `<p>@uze-local` receipt (plugin, then marketplace) and attaches `<p>@uze-store`. No enablement is carried. Add a changelog line saying so.
+- [ ] 5b.2 Turn the 2026-11-01 measurement that mixes origins in one marketplace into `conformance/experiments/{claude,codex}/marketplace-merge.py`, and record it as a `HarnessFact`.
 
 ## 6. Conformance
 

@@ -42,14 +42,13 @@ a time, and nothing undoes `setup`.
   an older build refuses them by name instead of writing into the new
   layout. The supported way back is `uze uninstall --purge` followed by a
   reinstall.
-- **One marketplace per vendor.** `uze-local`, for author envelopes, merges
-  into `uze-store`, and whether a build came from the author's envelope or
-  was generated becomes a field of the build (ADR-013's precedence was
-  already per package and per harness). The merge moves each
-  `<p>@uze-local` to `<p>@uze-store`, and was measured:
-  - **Claude:** carries the disabled state.
-  - **Codex:** has no disable verb, so a plugin the operator disabled is
-    left out, not re-enabled, and the report names it.
+- **One marketplace per vendor.** `uze-local` (author envelopes) merges into
+  `uze-store`, and whether a build came from the author's envelope or was
+  generated becomes a field of the build's receipt. ADR-013's precedence was
+  already decided per package and per harness. Existing `<p>@uze-local`
+  installs are retired by the generic earlier-shape rule and attached again
+  as `<p>@uze-store`. UZE is in beta and carries no legacy paths, so
+  enable/disable state is not carried across.
 - **Missing bytes never cost a delivery.** A package whose `sources/` entry
   is gone keeps its builds, its catalogue entries and its receipts, and is
   reported as missing its bytes.
