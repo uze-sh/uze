@@ -43,7 +43,10 @@ fn every_task_state() -> Vec<WorkStateView> {
 /// rule, over every glyph UZE ships rather than only these.
 #[test]
 fn no_status_mark_is_drawn_from_the_pictographic_blocks() {
-    for state in every_task_state() {
+    for state in every_task_state()
+        .into_iter()
+        .chain([WorkStateView::InReview])
+    {
         let Some((mark, _)) = task_mark(&state) else {
             continue;
         };
@@ -55,7 +58,7 @@ fn no_status_mark_is_drawn_from_the_pictographic_blocks() {
         );
         let point = character as u32;
         let geometric = (0x25A0..=0x25FF).contains(&point)
-            && !matches!(point, 0x25B6 | 0x25C0 | 0x25FB..=0x25FE);
+            && !matches!(point, 0x25AA | 0x25AB | 0x25B6 | 0x25C0 | 0x25FB..=0x25FE);
         assert!(
             point < 0x2300 || geometric,
             "{state:?}: {mark} (U+{point:04X}) is a pictograph"
