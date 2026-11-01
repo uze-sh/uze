@@ -503,7 +503,7 @@ fn a_launchs_context_under_the_home_reaches_only_that_process() {
         .filter(|(_, path)| {
             carried
                 .iter()
-                .any(|context| path.starts_with(context.as_str()))
+                .any(|context| path.starts_with(&crate::store_ownership::slashed(context)))
         })
         .collect();
     assert!(

@@ -31,9 +31,17 @@ fn owning_vendor(relative: &Path) -> Option<&'static str> {
     .map(|(_, vendor)| vendor)
 }
 
+/// `text` with every path in it spelled with `/`, whatever separator the
+/// platform wrote and however a JSON or TOML string escaped it, so a path
+/// is found and compared the same way on every platform.
+pub(crate) fn slashed(text: &str) -> String {
+    text.replace("\\\\", "\\").replace('\\', "/")
+}
+
 /// Scratch directories a reader recreates on demand: the one declared
 /// exception to "a harness reads only its store".
 pub(crate) fn is_on_demand_scratch(path: &str, uze_home: &str) -> bool {
+    let uze_home = slashed(uze_home);
     ["runtime/sessions", "runtime/rules/sessions"]
         .iter()
         .any(|scratch| path.starts_with(&format!("{uze_home}/{scratch}")))
@@ -59,9 +67,10 @@ fn files_under(root: &Path, skip: &[PathBuf], out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Every `$UZE_HOME` path a harness file names, with the file that names it.
+/// Every `$UZE_HOME` path a harness file names, with the file that names
+/// it, spelled with `/` (see [`slashed`]).
 pub(crate) fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String)> {
-    let uze_home = env.uze_home.to_string_lossy().into_owned();
+    let uze_home = slashed(&env.uze_home.to_string_lossy());
     let skip = [
         env.uze_home.clone(),
         env.project.clone(),
@@ -75,6 +84,7 @@ pub(crate) fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String
         let Ok(text) = std::fs::read_to_string(&file) else {
             continue;
         };
+        let text = slashed(&text);
         let mut rest = text.as_str();
         while let Some(at) = rest.find(&uze_home) {
             let tail = &rest[at..];
@@ -108,7 +118,7 @@ fn no_harness_artifact_names_outside_its_store() {
         &add.iter().map(String::as_str).collect::<Vec<_>>(),
     );
 
-    let uze_home = env.uze_home.to_string_lossy().into_owned();
+    let uze_home = slashed(&env.uze_home.to_string_lossy());
     let references = uze_home_references(&env);
     assert!(
         !references.is_empty(),
