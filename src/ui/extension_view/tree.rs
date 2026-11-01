@@ -411,14 +411,18 @@ fn sum(widths: impl IntoIterator<Item = u16>) -> u16 {
     widths.into_iter().fold(0, u16::saturating_add)
 }
 
-/// An icon the glyph set has no glyph for: it takes no cells, and no gap
-/// beside it either, so the label it stood before starts where it would.
+/// An icon the glyph set has no glyph for, and no room of its own: it takes
+/// no cell and no gap in any container, so the label it stood before starts
+/// where it would. One given `min-width` or `grow` keeps that room, which
+/// is what lines a column up across glyph sets.
 fn draws_nothing(node: &Node) -> bool {
-    matches!(&node.kind, NodeKind::Icon { glyph, .. } if theme::icon(glyph).1 == 0)
+    node.min_width == 0
+        && !node.grow
+        && matches!(&node.kind, NodeKind::Icon { glyph, .. } if theme::icon(glyph).1 == 0)
 }
 
-/// The children of a row that draw something, which are the ones a gap
-/// stands between.
+/// The children of a container that draw something, which are the ones a
+/// gap stands between.
 fn drawn(children: &[Node]) -> usize {
     children
         .iter()
@@ -560,7 +564,7 @@ fn height(node: &Node, width: u16) -> usize {
         NodeKind::Box(layout) => box_height(node, layout, own_width(layout, width)),
         NodeKind::Stack { gap } => {
             let rows: usize = node.children.iter().map(|child| height(child, width)).sum();
-            rows + usize::from(*gap) * node.children.len().saturating_sub(1)
+            rows + usize::from(*gap) * drawn(&node.children).saturating_sub(1)
         }
         NodeKind::Row { gap, align } => {
             let (_, widths) = row_widths(&node.children, *gap, *align, width);
@@ -733,7 +737,7 @@ fn box_natural(node: &Node, layout: &BoxLayout) -> u16 {
     }
     let gaps = layout
         .gap
-        .saturating_mul(cells_of(node.children.len().saturating_sub(1)));
+        .saturating_mul(cells_of(drawn(&node.children).saturating_sub(1)));
     let inner = match layout.row {
         true => sum(node.children.iter().map(natural)).saturating_add(gaps),
         false => node.children.iter().map(natural).max().unwrap_or(0),
@@ -748,6 +752,9 @@ fn box_lines(node: &Node, layout: &BoxLayout, room: u16) -> Vec<Vec<(usize, u16)
     let mut lines: Vec<Vec<(usize, u16)>> = vec![Vec::new()];
     let mut used = 0u16;
     for (index, child) in node.children.iter().enumerate() {
+        if draws_nothing(child) {
+            continue;
+        }
         let width = child_width(child, room);
         let line = lines.last_mut().expect("there is always a line");
         let needed = match line.is_empty() {
@@ -798,7 +805,7 @@ fn box_height(node: &Node, layout: &BoxLayout, width: u16) -> usize {
                 .iter()
                 .map(|child| sized_height(child, child_width_in_column(child, room)))
                 .sum();
-            rows + gap * node.children.len().saturating_sub(1)
+            rows + gap * drawn(&node.children).saturating_sub(1)
         }
         true => {
             let lines = box_lines(node, layout, room);
@@ -1851,7 +1858,7 @@ impl Painter<'_, '_> {
                 at += tallest + gap;
             }
         } else {
-            for child in &node.children {
+            for child in node.children.iter().filter(|child| !draws_nothing(child)) {
                 let child_width = child_width_in_column(child, room);
                 if !self.sized(child, inner_x, child_width, at) {
                     drawn = false;
@@ -1944,6 +1951,9 @@ impl Painter<'_, '_> {
     fn stacked(&mut self, children: &[Node], gap: u16, x: u16, width: u16, y: usize) -> bool {
         let mut at = y;
         for (index, child) in children.iter().enumerate() {
+            if draws_nothing(child) {
+                continue;
+            }
             let rows = height(child, width);
             if self.held.fold && !self.fits(at, rows) {
                 return self.fold_at(at, children.len() - index);

@@ -1984,6 +1984,68 @@ fn an_icon_draws_in_the_glyph_set_the_operator_chose() {
     }
 }
 
+fn blank_icon(id: usize) -> Node {
+    node(
+        id,
+        NodeKind::Icon {
+            glyph: uze_extensions::view::IconGlyph::Unknown,
+            role: Role::Info,
+        },
+    )
+}
+
+/// An icon the glyph set draws nothing for, but that was given room of its
+/// own (`min-width`), keeps that room: the column it holds lines up in
+/// every glyph set, and what follows it is drawn after it, not over it.
+#[test]
+fn a_blank_icon_with_room_of_its_own_keeps_it() {
+    let mut icon = blank_icon(1);
+    icon.min_width = 2;
+    let line = row(0, 1, Align::Start, vec![icon, words(2, "x", Role::Default)]);
+    assert_eq!(draw(&line, 10, 1, 0, at(0)).rows()[0].trim_end(), "   x");
+}
+
+/// A blank icon takes no cell and no gap in every container, not only in
+/// a row: a row box starts its label at its edge, and a stack draws no
+/// blank row above it.
+#[test]
+fn a_blank_icon_takes_no_gap_in_a_box_or_a_stack() {
+    use uze_extensions::view::BoxLayout;
+    let in_a_box = holding(
+        boxed(
+            0,
+            BoxLayout {
+                row: true,
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(
+        draw(&in_a_box, 10, 1, 0, at(0)).rows()[0].trim_end(),
+        "main"
+    );
+
+    let in_a_column = holding(
+        boxed(
+            0,
+            BoxLayout {
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(
+        draw(&in_a_column, 10, 3, 0, at(0)).rows()[0].trim_end(),
+        "main"
+    );
+
+    let in_a_stack = stack(0, 1, vec![blank_icon(1), words(2, "x", Role::Default)]);
+    assert_eq!(draw(&in_a_stack, 10, 3, 0, at(0)).rows()[0].trim_end(), "x");
+}
+
 /// A cut line answers the pointer: resting on it, it holds still, then
 /// slides sideways to show all of itself; off it, it is cut with an
 /// ellipsis; `marquee=#false` keeps it cut and gives it no target.
