@@ -633,9 +633,9 @@ pub(super) fn render_line(
         ),
     };
     // A marked run is the reader's own, and it reads over the diff's wash:
-    // the selection's ground, the sign keeping the change's hue.
+    // the gold of a draft comment, the sign keeping the change's hue.
     let background = match line.marked {
-        true => Some(theme::color(Token::SurfaceSelected)),
+        true => Some(theme::color(Token::StateDiffMarked)),
         false => background,
     };
     let mut content_spans: Vec<TextSpan<'static>> = line.spans.iter().map(styled).collect();

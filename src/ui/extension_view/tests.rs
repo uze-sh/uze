@@ -3192,3 +3192,21 @@ fn every_review_command_is_named_by_a_key_its_hint_carries() {
         );
     }
 }
+
+/// A run marked to comment on wears a draft comment's gold over the
+/// diff's own wash, so it reads as the reader's and never as a change.
+#[test]
+fn a_marked_line_wears_the_comment_gold_over_the_diffs_wash() {
+    let mut line = code_line("fn a() {}");
+    line.tone = LineTone::Added;
+    let at = (GUTTER_WIDTH, 0);
+    assert_eq!(
+        drawn_with_caret(&line, 20, 99)[at].bg,
+        theme::color(Token::StateDiffAdded)
+    );
+    line.marked = true;
+    assert_eq!(
+        drawn_with_caret(&line, 20, 99)[at].bg,
+        theme::color(Token::StateDiffMarked)
+    );
+}

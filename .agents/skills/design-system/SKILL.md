@@ -169,7 +169,10 @@ on "cancel" must not save first.
   shift or a drag down the numbers carries the mark, and a press on the
   text still selects text. Under the marked run stands one line that
   opens a comment on it (`◆ comment on 3 lines`), the affordance a
-  pointer needs where the key is `c`.
+  pointer needs where the key is `c`. The marked run wears
+  `state.diff-marked`, a draft comment's gold held faint, over the diff's
+  red and green; never the list's `SurfaceSelected`, which the operator
+  could not tell from a line passed over.
 - A comment stands under the lines it is about, set in from the edge,
   never in a box the extension draws: its first line says where and what
   state (`◆ L52–56 · draft`), with its actions as words on that line

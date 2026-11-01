@@ -41,6 +41,7 @@
     "state.published-muted": "@state.published/c0",
     "state.diff-added": "@state.success/1a",
     "state.diff-removed": "@state.danger/1a",
+    "state.diff-marked": "@state.warning/2e",
 
     "heat.0": "~22",
     "heat.1": "@state.success/4d",

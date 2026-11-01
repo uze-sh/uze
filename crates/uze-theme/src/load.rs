@@ -1039,6 +1039,7 @@ mod tests {
             Token::BorderFaint,
             Token::StateDiffAdded,
             Token::StateDiffRemoved,
+            Token::StateDiffMarked,
         ] {
             let rgb = loaded.theme.color(surface);
             let brightness = u16::from(rgb.0) + u16::from(rgb.1) + u16::from(rgb.2);

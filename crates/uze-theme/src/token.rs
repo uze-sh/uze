@@ -138,6 +138,10 @@ vocabulary! {
         StateDiffAdded = "state.diff-added",
         /// The wash behind a removed line in a diff.
         StateDiffRemoved = "state.diff-removed",
+        /// The wash behind diff lines the reader marked to comment on: the
+        /// warning's gold held faint, the hue a draft comment wears, so the
+        /// run reads as the reader's own over the diff's red and green.
+        StateDiffMarked = "state.diff-marked",
 
         // ── heat ───────────────────────────────────────────────────────
         // A sequential ramp: how much of one thing, in five steps of one
@@ -241,6 +245,7 @@ impl Token {
                 | Token::SurfaceHover
                 | Token::StateDiffAdded
                 | Token::StateDiffRemoved
+                | Token::StateDiffMarked
                 | Token::BorderDefault
                 | Token::BorderFaint
         )
