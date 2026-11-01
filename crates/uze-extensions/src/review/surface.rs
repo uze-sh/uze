@@ -92,9 +92,9 @@ pub struct ReviewView {
     pub(crate) composer: Option<Composer>,
     pub(crate) record: ReviewRecord,
     pub(crate) record_error: Option<String>,
-    /// Each kept comment's text as it is drawn, by id, with the text it
-    /// was drawn from.
-    pub(crate) rich: HashMap<u64, (String, Vec<Rich>)>,
+    /// Each kept comment as it is drawn, by id: its text and then each
+    /// answer, highlighted once, with what they were drawn from.
+    pub(crate) rich: HashMap<u64, Drawn>,
     pub(crate) theme: String,
     pub(crate) focus: Focus,
     /// The first content line on screen.
@@ -291,12 +291,13 @@ impl ReviewView {
         let theme = self.theme.clone();
         let mut kept = HashMap::new();
         for comment in &self.record.comments {
-            let source = drawn_source(comment);
-            let lines = match self.rich.remove(&comment.id) {
-                Some((was, lines)) if was == source => lines,
-                _ => compose::rich(&source, Path::new(&comment.path), &theme),
+            let drawn = match self.rich.remove(&comment.id) {
+                Some(drawn) if drawn.text == comment.text && drawn.answers == comment.answers => {
+                    drawn
+                }
+                _ => Drawn::of(comment, &theme),
             };
-            kept.insert(comment.id, (source, lines));
+            kept.insert(comment.id, drawn);
         }
         self.rich = kept;
     }
@@ -597,10 +598,29 @@ pub(crate) enum Viewed {
     Changed,
 }
 
-/// What a kept comment shows, in the order it shows it: its text, then
-/// each answer under the agent's name.
-fn drawn_source(comment: &Comment) -> String {
-    comment.text.clone()
+/// A kept comment's text and answers, highlighted, and what they were
+/// highlighted from: a comment is coloured again only once it changed.
+pub(crate) struct Drawn {
+    text: String,
+    answers: Vec<String>,
+    pub(crate) lines: Vec<Rich>,
+    pub(crate) answer_lines: Vec<Vec<Rich>>,
+}
+
+impl Drawn {
+    fn of(comment: &Comment, theme: &str) -> Self {
+        let path = Path::new(&comment.path);
+        Self {
+            text: comment.text.clone(),
+            answers: comment.answers.clone(),
+            lines: compose::rich(&comment.text, path, theme),
+            answer_lines: comment
+                .answers
+                .iter()
+                .map(|answer| compose::rich(answer, path, theme))
+                .collect(),
+        }
+    }
 }
 
 pub(crate) fn row_of(cell: &DiffCell) -> Row {

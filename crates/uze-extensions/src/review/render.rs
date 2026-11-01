@@ -468,8 +468,9 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
                 .drawn(Line::CardBody(id)),
         );
     }
-    if let Some((_, rich)) = review.rich.get(&id) {
-        for line in rich {
+    let cached = review.rich.get(&id);
+    if let Some(cached) = cached {
+        for line in &cached.lines {
             let mut building = Building::new().push(Span::new(RULE, Role::Faint));
             for span in line {
                 building = building.push(span.clone());
@@ -477,15 +478,17 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
             drawn.push(building.drawn(Line::CardBody(id)));
         }
     }
-    for answer in &comment.answers {
+    for answer in cached
+        .map(|cached| cached.answer_lines.as_slice())
+        .unwrap_or_default()
+    {
         drawn.push(
             Building::new()
                 .push(Span::new(RULE, Role::Faint))
                 .push(Span::new("agent", Role::Warning))
                 .drawn(Line::CardBody(id)),
         );
-        for line in super::compose::rich(answer, std::path::Path::new(&comment.path), &review.theme)
-        {
+        for line in answer {
             let mut building = Building::new().push(Span::new(RULE, Role::Faint));
             for span in line {
                 building = building.push(Span {
@@ -494,7 +497,7 @@ fn card(review: &ReviewView, comment: &Comment, gone: bool, drawn: &mut Vec<Draw
                     } else {
                         span.role
                     },
-                    ..span
+                    ..span.clone()
                 });
             }
             drawn.push(building.drawn(Line::CardBody(id)));
