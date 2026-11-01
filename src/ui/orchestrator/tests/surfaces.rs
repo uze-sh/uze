@@ -1652,3 +1652,25 @@ fn a_held_key_on_a_diff_lines_text_carries_the_mark_there() {
         "the run carried to the text pressed: {marked:?}"
     );
 }
+
+/// The comments push the agent's pane aside, to be read beside it, and
+/// float over the review or any view, whose room they would only take.
+#[test]
+fn the_comments_push_the_agent_aside_and_float_over_a_view() {
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    drafted(&mut model, "src/naming.rs");
+    let comments = model
+        .remembered
+        .declared
+        .slots
+        .iter()
+        .find(|slot| slot.surface.id == uze_extensions::review::COMMENTS)
+        .map(|slot| slot.id)
+        .expect("the review declares its comments");
+    model.toggle_drawer(comments, ratatui::layout::Rect::new(0, 0, 200, 50));
+    assert_eq!(model.open_drawer(), Some(comments));
+    assert!(!model.drawer_floats(), "beside the agent, it pushes");
+    crate::ui::orchestrator::open_review(&mut model);
+    assert!(model.drawer_floats(), "over the review, it floats");
+}

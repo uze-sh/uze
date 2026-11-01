@@ -70,7 +70,7 @@ pub(super) fn render_declared_drawer(
     let Some(slot) = model.open_drawer_slot() else {
         return false;
     };
-    let Some(place) = slot.drawer_place() else {
+    let Some(place) = model.drawer_place(slot) else {
         return false;
     };
     // A card that fits what it holds is measured from the view it then

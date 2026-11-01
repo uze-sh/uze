@@ -481,6 +481,15 @@ pub trait Extension: Send {
 
     fn restore_memory(&mut self, _memory: Opaque) {}
 
+    /// Where `surface`, a drawer, stands while the agent's pane is not
+    /// what is in front (a view or the overview stands there instead), or
+    /// `None` to keep the place it declared. A drawer that pushes the
+    /// agent's pane aside to be read beside it can float over a view, where
+    /// pushing would take the view's room for nothing it is read beside.
+    fn drawer_away_from_agent(&self, _surface: &str) -> Option<uze_contract::DrawerDecl> {
+        None
+    }
+
     /// A built-in that is told what agents do, as a declared extension
     /// granted `agent:observe` is: which agent works where, and when a turn
     /// ends.

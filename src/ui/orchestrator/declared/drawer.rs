@@ -71,8 +71,27 @@ impl WorkspaceModel {
         &self,
     ) -> Option<crate::ui::orchestrator::render::Dock> {
         self.open_drawer_slot()
-            .and_then(HostedSlot::drawer_place)
+            .and_then(|slot| self.drawer_place(slot))
             .map(|place| self.dock_for(place))
+    }
+
+    /// Where `slot`, a drawer, stands now: as its extension declared it
+    /// beside the agent's pane, and where it asks to stand instead while a
+    /// view or the overview holds the pane.
+    pub(in crate::ui::orchestrator) fn drawer_place(
+        &self,
+        slot: &HostedSlot,
+    ) -> Option<uze_contract::DrawerDecl> {
+        let declared = slot.drawer_place()?;
+        let agent_in_front = self.open_slot.is_none() && self.space_overview.is_none();
+        if agent_in_front {
+            return Some(declared);
+        }
+        self.remembered
+            .declared
+            .engine(&slot.owner)
+            .and_then(|engine| engine.drawer_away_from_agent(&slot.surface.id))
+            .or(Some(declared))
     }
 
     fn dock_for(&self, place: uze_contract::DrawerDecl) -> crate::ui::orchestrator::render::Dock {
@@ -103,7 +122,7 @@ impl WorkspaceModel {
         let Some(slot) = self.remembered.declared.slot(id) else {
             return;
         };
-        let Some(place) = slot.drawer_place() else {
+        let Some(place) = self.drawer_place(slot) else {
             return;
         };
         if !self.offers_declared(&slot.owner) {
@@ -140,7 +159,10 @@ impl WorkspaceModel {
         row: u16,
     ) {
         use uze_contract::DrawerSide;
-        let Some(place) = self.open_drawer_slot().and_then(HostedSlot::drawer_place) else {
+        let Some(place) = self
+            .open_drawer_slot()
+            .and_then(|slot| self.drawer_place(slot))
+        else {
             return;
         };
         // A card that fits what it holds is sized by it, not by a hand.
@@ -220,7 +242,7 @@ impl WorkspaceModel {
     /// as an overlay is, and Esc closes it wherever the keys are.
     pub(in crate::ui::orchestrator) fn drawer_floats(&self) -> bool {
         self.open_drawer_slot()
-            .and_then(HostedSlot::drawer_place)
+            .and_then(|slot| self.drawer_place(slot))
             .is_some_and(|place| place.float)
     }
 

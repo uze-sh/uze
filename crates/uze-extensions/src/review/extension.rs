@@ -1159,6 +1159,16 @@ impl Extension for ReviewExtension {
         Outcome::Stay
     }
 
+    /// The comments push the agent's pane aside, to be read beside it, and
+    /// float over the review or any other view, whose room they would take.
+    fn drawer_away_from_agent(&self, surface: &str) -> Option<uze_contract::DrawerDecl> {
+        (surface == COMMENTS).then_some(uze_contract::DrawerDecl {
+            side: uze_contract::DrawerSide::Right,
+            float: true,
+            fit: false,
+        })
+    }
+
     /// Told whom a send goes to and when it was taken up.
     fn observes_agents(&self) -> bool {
         true
