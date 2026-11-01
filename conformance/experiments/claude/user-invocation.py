@@ -278,7 +278,9 @@ def run(cfg, prov_ip):
     ) as tui:
         plain, ready = bindings.prepare(tui)
         if not ready:
-            common.check("user-invocation-ready", ready, plain[-160:].replace("\n", " "))
+            common.check(
+                "user-invocation-ready", ready, plain[-160:].replace("\n", " ")
+            )
             return
         for name, prompt in (
             ("tools", TOOLS_TURN),
@@ -289,7 +291,11 @@ def run(cfg, prov_ip):
         ):
             mark = _exec(cfg, f"wc -l < {LOG} 2>/dev/null || echo 0").strip()
             settled, seconds = _turn(bindings, tui, prompt)
-            turns[name] = {"settled": settled, "seconds": round(seconds, 1), "from": mark}
+            turns[name] = {
+                "settled": settled,
+                "seconds": round(seconds, 1),
+                "from": mark,
+            }
             tui.snapshot(f"turn-{name}", tui.shown()[-4000:])
         log = _exec(cfg, f"cat {LOG} 2>/dev/null")
         count = _exec(cfg, f"cat {COUNT} 2>/dev/null")
@@ -299,8 +305,8 @@ def run(cfg, prov_ip):
         mcp_list = _exec(cfg, "claude mcp list 2>&1 | head -20")
         spawn = _exec(
             cfg,
-            f"p='{{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"x\"}}'; "
-            f"s=$(date +%s%N); i=0; while [ $i -lt 50 ]; do echo \"$p\" | {LOGGER}; "
+            f'p=\'{{"hook_event_name":"UserPromptSubmit","prompt":"x"}}\'; '
+            f's=$(date +%s%N); i=0; while [ $i -lt 50 ]; do echo "$p" | {LOGGER}; '
             f"i=$((i+1)); done; e=$(date +%s%N); echo $(( (e-s)/50000 ))",
         )
     for name, text in (
@@ -320,13 +326,23 @@ def run(cfg, prov_ip):
         "turns": turns,
         "events": {k: len(v) for k, v in by_event.items()},
         "expansions": [
-            {k: p.get(k) for k in ("expansion_type", "command_name", "command_args", "command_source", "prompt")}
+            {
+                k: p.get(k)
+                for k in (
+                    "expansion_type",
+                    "command_name",
+                    "command_args",
+                    "command_source",
+                    "prompt",
+                )
+            }
             for p in by_event.get("UserPromptExpansion", [])
         ],
         "prompts": [p.get("prompt") for p in by_event.get("UserPromptSubmit", [])],
         "subagents": [
             (p.get("hook_event_name"), p.get("agent_type"))
-            for p in by_event.get("SubagentStart", []) + by_event.get("SubagentStop", [])
+            for p in by_event.get("SubagentStart", [])
+            + by_event.get("SubagentStop", [])
         ],
         "post_tools": [p.get("tool_name") for p in by_event.get("PostToolUse", [])],
         "counted": [
@@ -343,10 +359,24 @@ def run(cfg, prov_ip):
     print(json.dumps(summary, indent=1)[:9000], flush=True)
 
     names = [e["command_name"] for e in summary["expansions"]]
-    common.check("every-turn-settled", all(t["settled"] for t in turns.values()), json.dumps(turns))
-    common.check("skill-typed-reaches-user-prompt-expansion", SKILL in names, str(names))
-    common.check("plugin-skill-typed-reaches-user-prompt-expansion", any("review" in (n or "") for n in names), str(names))
-    common.check("mcp-prompt-typed-reaches-user-prompt-expansion", any("probe" in (n or "") for n in names), str(names))
+    common.check(
+        "every-turn-settled",
+        all(t["settled"] for t in turns.values()),
+        json.dumps(turns),
+    )
+    common.check(
+        "skill-typed-reaches-user-prompt-expansion", SKILL in names, str(names)
+    )
+    common.check(
+        "plugin-skill-typed-reaches-user-prompt-expansion",
+        any("review" in (n or "") for n in names),
+        str(names),
+    )
+    common.check(
+        "mcp-prompt-typed-reaches-user-prompt-expansion",
+        any("probe" in (n or "") for n in names),
+        str(names),
+    )
     common.check(
         "no-skill-tool-run-for-a-typed-skill",
         summary["post_tools"].count("Skill") == 1,
@@ -362,13 +392,19 @@ def run(cfg, prov_ip):
         any(t == AGENT for _, t in summary["subagents"]),
         str(summary["subagents"]),
     )
-    matching = [t for t in summary["post_tools"] if t in ("Skill", "Agent") or (t or "").startswith("mcp__")]
+    matching = [
+        t
+        for t in summary["post_tools"]
+        if t in ("Skill", "Agent") or (t or "").startswith("mcp__")
+    ]
     common.check(
         "matcher-spawns-only-for-matching-tools",
         sorted(summary["counted"]) == sorted(matching) and len(summary["counted"]) > 0,
         f"counted {summary['counted']} of {summary['post_tools']}",
     )
-    common.check("typed-skill-is-in-the-transcript", "UZE_UI_SKILL_ARGS_1d2e" in transcripts, "")
+    common.check(
+        "typed-skill-is-in-the-transcript", "UZE_UI_SKILL_ARGS_1d2e" in transcripts, ""
+    )
     starts = [t for e, t in summary["subagents"] if e == "SubagentStart"]
     common.check(
         "subagent-start-fires-once-per-dispatch",

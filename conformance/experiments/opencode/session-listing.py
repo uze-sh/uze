@@ -141,8 +141,12 @@ def run(cfg, prov_ip):
 
     probes = section(out, "probes")
     exports = section(out, "exports")
-    machine = re.search(r"api-list sessions=(\d+) projects=(\d+) children=(\d+)", probes)
-    exported = re.findall(r"export (ses_\S+) bytes=(\d+) ms=(\d+) parent=(\S+)", exports)
+    machine = re.search(
+        r"api-list sessions=(\d+) projects=(\d+) children=(\d+)", probes
+    )
+    exported = re.findall(
+        r"export (ses_\S+) bytes=(\d+) ms=(\d+) parent=(\S+)", exports
+    )
     common.check(
         "session-list-is-per-project",
         all(

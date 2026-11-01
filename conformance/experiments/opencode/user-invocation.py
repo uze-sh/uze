@@ -111,7 +111,8 @@ SEQUENCE = [
     ],
 ]
 
-PLUGIN = r"""// No import of `@opencode-ai/plugin`: 2.x cannot resolve it from the
+PLUGIN = (
+    r"""// No import of `@opencode-ai/plugin`: 2.x cannot resolve it from the
 // global plugin directory (measured by `opencode/session-start`).
 import { appendFileSync } from "node:fs";
 const LOG = "%s";
@@ -159,7 +160,9 @@ export default {
     })().catch((err) => rec("stream-error", String(err)));
   },
 };
-""" % LOG
+"""
+    % LOG
+)
 
 SID = """node -e 'const l=require("fs").readFileSync(process.argv[1],"utf8").split("\\n").filter(Boolean).map(s=>{try{return JSON.parse(s)}catch(e){return {}}}).map(e=>e.sessionID||e.properties?.sessionID||e.part?.sessionID||e.data?.sessionID).filter(Boolean);console.log(l.length?l[0]:"")'"""
 
@@ -222,7 +225,9 @@ for d in pa pb pc tui; do mkdir -p /work/$d; (cd /work/$d && git init -q . && ec
 def script():
     # decision: headless-permissions
     run = "timeout 150 opencode run --standalone --auto --format json"
-    return prelude() + f"""
+    return (
+        prelude()
+        + f"""
 echo "===== config"
 node -e 'const d=JSON.parse(require("fs").readFileSync("{CONFIG}/opencode.json","utf8"));delete d.providers;console.log(JSON.stringify(d))'
 stamp() {{ echo "== $1 $(date +%s%3N)" >> {LOG}; }}
@@ -297,6 +302,7 @@ while read name sid; do
 done < /work/sessions.txt
 echo "===== end"
 """
+    )
 
 
 def section(out, name):
@@ -313,6 +319,7 @@ def between(probe, name):
     begin = probe.find(f"== begin {name} ")
     end = probe.find(f"== end {name} ")
     return probe[begin:end] if begin >= 0 and end > begin else ""
+
 
 TUI_TURNS = [
     # (name, typed before the completion is taken, typed after it)
@@ -341,7 +348,9 @@ def _type(child, text):
 def _settled(cfg, count, tries=40):
     """Waits until the probe has seen `count` executions succeed."""
     for _ in range(tries):
-        seen = _exec(cfg, f"grep -c 'session.execution.succeeded' {LOG} 2>/dev/null").strip()
+        seen = _exec(
+            cfg, f"grep -c 'session.execution.succeeded' {LOG} 2>/dev/null"
+        ).strip()
         if seen.isdigit() and int(seen) >= count:
             return True
         time.sleep(1.5)
@@ -355,7 +364,9 @@ def tui_phase(cfg, prov_ip):
     cmd = common.docker_base(
         cfg, prov_ip, opencode_setup(cfg, prov_ip, final, plugins="flow mcp-plugin")
     )
-    child = pexpect.spawn(cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300)
+    child = pexpect.spawn(
+        cmd[0], cmd[1:], encoding="utf-8", codec_errors="replace", timeout=300
+    )
     child.setwinsize(50, 160)
     screen = make_screen(child)
     wait_for = make_waiter(screen)
@@ -382,9 +393,14 @@ def tui_phase(cfg, prov_ip):
     time.sleep(2)
     screens["slash-skill-completion"] = common.render_screen(screen(wait=1.5))
     probe = _exec(cfg, f"cat {LOG}")
-    sids = sorted(set(re.findall(r'(ses_[A-Za-z0-9]+)', probe)))
+    sids = sorted(set(re.findall(r"(ses_[A-Za-z0-9]+)", probe)))
     exports = "".join(
-        f"-- {sid}\n" + _exec(cfg, f"cd /work/tui && PATH=$PATH:/usr/local/.opencode/bin HOME=/work/home timeout 60 opencode session export {sid} 2>&1 | head -c 20000") + "\n"
+        f"-- {sid}\n"
+        + _exec(
+            cfg,
+            f"cd /work/tui && PATH=$PATH:/usr/local/.opencode/bin HOME=/work/home timeout 60 opencode session export {sid} 2>&1 | head -c 20000",
+        )
+        + "\n"
         for sid in sids
     )
     child.terminate(force=True)
@@ -470,7 +486,9 @@ def run(cfg, prov_ip):
         "the MCP tool reaches the hook as <config key>_<tool>",
     )
     stats = section(out, "stats")
-    counts = re.findall(r'-- from (\S+)( --project \.)?\s*\{[\s\S]*?"sessions": (\d+)', stats)
+    counts = re.findall(
+        r'-- from (\S+)( --project \.)?\s*\{[\s\S]*?"sessions": (\d+)', stats
+    )
     machine = {d: int(n) for d, flag, n in counts if not flag}
     scoped = {d: int(n) for d, flag, n in counts if flag}
     common.check(
@@ -495,9 +513,15 @@ def run(cfg, prov_ip):
             delta > PERF_CALLS * 300 * 0.6,
             f"fast={ms['perf_fast']}ms slow={ms['perf_slow']}ms delta={delta}ms over {PERF_CALLS + 2} calls",
         )
-    costs = [float(c) for c in re.findall(r'"kind":"tool.after.cost","data":"([0-9.]+)"', probe)]
+    costs = [
+        float(c)
+        for c in re.findall(r'"kind":"tool.after.cost","data":"([0-9.]+)"', probe)
+    ]
     fast = between(probe, "perf_fast")
-    fast_costs = [float(c) for c in re.findall(r'"kind":"tool.after.cost","data":"([0-9.]+)"', fast)]
+    fast_costs = [
+        float(c)
+        for c in re.findall(r'"kind":"tool.after.cost","data":"([0-9.]+)"', fast)
+    ]
     if fast_costs:
         common.check(
             "append-handler-cost",
