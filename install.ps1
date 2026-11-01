@@ -396,7 +396,9 @@ public static extern IntPtr SendMessageTimeout(
                 (Test-SameDirectory $earlier.path_entry $binDir)) {
                 $pathEntry = $binDir
             }
-        } catch { }
+        } catch {
+            Write-Verbose "no earlier install record to read: $_"
+        }
         $userPath = Get-UserPath
         $onPath = $userPath -split ';' | Where-Object { $_ -and (Test-SameDirectory ([Environment]::ExpandEnvironmentVariables($_)) $binDir) }
         if (-not $onPath) {
