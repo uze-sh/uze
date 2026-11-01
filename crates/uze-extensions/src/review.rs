@@ -161,6 +161,8 @@ pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Siz
         Command::MarkViewed => view.toggle_viewed(true),
         Command::Send => return Asked::Send,
         Command::OpenInCode => return Asked::OpenInCode,
+        Command::NextThread => view.go_to_thread(true),
+        Command::PreviousThread => view.go_to_thread(false),
         Command::Resolve => resolve_near_cursor(view),
         Command::OpenMenu => open_menu(view),
         Command::ScrollPageDown => {
@@ -217,7 +219,11 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
                 view.set_filter(*filter);
             }
         }
-        ViewHit::SelectMode(_) => view.toggle_viewed(false),
+        ViewHit::SelectMode(index) => match render::mode_at(view, index) {
+            render::ModeAct::PreviousThread => view.go_to_thread(false),
+            render::ModeAct::NextThread => view.go_to_thread(true),
+            render::ModeAct::Viewed => view.toggle_viewed(false),
+        },
         ViewHit::LineNumber { line, extend } => {
             if view.composer.is_some() {
                 return Asked::Stay;

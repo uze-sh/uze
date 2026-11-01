@@ -453,6 +453,10 @@ pub enum RowIcon {
     /// A file read in a review whose diff has moved since: the empty box,
     /// in the hue of what waits on the reader.
     ViewedThenChanged,
+    /// The one before, in a walk through several: a chip's step back.
+    Previous,
+    /// The one after: a chip's step on.
+    Next,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1440,6 +1444,10 @@ pub enum Command {
     Resolve,
     /// Carry the mark one line further this way.
     ExtendMark(ScrollDirection),
+    /// Go to the next open thread, in whichever file it is.
+    NextThread,
+    /// Go to the open thread before.
+    PreviousThread,
 
     // --- Asked of a surface with files open in tabs ----------------------
     /// Search, wherever the search lives — and into its field.

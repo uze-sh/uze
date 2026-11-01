@@ -110,6 +110,12 @@ pub struct ReviewView {
     pub(crate) discarding: Option<Discarding>,
     /// What can be done to the selected file, open on its row.
     pub(crate) menu: Option<FileMenu>,
+    /// The open thread the operator last went to, which the threads chip
+    /// counts from.
+    pub(crate) thread: Option<u64>,
+    /// A thread gone to in another file, waiting for that file's diff to
+    /// be read before it can be shown.
+    pub(crate) jump: Option<u64>,
     /// Changes made here and not yet written to the record.
     pub(crate) unwritten: Vec<Change>,
     /// A discard to hand the host: the paths to put back as the last
@@ -153,6 +159,8 @@ impl ReviewView {
             notice: None,
             discarding: None,
             menu: None,
+            thread: None,
+            jump: None,
             unwritten: Vec::new(),
             restore: None,
             relist: true,
@@ -278,11 +286,105 @@ impl ReviewView {
                     }
                 }
                 self.recolour();
+                self.settle_jump();
             }
             Err(message) => {
                 self.diff = None;
                 self.diff_error = Some(message);
             }
+        }
+    }
+
+    // --- Threads ----------------------------------------------------------
+
+    /// The open threads (every comment not resolved) on the files listed,
+    /// in the list's order and, within a file, by the lines they are on.
+    pub(crate) fn threads(&self) -> Vec<&Comment> {
+        let mut open: Vec<(usize, u32, &Comment)> = self
+            .record
+            .comments
+            .iter()
+            .filter(|comment| comment.status != CommentStatus::Resolved)
+            .filter_map(|comment| {
+                let path = self.root.join(&comment.path);
+                let file = self.files.iter().position(|file| file.path == path)?;
+                let line = comment.rows.iter().map(|row| row.line).min().unwrap_or(0);
+                Some((file, line, comment))
+            })
+            .collect();
+        open.sort_by_key(|(file, line, comment)| (*file, *line, comment.id));
+        open.into_iter().map(|(_, _, comment)| comment).collect()
+    }
+
+    /// Goes to the open thread after the one last gone to, or before it,
+    /// round the ends, in whichever file it is.
+    pub(crate) fn go_to_thread(&mut self, forward: bool) {
+        let threads: Vec<(u64, String)> = self
+            .threads()
+            .iter()
+            .map(|comment| (comment.id, comment.path.clone()))
+            .collect();
+        if threads.is_empty() {
+            self.notice = Some(Span::new("no open threads", crate::view::Role::Muted));
+            return;
+        }
+        let at = self
+            .thread
+            .and_then(|id| threads.iter().position(|(thread, _)| *thread == id));
+        let next = match (at, forward) {
+            (Some(at), true) => (at + 1) % threads.len(),
+            (Some(at), false) => (at + threads.len() - 1) % threads.len(),
+            (None, true) => 0,
+            (None, false) => threads.len() - 1,
+        };
+        let (id, path) = threads[next].clone();
+        let path = self.root.join(path);
+        if self.selected.as_ref() != Some(&path) {
+            let Some(index) = self.files.iter().position(|file| file.path == path) else {
+                return;
+            };
+            self.select_file(index);
+            // Refused while a comment is being written: it holds its file.
+            if self.selected.as_ref() != Some(&path) {
+                return;
+            }
+        }
+        self.thread = Some(id);
+        self.focus = Focus::Content;
+        self.jump = Some(id);
+        if self.diff.as_ref().is_some_and(|diff| diff.path == path) {
+            self.settle_jump();
+        }
+    }
+
+    /// Shows the thread gone to, once its file's diff is on show: its
+    /// lines marked and on screen, its comment under them.
+    fn settle_jump(&mut self) {
+        let Some(id) = self.jump.take() else {
+            return;
+        };
+        let (at, _) = self.placed();
+        let placed = at.iter().find_map(|(end, comments)| {
+            let comment = comments.iter().find(|comment| comment.id == id)?;
+            Some((*end + 1 - comment.rows.len().min(*end + 1), *end))
+        });
+        let wanted = match placed {
+            Some((from, to)) => {
+                self.mark = Some((from, to));
+                self.cursor = to;
+                Line::Cell(from)
+            }
+            // Its lines are gone from the diff: the comment stands at the
+            // end, and that is what is shown.
+            None => Line::CardHeader(id),
+        };
+        if let Some(line) = super::render::lines(self)
+            .iter()
+            .position(|drawn| drawn.line == wanted)
+        {
+            // A few lines of what comes before, so the thread is read in
+            // its place rather than at the very top edge.
+            self.scroll = line.saturating_sub(3);
         }
     }
 

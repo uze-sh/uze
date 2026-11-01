@@ -1180,3 +1180,86 @@ fn a_kept_comment_stands_on_a_card_ruled_in_its_states_hue() {
             .all(|tone| *tone == LineTone::Card(Role::Success))
     );
 }
+
+/// A kept draft on `path` about the row `text` on new line `line`.
+fn thread_on(view: &mut ReviewView, id: u64, path: &str, line: u32, text: &str) {
+    view.change(change::Change::Draft {
+        id,
+        path: path.to_owned(),
+        rows: vec![Row {
+            kind: crate::review::RowKind::Added,
+            line,
+            text: text.to_owned(),
+        }],
+        excerpt: String::new(),
+        text: format!("thread {id}"),
+    });
+}
+
+const TESTS: &str = "\
+diff --git a/tests.rs b/tests.rs
+--- /dev/null
++++ b/tests.rs
+@@ -0,0 +1,2 @@
++fn a_test() {
++}
+";
+
+/// The open threads are walked as GitLab walks them: a counter beside
+/// the viewed chip, a step on and back, across files, round the ends; a
+/// thread in another file is shown once that file's diff is read, its
+/// lines marked.
+#[test]
+fn the_threads_are_walked_across_files_from_the_chips_and_the_keys() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "tests.rs", 1, "fn a_test() {");
+    thread_on(&mut view, 2, "naming.rs", 3, "    rename();");
+    let chips = |view: &ReviewView| -> Vec<String> {
+        super::view(view, SPACE)
+            .modes
+            .iter()
+            .map(|mode| mode.label.clone())
+            .collect()
+    };
+    assert_eq!(chips(&view)[1], "◆ 2", "how many before any is gone to");
+    // naming.rs is listed first: its thread is the first.
+    handle_command(&mut view, Command::NextThread, SPACE);
+    assert_eq!(view.thread, Some(2));
+    assert_eq!(chips(&view)[1], "◆ 1/2");
+    assert_eq!(
+        view.marked(),
+        Some((3, 3)),
+        "its line marked: {:?}",
+        view.marked()
+    );
+    // On to tests.rs, from the chip: its diff is not read yet.
+    handle_hit(&mut view, ViewHit::SelectMode(2), SPACE);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/tests.rs")));
+    assert_eq!(view.jump, Some(1), "waiting for the file's diff");
+    let tests = PathBuf::from("/w/tests.rs");
+    view.absorb_diff(tests.clone(), Ok(diff_of(&tests, TESTS)), "x".to_owned());
+    assert_eq!(view.jump, None);
+    assert_eq!(view.marked(), Some((0, 0)), "shown once read");
+    assert_eq!(chips(&view)[1], "◆ 2/2");
+    // Round the end, and back again from the keys.
+    handle_command(&mut view, Command::NextThread, SPACE);
+    assert_eq!(view.thread, Some(2));
+    handle_command(&mut view, Command::PreviousThread, SPACE);
+    assert_eq!(view.thread, Some(1));
+    // The last chip is still the viewed one.
+    assert_eq!(chips(&view).last().map(String::as_str), Some("viewed"));
+}
+
+#[test]
+fn with_no_open_thread_the_walk_is_not_offered() {
+    let mut view = reviewing();
+    assert_eq!(
+        super::view(&view, SPACE).modes.len(),
+        1,
+        "the viewed chip alone"
+    );
+    handle_hit(&mut view, ViewHit::SelectMode(0), SPACE);
+    assert_eq!(view.viewed(Path::new("/w/naming.rs")), surface::Viewed::Yes);
+    handle_command(&mut view, Command::NextThread, SPACE);
+    assert!(view.notice.is_some(), "says there is none");
+}

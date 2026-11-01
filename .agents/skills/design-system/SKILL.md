@@ -206,6 +206,13 @@ on "cancel" must not save first.
   (the accent, the one meant next) and `discard`, which are `ctrl+s` and
   `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
   sends.
+- The open threads are walked from chips beside `viewed`, GitLab's way:
+  `‹`, `◆ 2/5` (or `◆ 5` before any is gone to), `›`, the steps drawn
+  by the host from `step.previous`/`step.next` (`RowIcon::Previous`,
+  `Next`), a chip of a mark alone with no space after it; `n` and `p` are
+  the same steps. A step crosses files, round the ends, and shows the
+  thread with its lines marked; nothing is offered while no thread is
+  open.
 - A file read is marked viewed: the list's row carries the host's
   `mark.viewed` icon (success), `mark.unviewed` (dim) before it is read,
   and the warning hue once the file changed since; the chip over its diff

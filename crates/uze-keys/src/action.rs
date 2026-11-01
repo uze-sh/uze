@@ -375,6 +375,10 @@ actions! {
         "Viewed", "Mark the file viewed and go on to the next one not viewed, or unmark it";
     ReviewOpenInCode => "review-open-in-code", false,
         "Open in code", "Open the marked line in the code surface";
+    ReviewNextThread => "review-next-thread", false,
+        "Next thread", "Go to the next open comment, in whichever file it is";
+    ReviewPreviousThread => "review-previous-thread", false,
+        "Previous thread", "Go to the open comment before, in whichever file it is";
     ReviewResolve => "review-resolve", false,
         "Resolve", "Take an answered comment out of the review";
     ReviewMarkDown => "review-mark-down", false,

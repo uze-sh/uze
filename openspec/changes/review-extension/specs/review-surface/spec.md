@@ -128,6 +128,17 @@ language on lines of its own, with the caret on its empty line.
 - **WHEN** the operator types `` `rev-parse` `` in a comment
 - **THEN** the saved comment draws `rev-parse` as code
 
+### Requirement: The open threads can be walked
+The review SHALL offer, beside the viewed mark, a walk through the open
+comments of the files listed: a step back, how many there are and which
+the operator is on, and a step on, by pointer and by key. A step SHALL
+cross files and go round the ends, and SHALL show the comment with its
+lines marked.
+
+#### Scenario: On to a thread in another file
+- **WHEN** the operator steps on from the last thread of `naming.rs` and the next open comment is on `tests.rs`
+- **THEN** `tests.rs` is selected, its diff shows the comment with its lines marked, and the count reads `2/2`
+
 ### Requirement: A file can be marked viewed
 Each listed file SHALL carry a viewed mark the operator toggles by pointer
 or by the viewed action. The action on an unviewed file SHALL mark it and

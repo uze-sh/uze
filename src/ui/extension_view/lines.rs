@@ -279,6 +279,8 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Finished => Symbol::Finished,
         RowIcon::Decision => Symbol::Decision,
         RowIcon::Viewed => Symbol::MarkViewed,
+        RowIcon::Previous => Symbol::StepPrevious,
+        RowIcon::Next => Symbol::StepNext,
         RowIcon::NotViewed | RowIcon::ViewedThenChanged => Symbol::MarkUnviewed,
     })
 }
@@ -339,6 +341,12 @@ pub(super) fn modes_width(modes: &[Mode]) -> u16 {
 /// where the glyph set has one to draw.
 pub(super) fn mode_width(mode: &Mode) -> u16 {
     let icon = icon_cells(mode.icon);
+    // A chip that is its mark alone (a step) has no word to stand apart
+    // from, so no space after the mark either.
+    let icon = match mode.label.is_empty() {
+        true => icon.saturating_sub(1),
+        false => icon,
+    };
     TextSpan::raw(&mode.label).width() as u16 + icon + 2 * MODE_PAD
 }
 
@@ -432,6 +440,10 @@ pub(super) fn render_chips(
         let pad = " ".repeat(MODE_PAD as usize);
         let mut spans = vec![TextSpan::styled(pad.clone(), style)];
         if let Some(mark) = icon_span(mode.icon) {
+            let mark = match mode.label.is_empty() {
+                true => TextSpan::raw(mark.content.trim_end().to_owned()),
+                false => mark,
+            };
             spans.push(mark.style(style));
         }
         spans.push(TextSpan::styled(format!("{}{pad}", mode.label), style));

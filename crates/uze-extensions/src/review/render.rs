@@ -122,7 +122,7 @@ pub fn view(review: &ReviewView, space: Size) -> View {
         footer: footer(review),
         notice: notice(review),
         confirm: discard_confirm(review),
-        modes: viewed_mode(review),
+        modes: [thread_modes(review), viewed_mode(review)].concat(),
         subjects: filter_chips(review),
         layout: Layout::Sidebar,
         trail: Vec::new(),
@@ -152,6 +152,52 @@ fn filter_chips(review: &ReviewView) -> Vec<Mode> {
             },
         })
         .collect()
+}
+
+/// The open threads as a walk, GitLab's way: a step back, where the
+/// operator is among them, a step on. Nothing when there are none.
+fn thread_modes(review: &ReviewView) -> Vec<Mode> {
+    let threads = review.threads();
+    if threads.is_empty() {
+        return Vec::new();
+    }
+    let at = review
+        .thread
+        .and_then(|id| threads.iter().position(|comment| comment.id == id));
+    let count = match at {
+        Some(at) => format!("{COMMENT_MARK} {}/{}", at + 1, threads.len()),
+        None => format!("{COMMENT_MARK} {}", threads.len()),
+    };
+    let step = |icon| Mode {
+        label: String::new(),
+        active: false,
+        icon,
+    };
+    vec![
+        step(RowIcon::Previous),
+        Mode {
+            label: count,
+            active: false,
+            icon: RowIcon::None,
+        },
+        step(RowIcon::Next),
+    ]
+}
+
+/// What a press on the content's chip `index` asks: the threads' walk
+/// stands before the viewed chip while there are threads.
+pub(crate) fn mode_at(review: &ReviewView, index: usize) -> ModeAct {
+    match (review.threads().is_empty(), index) {
+        (false, 0) => ModeAct::PreviousThread,
+        (false, 1 | 2) => ModeAct::NextThread,
+        _ => ModeAct::Viewed,
+    }
+}
+
+pub(crate) enum ModeAct {
+    PreviousThread,
+    NextThread,
+    Viewed,
 }
 
 fn viewed_mode(review: &ReviewView) -> Vec<Mode> {

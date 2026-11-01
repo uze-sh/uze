@@ -496,6 +496,8 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Review, "v", Action::ReviewViewed),
         bind(Scope::Review, "o", Action::ReviewOpenInCode),
         bind(Scope::Review, "r", Action::ReviewResolve),
+        bind(Scope::Review, "n", Action::ReviewNextThread),
+        bind(Scope::Review, "p", Action::ReviewPreviousThread),
         bind(Scope::Review, "shift+down", Action::ReviewMarkDown),
         bind(Scope::Review, "shift+up", Action::ReviewMarkUp),
         // Typing has a scope of its own so nothing behind it answers a
