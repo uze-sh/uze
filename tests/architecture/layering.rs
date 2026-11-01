@@ -1861,7 +1861,7 @@ fn only_the_declared_engine_asks_a_source() {
 }
 
 /// The review a person wrote for an agent is read and rewritten through
-/// the host from one place, the review extension (`review-extension` D5):
+/// the host from one place, the review extension (`review-extension` D1, D6):
 /// a declared extension may not read what an operator wrote about another
 /// agent's work, nor a built-in other than the one that keeps it.
 #[test]

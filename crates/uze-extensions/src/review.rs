@@ -207,7 +207,9 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
             match (what, act) {
                 (_, Some(act)) => perform(view, act, space),
                 (Some(Line::Composer(index)), None) => {
-                    let prefix = render_prefix();
+                    // A click counts what leads the line; the composer's
+                    // columns do not.
+                    let prefix = render::RULE.chars().count();
                     if let Some(composer) = view.composer.as_mut() {
                         composer.place(index, cell.saturating_sub(prefix));
                     }
@@ -223,12 +225,6 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
         _ => {}
     }
     Asked::Stay
-}
-
-/// The width of what leads every composer line, which a click's cell
-/// counts and the composer's own columns do not.
-fn render_prefix() -> usize {
-    4
 }
 
 fn perform(view: &mut ReviewView, act: Act, space: Size) {

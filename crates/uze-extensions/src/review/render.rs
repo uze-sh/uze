@@ -28,7 +28,7 @@ const INDENT: &str = "  ";
 /// What sets a comment's body lines, and the comment being written, in
 /// under its first line. Air rather than a drawn rule: a rule is chrome,
 /// and chrome is the host's to draw.
-const RULE: &str = "    ";
+pub(crate) const RULE: &str = "    ";
 
 /// What a press on a stretch of a comment's line does.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -273,7 +273,7 @@ fn content(review: &ReviewView, space: Size) -> Content {
     let Some(diff) = review.diff.as_ref().filter(|diff| diff.path == file.path) else {
         return message("reading…", None, Role::Muted);
     };
-    let heading = heading(review, file.status);
+    let heading = heading(review);
     if diff.binary {
         return match &diff.picture {
             Some(picture) => Content::Picture {
@@ -312,7 +312,7 @@ fn content(review: &ReviewView, space: Size) -> Content {
     }
 }
 
-fn heading(review: &ReviewView, status: FileStatus) -> String {
+fn heading(review: &ReviewView) -> String {
     let path = review
         .selected
         .as_ref()
@@ -322,7 +322,6 @@ fn heading(review: &ReviewView, status: FileStatus) -> String {
         (Filter::All, Some(_)) => "",
         _ => " · uncommitted",
     };
-    let _ = status;
     format!("DIFF · {path}{against}")
 }
 
