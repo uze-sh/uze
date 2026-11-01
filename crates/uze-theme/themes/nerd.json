@@ -46,6 +46,14 @@
       "glyph": "",
       "width": 1
     },
+    "mark.viewed": {
+      "glyph": "\uf14a",
+      "width": 1
+    },
+    "mark.unviewed": {
+      "glyph": "\uf096",
+      "width": 1
+    },
     "mark.sparkle": {
       "glyph": "",
       "width": 1

@@ -433,6 +433,14 @@ pub enum RowIcon {
     Finished,
     /// A decision the project keeps.
     Decision,
+    /// A file read in a review: a checklist's ticked box, in the hue of
+    /// what is done.
+    Viewed,
+    /// A file not yet read in a review: the empty box.
+    NotViewed,
+    /// A file read in a review whose diff has moved since: the empty box,
+    /// in the hue of what waits on the reader.
+    ViewedThenChanged,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

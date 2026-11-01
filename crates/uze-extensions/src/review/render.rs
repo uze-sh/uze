@@ -144,13 +144,20 @@ fn viewed_mode(review: &ReviewView) -> Vec<Mode> {
     let viewed = review.viewed(&file.path);
     vec![Mode {
         label: match viewed {
-            Viewed::Yes => "viewed".to_owned(),
-            Viewed::Changed => "changed since viewed".to_owned(),
-            Viewed::No => "mark viewed".to_owned(),
+            Viewed::Changed => "changed".to_owned(),
+            Viewed::Yes | Viewed::No => "viewed".to_owned(),
         },
         active: viewed == Viewed::Yes,
-        icon: RowIcon::None,
+        icon: viewed_icon(viewed),
     }]
+}
+
+fn viewed_icon(viewed: Viewed) -> RowIcon {
+    match viewed {
+        Viewed::Yes => RowIcon::Viewed,
+        Viewed::Changed => RowIcon::ViewedThenChanged,
+        Viewed::No => RowIcon::NotViewed,
+    }
 }
 
 fn navigator(review: &ReviewView) -> Navigator {
@@ -186,21 +193,16 @@ fn navigator(review: &ReviewView) -> Navigator {
                         comment.path == path && comment.status != CommentStatus::Resolved
                     })
                     .count();
-                // Viewed is what a reviewer working down the list reads,
-                // said first; then what waits on it, then where it sits.
-                let viewed = match review.viewed(&file.path) {
-                    Viewed::Yes => "viewed · ",
-                    Viewed::Changed => "changed since viewed · ",
-                    Viewed::No => "",
-                };
                 let detail = match comments {
-                    0 => format!("{viewed}{directory}"),
-                    n => format!("{viewed}{COMMENT_MARK}{n} {directory}"),
+                    0 => directory,
+                    n => format!("{COMMENT_MARK}{n} {directory}"),
                 };
                 let marker = Span::new(file.status.glyph(), file.status.role());
+                // Viewed is what a reviewer working down the list reads:
+                // a checklist down the rows' leading column.
                 NavigatorRow::Item {
                     id: index,
-                    icon: RowIcon::None,
+                    icon: viewed_icon(review.viewed(&file.path)),
                     detail,
                     name,
                     depth: 0,

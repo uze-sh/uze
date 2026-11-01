@@ -83,6 +83,8 @@
     "mark.more": "⋯",
     "mark.cross": "×",
     "mark.done": "✓",
+    "mark.viewed": "✓",
+    "mark.unviewed": "○",
     "mark.sparkle": "✦",
     "mark.toggle-off": "○",
     "mark.toggle-on": "◉",

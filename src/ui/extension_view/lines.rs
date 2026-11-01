@@ -210,6 +210,8 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Contract => Symbol::Contract,
         RowIcon::Finished => Symbol::Finished,
         RowIcon::Decision => Symbol::Decision,
+        RowIcon::Viewed => Symbol::MarkViewed,
+        RowIcon::NotViewed | RowIcon::ViewedThenChanged => Symbol::MarkUnviewed,
     })
 }
 
@@ -238,8 +240,14 @@ pub(super) fn row_mark(mark: RowMark) -> (String, u16) {
 pub(super) fn row_icon(icon: RowIcon) -> Option<TextSpan<'static>> {
     // Muted on purpose: the icon classifies, the name identifies, and an
     // icon drawn at the name's weight competes with the thing the reader
-    // is actually scanning for.
-    Some(icon_span(icon)?.style(theme::fg(Token::TextDim)))
+    // is actually scanning for. A checklist's box is the exception: its
+    // hue is what a reader working down the list reads.
+    let token = match icon {
+        RowIcon::Viewed => Token::StateSuccess,
+        RowIcon::ViewedThenChanged => Token::StateWarning,
+        _ => Token::TextDim,
+    };
+    Some(icon_span(icon)?.style(theme::fg(token)))
 }
 
 /// The mark and the space after it, or nothing at all where the glyph
