@@ -207,3 +207,59 @@ fn only_a_file_with_uncommitted_work_offers_a_discard() {
     handle_command(&mut view, Command::OpenMenu, SPACE);
     assert!(view.discarding.is_none(), "tests.rs is committed only");
 }
+
+#[test]
+fn a_changed_image_is_drawn_and_a_deleted_one_says_it_has_no_lines() {
+    let mut view = reviewing();
+    let image = PathBuf::from("/w/naming.rs");
+    let picture = crate::view::Picture {
+        width: 1,
+        height: 1,
+        pixels: std::sync::Arc::from(vec![[0u8, 0, 0, 255]]),
+    };
+    view.absorb_diff(
+        image.clone(),
+        Ok(FileDiff {
+            path: image.clone(),
+            cells: Vec::new(),
+            fingerprint: 1,
+            binary: true,
+            picture: Some(picture),
+        }),
+        "x".to_owned(),
+    );
+    assert!(matches!(
+        super::view(&view, SPACE).content,
+        Content::Picture { .. }
+    ));
+    view.absorb_diff(
+        image.clone(),
+        Ok(FileDiff {
+            path: image,
+            cells: Vec::new(),
+            fingerprint: 2,
+            binary: true,
+            picture: None,
+        }),
+        "x".to_owned(),
+    );
+    match super::view(&view, SPACE).content {
+        Content::Message { hint, .. } => {
+            assert!(hint.unwrap_or_default().contains("no lines to compare"));
+        }
+        other => panic!("not a message: {other:?}"),
+    }
+}
+
+#[test]
+fn a_diff_read_for_a_file_no_longer_selected_is_dropped() {
+    let mut view = reviewing();
+    view.select_file(1);
+    let naming = PathBuf::from("/w/naming.rs");
+    view.absorb_diff(naming.clone(), Ok(diff_of(&naming, NAMING)), "x".to_owned());
+    assert!(view.cells().is_empty(), "the late answer is not drawn");
+    assert!(
+        view.diff_pending,
+        "and the selection's own read is still awaited"
+    );
+}

@@ -1,63 +1,49 @@
-//! The workspace TUI's code surface — one place for the four things a
-//! person asks of the checkout a tab is standing in: what changed in it,
-//! what it contains, what happened to it, and what it is *made of*.
+//! The workspace TUI's code surface: what the checkout a tab is standing
+//! in contains, what happened to it, and what it is *made of*.
 //!
-//! # Why one extension and not two
+//! # What it is for, and what it is not
 //!
-//! The diff and the file tree shipped separately first, and using them
-//! showed why that is wrong. The flow this product is for is **agent
-//! first → diff → and only last, touch the real file**: the diff is where
-//! a person's contact with the work begins, and editing is the exception
-//! at the end. So "I see it in the diff, let me fix that line" is the
-//! most-crossed seam there is, and two surfaces put a close, an open and
-//! a re-navigation to *the same file* in the middle of it.
-//!
-//! The merge is not a de-duplication. What was genuinely shared already
-//! is: the host draws both (`src/ui/extension_view.rs`), and highlighting
-//! is `shared::highlight`. The two navigators only look alike —
-//! [`changes`] compacts a flat, complete list from `git status`, and
-//! [`files`] flattens a partial tree that grows as directories are
-//! opened. What one extension can have and two cannot is a **selection
-//! that survives the switch**, and that is the whole of the value.
+//! Reading and editing the checkout's files, and finding the one that
+//! carries the weight. Judging what an agent's branch adds is the review's
+//! (`crate::review`), which used to be this surface's first half and left
+//! once it kept work of its own and spoke to the agent; a line marked
+//! there opens here at that line ([`Entry::Path`](crate::contract::Entry)),
+//! which is the crossing that used to argue for one surface.
 //!
 //! # The rule that keeps it from rotting
 //!
 //! No handler branches on the mode to decide what the state *means*. The
 //! mode decides who is *asked*; each half answers about the same path and
-//! knows nothing about the other. [`changes`] answers "the diff of this
-//! path", [`files`] answers "the tree containing it", [`editor`] answers
-//! "the text of it".
+//! knows nothing about the other. [`files`] answers "the tree containing
+//! it", [`editor`] answers "the text of it", [`map`] "where it sits among
+//! everything else".
 //!
-//! This is why the selection is a [`PathBuf`] rather than an index into
-//! the changed files: an index cannot mean anything to a tree that lists
-//! directories on demand, and a path means the same thing to both — which
-//! is also what a person means by "this file".
+//! This is why the selection is a [`PathBuf`]: a path means the same thing
+//! to a tree that lists directories on demand and to a map of every file,
+//! which is also what a person means by "this file".
 //!
-//! [`map`] is the fourth half and the newest, and it is here for the same
-//! reason rather than beside the diagrams it was first drawn with. A
-//! treemap of a checkout looks like an architecture diagram and is not
-//! one: nobody writes it, it says nothing about what the project was
-//! meant to be, and every tile on it is a path — the same path the tree
-//! and the diff answer about. Finding the file that carries the weight
-//! and then reading it is the same seam as finding it in the diff and
-//! then editing it, and a surface of its own would put a close and an
-//! open in the middle of it.
+//! [`map`] is here rather than beside the diagrams it was first drawn
+//! with. A treemap of a checkout looks like an architecture diagram and is
+//! not one: nobody writes it, it says nothing about what the project was
+//! meant to be, and every tile on it is a path the tree answers about.
+//! Finding the file that carries the weight and then reading it is one
+//! seam, and a surface of its own would put a close and an open in the
+//! middle of it.
 //!
 //! # Scope
 //!
 //! The checkout the active tab is *in*, and nothing else. An agent UZE
 //! isolated works in `.worktrees/<name>`, and `git worktree list` answers
-//! repository-wide from anywhere inside it — so listing linked worktrees
-//! here would put every other agent's diff, plus every checkout nobody
-//! ever cleaned up, inside a tab that owns exactly one of them.
+//! repository-wide from anywhere inside it, so listing linked worktrees
+//! here would put every other agent's files inside a tab that owns
+//! exactly one of them.
 //!
 //! # Nothing here touches a disk
 //!
-//! Two cadences, both off the drawing thread. The changes half re-reads
-//! on a timer ([`Changes::read`]); the files half asks for what it needs
-//! one [`FileRequest`] at a time and the host answers. Neither can reach
-//! the other: a refresh installs a new [`Changes`] and nothing else,
-//! which is what keeps it from eating a buffer someone is typing into.
+//! The files half asks for what it needs one [`FileRequest`] at a time
+//! and the host answers, off the drawing thread; the map's measurement and
+//! the timeline are jobs of their own. None of them can reach a buffer
+//! someone is typing into.
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},

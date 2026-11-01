@@ -206,7 +206,7 @@ fn a_lit_surface_button_closes_it_in_one_click() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-lit-button"));
     let (mut model, first, _second) = two_agents_with_shells();
     select_tab(&mut model, first);
-    open_code(&mut model, uze_extensions::code::CHANGES);
+    open_code(&mut model, uze_extensions::code::FILES);
     let mut driven = driven(model, &home);
     driven.frame();
 
@@ -225,6 +225,53 @@ fn a_lit_surface_button_closes_it_in_one_click() {
             .model
             .showing(uze_extensions::code::CATALOG.id),
         "closed in one click"
+    );
+}
+
+/// The review's door is the review: a click on it opens the review, as
+/// its key does, and a click on it again puts it away.
+#[test]
+fn a_click_on_the_review_door_is_pressing_its_key() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-door"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    let mut driven = driven(model, &home);
+    driven.frame();
+    let door = |driven: &Driven<'_>| {
+        driven
+            .attach
+            .model
+            .hits
+            .iter()
+            .find(|(_, hit)| *hit == WorkspaceHit::OpenChanges)
+            .map(|(rect, _)| *rect)
+            .expect("the review's door stands on a clean checkout")
+    };
+    let rect = door(&driven);
+    driven.press(rect.x, rect.y);
+    let review = uze_extensions::review::CATALOG.id;
+    assert!(driven.attach.model.showing(review), "a click opens it");
+    driven.frame();
+    let rect = door(&driven);
+    driven.press(rect.x, rect.y);
+    assert!(!driven.attach.model.showing(review), "and closes it");
+
+    driven.press_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::ALT));
+    assert!(driven.attach.model.showing(review), "as its key does");
+}
+
+/// Switching the review off takes its door off the strip.
+#[test]
+fn the_review_switched_off_has_no_door() {
+    let mut model = agent_with_task(WorkStateView::Ready, 3);
+    model.follow_extension_switch(switched_off(&[uze_extensions::review::CATALOG.id]));
+    let (_, hits) = tab_strip(&model);
+    assert!(
+        !hits
+            .iter()
+            .any(|(_, hit)| *hit == WorkspaceHit::OpenChanges),
+        "no door for a review that is off"
     );
 }
 

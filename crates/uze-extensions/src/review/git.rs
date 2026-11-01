@@ -271,6 +271,44 @@ pub(crate) fn totals(host: &dyn Host, root: &Path, base: Option<&str>) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::DiskHost;
+
+    /// A branch with one commit of its own on `main`, which upstream has
+    /// already taken: fetched into `refs/uze/sync/main` while the local
+    /// `main` stayed behind.
+    #[test]
+    fn work_already_landed_upstream_is_not_listed_as_the_branchs_own() {
+        let repository = uze_testkit::git::Repository::new("review-stale-target");
+        let main = repository.branch();
+        repository.git(&["checkout", "-b", "fix/naming"]);
+        let landed = repository.commit_file("landed.rs", "fn landed() {}\n");
+        let root = repository.root();
+
+        let behind = base(&DiskHost, root, Some(&main), &Base::default());
+        let listed = listing(&DiskHost, root, behind.commit.as_deref()).unwrap();
+        assert_eq!(
+            listed.files.len(),
+            1,
+            "against the local {main}, the commit is the branch's"
+        );
+
+        repository.git(&["update-ref", &format!("refs/uze/sync/{main}"), &landed]);
+        let fetched = base(&DiskHost, root, Some(&main), &Base::default());
+        let listed = listing(&DiskHost, root, fetched.commit.as_deref()).unwrap();
+        assert!(
+            listed.files.is_empty(),
+            "against the fetched {main}, it already landed"
+        );
+    }
+
+    #[test]
+    fn a_branch_that_is_its_own_target_shows_what_is_uncommitted_and_says_why() {
+        let repository = uze_testkit::git::Repository::new("review-own-target");
+        let main = repository.branch();
+        let found = base(&DiskHost, repository.root(), Some(&main), &Base::default());
+        assert_eq!(found.commit, None);
+        assert!(found.reason.unwrap().contains("its own target"));
+    }
 
     #[test]
     fn a_name_status_listing_reads_each_letter_and_path() {
