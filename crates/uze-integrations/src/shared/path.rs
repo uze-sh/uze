@@ -94,6 +94,51 @@ pub(crate) fn attachment_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
     uze_home.generated_attachments_dir(vendor)
 }
 
+/// Removes every directory under a harness's [`attachment_root`] that
+/// nothing names any more: what an earlier layout staged there (its
+/// marketplaces, rules, hook groups, plugins) stays behind otherwise,
+/// since only the delivery that wrote it knew it. A child is kept while a
+/// receipt names a path inside it, while `registered` (asked at most once,
+/// and only when something would go) answers a root inside it the harness
+/// still reads, and when its name starts with `.`, the staging a
+/// replacement swaps in. Idempotent: what is left is exactly what is named.
+pub(crate) fn retire_unnamed_attachments(
+    uze_home: &UzeHome,
+    vendor: &str,
+    registered: impl FnOnce() -> Vec<PathBuf>,
+) -> Result<()> {
+    let root = attachment_root(uze_home, vendor);
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Ok(());
+    };
+    let receipts = serde_json::to_string(&uze_core::state::receipts(uze_home, None)?)
+        .expect("receipts serialize");
+    let mut registered = Some(registered);
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let child = entry.path();
+        let staging = entry.file_name().to_string_lossy().starts_with('.');
+        if staging || !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let named = serde_json::to_string(&child.display().to_string()).expect("a path serializes");
+        if receipts.contains(named.trim_matches('"')) {
+            continue;
+        }
+        if let Some(ask) = registered.take() {
+            roots = ask();
+        }
+        if roots
+            .iter()
+            .any(|registered| registered.starts_with(&child))
+        {
+            continue;
+        }
+        std::fs::remove_dir_all(&child).map_err(UzeError::write(&child))?;
+    }
+    Ok(())
+}
+
 /// Detaches a receipt the standard way and, when what went was a link,
 /// hands its target to `cleanup_unused_wrapper`: the generated wrapper a
 /// skill link pointed at goes with the last link to it.
@@ -298,5 +343,81 @@ mod cleanup_unused_wrapper_tests {
             "an unreferenced wrapper inside the root still goes"
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod retire_unnamed_attachments_tests {
+    use std::fs;
+
+    use uze_core::{
+        home::UzeHome,
+        integration::{AttachmentReceipt, ManagedArtifact},
+    };
+
+    use super::{attachment_root, retire_unnamed_attachments};
+
+    fn naming(home: &UzeHome, package_id: &str, path: &std::path::Path) {
+        uze_core::state::record_receipt(
+            home,
+            AttachmentReceipt {
+                package_id: package_id.to_owned(),
+                resource_identity: None,
+                integration: "opencode".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path: home.root().join("harness").join(package_id),
+                    target: path.to_path_buf(),
+                },
+            },
+        )
+        .unwrap();
+    }
+
+    /// What an earlier layout staged per harness goes once nothing names
+    /// it; what a receipt names, what the harness still registers and a
+    /// swap in progress stay, and a second run changes nothing.
+    #[test]
+    fn only_what_nothing_names_leaves_the_staging_tree() {
+        let scratch = uze_testkit::temp::TempDir::new("retire-unnamed");
+        let home = UzeHome::at(scratch.path().join("uze"));
+        let seed = |vendor: &str, name: &str| {
+            let dir = attachment_root(&home, vendor).join(name);
+            fs::create_dir_all(dir.join("inner")).unwrap();
+            fs::write(dir.join("inner/file"), "x").unwrap();
+            dir
+        };
+        let claude_rules = seed("claude", "rules");
+        let codex_rules = seed("codex", "rules");
+        let codex_generated = seed("codex", "generated");
+        let hook_groups = seed("opencode", "hook-groups");
+        let opencode_rules = seed("opencode", "rules");
+        let opencode_skills = seed("opencode", "skills");
+        let swapping = seed("opencode", ".skills.uze-staging-1-0");
+        let plugins = seed("antigravity", "plugins");
+        naming(&home, "flow@market", &opencode_skills.join("inner"));
+        naming(&home, "kit@market", &opencode_rules.join("inner/file"));
+
+        for _ in 0..2 {
+            retire_unnamed_attachments(&home, "claude", Vec::new).unwrap();
+            retire_unnamed_attachments(&home, "codex", || vec![codex_generated.clone()]).unwrap();
+            retire_unnamed_attachments(&home, "opencode", Vec::new).unwrap();
+            retire_unnamed_attachments(&home, "antigravity", Vec::new).unwrap();
+
+            for gone in [&claude_rules, &codex_rules, &hook_groups, &plugins] {
+                assert!(!gone.exists(), "{} is named by nothing", gone.display());
+            }
+            for kept in [
+                &codex_generated,
+                &opencode_rules,
+                &opencode_skills,
+                &swapping,
+            ] {
+                assert!(
+                    kept.join("inner/file").is_file(),
+                    "{} stays",
+                    kept.display()
+                );
+            }
+        }
     }
 }

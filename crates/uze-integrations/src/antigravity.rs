@@ -250,6 +250,12 @@ impl IntegrationPort for AntigravityIntegration {
         ID
     }
 
+    /// No derived view to rebuild; what an earlier layout staged for this
+    /// harness and nothing names any more goes.
+    fn republish_packages(&self, _packages: &[uze_core::store::StoredPackage]) -> Result<()> {
+        crate::shared::path::retire_unnamed_attachments(&self.uze_home, "antigravity", Vec::new)
+    }
+
     fn install_locations(&self) -> Vec<std::path::PathBuf> {
         native_installer_destination("agy").into_iter().collect()
     }

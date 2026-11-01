@@ -466,39 +466,22 @@ pub(crate) fn republish<D: MarketplaceDialect>(
     retire_earlier_roots::<D>(executable, command_home, uze_home)
 }
 
-/// The roots earlier releases registered marketplaces at, under the runtime
-/// tree: `generated` (the earlier `uze-store`) and `explicit` (`uze-local`).
-/// Each goes once no receipt names a path inside it and the harness has no
-/// marketplace registered there: a plugin still installed from one keeps
-/// it until its receipt is retired, and a registration not yet moved keeps
-/// it until it is, since the harness reads every marketplace it registered.
+/// What earlier releases staged under the runtime tree, among them the
+/// roots they registered marketplaces at (`generated`, the earlier
+/// `uze-store`, and `explicit`, `uze-local`): each goes once no receipt
+/// names a path inside it and the harness has no marketplace registered
+/// there, since the harness reads every marketplace it registered.
 fn retire_earlier_roots<D: MarketplaceDialect>(
     executable: &Path,
     command_home: &Path,
     uze_home: &UzeHome,
 ) -> Result<()> {
-    let receipts = serde_json::to_string(&uze_core::state::receipts(uze_home, None)?)
-        .expect("receipts serialize");
-    let staging = crate::shared::path::attachment_root(uze_home, D::STORE.vendor);
-    let mut registered: Option<Vec<PathBuf>> = None;
-    for earlier in ["generated", "explicit"].map(|name| staging.join(name)) {
-        let named =
-            serde_json::to_string(&earlier.display().to_string()).expect("a path serializes");
-        if !earlier.is_dir() || receipts.contains(named.trim_matches('"')) {
-            continue;
-        }
-        let registered = registered.get_or_insert_with(|| {
-            [MARKETPLACE, RETIRED_MARKETPLACE]
-                .into_iter()
-                .filter_map(|name| registered_at::<D>(executable, command_home, name))
-                .collect()
-        });
-        if registered.iter().any(|root| root.starts_with(&earlier)) {
-            continue;
-        }
-        fs::remove_dir_all(&earlier).map_err(UzeError::write(&earlier))?;
-    }
-    Ok(())
+    crate::shared::path::retire_unnamed_attachments(uze_home, D::STORE.vendor, || {
+        [MARKETPLACE, RETIRED_MARKETPLACE]
+            .into_iter()
+            .filter_map(|name| registered_at::<D>(executable, command_home, name))
+            .collect()
+    })
 }
 
 /// Where the harness has the marketplace `name` registered: read from its
