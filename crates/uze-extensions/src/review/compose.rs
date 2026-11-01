@@ -18,6 +18,9 @@ pub(crate) struct Composer {
     pub(crate) lines: Vec<String>,
     /// Where the next character lands, counted in characters.
     pub(crate) caret: Caret,
+    /// The file the comment is about, whatever is selected by the time it
+    /// is kept.
+    pub(crate) path: std::path::PathBuf,
     /// The lines the comment is about.
     pub(crate) rows: Vec<Row>,
     /// The text the operator selected in them, when they selected.
@@ -27,22 +30,30 @@ pub(crate) struct Composer {
 }
 
 impl Composer {
-    pub(crate) fn new(rows: Vec<Row>, excerpt: String) -> Self {
+    pub(crate) fn new(path: std::path::PathBuf, rows: Vec<Row>, excerpt: String) -> Self {
         Self {
             lines: vec![String::new()],
+            path,
             rows,
             excerpt,
             ..Self::default()
         }
     }
 
-    pub(crate) fn editing(id: u64, rows: Vec<Row>, excerpt: String, text: &str) -> Self {
+    pub(crate) fn editing(
+        id: u64,
+        path: std::path::PathBuf,
+        rows: Vec<Row>,
+        excerpt: String,
+        text: &str,
+    ) -> Self {
         let lines: Vec<String> = text.split('\n').map(str::to_owned).collect();
         let line = lines.len() - 1;
         let column = lines[line].chars().count();
         Self {
             lines,
             caret: Caret { line, column },
+            path,
             rows,
             excerpt,
             editing: Some(id),
@@ -289,7 +300,8 @@ mod tests {
 
     #[test]
     fn typing_splits_and_joins_lines_at_the_caret() {
-        let mut composer = Composer::new(Vec::new(), String::new());
+        let mut composer =
+            Composer::new(std::path::PathBuf::from("a.rs"), Vec::new(), String::new());
         typed(&mut composer, "ab\ncd");
         assert_eq!(composer.lines, ["ab", "cd"]);
         composer.line_start();
@@ -314,7 +326,7 @@ mod tests {
                 text: "new();".to_owned(),
             },
         ];
-        let mut composer = Composer::new(rows, String::new());
+        let mut composer = Composer::new(std::path::PathBuf::from("a.rs"), rows, String::new());
         typed(&mut composer, "Rather:");
         composer.insert_block();
         assert_eq!(composer.text(), "Rather:\n```\nnew();\n```\n");
@@ -322,7 +334,8 @@ mod tests {
 
     #[test]
     fn inline_code_leaves_the_caret_between_the_backticks() {
-        let mut composer = Composer::new(Vec::new(), String::new());
+        let mut composer =
+            Composer::new(std::path::PathBuf::from("a.rs"), Vec::new(), String::new());
         composer.insert_inline();
         typed(&mut composer, "x");
         assert_eq!(composer.text(), "`x`");

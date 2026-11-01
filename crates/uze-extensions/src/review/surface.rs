@@ -196,7 +196,7 @@ impl ReviewView {
                 self.uncommitted = listing.uncommitted;
             }
         }
-        if self.selected_index().is_none() {
+        if self.selected_index().is_none() && self.composer.is_none() {
             self.selected = self.files.first().map(|file| file.path.clone());
             self.diff = None;
             self.cursor = 0;
@@ -283,6 +283,15 @@ impl ReviewView {
     // --- Selecting --------------------------------------------------------
 
     pub(crate) fn select_file(&mut self, index: usize) {
+        // A comment being written is about the file on show: moving away
+        // would take it with it, so the move waits for it.
+        if self.composer.is_some() {
+            self.notice = Some(Span::new(
+                "add the comment or cancel it first",
+                crate::view::Role::Muted,
+            ));
+            return;
+        }
         let Some(file) = self.files.get(index) else {
             return;
         };
@@ -296,7 +305,6 @@ impl ReviewView {
         self.cursor = 0;
         self.mark = None;
         self.excerpt.clear();
-        self.composer = None;
         self.scroll = 0;
         self.notice = None;
     }
@@ -381,7 +389,10 @@ impl ReviewView {
         }
         let (_, to) = self.marked().unwrap_or((self.cursor, self.cursor));
         self.cursor = to;
-        self.composer = Some(Composer::new(rows, std::mem::take(&mut self.excerpt)));
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
+        self.composer = Some(Composer::new(path, rows, std::mem::take(&mut self.excerpt)));
         self.focus = Focus::Content;
         self.notice = None;
     }
@@ -395,8 +406,10 @@ impl ReviewView {
         else {
             return;
         };
+        let path = self.root.join(&comment.path);
         self.composer = Some(Composer::editing(
             id,
+            path,
             comment.rows.clone(),
             comment.excerpt.clone(),
             &comment.text,
@@ -413,9 +426,7 @@ impl ReviewView {
         if composer.is_blank() {
             return;
         }
-        let Some(path) = self.selected.clone() else {
-            return;
-        };
+        let path = composer.path.clone();
         let text = composer.text().trim_end().to_owned();
         match composer.editing {
             Some(id) => self.change(Change::Edit { id, text }),

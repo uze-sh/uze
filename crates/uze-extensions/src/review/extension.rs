@@ -479,9 +479,10 @@ impl Extension for ReviewExtension {
         _space: Size,
     ) {
         if let Some(view) = self.view_mut(surface) {
-            match target {
-                ScrollTarget::Navigator => view.step_file(direction),
-                ScrollTarget::Content => handle_scroll(view, direction, false),
+            // The list is the host's to scroll: the wheel never moves
+            // the selection.
+            if target == ScrollTarget::Content {
+                handle_scroll(view, direction, false);
             }
         }
     }

@@ -391,3 +391,41 @@ fn a_draft_kept_just_before_the_review_closes_is_still_written() {
     );
     assert_eq!(kept.comments[0].text, "kept");
 }
+
+#[test]
+fn a_comment_being_written_stays_with_its_file_while_the_list_moves() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    handle_command(&mut view, Command::Type('x'), SPACE);
+    handle_hit(&mut view, ViewHit::SelectItem(1), SPACE);
+    assert!(view.typing(), "a click on another file keeps the comment");
+    // The agent commits naming.rs: the list no longer holds it.
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files: vec![ChangedFile {
+                status: FileStatus::Added,
+                path: PathBuf::from("/w/tests.rs"),
+                renamed_from: None,
+            }],
+            uncommitted: Default::default(),
+        }),
+    );
+    handle_command(&mut view, Command::AddComment, SPACE);
+    assert_eq!(view.drafts().len(), 1);
+    assert_eq!(
+        view.drafts()[0].path,
+        "naming.rs",
+        "kept on the file it was written on"
+    );
+}
