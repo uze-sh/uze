@@ -178,7 +178,7 @@ A script answers the envelope; a program answers it or a bare value, read as its
 | `cpu` | A processor, load. |
 | `gauge` | A meter, usage. |
 
-`Icon "<name>"` draws one of these in the glyph set the operator chose. In the default Unicode set, one the default terminal fonts do not all carry at one size is left blank and takes no room, so keep a label beside an icon; the Nerd Font set draws every one. An idea they do not hold is declared in the manifest, `icon "<name>" nerd="…" unicode="…" ascii="…"`, with all three: `nerd` one character of a Nerd Font's private use area, `unicode` one character drawn as text, `ascii` one or two printable characters. A view or a lookup table that writes an icon glyph loose — from a Nerd Font, or a pictograph a terminal draws from its emoji font — is refused.
+`Icon "<name>"` draws one of these in the glyph set the operator chose. An idea they do not hold is declared in the manifest, `icon "<name>" nerd="…" unicode="…" ascii="…"`, with all three: `nerd` one character of a Nerd Font's private use area, `unicode` one character drawn as text, `ascii` one or two printable characters. A view or a lookup table that writes an icon glyph loose — from a Nerd Font, or a pictograph a terminal draws from its emoji font — is refused.
 
 ## Catalog
 

@@ -690,34 +690,25 @@ operator rather than assume.
 - No heavy frames. No small caps: never for a title, a label, a badge or
   a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
-  only under the nerd scheme. "The same size" is measured, not judged by
-  eye, against the fonts terminals ship by default on every platform:
-  Cascadia Mono (Windows Terminal), DejaVu Sans Mono (Linux; Menlo on a
-  Mac derives from it), Noto Sans Mono (Fedora) and Adwaita Mono (GNOME).
-  A glyph one of them lacks is drawn from a fallback font, at its size
-  and baseline. Geometric Shapes (`● ○ ◉ ◌ ◴ ◆ ▲ △ □ ◷…`) is the one block
-  all four carry at one size, so the task marks are drawn from it beside
-  `± ! ×`, which every one of them also carries; arrows and operators
-  beyond `↑ ↓ → ± × ≡` are not safe. `✓` is the one exception, kept on
-  purpose: Noto lacks it. A spinner's frames are also narrow in every
-  locale (East Asian width N), so a terminal drawing ambiguous characters
-  wide does not shift the row each tick. A mark never
-  borrows a glyph that means something else on screen (the text
-  ellipsis, the menu's `≡`, the sync count's `↑`): it gets a `Symbol` of
-  its own.
-- An extension icon the four default fonts do not all carry at one size
-  is left blank in the default set, never drawn from a fallback font
-  (the operator: the label beside it already says it); the nerd set
-  draws it. A blank icon takes no cell and no gap, in a row, a box or a
-  stack, unless it was given room of its own (`min-width`, `grow`). An
-  icon a bundled surface draws with no label beside it keeps a glyph (the
-  focus timer's `◕`, the review's `✎` count, a finished gsd phase's `✓`),
-  and the theme's completeness test names them.
+  only under the nerd scheme.
+- The default set keeps the glyphs it shipped, icons and status marks
+  alike, even where a default terminal font lacks one and the terminal
+  draws it from a fallback font (Cascadia Mono, Noto Sans Mono and
+  Consolas lack `✓ ↗ ⇧ ⎇ ⧗` and most pictorial icons; Geometric Shapes
+  `● ○ ◉ ▲ □ ◷…` is the one block all of them carry at one size). The
+  operator tried a stricter set, blanking what the fonts lack, and took it
+  back as too large a change for no complaint: a change to a default glyph
+  waits for one, and is measured in those fonts when it comes. A task
+  state still gets a `Symbol` of its own (`task.published`,
+  `task.delivering`, `task.delivered`, `task.shelved`), so its glyph can
+  change without repainting an arrow, the ellipsis or the menu.
+- A blank icon (a name nothing knows, a theme that leaves one empty)
+  takes no cell and no gap, in a row, a box or a stack, unless it was
+  given room of its own (`min-width`, `grow`).
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
-  (a quadrant turning in a circle, `◴◵◶◷`, in the default theme, one
-  size in every frame); the CLI's is
+  (a small star pulsing, in the default theme); the CLI's is
   `progress::spinner`. Never hand-pick frames.
-- The animated circle is the agents' alone. A shell running a program wears
+- The animated star is the agents' alone. A shell running a program wears
   `Symbol::StatusRunning` (`▸`, still) in `state.success`, selected or
   not: the runtime knows a shell runs something, not that it is producing
   output, so nothing about it pulses. When that program ends in a tab the

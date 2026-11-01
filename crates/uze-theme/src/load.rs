@@ -783,9 +783,6 @@ mod tests {
 
     #[test]
     fn the_builtin_default_is_complete_and_resolves() {
-        /// Icons a bundled surface draws as the row's only signal: the
-        /// review's comment count, the focus timer, a finished gsd phase.
-        const LABELLESS: &[&str] = &["icon.comment", "icon.timer", "icon.check"];
         let theme = default_theme();
         // Every token and symbol answers — the property every other
         // surface's "always has a colour" rests on.
@@ -794,8 +791,8 @@ mod tests {
         }
         for symbol in Symbol::ALL {
             // "Draw nothing" is an answer rather than a hole in exactly
-            // three places, for one reason: plain Unicode has no mark for
-            // the thing the default terminal fonts all draw at one size. The `file.` family is folders and documents,
+            // two places, for one reason: plain Unicode has no mark for
+            // the thing. The `file.` family is folders and documents,
             // which a terminal only draws by reaching into its emoji
             // font, and this vocabulary carries no emoji. The rest are
             // ideas — a checkout's code, a project's shape, what it
@@ -805,11 +802,7 @@ mod tests {
             // icons for all of them, which is one of the things
             // installing one buys.
             let iconless = symbol.to_string();
-            // The third is an extension icon, beside a label that says what
-            // it is; the nerd set draws it. One a surface draws with no
-            // label beside it is held to a glyph below.
             if iconless.starts_with("file.")
-                || (iconless.starts_with("icon.") && !LABELLESS.contains(&iconless.as_str()))
                 || matches!(
                     iconless.as_str(),
                     "code"
@@ -1057,22 +1050,6 @@ mod tests {
         }
     }
 
-    /// The spinner is one width in every frame, also where a terminal
-    /// draws East Asian ambiguous characters two cells wide: a frame that
-    /// is wide there and the next that is not shifts the row each tick.
-    #[test]
-    fn the_spinner_keeps_one_width_where_ambiguous_characters_are_wide() {
-        use unicode_width::UnicodeWidthStr;
-        let theme = default_theme();
-        for frame in theme.symbol(Symbol::StatusWorking).frames() {
-            assert_eq!(
-                frame.width(),
-                frame.width_cjk(),
-                "`{frame}` is ambiguous-width"
-            );
-        }
-    }
-
     #[test]
     fn the_default_carries_the_exact_glyphs_that_shipped() {
         let theme = default_theme();
@@ -1082,9 +1059,9 @@ mod tests {
         assert_eq!(theme.glyph(Symbol::StatusIdle), "○");
         assert_eq!(theme.glyph(Symbol::TreeLast), "└─");
         assert_eq!(theme.glyph(Symbol::HintSeparator), " · ");
-        assert_eq!(theme.symbol(Symbol::StatusWorking).frames().len(), 4);
-        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "◴");
-        assert_eq!(theme.frame(Symbol::StatusWorking, 4), "◴");
+        assert_eq!(theme.symbol(Symbol::StatusWorking).frames().len(), 6);
+        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "·");
+        assert_eq!(theme.frame(Symbol::StatusWorking, 6), "·");
     }
 
     #[test]

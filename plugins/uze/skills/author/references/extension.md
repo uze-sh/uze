@@ -701,11 +701,8 @@ Row gap=1 {
 
 The host's icons are listed in `docs/extensions/reference.md` (`clock`,
 `timer`, `calendar`, `check`, `cross`, `warning`, `git-branch`,
-`pull-request`, `rocket`, `bug`…). In the default Unicode set, an icon the
-default terminal fonts do not all carry at one size (`git-branch`, `rocket`,
-`bug` and most of the pictorial ones) is drawn blank and takes no room, so
-keep a label beside it; the Nerd Font set draws them all. For an idea they
-do not hold, declare it in `extension.kdl` with all three spellings:
+`pull-request`, `rocket`, `bug`…). For an idea they do not hold, declare
+it in `extension.kdl` with all three spellings:
 
 ```kdl
 icon "kennel" nerd="\u{f0a43}" unicode="⌂" ascii="K"

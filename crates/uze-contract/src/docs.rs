@@ -876,10 +876,7 @@ fn icons(line: &mut impl FnMut(&str)) {
             .map(|(name, doc)| vec![code(name), (*doc).to_owned()]),
     );
     line(
-        "`Icon \"<name>\"` draws one of these in the glyph set the operator chose. In the \
-         default Unicode set, one the default terminal fonts do not all carry at one size is \
-         left blank and takes no room, so keep a label beside an icon; the Nerd Font set \
-         draws every one. An idea \
+        "`Icon \"<name>\"` draws one of these in the glyph set the operator chose. An idea \
          they do not hold is declared in the manifest, `icon \"<name>\" nerd=\"…\" \
          unicode=\"…\" ascii=\"…\"`, with all three: `nerd` one character of a Nerd Font's \
          private use area, `unicode` one character drawn as text, `ascii` one or two printable \

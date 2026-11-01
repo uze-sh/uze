@@ -180,16 +180,6 @@ fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
     let y = usize::from(mark.y);
     assert!(rows[y].contains("Approval"), "{rows:?}");
     assert!(rows[y + 1].contains("asks for"), "{rows:?}");
-    // The mark is the notice's one coloured thing, so it is one every glyph
-    // set draws, never an extension icon a set may leave blank.
-    let headline = rows[y]
-        .split('│')
-        .find(|cell| cell.contains("Approval"))
-        .unwrap();
-    assert!(
-        !headline.trim_start().starts_with("Approval"),
-        "a mark leads the headline: {headline:?}"
-    );
     assert!(
         !rows.iter().any(|line| line.contains("v0.0.0-alpha.14")),
         "one notice at a time: {rows:?}"
