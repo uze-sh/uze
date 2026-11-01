@@ -12,7 +12,7 @@ use uze_application::application::{
 
 pub(crate) fn run_uninstall(home: UzeHome, yes: bool, purge: bool) -> Result<()> {
     refuse_while_running(&home)?;
-    let app = UzeApplication::from_env(home)?;
+    let app = UzeApplication::from_env(home.clone())?;
     let interactive = prompt::interactive();
     let mode = if purge {
         UninstallMode::Purge
@@ -57,7 +57,10 @@ pub(crate) fn run_uninstall(home: UzeHome, yes: bool, purge: bool) -> Result<()>
             return Ok(());
         }
     }
-    let report = with_spinner("Uninstalling", || app.uninstall(&plan))?;
+    // Asked again under the lock: an agent or an update may have started
+    // while the plan was read or the question was open.
+    let still_clear = || refuse_while_running(&home);
+    let report = with_spinner("Uninstalling", || app.uninstall(&plan, &still_clear))?;
     print!("{}", progress::for_terminal(&render_report(&report)));
     if report.needs_the_person() {
         EXIT_CODE.store(1, std::sync::atomic::Ordering::Relaxed);

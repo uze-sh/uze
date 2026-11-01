@@ -272,13 +272,22 @@ impl UzeApplication {
     ///
     /// A purge stops before the binary when a detach fails, so the run can
     /// be repeated; everything left by inspection is listed, not retried.
+    ///
+    /// `still_clear` is asked once the lock is held, right before anything
+    /// is removed: what runs (an agent, an update) may have started since
+    /// the plan was shown, and its refusal removes nothing.
     #[tracing::instrument(name = "uninstall.run", skip_all, fields(mode = ?plan.mode), err)]
-    pub fn uninstall(&self, plan: &UninstallPlan) -> Result<UninstallReport> {
+    pub fn uninstall(
+        &self,
+        plan: &UninstallPlan,
+        still_clear: &dyn Fn() -> Result<()>,
+    ) -> Result<UninstallReport> {
         let lock = if self.home.root().is_dir() {
             Some(uze_core::persistence::MutationLock::acquire(&self.home)?)
         } else {
             None
         };
+        still_clear()?;
         // What the installer recorded is read before anything is removed:
         // `state/` goes with a purge, and the binary is removed after it.
         let plan = self.uninstall_plan(plan.mode);
@@ -804,6 +813,29 @@ mod tests {
             path: PathBuf::from("/opt/uze/bin/uze"),
             path_entry: Some(PathBuf::from("/opt/uze/bin")),
         }
+    }
+
+    #[test]
+    fn something_started_after_the_plan_stops_uninstall_before_it_removes_anything() {
+        let root = uze_testkit::temp::scratch("uninstall-still-clear");
+        let home = uze_core::UzeHome::at(root.join("uze"));
+        fs::create_dir_all(home.runtime_dir()).unwrap();
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let plan = app.uninstall_plan(UninstallMode::Program);
+
+        let refused = app.uninstall(&plan, &|| {
+            Err(UzeError::UninstallRefused {
+                reason: "still running in the workspace: 1 agent".to_owned(),
+                next: "end the agents, then uze workspace stop".to_owned(),
+            })
+        });
+
+        assert!(
+            matches!(refused, Err(UzeError::UninstallRefused { .. })),
+            "{refused:?}"
+        );
+        assert!(home.runtime_dir().is_dir(), "something was removed");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
