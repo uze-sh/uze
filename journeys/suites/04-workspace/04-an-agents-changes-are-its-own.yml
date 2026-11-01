@@ -71,21 +71,16 @@ scenes:
   - scene: discarding the selected agent's change touches its checkout alone
     when:
       - key: "M-g"
-        say: open the changes of the selected agent
-        # The half is named by the nav, which is drawn whichever half is
-        # up; what says this one opened is the diff it is read in.
+        say: open the review of the selected agent
+        # What says it opened is the diff the change is read in.
         expect: "DIFF ·"
         expect_timeout: 20
       - key: "M-."
-        say: open the actions of the change the surface selected
-        expect: "Discard changes"
-      - click: "Discard changes"
-        in: pane
-        say: ask to discard it
+        say: ask to discard what is not committed in the file it selected
         # The change is a file the last commit does not have, so throwing
-        # it away is deleting it — and the dialog says so.
+        # it away is deleting it, and the dialog says it cannot be undone.
         expect: "cannot be undone"
-      - key: ["Right", "Enter"]
+      - key: ["Tab", "Enter"]
         say: move onto the answer that goes ahead, and take it
         pause: 0.5
       - wait: shell

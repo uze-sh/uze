@@ -1,0 +1,104 @@
+journey: the operator comments on a line of an agent's branch and sends the review, which reaches the agent as one line once allowed
+tags: [gate, tui, workspace]
+proves: web/content/docs/workspace/review.mdx
+about: |
+  The review is the operator reading what an agent's branch adds against
+  its target and saying back what should change. A comment written on a
+  line is kept for the agent before anything is sent; sending types one
+  line into the agent, shown first, and only then are the comments sent.
+
+  What was kept is read from the review record under the project's state;
+  what reached the agent from the conversation the stand-in records. The
+  screen only gates each gesture.
+
+world:
+  project: demo-app
+  manifest: |
+    workspace:
+      worktree: always
+      target: main
+      slots: 2
+
+scenes:
+  - scene: an agent commits a change on its branch
+    when:
+      - open: ["{uze}", "workspace"]
+        say: uze opens on the project
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent picker
+        in: sidebar
+        expect: 'overrides .*Claude Code'
+      - type: "{project}"
+        say: place an agent on the project
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - shell: |
+          set -e
+          slot=$(ls -d {project}/.worktrees/*/ | head -n 1)
+          printf 'pub fn rename() {}\n' > "$slot/src/rename.rs"
+          git -C "$slot" add src/rename.rs
+          git -C "$slot" -c user.name=agent -c user.email=agent@invalid commit -q -m "feat: rename"
+        say: the agent commits a file on its own branch
+    then:
+      - git: { in: "{project}", dirty: false }
+        about: the project's own checkout is untouched
+
+  - scene: and then a comment on its line is kept as a draft for that agent
+    when:
+      - key: "M-g"
+        say: open the review of the agent's branch
+        expect: "DIFF · src/rename.rs"
+        expect_timeout: 20
+      - key: "Tab"
+        say: move the keys into the diff
+      - key: "c"
+        say: comment on the line under the cursor
+        expect: "new comment"
+      - type: "Name it after what it renames."
+        submit: false
+        say: write the comment
+      - key: "C-s"
+        say: keep it as a draft
+        expect: "draft"
+    then:
+      - json: "{uze_home}/state/projects/*/reviews/*.json"
+        at: comments.*.status
+        equals: "draft"
+        count: 1
+        about: the draft is kept for the agent before anything is sent
+      - json: "{uze_home}/state/projects/*/reviews/*.json"
+        at: comments.*.text
+        equals: "Name it after what it renames."
+        about: in the words the operator typed
+
+  - scene: and then sending it types one line into the agent, once allowed
+    when:
+      - key: "s"
+        say: send the review
+        expect: "Type this into agent 1"
+        expect_timeout: 10
+      - wait: screen
+        until: "uze agent review show"
+        timeout: 5
+        say: the line names how the agent reads the review
+      - click: "Type it"
+        say: allow it
+        expect: '(?s)\A(?!.*Type this into agent 1)'
+        expect_timeout: 10
+      - wait: shell
+        until: "grep -q 'review comment waits' {home}/.claude/projects/*/*.jsonl"
+        timeout: 10
+        say: the agent reads the line
+    then:
+      - file: "{home}/.claude/projects/*/*.jsonl"
+        contains: "1 review comment waits for you (send 1)"
+        about: the agent received the one line the question showed
+      - json: "{uze_home}/state/projects/*/reviews/*.json"
+        at: comments.*.status
+        equals: "sent"
+        count: 1
+        about: and only then was the comment sent
