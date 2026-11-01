@@ -164,10 +164,9 @@ fn thread_modes(review: &ReviewView) -> Vec<Mode> {
     let at = review
         .thread
         .and_then(|id| threads.iter().position(|comment| comment.id == id));
-    let count = match at {
-        Some(at) => format!("{COMMENT_MARK} {}/{}", at + 1, threads.len()),
-        None => format!("{COMMENT_MARK} {}", threads.len()),
-    };
+    // Where the operator stands among them, from the first before any is
+    // gone to: the step on shows that one.
+    let count = format!("{}/{}", at.unwrap_or(0) + 1, threads.len());
     let step = |icon| Mode {
         label: String::new(),
         active: false,
@@ -255,19 +254,7 @@ fn navigator(review: &ReviewView) -> Navigator {
                     .parent()
                     .map(|parent| parent.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let path = review.relative(&file.path);
-                let comments = review
-                    .record
-                    .comments
-                    .iter()
-                    .filter(|comment| {
-                        comment.path == path && comment.status != CommentStatus::Resolved
-                    })
-                    .count();
-                let detail = match comments {
-                    0 => directory,
-                    n => format!("{COMMENT_MARK}{n} {directory}"),
-                };
+                let detail = directory;
                 let marker = Span::new(file.status.glyph(), file.status.role());
                 // Viewed is what a reviewer working down the list reads:
                 // a checklist down the rows' leading column.
@@ -430,11 +417,7 @@ pub(crate) fn lines(review: &ReviewView) -> Vec<Drawn> {
             drawn.push(
                 Building::new()
                     .push(Span::new(INDENT, Role::Default))
-                    .act(
-                        &format!("{COMMENT_MARK} comment on {lines}"),
-                        Act::Comment,
-                        Role::Warning,
-                    )
+                    .act(&format!("comment on {lines}"), Act::Comment, Role::Warning)
                     .drawn(Line::Affordance),
             );
         }
@@ -711,16 +694,8 @@ fn notice(review: &ReviewView) -> Option<Span> {
             Role::Danger,
         ));
     }
-    let drafts = review.drafts().len();
-    (drafts > 0).then(|| {
-        Span::new(
-            match drafts {
-                1 => "1 draft".to_owned(),
-                many => format!("{many} drafts"),
-            },
-            Role::Warning,
-        )
-    })
+    // What waits to be sent is the bar's to say, wherever the operator is.
+    None
 }
 
 /// What discarding does to this file: a file the last commit lacks is

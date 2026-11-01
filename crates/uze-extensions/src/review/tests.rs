@@ -1192,11 +1192,15 @@ fn the_threads_are_walked_across_files_from_the_chips_and_the_keys() {
             .map(|mode| mode.label.clone())
             .collect()
     };
-    assert_eq!(chips(&view)[1], "◆ 2", "how many before any is gone to");
+    assert_eq!(
+        chips(&view)[1],
+        "1/2",
+        "current of total before any is gone to"
+    );
     // naming.rs is listed first: its thread is the first.
     handle_command(&mut view, Command::NextThread, SPACE);
     assert_eq!(view.thread, Some(2));
-    assert_eq!(chips(&view)[1], "◆ 1/2");
+    assert_eq!(chips(&view)[1], "1/2");
     assert_eq!(
         view.marked(),
         Some((3, 3)),
@@ -1211,7 +1215,7 @@ fn the_threads_are_walked_across_files_from_the_chips_and_the_keys() {
     view.absorb_diff(tests.clone(), Ok(diff_of(&tests, TESTS)), "x".to_owned());
     assert_eq!(view.jump, None);
     assert_eq!(view.marked(), Some((0, 0)), "shown once read");
-    assert_eq!(chips(&view)[1], "◆ 2/2");
+    assert_eq!(chips(&view)[1], "2/2");
     // Round the end, and back again from the keys.
     handle_command(&mut view, Command::NextThread, SPACE);
     assert_eq!(view.thread, Some(2));
@@ -1381,4 +1385,35 @@ fn a_comment_pressed_in_the_drawer_opens_the_review_on_it() {
     );
     assert_eq!(view.thread, Some(1), "on the comment pressed");
     assert_eq!(view.selected.as_deref(), Some(Path::new("/w/naming.rs")));
+}
+
+/// The comment mark stands where comments are, the lines they are on and
+/// their cards' first line, and nowhere else: not on the threads' walk,
+/// the list, the affordance under a marked run, or the foot.
+#[test]
+fn the_comment_mark_stands_only_on_commented_lines_and_their_cards() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 3, "    rename();");
+    view.mark = Some((0, 0));
+    let drawn = super::view(&view, SPACE);
+    let mark = crate::view::COMMENT_MARK.to_string();
+    assert!(
+        drawn.modes.iter().all(|mode| !mode.label.contains(&mark)),
+        "the walk"
+    );
+    let navigator = drawn.navigator.unwrap();
+    assert!(
+        navigator
+            .rows
+            .iter()
+            .all(|row| !format!("{row:?}").contains(&mark)),
+        "the list"
+    );
+    assert!(drawn.notice.is_none(), "the foot says nothing of drafts");
+    for line in render::lines(&view) {
+        let text = line.content.text();
+        let allowed = matches!(line.line, surface::Line::CardHeader(_))
+            || line.content.gutter.starts_with(&mark);
+        assert!(allowed || !text.contains(&mark), "{:?}: {text}", line.line);
+    }
 }

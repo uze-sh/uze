@@ -175,11 +175,16 @@ on "cancel" must not save first.
   it); a plain press on the text still selects text. Only numbered text
   nobody types into marks from its text: in a file typed into, a press is
   the caret's. Under the marked run stands one line that
-  opens a comment on it (`◆ comment on 3 lines`), the affordance a
+  opens a comment on it (`comment on 3 lines`), the affordance a
   pointer needs where the key is `c`. The marked run wears
   `state.diff-marked`, a draft comment's gold held faint, over the diff's
   red and green, across the whole line, its sign and number included; never the list's `SurfaceSelected`, which the operator
   could not tell from a line passed over.
+- The comment mark `◆` stands where comments are and nowhere else: the
+  gutter of a commented line and a comment card's first line. Never on the
+  threads' walk, the list's rows, the affordance under a marked run, the
+  foot or the door (the operator asked for it, more than once). What waits
+  to be sent is the bar's item to say, never a count on the foot.
 - A comment stands under the lines it is about on a card the host draws
   (`LineTone::Card(role)`), never a box the extension draws: its lines on
   `SurfaceRaised` with a row of air above and below, and `bar.medium`
@@ -213,7 +218,7 @@ on "cancel" must not save first.
   and `send N drafts to the agent` (primary) at its foot: the one way to
   send, never a bare letter that sends what was not read again.
 - The open threads are walked from chips beside `viewed`, GitLab's way:
-  `‹`, `◆ 2/5` (or `◆ 5` before any is gone to), `›`, the steps drawn
+  `‹`, `2/5` (current of total, `1/5` before any is gone to), `›`, the steps drawn
   by the host from `step.previous`/`step.next` (`RowIcon::Previous`,
   `Next`), a chip of a mark alone with no space after it; `n` and `p` are
   the same steps. A step crosses files, round the ends, and shows the

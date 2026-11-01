@@ -642,6 +642,7 @@ impl ReviewView {
         self.composer = None;
     }
 
+    #[cfg(test)]
     pub(crate) fn drafts(&self) -> Vec<&Comment> {
         self.record
             .comments
