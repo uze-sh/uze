@@ -26,9 +26,11 @@ a time, and nothing undoes `setup`.
 ## What Changes
 
 - **`~/.uze/store/<vendor>/` is what each harness reads.**
-  - Each harness gets one directory, which is at the same time the
-    marketplace it references, the build of each package for it (the
-    package's `${PLUGIN_ROOT}`), its hook wrapper, and its rules engine.
+  - Each harness gets one directory, `store/<vendor>/`. It is the one
+    marketplace UZE registers with that harness, and it holds only builds:
+    `store/<vendor>/<id>/` is everything one package needs there, including
+    the plugin, its `${PLUGIN_ROOT}` and its hook wrapper. The rules engine
+    ships in the bundled `uze` plugin's build.
   - No file a harness reads and no configuration entry UZE writes names a
     path outside that directory. The workspace's per-process launch context
     is the one exception.
@@ -40,10 +42,14 @@ a time, and nothing undoes `setup`.
   an older build refuses them by name instead of writing into the new
   layout. The supported way back is `uze uninstall --purge` followed by a
   reinstall.
-- **Two marketplaces per vendor stay two.** `store/<vendor>/local/` holds
-  author-enveloped builds (`uze-local`) and `store/<vendor>/generated/`
-  holds generated ones (`uze-store`), so no plugin is renamed and no
-  enablement is lost.
+- **One marketplace per vendor.** `uze-local`, for author envelopes, merges
+  into `uze-store`, and whether a build came from the author's envelope or
+  was generated becomes a field of the build (ADR-013's precedence was
+  already per package and per harness). The merge moves each
+  `<p>@uze-local` to `<p>@uze-store`, and was measured:
+  - **Claude:** carries the disabled state.
+  - **Codex:** has no disable verb, so a plugin the operator disabled is
+    left out, not re-enabled, and the report names it.
 - **Missing bytes never cost a delivery.** A package whose `sources/` entry
   is gone keeps its builds, its catalogue entries and its receipts, and is
   reported as missing its bytes.

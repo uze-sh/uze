@@ -14,7 +14,7 @@ See proposal.md for the motivation. State on `b09b1a92` (uze 1.0.0-beta.22).
 
   The cost was accepted on purpose: removing `~/.uze` by hand is
   unsupported.
-- Revision 4 folds in two independent reviews of revision 3, one on
+- Revision 4 folds in two independent reviews of revision 3, and revision 5 flattens the store with the operator after three more measurements, one on
   architecture and one on harness feasibility and product. The "Decision
   log" at the end lists every choice made without the operator, with the
   alternatives that were rejected.
@@ -104,45 +104,66 @@ The code also writes ties outside the harness homes:
 
 ## Decisions
 
-### D1. Tiers and layout
+### D1. Tiers and layout: a vendor store is one marketplace of builds
 
 ```
 ~/.uze/
   sources/<id>/                  BYTES      canonical package bytes (today's store/plugins, moved)
   sources/superseded/<id>/       BYTES      a failed restore's only copy (today's store/superseded)
-  store/<vendor>/                STORE      what that harness reads
-    local/<id>/                  build of an author-enveloped package  (marketplace uze-local)
-    generated/<id>/              build of a generated package          (marketplace uze-store)
-    .uze/                        hooks/exec(.ps1), rules engine + sessions,
-                                 OpenCode hook and session documents
+  store/<vendor>/                STORE      the one marketplace UZE registers with that harness
+    <marketplace manifest>       .claude-plugin/marketplace.json, .agents/plugins/marketplace.json
+    <id>/                        the build of <id> for <vendor>: plugin, ${PLUGIN_ROOT}, hooks/exec
+    uze/                         the bundled plugin's build, which also carries the rules engine
   state/                         RECORD     receipts, registry, tasks, memory
   config.toml keys.json themes/  AUTHORED   the operator's own text
   runtime/  cache/  shims/       GENERATED / REMEMBERED
 ```
 
-- **Two roots per vendor**, because Claude and Codex keep two marketplaces
-  and a root holds one catalogue. Antigravity and OpenCode use only
-  `generated/` and `.uze/`. *Rejected: merging the two marketplaces.* It
-  renames `<p>@uze-local` and loses Claude's `enabledPlugins` and Codex's
-  `[plugins."<id>"]`.
-- **The store tier**: deleting it uninstalls that harness's plugins. Its
-  `.uze/sessions` scratch is recreated on demand and is the only disposable
-  part of it. It lives here because the configuration that names it must
-  point into the store. The
-  persisted-state requirement keeps every existing tier (authored included)
-  and its rule that content generated for another program never sits beside
-  the records.
+**The store holds only builds**, and a build is everything one package
+needs in one harness. Nothing structural sits beside them.
+
+- **One marketplace per vendor, named `uze-store`.** Today Claude and Codex
+  carry two: `uze-local` for author envelopes and `uze-store` for generated
+  ones. The separation guarded against a generated envelope overriding an
+  author's, but ADR-013's precedence already decides that **per package
+  and per harness**. A package that ships an author envelope for that
+  harness is built from it; otherwise UZE generates one. The fixture
+  `route-explicit` is explicit on Codex and generated on Claude. The origin
+  is therefore a field of the build manifest (`origin: explicit |
+  generated`), not a directory. A plugin-name collision between two
+  packages is resolved when the name is chosen (ADR-029), exactly as two
+  generated plugins are today.
+
+  *Measured 2026-11-01:* one Claude marketplace and one Codex marketplace
+  each held an author-enveloped plugin beside a generated one, and both
+  listed, installed and loaded.
+- **The store tier**: deleting it uninstalls that harness's plugins.
+  Nothing disposable lives in it (see D4). The persisted-state requirement
+  keeps every existing tier, authored included, and its rule that content
+  generated for another program never sits beside the records.
 - `Store`, the Rust type, keeps its name and its invariant (it never writes a
   harness artifact), and now writes `sources/`. Each vendor store is
   written by its integration through `UzeHome::store_dir(vendor)`, in the
   same way `generated_attachments_dir(vendor)` is today.
 
+*Rejected:*
+- *Two roots per vendor (`local/`, `generated/`).* Revision 4 kept them to
+  avoid the rename. The rename was then measured to be clean (D5), and the
+  directories encoded something that is per-harness state.
+- *A nested `.uze/` for machine material.* Every item in it has a more
+  natural home (D4).
+
 ### D2. A build is the plugin and the package root
 
 Each build is rendered from `sources/<id>` for one harness. It carries the
-whole package: manifest, `SKILL.md` with that harness's frontmatter, agents
-and MCP in its format, hooks compiled to its dialect, and every supporting
-file.
+whole package:
+
+- the manifest, either the author's or a generated one;
+- `SKILL.md` with that harness's frontmatter;
+- agents and MCP in that harness's format;
+- hooks compiled to its dialect;
+- **the hook wrapper** (`hooks/exec`, `exec.ps1`);
+- every supporting file.
 
 `${PLUGIN_ROOT}` resolves to the build's own directory on every route of
 that harness, including `settings.json` hooks, `claude mcp add` and loose
@@ -153,13 +174,13 @@ skills and agents.
 | Claude | its marketplace entry, read in place | `plugins/cache`, unused |
 | Codex | its marketplace entry; must exist | `plugins/cache`, where it runs |
 | Antigravity | the install source and the root | `config/plugins/<name>` |
-| OpenCode | the root; skills and agents are copied to its discovery dirs | — |
+| OpenCode | the root; skills and agents are copied to its discovery dirs, and the build holds the package's hook-group document | — |
 
 The Codex and Antigravity builds grow to the whole package through
-`shared::tree`, as Claude's does. Packages are machine-wide, with one registry entry each, so each package
-has one build per vendor and origin. Its receipt is detached with the
-package's other receipts when the package is removed (`take_off`). Nothing
-needs reference counting.
+`shared::tree`, as Claude's does. Packages are machine-wide, with one
+registry entry each, so each package has one build per vendor. Its receipt
+is detached with the package's other receipts when the package is removed
+(`take_off`). Nothing needs reference counting.
 
 *Rejected: a throwaway build cache* (measured to break Claude and Codex).
 *Rejected: a Git marketplace* (`file://` is refused by both).
@@ -171,45 +192,43 @@ writes a `.uze-build` manifest holding:
 
 - the **build key** `(package digest, UZE build version, dialect version,
   build root, active name)`;
+- the `origin`;
 - the digest of every file UZE wrote into the build.
 
 | step | rule |
 |---|---|
 | publish | stage and swap a build only when its key differs, then swap the catalogue last. A UZE upgrade changes the key, so a stale render never survives one. |
 | inspect | `Matched` when every listed file still has its digest; `Drifted` when one was edited; `Missing` when the directory or manifest is gone. A file a hook *added* is not listed, so it is not drift. |
-| receipt | `IntegrationOwned { kind: "build" }`, one per (vendor, origin, package) |
+| receipt | `IntegrationOwned { kind: "build" }`, one per (vendor, package) |
 
-**Catalogue membership comes from the registry and the build key, never from
-the bytes.** A registry entry whose `sources/` directory is missing becomes
-**bytes missing**:
+**Catalogue membership comes from the registry and the build manifests,
+never from the bytes.** A registry entry whose `sources/` directory is
+missing becomes **bytes missing**:
 
-- it stays in its catalogue with the build it has;
+- it stays in the catalogue with the build it has, and its origin is read
+  from that build's manifest;
 - it is never pruned as a ghost and its receipts are never orphaned;
-- it is not rebuilt until the bytes return;
-- its origin (`local` or `generated`) is read from where its build sits,
-  never from the missing bytes.
+- it is not rebuilt until the bytes return.
 
 `prune_ghost_registrations` applies only to an entry that has neither bytes
-nor a build. This is what keeps "deleting the bytes leaves every delivery
-working" true.
+nor a build.
 
-### D4. Setup's machine artifacts: what changes
+### D4. Machine material finds its natural home
 
-These already carry receipts and keep them:
-- the rules entries (`SETUP_OWNER`), which name the engine path;
-- the wrapper, owned by `HookConfigEntry.wrapper`.
+`store/<vendor>/.uze/` is gone. Each item moves where it belongs:
 
-Both paths move to `store/<vendor>/.uze/`.
+| item | before | after |
+|---|---|---|
+| hook wrapper | one shared copy per harness | inside every build that has hooks. The entry names its own build's `hooks/exec`, and the wrapper leaves with the package. This was ADR-040's original intent. `HookConfigEntry.wrapper` then names a file the build receipt already owns, and its "removed once no entry needs it" logic goes. |
+| rules engine | a shared file per harness | inside the bundled `uze` plugin's build (`store/<vendor>/uze/rules/`). Rules are UZE's feature, and that plugin is delivered to every harness and leaves only with `--purge`. The `SETUP_OWNER` entries name it there. |
+| rule-engine sessions | `runtime/rules/sessions` | computed by the engine at run time under `${TMPDIR:-/tmp}/uze-rules-$UID`. No configuration names it, and nothing disposable sits in the store tier. |
+| OpenCode hook groups | `runtime/attachments/opencode/hook-groups` | inside each package's build. `uze.ts` reads `store/opencode/*/`. |
+| OpenCode session documents | `runtime/sessions/opencode`, a path baked into `uze.ts` | the workspace passes the document's path in the launched process's environment, which is within the per-process exception. *Measured:* an OpenCode 2.2.5 plugin reads the launch environment. |
 
-`uze.ts`, OpenCode's documents and the bundled `uze` plugin's deliveries gain
-receipts. `remove` keeps refusing the bundled plugin, and only
-`uninstall --purge` detaches it.
-
-Lookups of directories that moved:
-- The setup sweep and the workspace's deletion of session documents ask the
-  integration for the directory.
-- `~/.agents/skills` belongs to the Codex integration. OpenCode reads it
-  too, and the copies there resolve into `store/codex`.
+`uze.ts` and the bundled `uze` plugin's deliveries gain receipts. `remove`
+keeps refusing the bundled plugin, and only `uninstall --purge` detaches
+it. `~/.agents/skills` belongs to the Codex integration. OpenCode reads it
+too, and the copies there resolve into `store/codex`.
 
 Codex hook groups are always written **after** the operator's own groups in
 each event array. Adding or removing them then never shifts the trust keys of
@@ -220,8 +239,8 @@ today:
 - at purge, removing UZE's groups shifts operator groups added after them.
 
 Both are reported. Through `codex/trust.rs`, the report names every hook
-whose review Codex will ask for again. Skills that call `uze` say they do not apply
-when it is absent.
+whose review Codex will ask for again. Skills that call `uze` say they do
+not apply when it is absent.
 
 ### D5. Migration, fenced against older builds
 
@@ -244,17 +263,34 @@ when it is absent.
 3. **Re-deliver.** On the next `setup`, `install` or `update`, for each
    harness:
    1. Publish the builds into `store/<vendor>/{local,generated}`.
-   2. Repoint each marketplace only when its registered root differs, and
+   2. Merge `uze-local` into `uze-store`. Each explicit plugin moves from
+      `<p>@uze-local` to `<p>@uze-store`; both moves were measured on
+      2026-11-01.
+      - **Claude:** install the new selector, carry the disabled state with
+        `claude plugin disable`, uninstall the old selector, then remove the
+        `uze-local` marketplace. `enabledPlugins` ends up holding only the
+        new selector, with its state carried.
+      - **Codex:** `codex plugin add` the new selector, then
+        `codex plugin remove` the old one and `marketplace remove uze-local`.
+        `config.toml` ends up clean. Codex has no CLI to disable a plugin,
+        and UZE does not edit its TOML (ADR-009). So a plugin the operator
+        had disabled under `@uze-local` is removed and **not** re-added,
+        and the report names it with the command that re-adds it. The
+        operator's intent that it not run is kept.
+      - Each vendor keeps an empty `cache/uze-local` directory of its own.
+        That is vendor bookkeeping; UZE leaves it alone and does not report
+        it.
+   3. Repoint each marketplace only when its registered root differs, and
       never while a session of that harness is running:
       - **Claude:** a same-name `marketplace add`.
       - **Codex:** `remove`, then `add`. If the `add` fails, re-add the
         old root (which still exists) and report.
-   3. Refresh the vendor caches (measured):
+   4. Refresh the vendor caches (measured):
       - **Claude:** nothing, because it reads in place.
       - **Codex:** `codex plugin add <id>` over the installed plugin.
       - **Antigravity:** the existing uninstall-then-install re-delivery.
-   4. Retire the old receipts by inspect-before-detach.
-   5. Move the wrapper.
+   5. Retire the old receipts by inspect-before-detach.
+   6. The wrappers now sit in the builds.
 4. **Codex trust.** The wrapper path is in the hashed command, so every UZE
    hook reads as "Modified" and Codex holds it back. That includes deny
    guards, which then **stop enforcing until reviewed**. Install, `doctor`
@@ -353,7 +389,7 @@ the reinstall-then-purge path.
 | # | chosen | rejected, and why |
 |---|---|---|
 | 1 | Default uninstall **keeps `sources/`** (and authored files); only the program goes | Deleting `sources/` and re-acquiring on reinstall needs the network, makes this change depend on `doctor-repair`, and cannot re-acquire local, linked or embedded packages. |
-| 2 | Two roots per vendor (`local/`, `generated/`) | One merged marketplace renames `@uze-local` plugins and loses enablement state. |
+| 2 | One marketplace per vendor (`uze-store`), with `origin` as build state (revision 5, with the operator) | Two roots (`local/`, `generated/`) encoded a per-harness fact as a directory. The rename it avoided was measured to be clean, carrying the disabled state on Claude. |
 | 3 | Fence older builds by bumping both document shapes | "Report as a leftover" is not what the code does. The older build would silently write into the new layout. |
 | 4 | Build key includes UZE version, dialect, root and alias | Digest-only keys leave stale renders after a UZE upgrade. |
 | 5 | Build inspection by per-file digest; hook-added files ignored | Existence plus marker never yields `Drifted`, so `--purge` would delete an edit. |
@@ -364,7 +400,10 @@ the reinstall-then-purge path.
 | 10 | Interactive uninstall asks keep-or-purge | A default with no binary left makes `--purge` unreachable without a reinstall. |
 | 11 | The ownership test walks configuration and discovery files, not transcripts | Transcripts legitimately quote expanded paths and are the vendor's history. |
 | 12 | Write both fenced documents, then move the bytes, then backfill digests during the move | Moving first lets an older build prune and detach. A ladder rung cannot compute digests from disk. |
-| 13 | No reference counting; one build per package per vendor and origin | Packages are machine-wide with one registry entry. A scope model does not exist and is not needed. |
+| 13 | No reference counting; one build per package per vendor | Packages are machine-wide with one registry entry. A scope model does not exist and is not needed. |
+
+| 19 | No `.uze/` in the store: the wrapper goes in each build, the rules engine in the bundled plugin's build, sessions in `$TMPDIR`, OpenCode documents in builds or the launch environment (revision 5, with the operator) | A nested `.uze/` mixed disposable scratch into the store tier and kept the wrapper shared, which needed "removed with the last entry" bookkeeping. |
+| 20 | A Codex plugin the operator disabled under `@uze-local` is not re-added during the merge, and is reported | Re-adding enables it, because Codex has no disable verb. Editing `config.toml` breaks ADR-009. |
 
 ## Candidate ADRs
 

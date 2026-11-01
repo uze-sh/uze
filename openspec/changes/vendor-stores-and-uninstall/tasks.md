@@ -12,7 +12,7 @@
 
 - [ ] 2.1 `UzeHome`:
   - `sources_dir()` and `sources/superseded/`;
-  - `store_dir(vendor)` with its `local/`, `generated/` and `.uze/`;
+  - `store_dir(vendor)`: one marketplace of builds (`<id>/`), with no structural subdirectories;
   - `runtime_attachments_dir` reduced to staging;
   - `delivered_packages_dir` kept only for `delivered_root::materialize` in UZE's own extension MCP launcher, documented as UZE-internal;
   - `ensure_layout` creates `sources/`, never `store/plugins`.
@@ -25,17 +25,17 @@
 
   The step runs whenever any such directory exists, so it is resumable.
 - [ ] 2.5 Cache the package digest in `packages.json` at ingest, for packages installed after the move.
-- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from where its build sits), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
+- [ ] 2.6 "Bytes missing": catalogue membership, and each package's origin (from its build manifest), come from the registry and build keys, never from `sources/`. `prune_ghost_registrations` and orphan reconciliation skip an entry that still has a build. `doctor` reports the entry as missing its bytes.
 
 ## 3. Builds and publication
 
 - [ ] 3.1 The Codex and Antigravity builds mirror the whole package through `shared::tree`, with the exclusions Claude's build uses.
 - [ ] 3.2 `shared::package_root` resolves `${PLUGIN_ROOT}` to the build directory on every route and file kind of a harness.
 - [ ] 3.3 The `.uze-build` manifest records the build key (package digest, UZE build version, dialect version, build root, active name) and the digest of every file UZE wrote.
-- [ ] 3.4 Publication per marketplace root (`local/`, `generated/`):
+- [ ] 3.4 Publication into the one vendor marketplace (`uze-store`). The build manifest records `origin: explicit | generated`, decided per package and per harness by ADR-013's precedence:
   - stage and swap only a build whose key differs;
   - swap the catalogue last;
-  - receipt `IntegrationOwned { kind: "build" }` per (vendor, origin, package), inspected by per-file digest, where a hook-added file is not drift;
+  - receipt `IntegrationOwned { kind: "build" }` per (vendor, package), inspected by per-file digest, where a hook-added file is not drift;
   - detached with the package's other receipts on removal.
 - [ ] 3.5 Registration:
   - repoint only when the registered root differs, and never while a session of that harness runs;
@@ -51,16 +51,21 @@
 
 ## 4. Hooks, rules, OpenCode, the bundled plugin
 
-- [ ] 4.1 Move the wrapper (`exec`, `exec.ps1`) and the rules engine and its sessions to `store/<vendor>/.uze/`. Their existing receipts (`HookConfigEntry.wrapper`, `SETUP_OWNER`) name the new paths.
-- [ ] 4.2 Move OpenCode's hook and session documents to `store/opencode/.uze/`, and give `uze.ts` a receipt. The setup sweep and `uze-workspace/conversation.rs` ask the integration for the directory.
-- [ ] 4.3 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
-- [ ] 4.4 Codex: UZE's hook groups are always written after the operator's groups in each event array.
+- [ ] 4.1 Hook wrapper (`exec`, `exec.ps1`): goes inside every build that has hooks. Each entry names its own build's wrapper, and `HookConfigEntry.wrapper`'s "removed once no entry needs it" logic goes.
+- [ ] 4.2 Rules engine: goes in the bundled `uze` plugin's build (`store/<vendor>/uze/rules/`), and the `SETUP_OWNER` entries name it there. The engine computes its session directory at run time under `${TMPDIR:-/tmp}/uze-rules-$UID`, and no configuration names it.
+- [ ] 4.3 OpenCode:
+  - hook-group documents go inside each package's build, and `uze.ts` reads `store/opencode/*/`;
+  - the workspace passes the session document's path in the launched process's environment, so it is no longer a directory baked into `uze.ts`;
+  - `uze.ts` gets a receipt;
+  - `uze-workspace/conversation.rs` asks the integration for the session location.
+- [ ] 4.4 The Codex integration owns `~/.agents/skills`, and its copies resolve into `store/codex`. Document that OpenCode reads it too.
+- [ ] 4.5 Codex: UZE's hook groups are always written after the operator's groups in each event array.
   - Test that the trust keys of operator groups placed first never change.
   - Removing a package's groups, or purging, reports every hook whose trust key shifts, through `codex/trust.rs`.
-- [ ] 4.5 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
-- [ ] 4.6 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
-- [ ] 4.7 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
-- [ ] 4.8 `no_harness_artifact_names_outside_its_store` (1.3) is green.
+- [ ] 4.6 Attach the bundled `uze` plugin with receipts. `remove` refuses it, and only `uninstall --purge` detaches it.
+- [ ] 4.7 The bundled skills that run `uze` open with the line saying they do not apply when `uze` is not on `PATH`.
+- [ ] 4.8 Show a blocking Codex trust notice in install, `doctor` and the TUI. It names each UZE hook that Codex holds back and the review to do, and clears once `codex/trust.rs` reads the hook as trusted.
+- [ ] 4.9 `no_harness_artifact_names_outside_its_store` (1.3) is green.
 
 ## 5. `uze uninstall`
 
@@ -82,6 +87,12 @@
   - a Codex repoint whose `add` fails re-registers the old root (fake vendor CLI);
   - a workspace launch puts its `$UZE_HOME` context only in the process's arguments;
   - deleting one vendor store stops that harness's plugins until the next delivery.
+
+## 5b. Merging `uze-local` into `uze-store`
+
+- [ ] 5b.1 Claude: install `<p>@uze-store`, carry the disabled state with `claude plugin disable`, uninstall `<p>@uze-local`, then remove the `uze-local` marketplace.
+- [ ] 5b.2 Codex: run `codex plugin add <p>@uze-store` and `codex plugin remove <p>@uze-local`, then remove the `uze-local` marketplace. A plugin the operator had disabled is not re-added, and the report names it with the command that re-adds it.
+- [ ] 5b.3 Turn the 2026-11-01 measurements (mixed origins in one marketplace, and both merges) into `conformance/experiments/{claude,codex}/marketplace-merge.py`. Record them as `HarnessFact`s.
 
 ## 6. Conformance
 

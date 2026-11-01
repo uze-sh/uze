@@ -30,14 +30,15 @@ return.
 - **THEN** every harness still lists and loads every delivered plugin
 - **AND** each package is reported as missing its bytes, and no receipt is detached
 
-### Requirement: Each marketplace UZE registers lies in its vendor store
-Every marketplace UZE registers with a harness SHALL be a directory inside
-that harness's vendor store, one per marketplace UZE keeps for it.
-Publishing SHALL replace only the builds whose build key changed.
+### Requirement: A vendor store is the one marketplace UZE registers
+Each harness that installs plugins from a marketplace SHALL have exactly one
+UZE marketplace, and it SHALL be that harness's vendor store. It SHALL hold
+the builds of author-enveloped and generated packages alike, each build
+recording its origin. Publishing SHALL replace only builds whose key changed.
 
-#### Scenario: Claude reads the store
-- **WHEN** a generated plugin and an author-enveloped plugin are installed for Claude Code
-- **THEN** both marketplaces Claude records lie inside Claude Code's vendor store
+#### Scenario: Both origins in one marketplace
+- **WHEN** a package with its own Claude Code envelope and a package without one are installed for Claude Code
+- **THEN** both are plugins of the one UZE marketplace Claude records, and that marketplace is Claude Code's vendor store
 
 #### Scenario: An unchanged package is not rebuilt
 - **WHEN** one package is updated while another stays the same
@@ -48,8 +49,12 @@ Publishing SHALL replace only the builds whose build key changed.
 - **THEN** every build is rendered again
 
 #### Scenario: An earlier install moves without losing its plugins
-- **WHEN** a machine whose marketplaces point into `runtime/` is upgraded and installs again
-- **THEN** every plugin is still installed and enabled, and each marketplace lies in the harness's vendor store
+- **WHEN** a machine with plugins under `uze-local` and `uze-store`, pointing into `runtime/`, is upgraded and installs again
+- **THEN** every plugin is installed from the vendor store's one marketplace, and every enabled or disabled state on Claude Code is kept
+
+#### Scenario: A disabled Codex plugin during the merge
+- **WHEN** the operator had disabled a Codex plugin installed under `uze-local`
+- **THEN** it is not installed again under the merged marketplace, and the report names it with the command that installs it
 
 #### Scenario: A repoint that fails on Codex
 - **WHEN** re-adding Codex's marketplace from the vendor store fails
