@@ -211,6 +211,10 @@ pub(super) struct Reserved {
     pub(super) bar: bool,
 }
 
+/// The most an item of the bar takes, so one extension's line cannot push
+/// every other off it.
+pub(in crate::ui::orchestrator) const BAR_ITEM_MAX: u16 = 32;
+
 /// The fewest rows the pane keeps under its bands: a band that would
 /// leave it fewer is not laid out, so a short window keeps its agent.
 pub(super) const PANE_MIN_ROWS: u16 = 6;

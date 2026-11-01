@@ -25,6 +25,10 @@ pub const SURFACE: &str = "review";
 pub const DOOR: &str = "review";
 /// The action a send is asked under, which the bridge's answer names.
 const SEND_ACTION: &str = "review-send";
+/// The bar's item: what waits in the review of the checkout in front.
+pub const ITEM: &str = "review-item";
+/// The drawer the item opens: the comments, and their send.
+pub const COMMENTS: &str = "review-comments";
 
 /// How often the open review reads its list and record again.
 const LIST_EVERY: Duration = Duration::from_millis(1500);
@@ -62,6 +66,10 @@ pub struct ReviewExtension {
     /// Each open agent, by the checkout it works in.
     agents: Vec<(String, PathBuf)>,
     sending: Option<(PathBuf, Sending)>,
+    /// What the drawer last had to say about a send: refused, declined.
+    drawer_notice: Option<Span>,
+    /// A comment a press in the drawer asked the review to open on.
+    open_on: Option<u64>,
     /// The agent a send was typed into and the checkout it works in, until
     /// its turn finishes or it is gone: the turn's end is when its answers
     /// are read, without waiting for the next pass.
@@ -182,33 +190,96 @@ impl ReviewExtension {
 
     /// Asks the bridge to tell the agent its drafts wait for it. The
     /// drafts become a send only once the bridge says the line was typed.
-    fn send(&mut self) -> Outcome {
-        let agent = self
-            .open
-            .as_ref()
-            .and_then(|view| self.agent_of(&view.root));
-        let Some(view) = self.open.as_mut() else {
+    /// A press in the drawer: the send, or a comment, which the review
+    /// opens on, in its file, with its lines marked.
+    fn drawer_hit(&mut self, hit: ViewHit, _space: Size) -> Outcome {
+        let ViewHit::Node { node, act } = hit else {
             return Outcome::Stay;
         };
-        let ids: Vec<u64> = view.drafts().iter().map(|comment| comment.id).collect();
+        match act {
+            crate::view::NodeAct::Press if node == super::drawer::SEND => self.send(),
+            crate::view::NodeAct::Row(row) => {
+                let Some(id) = self
+                    .record_in_front()
+                    .and_then(|(_, record)| super::drawer::comment_at(record, node, row))
+                else {
+                    return Outcome::Stay;
+                };
+                let in_front = self.focus.as_ref().map(|focus| &focus.root);
+                match self
+                    .open
+                    .as_mut()
+                    .filter(|view| Some(&view.root) == in_front)
+                {
+                    Some(view) => {
+                        view.go_to_thread_id(id);
+                        Outcome::Show(SURFACE.to_owned())
+                    }
+                    None => {
+                        self.open_on = Some(id);
+                        Outcome::Show(SURFACE.to_owned())
+                    }
+                }
+            }
+            _ => Outcome::Stay,
+        }
+    }
+
+    /// The checkout in front and its review as it stands: the view's,
+    /// open on it, else what the door last read.
+    fn record_in_front(&self) -> Option<(&Path, &ReviewRecord)> {
+        let root = &self.focus.as_ref()?.root;
+        match &self.open {
+            Some(view) if &view.root == root => Some((root, &view.record)),
+            _ if self.door.root.as_ref() == Some(root) => Some((root, &self.door.record)),
+            _ => None,
+        }
+    }
+
+    /// Says `span` where the send was asked: the review, when it is open,
+    /// and the drawer.
+    fn say(&mut self, span: Span) {
+        if let Some(view) = self.open.as_mut() {
+            view.notice = Some(span.clone());
+        }
+        self.drawer_notice = Some(span);
+    }
+
+    /// Asks the bridge to tell the agent of the checkout in front that its
+    /// drafts wait for it, from the review or from the drawer, open or
+    /// not. The drafts become a send only once the bridge says the line
+    /// was typed.
+    fn send(&mut self) -> Outcome {
+        let Some((root, record)) = self.record_in_front() else {
+            return Outcome::Stay;
+        };
+        let root = root.to_path_buf();
+        let ids: Vec<u64> = record
+            .comments
+            .iter()
+            .filter(|comment| comment.status == super::CommentStatus::Draft)
+            .map(|comment| comment.id)
+            .collect();
+        let next_send = record.next_send.max(1);
         if ids.is_empty() {
-            view.notice = Some(Span::new("no drafts to send", Role::Muted));
+            self.say(Span::new("no drafts to send", Role::Muted));
             return Outcome::Stay;
         }
-        let Some(agent) = agent else {
-            view.notice = Some(Span::new(
+        let Some(agent) = self.agent_of(&root) else {
+            self.say(Span::new(
                 "no agent UZE launched works in this checkout",
                 Role::Warning,
             ));
             return Outcome::Stay;
         };
         if self.sending.is_some() {
-            view.notice = Some(Span::new("a send is waiting for your answer", Role::Muted));
+            self.say(Span::new("a send is waiting for your answer", Role::Muted));
             return Outcome::Stay;
         }
-        let line = change::send_line(ids.len(), view.record.next_send.max(1));
+        self.drawer_notice = None;
+        let line = change::send_line(ids.len(), next_send);
         self.sending = Some((
-            view.root.clone(),
+            root,
             Sending {
                 ids,
                 agent: agent.clone(),
@@ -489,6 +560,26 @@ impl ReviewExtension {
         self.door.at = Some(Instant::now());
     }
 
+    /// A draft on `path`, as the door's read of the record at `root`, in
+    /// front, would have found it: the client's tests' stand-in for a
+    /// record on disk and a pass that focused it.
+    pub fn drafted(&mut self, root: PathBuf, path: &str, text: &str) {
+        self.focus = Some(Checkout {
+            display: root.display().to_string(),
+            root: root.clone(),
+            target: None,
+        });
+        self.door.root = Some(root);
+        Change::Draft {
+            id: self.door.record.free_id(),
+            path: path.to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: text.to_owned(),
+        }
+        .apply(&mut self.door.record);
+    }
+
     /// Lets a failed write be tried again at once, as the clock would.
     #[cfg(test)]
     pub(crate) fn retry_now(&mut self) {
@@ -511,18 +602,49 @@ impl Extension for ReviewExtension {
     }
 
     fn surfaces(&self) -> Vec<SurfaceInfo> {
-        vec![SurfaceInfo {
-            id: SURFACE.to_owned(),
-            slot: SurfaceSlot::View,
-            title: CATALOG.name.to_owned(),
-            opens: None,
-        }]
+        vec![
+            SurfaceInfo {
+                id: SURFACE.to_owned(),
+                slot: SurfaceSlot::View,
+                title: CATALOG.name.to_owned(),
+                opens: None,
+            },
+            // What waits in the review rides the bar wherever the operator
+            // is, so a draft is never left unsent for want of the review
+            // being open; it opens the comments beside the pane.
+            SurfaceInfo {
+                id: ITEM.to_owned(),
+                slot: SurfaceSlot::Bar { right: true },
+                title: "Comments".to_owned(),
+                opens: Some(COMMENTS.to_owned()),
+            },
+            SurfaceInfo {
+                id: COMMENTS.to_owned(),
+                slot: SurfaceSlot::Drawer(uze_contract::DrawerDecl {
+                    side: uze_contract::DrawerSide::Right,
+                    float: false,
+                    fit: false,
+                }),
+                title: "Comments".to_owned(),
+                opens: None,
+            },
+        ]
     }
 
     fn view(&self, surface: &str, space: Size) -> Option<View> {
-        (surface == SURFACE)
-            .then(|| self.open.as_ref().map(|view| super::view(view, space)))
-            .flatten()
+        match surface {
+            SURFACE => self.open.as_ref().map(|view| super::view(view, space)),
+            ITEM => super::drawer::item(self.record_in_front()?.1),
+            COMMENTS => {
+                let (root, record) = self.record_in_front()?;
+                Some(super::drawer::drawer(
+                    record,
+                    self.agent_of(root).is_some(),
+                    self.drawer_notice.as_ref(),
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn section(&self, _surface: &str, _collapsed: bool) -> Option<Section> {
@@ -538,6 +660,9 @@ impl Extension for ReviewExtension {
     }
 
     fn hit(&mut self, surface: &str, hit: ViewHit, space: Size) -> Outcome {
+        if surface == COMMENTS {
+            return self.drawer_hit(hit, space);
+        }
         let Some(view) = self.view_mut(surface) else {
             return Outcome::Stay;
         };
@@ -601,6 +726,7 @@ impl Extension for ReviewExtension {
             let in_flight = self.in_flight_for(&checkout.root);
             view.absorb_record(Ok(self.door.record.clone()), &in_flight);
         }
+        view.open_on = self.open_on.take();
         self.listed_at = None;
         self.open = Some(view);
     }
@@ -765,6 +891,11 @@ impl Extension for ReviewExtension {
             };
             // Typed is typed: the drafts are sent whether or not the review
             // still stands to show it.
+            // The door's record says it at once too, for the drawer and
+            // the bar, open review or not.
+            if self.door.root.as_ref() == Some(&root) {
+                sent.apply(&mut self.door.record);
+            }
             match open {
                 Some(view) => view.change(sent),
                 None => self.waiting.push((root.clone(), vec![sent])),
@@ -772,17 +903,12 @@ impl Extension for ReviewExtension {
             self.working = Some((sending.agent, root));
             return;
         }
-        let Some(view) = open else {
-            return;
-        };
         match written {
             AgentWritten::Typed => {}
             AgentWritten::Refused(reason) => {
-                view.notice = Some(Span::new(format!("not sent: {reason}"), Role::Warning));
+                self.say(Span::new(format!("not sent: {reason}"), Role::Warning));
             }
-            AgentWritten::Declined => {
-                view.notice = Some(Span::new("not sent", Role::Muted));
-            }
+            AgentWritten::Declined => self.say(Span::new("not sent", Role::Muted)),
         }
     }
 

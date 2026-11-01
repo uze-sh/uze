@@ -1234,3 +1234,151 @@ fn with_no_open_thread_the_walk_is_not_offered() {
     handle_command(&mut view, Command::NextThread, SPACE);
     assert!(view.notice.is_some(), "says there is none");
 }
+
+/// The node and row of the drawer's tree a press lands on, by what the
+/// row's comment says.
+fn drawer_tree(extension: &ReviewExtension) -> crate::view::Node {
+    use crate::contract::Extension;
+    match extension
+        .view(super::COMMENTS, SPACE)
+        .expect("the drawer")
+        .content
+    {
+        Content::Tree { root, .. } => root,
+        other => panic!("a tree: {other:?}"),
+    }
+}
+
+fn walk<'a>(node: &'a crate::view::Node, out: &mut Vec<&'a crate::view::Node>) {
+    out.push(node);
+    for child in &node.children {
+        walk(child, out);
+    }
+}
+
+/// The bar's item counts what waits on the operator, in its hue: drafts in
+/// gold, then answers in green, then the sent ones waiting on the agent,
+/// held back; nothing while nothing is open.
+#[test]
+fn the_bars_item_counts_what_waits_in_its_hue() {
+    use crate::contract::Extension;
+    use crate::view::{NodeKind, Role};
+    let count = |extension: &ReviewExtension| {
+        let view = extension.view(super::ITEM, SPACE)?;
+        let Content::Tree { root, .. } = view.content else {
+            panic!("a tree")
+        };
+        let mut nodes = Vec::new();
+        walk(&root, &mut nodes);
+        nodes.into_iter().find_map(|node| match &node.kind {
+            NodeKind::Text { spans, .. } => Some((spans[0].text.clone(), spans[0].role)),
+            _ => None,
+        })
+    };
+    let mut extension = sending_extension();
+    assert_eq!(count(&extension), Some(("1".to_owned(), Role::Warning)));
+    let view = extension.review_view_mut().unwrap();
+    view.record.comments[0].status = CommentStatus::Answered;
+    assert_eq!(count(&extension), Some(("1".to_owned(), Role::Success)));
+    let view = extension.review_view_mut().unwrap();
+    view.record.comments[0].status = CommentStatus::Resolved;
+    assert_eq!(count(&extension), None, "nothing open, no item");
+}
+
+/// The drawer lists the comments by file and sends the drafts from its
+/// button, with the review put away: the line is asked of the agent, and
+/// once typed the drafts are sent, on the door's record at once.
+#[test]
+fn the_drawer_sends_the_drafts_with_the_review_put_away() {
+    use crate::contract::{AgentWritten, Extension, Outcome};
+    use crate::view::{NodeAct, NodeKind};
+    let mut extension = sending_extension();
+    extension.counted(PathBuf::from("/w"), 3, 1, 1);
+    extension.close(SURFACE);
+    let root = drawer_tree(&extension);
+    let mut nodes = Vec::new();
+    walk(&root, &mut nodes);
+    assert!(
+        nodes.iter().any(|node| matches!(&node.kind, NodeKind::Rule { label: Some(path), .. } if path == "naming.rs")),
+        "its file names its group"
+    );
+    assert!(
+        nodes
+            .iter()
+            .any(|node| matches!(&node.kind, NodeKind::Markdown { text } if text == "check"))
+    );
+    let send = nodes
+        .iter()
+        .find(|node| matches!(&node.kind, NodeKind::Button { primary: true, .. }))
+        .expect("a send while drafts wait");
+    let asked = extension.hit(
+        super::COMMENTS,
+        ViewHit::Node {
+            node: send.id,
+            act: NodeAct::Press,
+        },
+        SPACE,
+    );
+    assert!(matches!(asked, Outcome::Agent(_)), "{asked:?}");
+    extension.agent_write("review-send", AgentWritten::Typed);
+    let root = drawer_tree(&extension);
+    let mut nodes = Vec::new();
+    walk(&root, &mut nodes);
+    assert!(
+        !nodes
+            .iter()
+            .any(|node| matches!(node.kind, NodeKind::Button { .. })),
+        "sent, no draft is left to send"
+    );
+}
+
+/// A press on a comment in the drawer opens the review on it: its file
+/// selected once the list is read, its thread the one gone to.
+#[test]
+fn a_comment_pressed_in_the_drawer_opens_the_review_on_it() {
+    use crate::contract::{Checkout, Extension, Outcome};
+    use crate::view::{NodeAct, NodeKind};
+    let mut extension = sending_extension();
+    extension.counted(PathBuf::from("/w"), 3, 1, 1);
+    extension.close(SURFACE);
+    let root = drawer_tree(&extension);
+    let mut nodes = Vec::new();
+    walk(&root, &mut nodes);
+    let list = nodes
+        .iter()
+        .find(|node| matches!(node.kind, NodeKind::List { .. }))
+        .expect("a file's comments");
+    let asked = extension.hit(
+        super::COMMENTS,
+        ViewHit::Node {
+            node: list.id,
+            act: NodeAct::Row(0),
+        },
+        SPACE,
+    );
+    assert_eq!(asked, Outcome::Show(SURFACE.to_owned()));
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+    let view = extension.review_view_mut().unwrap();
+    let files = reviewing().files;
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files,
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps: Default::default(),
+            head: None,
+        }),
+    );
+    assert_eq!(view.thread, Some(1), "on the comment pressed");
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/naming.rs")));
+}

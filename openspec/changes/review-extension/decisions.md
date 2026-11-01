@@ -117,3 +117,23 @@
 - decided:  `door_badge` answers `+a -d`, or `review` held back, and nothing else; drafts, answers and the working mark are not on the door. What waits is read inside the review, from the threads' walk beside `viewed`
 - rejected: keeping answers alone on the door, which brings back the mark the operator asked to take off
 - blast:    the spec's door requirement; the turn's end still reads the review again at once
+
+## D13 — The drafts are sent from a drawer the bar opens, not from a key
+
+- status:   pending
+- task:     9.1
+- commit:   
+- trigger:  the operator saved two comments and found the agent had none: `s` sent from the review alone, nothing outside it said the drafts were unsent, and the gold count had left the door (D12)
+- decided:  the review declares a bar item (the comment mark and what waits: drafts in gold, else answers in green, else the sent ones held back) and a drawer it opens, the comments by file, each opening the review on itself, `send N drafts to the agent` at its foot; `s` is unbound, the send stays in the action index; the bridge's confirmation stays, its body drawing backticked text as code
+- rejected: sending without the confirmation, which is the host's guard for every extension that writes to an agent; keeping `s`, a letter that sends unread
+- blast:    the send requirement; journey 30's send step; the bar takes a bundled extension's item (D14)
+
+## D14 — Bundled extensions may stand on the bar, plugins only there
+
+- status:   pending
+- task:     9.1
+- commit:   
+- trigger:  the operator's hierarchy: a bundled extension may use the tab strip and the bar; one that is not bundled, the bar alone
+- decided:  `bar_items` takes a bundled extension's item wherever a checkout is in front; a plugin's door and item stand the bar by what is installed, a bundled item only while it draws, since one is always installed and an empty row on every agent costs each a row; a bundled drawer gets no door, its item opens it
+- rejected: standing the bar for the review whenever it is on, which takes a row from every agent's pane for an item that is mostly empty
+- blast:    the design system's bar rule; the pane gains or loses a row when the first draft is kept or the last comment resolved

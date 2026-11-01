@@ -116,6 +116,9 @@ pub struct ReviewView {
     /// A thread gone to in another file, waiting for that file's diff to
     /// be read before it can be shown.
     pub(crate) jump: Option<u64>,
+    /// The comment the review was opened on from the drawer, gone to once
+    /// the list is read.
+    pub(crate) open_on: Option<u64>,
     /// Changes made here and not yet written to the record.
     pub(crate) unwritten: Vec<Change>,
     /// A discard to hand the host: the paths to put back as the last
@@ -161,6 +164,7 @@ impl ReviewView {
             menu: None,
             thread: None,
             jump: None,
+            open_on: None,
             unwritten: Vec::new(),
             restore: None,
             relist: true,
@@ -244,6 +248,9 @@ impl ReviewView {
             self.diff = None;
             self.cursor = 0;
             self.mark = None;
+        }
+        if let Some(id) = self.open_on.take() {
+            self.go_to_thread_id(id);
         }
         // Read the diff again only once the file, the commit or the base
         // it is taken against moved.
@@ -337,8 +344,21 @@ impl ReviewView {
             (None, true) => 0,
             (None, false) => threads.len() - 1,
         };
-        let (id, path) = threads[next].clone();
-        let path = self.root.join(path);
+        self.go_to_thread_id(threads[next].0);
+    }
+
+    /// Goes to the open thread `id`, in whichever file it is: its file
+    /// selected, its lines marked once that file's diff is read.
+    pub(crate) fn go_to_thread_id(&mut self, id: u64) {
+        let Some(path) = self
+            .record
+            .comments
+            .iter()
+            .find(|comment| comment.id == id)
+            .map(|comment| self.root.join(&comment.path))
+        else {
+            return;
+        };
         if self.selected.as_ref() != Some(&path) {
             let Some(index) = self.files.iter().position(|file| file.path == path) else {
                 return;

@@ -492,7 +492,6 @@ fn default_bindings() -> Vec<Binding> {
         bind(Scope::Review, "pageup", Action::ScrollPageUp),
         bind(Scope::Review, "alt+.", Action::OpenMenu),
         bind(Scope::Review, "c", Action::ReviewComment),
-        bind(Scope::Review, "s", Action::ReviewSend),
         bind(Scope::Review, "v", Action::ReviewViewed),
         bind(Scope::Review, "o", Action::ReviewOpenInCode),
         bind(Scope::Review, "r", Action::ReviewResolve),
@@ -809,6 +808,10 @@ mod tests {
                 // letter of its own would be one of the four nobody could
                 // guess.
                 "choose-area",
+                // The review's drafts are sent from their drawer's button,
+                // where they are read first: a letter that sent them blind
+                // was what the operator asked to take away.
+                "review-send",
                 // Delivering every task at once is rare and wide: the
                 // index offers it wherever there is a space to deliver.
                 "deliver-all-tasks",

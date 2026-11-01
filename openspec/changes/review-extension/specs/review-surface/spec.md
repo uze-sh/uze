@@ -164,8 +164,21 @@ cannot be read SHALL be reported and never written over.
 - **WHEN** the operator has two drafts and the agent runs `uze agent work name fix/branch-naming`, renaming its branch
 - **THEN** both drafts are still there
 
+### Requirement: What waits in the review rides the bar
+While the review of the checkout in front holds a comment not resolved, the
+bar under the agent area SHALL carry an item with the comment mark and what
+waits on the operator: the drafts, else the answers, else the comments sent
+and waiting on the agent. A press on it SHALL open a drawer listing the
+comments by file, each opening the review on itself, with the send of the
+drafts at its foot.
+
+#### Scenario: A draft never left unsent unseen
+- **WHEN** the operator keeps one draft and goes back to the agent's pane
+- **THEN** the bar shows the comment mark with `1`, and a press on it opens the comments with `send 1 draft to the agent`
+
 ### Requirement: A send tells the agent where the review is
-The send action SHALL type one line into the review's agent through the
+The send, pressed in the comments drawer, SHALL type one line into the
+review's agent through the
 agent bridge, which shows it first and refuses an agent that is not ready:
 how many comments wait and the command that shows them. Drafts SHALL
 become sent comments of a numbered send only once the line is typed.

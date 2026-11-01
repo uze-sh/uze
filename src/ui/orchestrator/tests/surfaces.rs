@@ -1473,3 +1473,62 @@ fn moving_to_the_agents_shell_under_the_overview_keeps_the_surface() {
     driven.attach.model.dismiss_space_overview();
     assert!(showing_architect(&driven.attach.model));
 }
+
+/// A draft waiting in the review rides the bar under the agent area, a
+/// bundled extension's item beside the plugins' own: a click on it opens
+/// the comments beside the pane, review open or not.
+#[test]
+fn a_draft_waiting_rides_the_bar_and_opens_the_comments() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-review-item"));
+    let (mut model, first, _second) = two_agents_with_shells();
+    select_tab(&mut model, first);
+    full_frame(&mut model);
+    let item = |model: &WorkspaceModel| {
+        model
+            .bar_items()
+            .into_iter()
+            .find(|slot| slot.owner == super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+            .map(|slot| slot.id)
+    };
+    assert!(
+        item(&model).is_some(),
+        "a bundled extension may stand on the bar"
+    );
+    let rows = frame_rows(&mut model);
+    assert!(
+        !rows.iter().any(|row| row.contains("✎")),
+        "nothing waits, nothing drawn"
+    );
+
+    drafted(&mut model, "src/naming.rs");
+    let mut driven = driven(model, &home);
+    // Room for the comments beside the pane, which a narrow window
+    // refuses to open.
+    driven.area = ratatui::layout::Rect::new(0, 0, 160, 40);
+    driven.frame();
+    let target = driven
+        .attach
+        .model
+        .hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, WorkspaceHit::ToggleDrawer(_)))
+        .map(|(rect, hit)| (*rect, *hit))
+        .expect("the item opens the comments");
+    let (rect, WorkspaceHit::ToggleDrawer(drawer)) = target else {
+        unreachable!()
+    };
+    driven.press(rect.x, rect.y);
+    assert_eq!(
+        driven.attach.model.open_drawer(),
+        Some(drawer),
+        "the comments open"
+    );
+    let comments = driven
+        .attach
+        .model
+        .remembered
+        .declared
+        .slot(drawer)
+        .unwrap();
+    assert_eq!(comments.surface.id, uze_extensions::review::COMMENTS);
+}

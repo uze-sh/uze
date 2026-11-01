@@ -10,7 +10,7 @@ use uze_extensions::view::View;
 
 /// The most an item of the bar takes, so one extension's line cannot push
 /// every other off it.
-const ITEM_MAX: u16 = 32;
+const ITEM_MAX: u16 = super::BAR_ITEM_MAX;
 /// The columns kept between the bar's groups and items.
 const GAP: u16 = 1;
 /// The most a plugin's door's name takes of the bar: a title is the

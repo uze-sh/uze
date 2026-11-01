@@ -682,9 +682,6 @@ fn footer(review: &ReviewView) -> Vec<Command> {
         Command::MarkViewed,
         Command::OpenInCode,
     ];
-    if !review.drafts().is_empty() {
-        commands.push(Command::Send);
-    }
     if review
         .record
         .comments

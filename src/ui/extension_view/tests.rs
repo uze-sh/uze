@@ -3168,10 +3168,11 @@ fn every_review_command_is_named_by_a_key_its_hint_carries() {
     for command in [
         Command::Comment,
         Command::AddComment,
-        Command::Send,
         Command::MarkViewed,
         Command::OpenInCode,
         Command::Resolve,
+        Command::NextThread,
+        Command::PreviousThread,
         Command::ExtendMark(ScrollDirection::Down),
         Command::ExtendMark(ScrollDirection::Up),
     ] {

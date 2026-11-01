@@ -1243,6 +1243,20 @@ pub(super) fn spec_slot(model: &WorkspaceModel, surface: &str) -> u32 {
         .expect("the spec has the slot")
 }
 
+/// The review of the checkout in front holds a draft on `path`, as its
+/// read of the record would have found.
+pub(super) fn drafted(model: &mut WorkspaceModel, path: &str) {
+    let root = model.focused_cwd().unwrap_or_default();
+    if let Some(engine) = model
+        .remembered
+        .declared
+        .engines
+        .get_mut(&super::Owner::Builtin(uze_extensions::review::CATALOG.id))
+    {
+        engine.review_drafted(root, path, "check this");
+    }
+}
+
 /// The review's door says the checkout in front adds `additions` lines and
 /// removes `deletions`, as its read would have found.
 pub(super) fn counted(model: &mut WorkspaceModel, additions: u32, deletions: u32) {

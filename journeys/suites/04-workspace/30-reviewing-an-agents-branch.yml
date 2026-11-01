@@ -77,8 +77,13 @@ scenes:
 
   - scene: and then sending it types one line into the agent, once allowed
     when:
-      - key: "s"
-        say: send the review
+      - click: "✎ 1"
+        in: bar
+        say: open the comments from the draft waiting on the bar
+        expect: "send 1 draft to the agent"
+        expect_timeout: 10
+      - click: "send 1 draft to the agent"
+        say: send the review from the comments
         expect: "Type this into agent 1"
         expect_timeout: 10
       - wait: screen

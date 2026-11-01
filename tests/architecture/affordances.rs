@@ -374,7 +374,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::ReviewSend,
-        Control("the send hint along the review's foot while drafts wait"),
+        Control("the send button in the comments drawer, which the bar's comment item opens"),
     );
     put(
         Action::ReviewViewed,
@@ -383,6 +383,14 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     put(
         Action::ReviewOpenInCode,
         Control("the open in code hint along the review's foot"),
+    );
+    put(
+        Action::ReviewNextThread,
+        Control("the step on beside the threads' count over the review's diff"),
+    );
+    put(
+        Action::ReviewPreviousThread,
+        Control("the step back beside the threads' count over the review's diff"),
     );
     put(
         Action::ReviewResolve,

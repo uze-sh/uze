@@ -206,6 +206,12 @@ on "cancel" must not save first.
   (the accent, the one meant next) and `discard`, which are `ctrl+s` and
   `esc`; never `ctrl+enter` alone, which only an enhanced keyboard
   sends.
+- What waits in the review rides the bar wherever the operator is: the
+  `comment` icon and a count, drafts in gold, else answers in green, else
+  the sent ones held back, gone once nothing is open. It opens the
+  comments drawer, by file, each comment opening the review on itself,
+  and `send N drafts to the agent` (primary) at its foot: the one way to
+  send, never a bare letter that sends what was not read again.
 - The open threads are walked from chips beside `viewed`, GitLab's way:
   `‹`, `◆ 2/5` (or `◆ 5` before any is gone to), `›`, the steps drawn
   by the host from `step.previous`/`step.next` (`RowIcon::Previous`,
@@ -404,10 +410,14 @@ on "cancel" must not save first.
 - Keyboard users must never lose a path.
 
 **What is UZE's and what is a plugin's:**
-- The tab strip holds UZE's own surfaces only. Everything a plugin adds
-  (the doors to its views and drawers, the items it draws) stands in the
-  bar under the agent area, the tab strip's mirror at the content column's
-  foot, which takes its rows only while a plugin puts something there.
+- Placement follows hierarchy: the tab strip holds UZE's own surfaces and
+  the bundled extensions'; the bar under the agent area (the tab strip's
+  mirror at the content column's foot) takes what any extension adds, and
+  is the only place a plugin may stand: the doors to its views and
+  drawers, the items it draws. A bundled extension may use both. The bar
+  takes its row while a plugin puts something there, or while a bundled
+  item has something to say (the review's comments), never for an empty
+  bundled item. A bundled drawer has no door; its item opens it.
 - A plugin's list in a sidebar section reads as the sidebar's own rows: no
   ground on hover or selection, its text held back at rest and lit in its
   own hues under the pointer or once chosen, as the tasks section is.

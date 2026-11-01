@@ -26,6 +26,7 @@
 pub(crate) mod change;
 pub(crate) mod compose;
 pub(crate) mod diff;
+mod drawer;
 mod extension;
 pub(crate) mod git;
 pub mod record;
@@ -34,7 +35,7 @@ mod surface;
 #[cfg(test)]
 mod tests;
 
-pub use extension::{DOOR, ReviewExtension, SURFACE};
+pub use extension::{COMMENTS, DOOR, ITEM, ReviewExtension, SURFACE};
 pub use record::{Comment, CommentStatus, ReviewRecord, Row, RowKind};
 pub use render::view;
 pub use surface::{Filter, ReviewView};

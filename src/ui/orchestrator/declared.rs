@@ -116,6 +116,10 @@ pub(super) trait Hosted: Extension {
     /// how the client's tests stand in for Git. Nothing by default.
     #[cfg(test)]
     fn review_counted(&mut self, _root: PathBuf, _additions: u32, _deletions: u32) {}
+    /// A draft the review's record holds for `root`, as its read would
+    /// have found it. Nothing by default.
+    #[cfg(test)]
+    fn review_drafted(&mut self, _root: PathBuf, _path: &str, _text: &str) {}
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -252,6 +256,10 @@ impl Hosted for uze_extensions::review::ReviewExtension {
     fn review_counted(&mut self, root: PathBuf, additions: u32, deletions: u32) {
         let files = usize::from(additions + deletions > 0);
         self.counted(root, additions, deletions, files);
+    }
+    #[cfg(test)]
+    fn review_drafted(&mut self, root: PathBuf, path: &str, text: &str) {
+        self.drafted(root, path, text);
     }
 }
 impl Hosted for code::CodeExtension {
