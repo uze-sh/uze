@@ -303,7 +303,7 @@ scenes:
         at: marketplaces.studio.link
         equals: "{world}/market"
         about: the marketplace follows the author's working tree
-      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
+      - file: "{uze_home}/sources/plugins/studio/gsd/extensions/gsd-band/board.uze"
         contains: 'Text "{percent}%"'
         about: the extension's view was installed with the plugin
       - dir: "{uze_home}/runtime/extensions"
@@ -382,6 +382,6 @@ scenes:
       - file: "{uze_home}/runtime/extensions/????????????????.json"
         count: 2
         about: the save was compiled anew, beside the compile of the files it replaced
-      - file: "{uze_home}/store/plugins/studio/gsd/extensions/gsd-band/board.uze"
+      - file: "{uze_home}/sources/plugins/studio/gsd/extensions/gsd-band/board.uze"
         excludes: "% done"
         about: read from the working tree — the Store's copy was never reinstalled

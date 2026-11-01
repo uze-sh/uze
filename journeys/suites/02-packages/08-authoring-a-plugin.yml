@@ -81,6 +81,6 @@ scenes:
           run: "{uze} agent plugin check {world}/tools-market/plugins/greet"
           exit: 1
         about: the finding is a non-zero answer a script can read
-      - dir: "{uze_home}/store/plugins/tools/-flag"
+      - dir: "{uze_home}/sources/plugins/tools/-flag"
         exists: false
         about: and nothing was installed by any of it

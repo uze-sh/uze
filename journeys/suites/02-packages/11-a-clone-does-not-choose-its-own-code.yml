@@ -61,9 +61,9 @@ scenes:
           exit: 1
           stderr_contains: "TRUST_REQUIRED"
         about: the install refuses rather than assuming consent, and says why
-      - dir: "{uze_home}/store/plugins/clone/guard"
+      - dir: "{uze_home}/sources/plugins/clone/guard"
         exists: false
-        about: nothing of the package reached the Store
+        about: nothing of the package reached UZE's sources
       - file: "{project}/agents.lock"
         exists: false
         about: and the lock records nothing that was not installed
@@ -73,7 +73,7 @@ scenes:
       - shell: "{uze} install --trust"
         say: install again, consenting to what the clone runs
     then:
-      - dir: "{uze_home}/store/plugins/clone/guard"
+      - dir: "{uze_home}/sources/plugins/clone/guard"
         exists: true
         about: consent given, the package is installed
       - file: "{project}/agents.lock"

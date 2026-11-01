@@ -49,7 +49,7 @@ scenes:
       - shell: "{uze} market add {world}/market"
         say: register the staged marketplace
     then:
-      - dir: "{uze_home}/store/plugins/demo"
+      - dir: "{uze_home}/sources/plugins/demo"
         exists: false
         about: registering a source installs nothing
 
@@ -81,7 +81,7 @@ scenes:
         say: narrow the list to the staged plugin
         expect: "flow"
     then:
-      - dir: "{uze_home}/store/plugins/demo"
+      - dir: "{uze_home}/sources/plugins/demo"
         exists: false
         about: finding a plugin installs nothing
 
@@ -101,10 +101,10 @@ scenes:
         expect_timeout: 45
         pause: 1.5
     then:
-      - dir: "{uze_home}/store/plugins/demo/flow"
+      - dir: "{uze_home}/sources/plugins/demo/flow"
         exists: true
-        about: the bytes are in the Store, put there by a flow with no keystrokes but a filter
-      - file: "{uze_home}/store/plugins/demo/flow/skills/commit/SKILL.md"
+        about: the bytes are in UZE's sources, put there by a flow with no keystrokes but a filter
+      - file: "{uze_home}/sources/plugins/demo/flow/skills/commit/SKILL.md"
         exists: true
         about: the package arrived whole
       - file: "{world}/market/plugins/flow/plugin.json"

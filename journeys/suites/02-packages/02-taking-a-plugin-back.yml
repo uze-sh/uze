@@ -61,7 +61,7 @@ scenes:
         exists: true
       - file: "{home}/.gemini/config/plugins/flow/plugin.json"
         exists: true
-      - dir: "{uze_home}/runtime/attachments/claude/generated/flow@demo"
+      - dir: "{uze_home}/store/claude/flow@demo"
         exists: true
         about: the three harness-owned trees each gained this plugin
 
@@ -70,18 +70,21 @@ scenes:
       - shell: "{uze} remove -m flow"
         say: remove the plugin from the machine
     then:
-      - dir: "{uze_home}/store/plugins/demo/flow"
+      - dir: "{uze_home}/sources/plugins/demo/flow"
         exists: false
-        about: the Store no longer holds its bytes
+        about: UZE's sources no longer hold its bytes
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         exists: false
         about: OpenCode's skill root gave it back
       - dir: "{home}/.gemini/config/plugins/flow"
         exists: false
         about: the byte copy staged by the vendor CLI is gone
-      - dir: "{uze_home}/runtime/attachments/claude/generated/flow@demo"
+      - dir: "{uze_home}/store/*/flow@demo"
         exists: false
-        about: the generated native package is gone
+        about: the generated native package is gone, and so is its build in every other harness's store
+      - dir: "{uze_home}/store/antigravity/flow--demo"
+        exists: false
+        about: including the build Antigravity's CLI staged its copy from
       - json: "{uze_home}/state/attachments.json"
         at: receipts.*.package_id
         includes: [uze@uze]

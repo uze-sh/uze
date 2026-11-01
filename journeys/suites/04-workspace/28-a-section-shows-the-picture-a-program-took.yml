@@ -110,9 +110,9 @@ scenes:
       - shell: "cd {project} && {uze} add media@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/media/extensions/screen/bin/shot"
+      - file: "{uze_home}/sources/plugins/studio/media/extensions/screen/bin/shot"
         contains: "TMPDIR/shot.png"
-        about: the extension's program was installed from the clone, into the Store
+        about: the extension's program was installed from the clone, into UZE's sources
       - file: "{uze_home}/state/extensions.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled

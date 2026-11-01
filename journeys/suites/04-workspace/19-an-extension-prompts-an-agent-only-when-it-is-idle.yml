@@ -176,9 +176,9 @@ scenes:
       - shell: "cd {project} && {uze} add bridge@studio > {world}/install.log 2>&1"
         say: add the plugin to the project, with nobody at a terminal to answer
     then:
-      - file: "{uze_home}/store/plugins/studio/bridge/extensions/flightdeck/extension.kdl"
+      - file: "{uze_home}/sources/plugins/studio/bridge/extensions/flightdeck/extension.kdl"
         contains: "agent-prompt"
-        about: the extensions were installed from the clone, into the Store
+        about: the extensions were installed from the clone, into UZE's sources
       - file: "{uze_home}/state/extensions.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled

@@ -100,7 +100,7 @@ scenes:
           and so is everything else — a blocked removal is a no-op, not a
           partial one. The three artifacts that were fine were not taken
           away to get closer to a removal that could never finish
-      - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
+      - file: "{uze_home}/sources/plugins/demo/flow/plugin.json"
         exists: true
         about: with the package still installed, rather than half-gone
 
