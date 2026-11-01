@@ -3145,3 +3145,38 @@ fn a_gutter_is_as_wide_as_its_numbers_and_marks() {
     );
     assert_eq!(gutter_width(&[line("", "12345")]), 7);
 }
+
+/// Every key the review's foot can name is one a hint can carry, so a
+/// click on the hint is pressing it.
+#[test]
+fn every_review_command_is_named_by_a_key_its_hint_carries() {
+    use uze_extensions::view::{Command, ScrollDirection};
+    for command in [
+        Command::Comment,
+        Command::AddComment,
+        Command::Send,
+        Command::MarkViewed,
+        Command::OpenInCode,
+        Command::Resolve,
+        Command::ExtendMark(ScrollDirection::Down),
+        Command::ExtendMark(ScrollDirection::Up),
+    ] {
+        let action = action_of(command).unwrap_or_else(|| panic!("{command:?} has no key"));
+        assert_eq!(
+            command_for(action),
+            Some(command),
+            "{command:?} round-trips"
+        );
+        assert!(
+            [uze_keys::Scope::Review, uze_keys::Scope::ReviewComposing]
+                .iter()
+                .any(|scope| uze_keys::default_keymap()
+                    .chord_for(
+                        action,
+                        &[uze_keys::Scope::Global, uze_keys::Scope::Workspace, *scope]
+                    )
+                    .is_some()),
+            "{command:?} is bound in the review"
+        );
+    }
+}
