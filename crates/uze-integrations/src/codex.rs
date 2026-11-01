@@ -966,6 +966,54 @@ const FACTS: &[HarnessFact] = &[
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "lists an explicit `.codex-plugin` plugin and a generated one from one local marketplace, both installed and enabled",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_explicit_beside_generated",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "rewrites an installed plugin's cache in place, same version directory, on `codex plugin add` over it",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_add_rewrites_cache",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "refuses a same-name `marketplace add` from another root until the marketplace is removed",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_same_name_other_root_refused",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "fails `codex plugin list` as a whole while a local marketplace's root is gone",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_list_needs_local_root",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "keeps `[plugins.\"<id>\"] enabled = true` across `marketplace remove`, and lists the plugin installed and enabled once the marketplace is added from a new root",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_remove_then_add_keeps_enabled",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "drops a plugin's `[plugins]` key and its cache on `codex plugin remove`",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_plugin_remove_drops_key_and_cache",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "refuses a `file://` marketplace source",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_file_url_refused",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "keys a hook's trust by `<file>:<event>:<group index>:<handler index>`, holding a hash of the handler's command and defaults, so moving or rewriting a handler asks again",
+        measured_on: "0.160.1",
+        proven_by: "experiments/codex/trust-store.py::run",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "0.166.0";

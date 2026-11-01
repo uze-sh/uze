@@ -929,6 +929,36 @@ const FACTS: &[HarnessFact] = &[
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "holds an author-enveloped plugin and a generated one in one directory marketplace, and installs both",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/source-tie.py::_assert_enveloped_beside_generated",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "reads an installed directory-marketplace plugin in place from the marketplace source, not from its cache copy",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/source-tie.py::_assert_loads_in_place",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "fails to load a directory-marketplace plugin whose source was moved away",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/source-tie.py::_assert_source_gone_fails",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "repoints a marketplace on a same-name `marketplace add` of another directory, its plugins kept installed and enabled",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/source-tie.py::_assert_same_name_add_repoints",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "refuses a `file://` marketplace source",
+        measured_on: "2.1.316",
+        proven_by: "experiments/claude/source-tie.py::_assert_file_url_refused",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "2.1.314";

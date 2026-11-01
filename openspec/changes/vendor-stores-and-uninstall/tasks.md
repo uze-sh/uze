@@ -1,11 +1,11 @@
 ## 1. Evidence first
 
-- [ ] 1.1 Make the 2026-11-01 sandbox measurements re-runnable as `conformance/experiments/{claude,codex,antigravity}/source-tie.py` (design.md, Context):
+- [x] 1.1 Make the 2026-11-01 sandbox measurements re-runnable as `conformance/experiments/{claude,codex,antigravity}/source-tie.py` (design.md, Context):
   - Claude loads in place, and a same-name `add` repoints it.
   - Codex needs its local root, and needs `remove` then `add` to repoint, with plugins staying enabled across it.
   - `codex plugin add` over an installed plugin refreshes its cache.
   - `file://` is refused on both.
-- [ ] 1.2 Record each fact from 1.1, and Codex's command-and-index-keyed hook trust (`codex/trust.rs`), as a `HarnessFact` with the version it was measured on.
+- [x] 1.2 Record each fact from 1.1, and Codex's command-and-index-keyed hook trust (`codex/trust.rs`), as a `HarnessFact` with the version it was measured on.
 - [x] 1.3 Write `tests/integrations/vendor_neutral.rs::no_harness_artifact_names_outside_its_store`. After the canonical fixtures are installed, it walks every configuration and discovery file under the fake home, not transcripts. It must be red on the current code.
 
 ## 2. Tiers, layout and the fenced move

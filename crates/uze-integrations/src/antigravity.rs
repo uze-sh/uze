@@ -960,6 +960,18 @@ const FACTS: &[HarnessFact] = &[
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
     },
+    HarnessFact {
+        subject: "plugins",
+        fact: "copies `agy plugin install <dir>` into `~/.gemini/config/plugins/<name>`, which keeps it listed after the source moves away",
+        measured_on: "1.4.12",
+        proven_by: "experiments/antigravity/source-tie.py::_assert_install_copies",
+    },
+    HarnessFact {
+        subject: "plugins",
+        fact: "replaces an earlier installation of the same name on `agy plugin install`",
+        measured_on: "1.4.12",
+        proven_by: "experiments/antigravity/source-tie.py::_assert_same_name_install_replaces",
+    },
 ];
 /// The version the facts above were measured on.
 const VERSION: &str = "1.4.12";
