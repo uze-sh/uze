@@ -276,11 +276,19 @@ pub(crate) fn publish(
         name: package.active_name.clone(),
     };
     if let Some(recorded) = recorded {
-        let inspection = inspect(store, uze_home, recorded);
         // The same bytes from a link and then from the pinned commit are two
         // builds: the receipt says which source it was rendered from.
-        let same_key = RecordedBuild::of(recorded)
-            .is_some_and(|build| build.key.as_ref() == Some(&key) && build.source == Some(source));
+        let current = RecordedBuild::of(recorded)
+            .filter(|build| build.key.as_ref() == Some(&key) && build.source == Some(source));
+        let same_key = current.is_some();
+        // A build whose key is unchanged is kept whatever its content, so
+        // its files are hashed only when it is about to be replaced.
+        if current
+            .is_some_and(|build| build.root == root && !build.files.is_empty() && root.is_dir())
+        {
+            return Ok(recorded.clone());
+        }
+        let inspection = inspect(store, uze_home, recorded);
         match inspection.state {
             AttachmentState::Matched if same_key => return Ok(recorded.clone()),
             // An edit is the person's: kept as it is, and said by inspection
