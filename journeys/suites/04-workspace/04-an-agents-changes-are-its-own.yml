@@ -76,10 +76,13 @@ scenes:
         expect: "DIFF ·"
         expect_timeout: 20
       - key: "M-."
-        say: ask to discard what is not committed in the file it selected
+        say: open the actions of the file it selected
+        expect: "Discard changes"
+      - key: "Enter"
+        say: ask to discard it
         # The change is a file the last commit does not have, so throwing
-        # it away is deleting it, and the dialog says it cannot be undone.
-        expect: "cannot be undone"
+        # it away is deleting it — and the dialog says so.
+        expect: "Deletes the file"
       - key: ["Tab", "Enter"]
         say: move onto the answer that goes ahead, and take it
         pause: 0.5

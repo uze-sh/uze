@@ -101,6 +101,8 @@ pub struct ReviewView {
     pub(crate) scroll: usize,
     pub(crate) notice: Option<Span>,
     pub(crate) discarding: Option<Discarding>,
+    /// What can be done to the selected file, open on its row.
+    pub(crate) menu: bool,
     /// Changes made here and not yet written to the record.
     pub(crate) unwritten: Vec<Change>,
     /// A discard to hand the host: the paths to put back as the last
@@ -141,6 +143,7 @@ impl ReviewView {
             scroll: 0,
             notice: None,
             discarding: None,
+            menu: false,
             unwritten: Vec::new(),
             restore: None,
             relist: true,

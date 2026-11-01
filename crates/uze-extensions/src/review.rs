@@ -63,6 +63,13 @@ pub(crate) enum Asked {
 }
 
 pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Size) -> Asked {
+    if view.menu {
+        view.menu = false;
+        if command == Command::Activate {
+            ask_discard(view);
+        }
+        return Asked::Stay;
+    }
     if let Some(discarding) = view.discarding.as_mut() {
         match command {
             Command::Activate => {
@@ -145,7 +152,7 @@ pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Siz
         Command::Send => return Asked::Send,
         Command::OpenInCode => return Asked::OpenInCode,
         Command::Resolve => resolve_near_cursor(view),
-        Command::OpenMenu => ask_discard(view),
+        Command::OpenMenu => open_menu(view),
         Command::ScrollPageDown => {
             view.scroll = view.scroll.saturating_add(usize::from(space.height).max(1));
             clamp_scroll(view);
@@ -165,6 +172,12 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
         }
         return Asked::Stay;
     }
+    if std::mem::take(&mut view.menu) {
+        if hit == ViewHit::MenuEntry(0) {
+            ask_discard(view);
+        }
+        return Asked::Stay;
+    }
     match hit {
         ViewHit::Close => return Asked::Close,
         ViewHit::SelectItem(index) => {
@@ -173,7 +186,7 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
         }
         ViewHit::OpenMenu(index) => {
             view.select_file(index);
-            ask_discard(view);
+            open_menu(view);
         }
         ViewHit::SelectSubject(index) => {
             if let Some((filter, _)) = render::filters().get(index) {
@@ -267,6 +280,22 @@ fn resolve_near_cursor(view: &mut ReviewView) {
             ));
         }
     }
+}
+
+/// What can be done to the selected file, on its row: what is not
+/// committed in it can be thrown away, and nothing else is offered here.
+fn open_menu(view: &mut ReviewView) {
+    let Some(file) = view.selected_file() else {
+        return;
+    };
+    if !surface::discardable(view, file) {
+        view.notice = Some(Span::new(
+            "only what is not committed can be discarded",
+            crate::view::Role::Muted,
+        ));
+        return;
+    }
+    view.menu = true;
 }
 
 fn ask_discard(view: &mut ReviewView) {

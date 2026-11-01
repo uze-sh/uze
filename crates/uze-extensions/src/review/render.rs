@@ -18,7 +18,7 @@ use crate::shared::checkout;
 use crate::shared::git_status::FileStatus;
 use crate::view::{
     COMMENT_MARK, Command, Confirm, Content, ContentLine, Layout, LineTone, MarkerSide, Medium,
-    Mode, Navigator, NavigatorRow, Role, RowIcon, Size, Span, View,
+    Mode, Navigator, NavigatorRow, Role, RowIcon, RowMenu, Size, Span, View,
 };
 
 use super::record::{Comment, CommentStatus};
@@ -170,7 +170,15 @@ fn navigator(review: &ReviewView) -> Navigator {
         focused: review.focus == Focus::Navigator,
         anchor: selected,
         choosing: None,
-        menu: None,
+        menu: review
+            .menu
+            .then_some(selected)
+            .flatten()
+            .map(|row| RowMenu {
+                row,
+                entries: vec!["Discard changes…".to_owned()],
+                highlighted: 0,
+            }),
         rows: review
             .files
             .iter()
@@ -569,6 +577,9 @@ fn footer(review: &ReviewView) -> Vec<Command> {
     if review.discarding.is_some() {
         return Vec::new();
     }
+    if review.menu {
+        return vec![Command::Activate, Command::Close];
+    }
     if review.composer.is_some() {
         return vec![Command::AddComment, Command::Close];
     }
@@ -623,13 +634,33 @@ fn notice(review: &ReviewView) -> Option<Span> {
     })
 }
 
+/// What discarding does to this file: a file the last commit lacks is
+/// deleted, a rename brings its old name back, anything else is put back.
+fn discard_body(review: &ReviewView, path: &std::path::Path) -> String {
+    let status = review
+        .files
+        .iter()
+        .find(|file| file.path == path)
+        .map(|file| file.status);
+    match (review.partners.get(path), status) {
+        (Some(other), _) => format!(
+            "Takes the rename back: {} returns the way the last commit has it. This cannot be undone.",
+            review.relative(other)
+        ),
+        (None, Some(FileStatus::Untracked | FileStatus::Added)) => {
+            "Deletes the file, which the last commit does not have. This cannot be undone."
+                .to_owned()
+        }
+        _ => "Puts the file back the way the last commit has it. This cannot be undone.".to_owned(),
+    }
+}
+
 fn discard_confirm(review: &ReviewView) -> Option<Confirm> {
     let discarding = review.discarding.as_ref()?;
     Some(Confirm {
         title: "Discard".to_owned(),
         subject: review.relative(&discarding.path),
-        body: "What is not committed in it goes back to the last commit. This cannot be undone."
-            .to_owned(),
+        body: discard_body(review, &discarding.path),
         confirm: "Discard".to_owned(),
         on_confirm: discarding.on_confirm,
         field: None,

@@ -242,11 +242,17 @@ fn a_selection_marks_the_lines_it_covered_and_is_quoted() {
 fn only_a_file_with_uncommitted_work_offers_a_discard() {
     let mut view = reviewing();
     handle_command(&mut view, Command::OpenMenu, SPACE);
-    assert!(view.discarding.is_some(), "naming.rs is uncommitted");
+    assert!(view.menu, "naming.rs is uncommitted: its actions open");
+    let drawn = super::view(&view, SPACE);
+    let menu = drawn.navigator.unwrap().menu.expect("on its row");
+    assert_eq!(menu.entries, ["Discard changes…"]);
+    handle_hit(&mut view, ViewHit::MenuEntry(0), SPACE);
+    let asked = super::view(&view, SPACE).confirm.expect("asked first");
+    assert!(asked.body.contains("Puts the file back"), "{}", asked.body);
     handle_command(&mut view, Command::Close, SPACE);
     view.select_file(1);
     handle_command(&mut view, Command::OpenMenu, SPACE);
-    assert!(view.discarding.is_none(), "tests.rs is committed only");
+    assert!(!view.menu, "tests.rs is committed only");
 }
 
 #[test]
@@ -483,6 +489,7 @@ fn discarding_a_rename_puts_back_both_of_its_paths() {
     let (new, old) = (PathBuf::from("/w/naming.rs"), PathBuf::from("/w/old.rs"));
     view.partners = [(new.clone(), old.clone()), (old.clone(), new.clone())].into();
     handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_command(&mut view, Command::Activate, SPACE);
     handle_hit(&mut view, ViewHit::Answer(true), SPACE);
     assert_eq!(view.restore, Some(vec![new, old]));
 }
