@@ -12,10 +12,12 @@
 //! every entry as a ghost, detaching its receipts as orphans, or rewriting
 //! the marketplaces without the pins this build records there.
 //!
-//! **Then each directory moves on its own.** A rename per marketplace and
-//! per superseded revision, so an interruption leaves some moved and some
-//! not, and the next run carries the rest. A directory that already exists
-//! on the new side is left where it is: nothing is overwritten.
+//! **Then each package moves on its own.** A rename per package and per
+//! superseded revision, so an interruption leaves some moved and some not,
+//! and the next run carries the rest. A marketplace already on the new side
+//! is merged into, package by package; a package already on the new side
+//! is left where it is, since nothing is overwritten and two revisions are
+//! never mixed.
 //!
 //! **Then the digests the registry lacks are recorded**, read from the
 //! moved bytes. A ladder step cannot do it: it is a function over the
@@ -41,26 +43,33 @@ pub(crate) fn carry_into_sources(home: &UzeHome) -> Result<()> {
     state::rewrite_ledger(home)?;
     state::rewrite_marketplaces(home)?;
     for (old, new) in &layout {
-        carry_entries(old, new)?;
-        // Empty once everything in it has moved; an older build that ran
-        // before the fence existed may also have left an empty one behind.
-        let _ = fs::remove_dir(old);
+        // `plugins/<market>/<plugin>` and `superseded/<package>`: how deep a
+        // whole package sits, which is what moves in one rename.
+        let package_depth = if *new == home.plugins_dir() { 2 } else { 1 };
+        carry_entries(old, new, package_depth)?;
     }
     store.rewrite_registry_with_digests()
 }
 
-fn carry_entries(old: &Path, new: &Path) -> Result<()> {
+/// Moves every entry `depth` levels under `old` that `new` lacks, merging
+/// the directories above it, then removes each directory the move emptied;
+/// an older build that ran before the fence existed may also have left an
+/// empty one behind.
+fn carry_entries(old: &Path, new: &Path, depth: usize) -> Result<()> {
     let Ok(entries) = fs::read_dir(old) else {
         return Ok(());
     };
     fs::create_dir_all(new).map_err(UzeError::write(new))?;
     for entry in entries.flatten() {
+        let source = entry.path();
         let destination = new.join(entry.file_name());
-        if destination.exists() {
-            continue;
+        if !destination.exists() {
+            fs::rename(&source, &destination).map_err(UzeError::write(&destination))?;
+        } else if depth > 1 && source.is_dir() && destination.is_dir() {
+            carry_entries(&source, &destination, depth - 1)?;
         }
-        fs::rename(entry.path(), &destination).map_err(UzeError::write(&destination))?;
     }
+    let _ = fs::remove_dir(old);
     Ok(())
 }
 
@@ -145,6 +154,56 @@ mod tests {
         assert_eq!(fs::read_to_string(already.join("keep")).unwrap(), "kept");
         assert!(!home.store_dir().join("plugins").exists());
         assert!(!home.store_dir().join("superseded").exists());
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_marketplace_on_both_sides_is_merged_package_by_package() {
+        let home = home("merge");
+        old_package(&home, "ai", "flow");
+        old_package(&home, "ai", "kit");
+        // The same marketplace already on the new side, holding one of the
+        // two packages in another revision.
+        let kept = home.plugins_dir().join("ai/kit");
+        fs::create_dir_all(&kept).unwrap();
+        fs::write(kept.join("plugin.json"), "new revision").unwrap();
+
+        carry_into_sources(&home).unwrap();
+
+        assert!(home.plugins_dir().join("ai/flow/plugin.json").is_file());
+        assert_eq!(
+            fs::read_to_string(kept.join("plugin.json")).unwrap(),
+            "new revision"
+        );
+        assert!(
+            !home.store_dir().join("plugins/ai/flow").exists(),
+            "the package the new side lacked was stranded"
+        );
+        // Never overwritten, and never mixed into the kept revision.
+        assert!(
+            home.store_dir()
+                .join("plugins/ai/kit/plugin.json")
+                .is_file()
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_fence_with_nothing_to_change_leaves_the_registry_untouched() {
+        let home = home("untouched");
+        installed_on_the_old_layout(&home);
+        carry_into_sources(&home).unwrap();
+        // Left behind on the old side: the move runs again on the next
+        // mutation, and finds the registry already as it would write it.
+        old_package(&home, "ai", "flow");
+        let registry: serde_json::Value =
+            serde_json::from_slice(&fs::read(home.registry_path()).unwrap()).unwrap();
+        let compact = serde_json::to_vec(&registry).unwrap();
+        fs::write(home.registry_path(), &compact).unwrap();
+
+        carry_into_sources(&home).unwrap();
+
+        assert_eq!(fs::read(home.registry_path()).unwrap(), compact);
         fs::remove_dir_all(home.root()).unwrap();
     }
 

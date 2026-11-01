@@ -972,6 +972,11 @@ impl UzeStore {
     /// digest for every entry that has bytes and none yet. The fence and the
     /// backfill of the move to `sources/`: an older build refuses a registry
     /// it finds in this shape before it can prune or install anything.
+    ///
+    /// Writes nothing when the file already holds exactly that, compared
+    /// with the bytes on disk: the move runs on every mutation while
+    /// anything is left on the old layout, and must not touch the home each
+    /// time.
     pub fn rewrite_registry_with_digests(&self) -> Result<()> {
         if !self.home.registry_path().exists() {
             return Ok(());
@@ -985,6 +990,12 @@ impl UzeStore {
                         .map_err(UzeError::read(&root))?,
                 );
             }
+        }
+        let on_disk = fs::read(self.home.registry_path())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        if on_disk.is_some() && on_disk == serde_json::to_value(&registry).ok() {
+            return Ok(());
         }
         self.save_registry(&registry)
     }

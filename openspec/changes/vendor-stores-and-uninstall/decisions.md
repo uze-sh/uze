@@ -14,7 +14,7 @@
 - task:     2.4
 - commit:   8466e25a
 - trigger:  the task asks for a per-package rename; the layout being moved is `store/plugins/<marketplace>/<plugin>` beside `store/superseded/<id>`, and `sources/` keeps exactly that layout.
-- decided:  `package::sources::carry_into_sources` renames each child of `store/plugins` and `store/superseded` into `sources/` (one rename per marketplace and per superseded revision), never overwriting what already sits on the new side, then removes the emptied old directories. Same guarantees — resumable, nothing copied, nothing overwritten — in fewer renames. It runs from `MutationLock::acquire`, with the lock held, after the fence and before the digest backfill.
+- decided:  `package::sources::carry_into_sources` renames each child of `store/plugins` and `store/superseded` into `sources/` (one rename per package and per superseded revision; a marketplace already on the new side is merged into, package by package), never overwriting or mixing into a package that already sits on the new side, then removes the emptied old directories; the registry is rewritten only when its bytes would change, since the move reruns on every mutation while anything is left behind. Same guarantees — resumable, nothing copied, nothing overwritten — in fewer renames. It runs from `MutationLock::acquire`, with the lock held, after the fence and before the digest backfill.
 - rejected: a rename per package (more renames for the same guarantee); one rename of `store/` to `sources/` (would also carry anything else under `store/`, and `store/` is about to hold the vendor stores).
 - blast:    the loop in `carry_entries`.
 
