@@ -134,8 +134,9 @@ and every 15 minutes from then on, on a thread of its own
 open. An open Overview draws each collection as it lands. The Overview itself
 collects only when what was last collected is older than 15 minutes, after a
 short debounce, or on refresh (`f5`, or `refresh` in its foot). A collection
-holds `state/machine-usage.lock` without waiting: a second workspace finding
-it held skips its turn. It runs one harness at a time:
+holds `state/machine-usage.lock`, waiting at most two seconds (a child
+process holds its descriptor between fork and exec): a second workspace
+finding it held longer skips its turn. It runs one harness at a time:
 1. inventory;
 2. tokens and health;
 3. sessions;

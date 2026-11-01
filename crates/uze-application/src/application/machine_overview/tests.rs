@@ -149,3 +149,22 @@ fn deleting_the_snapshot_costs_only_a_collection() {
         .unwrap();
     assert_eq!(first, again);
 }
+
+/// One collection reads and moves the records at a time: a second, in
+/// another workspace, finds the lock held and skips its turn.
+#[test]
+fn a_collection_already_running_elsewhere_is_left_to_finish() {
+    let root = uze_testkit::temp::TempDir::new("machine-overview-held");
+    let home = UzeHome::at(root.join("uze"));
+    let app = UzeApplication::new(home.clone(), vec![Box::new(Harness::new("a"))]);
+    let _elsewhere = uze_core::persistence::FileLock::acquire(
+        &home.machine_usage_lock_path(),
+        std::time::Duration::ZERO,
+        std::time::Duration::ZERO,
+    )
+    .unwrap();
+    assert!(
+        app.collect_machine_overview(&AtomicBool::new(false), |_| {})
+            .is_none()
+    );
+}

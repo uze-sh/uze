@@ -126,7 +126,7 @@
 - task:     8.1
 - commit:
 - trigger:  The operator saw the Overview read the harnesses on every opening, and asked for the counts to survive the harnesses deleting their own records, for a refresh, and for collection that does not need the modal open.
-- decided:  The workspace collects on a thread of its own 20 s after it opens and every 15 minutes, under a `state/` lock taken without waiting; the Overview draws the last collection, says when it was made, collects only past 15 minutes, and offers `refresh` (f5) in its foot. Uses of a record a harness no longer lists move, per record, to `state/machine-usage.json`, a shaped record; a record listed again leaves it and is read live. The header says since when uses are counted.
+- decided:  The workspace collects on a thread of its own 20 s after it opens and every 15 minutes, under a `state/` lock waited on for at most two seconds; the Overview draws the last collection, says when it was made, collects only past 15 minutes, and offers `refresh` (f5) in its foot. Uses of a record a harness no longer lists move, per record, to `state/machine-usage.json`, a shaped record; a record listed again leaves it and is read live. The header says since when uses are counted.
 - rejected: Collecting from the CLI or a hook: cost on paths the Overview promised to leave alone. Summing the archive by day: a record listed again would count twice. Keeping it in `cache/`: deleting it would lose uses no harness keeps any more.
 - blast:    `usage::Archive`, `UzeHome::{machine_usage_path, machine_usage_lock_path}`, `collect_machine_overview`, `orchestrator::reads`, the session loop, `machine::SYNC_EVERY`, the architecture test that names who may collect, the spec's scheduling and privacy requirements.
 

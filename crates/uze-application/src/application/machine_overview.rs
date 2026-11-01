@@ -42,10 +42,14 @@ impl UzeApplication {
         cancelled: &AtomicBool,
         mut answer: impl FnMut(&MachineOverview),
     ) -> Option<MachineOverview> {
+        // A short wait, not none: a process another thread starts holds the
+        // lock's descriptor for the instant between its fork and its exec.
+        // A collection in another workspace takes longer, and this one
+        // then skips its turn.
         let _collecting = FileLock::acquire(
             &self.home.machine_usage_lock_path(),
-            Duration::ZERO,
-            Duration::ZERO,
+            Duration::from_secs(2),
+            Duration::from_millis(50),
         )
         .ok()?;
         let receipts = uze_core::state::receipts(&self.home, None).unwrap_or_default();
