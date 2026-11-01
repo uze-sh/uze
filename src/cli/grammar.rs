@@ -150,6 +150,21 @@ pub(crate) enum Command {
         #[arg(long, hide = true)]
         background: bool,
     },
+    /// Take uze off this machine
+    ///
+    /// By default the program goes: the binary, the workspace's links and
+    /// what uze generated, while every plugin it delivered keeps working
+    /// and a reinstall picks up where it stopped. `--purge` also uninstalls
+    /// every plugin it delivered and removes ~/.uze. The plan is shown
+    /// first, and nothing changes until it is confirmed.
+    Uninstall {
+        /// Act without asking
+        #[arg(long)]
+        yes: bool,
+        /// Remove every trace, the delivered plugins included
+        #[arg(long)]
+        purge: bool,
+    },
     /// Provision harness integrations, or inspect their readiness
     Setup {
         /// Harness ids to provision. Omit to provision every registered harness.

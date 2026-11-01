@@ -241,6 +241,13 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "uninstall",
+        PerformanceClass::JustifiedSlow(
+            "asks every agent's own CLI to uninstall what uze delivered, and removes the \
+             directories uze holds",
+        ),
+    ),
+    (
         "upgrade",
         PerformanceClass::JustifiedSlow(
             "asks for the latest release and downloads it — in the foreground when asked, in a detached process when a command hands off a stale check",

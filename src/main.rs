@@ -195,6 +195,7 @@ fn hint_for(error: &uze_application::UzeError) -> Option<String> {
     use uze_application::UzeError;
     match error {
         UzeError::UnknownMarketplace(_) => Some("uze market list".to_owned()),
+        UzeError::UninstallRefused { next, .. } => Some(next.clone()),
         UzeError::Upgrade(reason) if reason.starts_with("not upgraded") => {
             Some("curl -fsSL https://uze.sh/i | sh".to_owned())
         }
@@ -449,6 +450,11 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         }
         return run_upgrade(&home);
     }
+    // The same, for the way off the machine: nothing is seeded on it.
+    if let Command::Uninstall { yes, purge } = command {
+        die_quietly_on_a_closed_pipe();
+        return run_uninstall(home, yes, purge);
+    }
     die_quietly_on_a_closed_pipe();
     let app = UzeApplication::from_env(home.clone())?;
     // Seed the default marketplace plugins (`plugins/uze`) on every CLI
@@ -667,6 +673,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Upgrade { .. } => {
             unreachable!("the release check returns before application setup")
         }
+        Command::Uninstall { .. } => {
+            unreachable!("uninstall returns before application setup")
+        }
     }
     Ok(())
 }
@@ -683,6 +692,7 @@ fn tells_about_releases(command: &Command) -> bool {
             | Command::Shell { .. }
             | Command::Confine { .. }
             | Command::Upgrade { .. }
+            | Command::Uninstall { .. }
     )
 }
 
