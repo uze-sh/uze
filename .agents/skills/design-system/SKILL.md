@@ -162,9 +162,10 @@ on "cancel" must not save first.
 - Anything that reveals itself on hover needs a hint saying what it means.
 
 **The review:**
-- Its door is the `+N -M` on the tab strip, and it is always there while
-  the review is on: a clean checkout reads `review`, held back, never
-  nothing. It counts the branch and nothing more: no drafts, answers or
+- Its door is the `+N -M` on the tab strip, and it stands only when the
+  checkout has changes against its target: a clean checkout has no door
+  (the operator asked for no `review` placeholder; its key still opens
+  it). It counts the branch and nothing more: no drafts, answers or
   working mark ride it (the operator took the `◆n` off); what waits is
   read inside the review, on the threads' walk. The door is drawn from
   the extension's own `door_badge`, never from a read the host makes.
@@ -690,6 +691,23 @@ operator rather than assume.
   a hint.
 - Glyphs say something and are all the same size. Nerd-only icons appear
   only under the nerd scheme.
+- The default set keeps the glyphs it shipped, icons and status marks
+  alike, even where a default terminal font lacks one and the terminal
+  draws it from a fallback font (Cascadia Mono, Noto Sans Mono and
+  Consolas lack `✓ ↗ ⇧ ⎇ ⧗` and most pictorial icons; Geometric Shapes
+  `● ○ ◉ ▲ □ ◷…` is the one block all of them carry at one size). The
+  operator tried a stricter set, blanking what the fonts lack, and took it
+  back as too large a change for no complaint: a change to a default glyph
+  waits for one, and is measured in those fonts when it comes. The one
+  exception is `icon.comment`, blank in the Unicode and ascii sets: the
+  review's bar count names what it counts (`1 draft`, `2 answered`), and
+  only the Nerd Font set leads it with a mark. A task
+  state still gets a `Symbol` of its own (`task.published`,
+  `task.delivering`, `task.delivered`, `task.shelved`), so its glyph can
+  change without repainting an arrow, the ellipsis or the menu.
+- A blank icon (a name nothing knows, a theme that leaves one empty)
+  takes no cell and no gap, in a row, a box or a stack, unless it was
+  given room of its own (`min-width`, `grow`).
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
   (a small star pulsing, in the default theme); the CLI's is
   `progress::spinner`. Never hand-pick frames.
@@ -728,6 +746,11 @@ operator rather than assume.
 **Declutter.**
 - Nothing redundant: a hint the footer already shows, a branch the
   timeline already shows, a label repeated in three places.
+- The space overview has no title row: the agent's name is already its
+  tab's, the sidebar's and the first section's (the operator took the
+  `Agent <name> <path>` line off). Where the agent works is the one thing
+  only it says, muted at the section bar's far end, cut at its head and
+  left out before a section loses room.
 - Details go in the drawer, on selection.
 - Counts are minimal (`1/5`). There are no raw logs in the UI.
 

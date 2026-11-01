@@ -1972,16 +1972,136 @@ fn an_icon_draws_in_the_glyph_set_the_operator_chose() {
     ] {
         uze_theme::with_active(in_glyph_set(set), || {
             let drawn = draw(&icons(), 20, 1, 0, at(0));
-            // A name nothing knows draws no cell, and the row still keeps
-            // its gap, as it does for an empty `Text`.
+            // A name nothing knows draws no cell and takes no gap: the
+            // label after it starts where it would without it.
             assert_eq!(
                 drawn.rows()[0].trim_end(),
-                format!("{clock} {declared}  end"),
+                format!("{clock} {declared} end"),
                 "{set}"
             );
             assert_eq!(drawn.fg(0, 0), color(Role::Info), "{set}");
         });
     }
+}
+
+fn blank_icon(id: usize) -> Node {
+    node(
+        id,
+        NodeKind::Icon {
+            glyph: uze_extensions::view::IconGlyph::Unknown,
+            role: Role::Info,
+        },
+    )
+}
+
+/// An icon the glyph set draws nothing for, but that was given room of its
+/// own (`min-width`), keeps that room: the column it holds lines up in
+/// every glyph set, and what follows it is drawn after it, not over it.
+#[test]
+fn a_blank_icon_with_room_of_its_own_keeps_it() {
+    let mut icon = blank_icon(1);
+    icon.min_width = 2;
+    let line = row(0, 1, Align::Start, vec![icon, words(2, "x", Role::Default)]);
+    assert_eq!(draw(&line, 10, 1, 0, at(0)).rows()[0].trim_end(), "   x");
+}
+
+/// A blank icon takes no cell and no gap in every container, not only in
+/// a row: a row box starts its label at its edge, and a stack draws no
+/// blank row above it.
+#[test]
+fn a_blank_icon_takes_no_gap_in_a_box_or_a_stack() {
+    use uze_extensions::view::BoxLayout;
+    let in_a_box = holding(
+        boxed(
+            0,
+            BoxLayout {
+                row: true,
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(
+        draw(&in_a_box, 10, 1, 0, at(0)).rows()[0].trim_end(),
+        "main"
+    );
+
+    let in_a_column = holding(
+        boxed(
+            0,
+            BoxLayout {
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(
+        draw(&in_a_column, 10, 3, 0, at(0)).rows()[0].trim_end(),
+        "main"
+    );
+
+    let in_a_stack = stack(0, 1, vec![blank_icon(1), words(2, "x", Role::Default)]);
+    assert_eq!(draw(&in_a_stack, 10, 3, 0, at(0)).rows()[0].trim_end(), "x");
+}
+
+/// What a blank icon leaves out is measured as it is drawn: a stack or a
+/// column box of it and one line is one row tall, and a row box holding it
+/// is as wide as its label.
+#[test]
+fn a_blank_icon_is_measured_as_it_is_drawn() {
+    use uze_extensions::view::BoxLayout;
+    let in_a_stack = stack(0, 1, vec![blank_icon(1), words(2, "x", Role::Default)]);
+    assert_eq!(tree_height(&in_a_stack, 10), 1);
+    let in_a_column = holding(
+        boxed(
+            0,
+            BoxLayout {
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "x", Role::Default)],
+    );
+    assert_eq!(tree_height(&in_a_column, 10), 1);
+    let in_a_row_box = holding(
+        boxed(
+            0,
+            BoxLayout {
+                row: true,
+                gap: 1,
+                ..BoxLayout::default()
+            },
+        ),
+        vec![blank_icon(1), words(2, "main", Role::Default)],
+    );
+    assert_eq!(tree_width(&in_a_row_box), 4);
+}
+
+/// A folded stack counts what it left out by what would have drawn: a
+/// blank icon past the fold is not one more.
+#[test]
+fn a_folded_stack_does_not_count_a_blank_icon() {
+    let root = stack(
+        0,
+        0,
+        vec![
+            words(1, "one", Role::Default),
+            words(2, "two", Role::Default),
+            blank_icon(3),
+            words(4, "three", Role::Default),
+        ],
+    );
+    let held = TreeFrame {
+        fold: true,
+        ..at(0)
+    };
+    let more = theme::glyph(Symbol::MarkMore);
+    assert_eq!(
+        draw(&root, 20, 2, 0, held).rows(),
+        ["one", &format!("{more} 2 more")]
+    );
 }
 
 /// A cut line answers the pointer: resting on it, it holds still, then

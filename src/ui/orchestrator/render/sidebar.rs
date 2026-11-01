@@ -330,7 +330,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     let notice = match (&model.extension_notice, &release) {
         (Some((title, body)), _) => Some((
             crate::ui::SidebarNotice {
-                marker: Symbol::IconBell,
+                marker: Symbol::MarkStanding,
                 tone: Token::StateInfo,
                 headline: title,
                 detail: body,
@@ -1756,18 +1756,18 @@ pub(in crate::ui::orchestrator) fn task_tone(state: &WorkStateView) -> Option<(S
         // A quiet hue, because nothing is being asked of the operator, and
         // deliberately not `Integrated`'s arrow,
         // which claims the work is in the target.
-        WorkStateView::Published => (Symbol::ArrowExternal, Token::StatePublished),
+        WorkStateView::Published => (Symbol::TaskPublished, Token::StatePublished),
         // In somebody else's hands: a request is open for it.
         WorkStateView::InReview => (Symbol::TaskInReview, Token::StatePublished),
-        WorkStateView::Integrating => (Symbol::Ellipsis, Token::StateInFlight),
+        WorkStateView::Integrating => (Symbol::TaskDelivering, Token::StateInFlight),
         // Split, where one warning mark used to cover both: a paused rebase
         // wants your hands in the slot, a failed gate wants the code fixed —
         // different work, and the sidebar was the one surface that never
         // said which (the strip's own button already did).
         WorkStateView::Conflicted { .. } => (Symbol::MarkAttention, Token::StateWarning),
         WorkStateView::GateFailed => (Symbol::MarkCross, Token::StateDanger),
-        WorkStateView::Integrated => (Symbol::ArrowUp, Token::StateLanded),
-        WorkStateView::Shelved => (Symbol::Menu, Token::TextMuted),
+        WorkStateView::Integrated => (Symbol::TaskDelivered, Token::StateLanded),
+        WorkStateView::Shelved => (Symbol::TaskShelved, Token::TextMuted),
     };
     Some((symbol, hue))
 }

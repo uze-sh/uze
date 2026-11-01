@@ -228,11 +228,10 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
     // could; holding it back and letting the pointer restore it says
     // "this answers you" without anything being drawn.
     //
-    // Always there while the review is on: it is the review's door, so a
-    // clean checkout still has one, held back and saying `review` rather
-    // than a count of nothing. What it says is the review's own answer
-    // (`door_badge`): the counts against the target, and what waits on
-    // the operator.
+    // Only there when the checkout has changes against its target: a clean
+    // checkout has nothing to review, so no door (its key still opens it).
+    // What it says is the review's own answer (`door_badge`): the counts
+    // against the target.
     //
     // What the checkout owes its upstream shares the zone, left of the
     // counts: it is the same checkout's git state. What a pull would bring
@@ -258,10 +257,10 @@ pub(in crate::ui::orchestrator) fn render_tab_strip(
         let mut spans = vec![Span::raw(" ")];
         for span in &badge.spans {
             let token = crate::ui::extension_view::token(span.role);
-            let colour = match (full, badge.quiet) {
-                (true, _) => theme::color(token),
-                (false, true) => theme::color(Token::TextMuted),
-                (false, false) => theme::color(held_back(token)),
+            let colour = if full {
+                theme::color(token)
+            } else {
+                theme::color(held_back(token))
             };
             spans.push(Span::styled(span.text.clone(), Style::default().fg(colour)));
         }

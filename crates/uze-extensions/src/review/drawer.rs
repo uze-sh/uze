@@ -45,9 +45,11 @@ pub(crate) fn comment_at(record: &ReviewRecord, node: usize, row: usize) -> Opti
     comments.get(row).map(|comment| comment.id)
 }
 
-/// The bar's item: the comment mark and what waits on the operator, the
+/// The bar's item: what waits on the operator, counted and named, the
 /// drafts in gold, else the answers in green, else how many are open and
-/// waiting on the agent, held back. Nothing while nothing is open.
+/// waiting on the agent, held back. Nothing while nothing is open. The
+/// word says what the count is; the comment mark leads it where the glyph
+/// set has one.
 pub(crate) fn item(record: &ReviewRecord) -> Option<View> {
     let count = |status| {
         record
@@ -61,11 +63,12 @@ pub(crate) fn item(record: &ReviewRecord) -> Option<View> {
         count(CommentStatus::Answered),
         count(CommentStatus::Sent),
     );
-    let (number, role) = match (drafts, answered, sent) {
+    let (number, word, role) = match (drafts, answered, sent) {
         (0, 0, 0) => return None,
-        (0, 0, sent) => (sent, Role::Muted),
-        (0, answered, _) => (answered, Role::Success),
-        (drafts, _, _) => (drafts, Role::Warning),
+        (0, 0, sent) => (sent, "sent", Role::Muted),
+        (0, answered, _) => (answered, "answered", Role::Success),
+        (1, _, _) => (1, "draft", Role::Warning),
+        (drafts, _, _) => (drafts, "drafts", Role::Warning),
     };
     let mut row = Node::new(
         0,
@@ -85,7 +88,7 @@ pub(crate) fn item(record: &ReviewRecord) -> Option<View> {
         Node::new(
             QUIET + 1,
             NodeKind::Text {
-                spans: vec![Span::new(number.to_string(), role)],
+                spans: vec![Span::new(format!("{number} {word}"), role)],
                 truncate: false,
                 still: true,
             },

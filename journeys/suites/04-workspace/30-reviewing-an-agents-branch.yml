@@ -79,9 +79,9 @@ scenes:
     when:
       - key: "M-g"
         say: put the review away, back to the agent's pane, where the draft rides the bar
-        expect: "✎ 1"
+        expect: "1 draft"
         expect_timeout: 10
-      - click: "✎ 1"
+      - click: "1 draft"
         in: bar
         say: open the comments from the draft waiting on the bar
         expect: "send 1 draft to the agent"

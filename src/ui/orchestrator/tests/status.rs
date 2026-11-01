@@ -33,15 +33,20 @@ fn every_task_state() -> Vec<WorkStateView> {
 }
 
 /// The marks are symbols, not emoji, and this is the narrow form of that
-/// rule: a status mark is one column, so it is held to U+2300 — below
-/// the blocks where the pictographs start — rather than merely to being
-/// non-emoji.
+/// rule: a status mark is one column, so it is held out of the blocks
+/// where the pictographs live (Miscellaneous Technical, Miscellaneous
+/// Symbols, Dingbats and above) and off the geometric shapes that have an
+/// emoji presentation. The rest of Geometric Shapes is allowed: it is the
+/// one block every default terminal font carries at one size.
 ///
 /// `uze_theme::load::tests::no_bundled_glyph_is_an_emoji` is the wider
 /// rule, over every glyph UZE ships rather than only these.
 #[test]
 fn no_status_mark_is_drawn_from_the_pictographic_blocks() {
-    for state in every_task_state() {
+    for state in every_task_state()
+        .into_iter()
+        .chain([WorkStateView::InReview])
+    {
         let Some((mark, _)) = task_mark(&state) else {
             continue;
         };
@@ -51,11 +56,44 @@ fn no_status_mark_is_drawn_from_the_pictographic_blocks() {
             characters.next().is_none(),
             "{state:?}: one column, one character: {mark}"
         );
+        let point = character as u32;
+        let geometric = (0x25A0..=0x25FF).contains(&point)
+            && !matches!(point, 0x25AA | 0x25AB | 0x25B6 | 0x25C0 | 0x25FB..=0x25FE);
         assert!(
-            (character as u32) < 0x2300,
-            "{state:?}: {mark} (U+{:04X}) is a pictograph",
-            character as u32
+            point < 0x2300 || geometric,
+            "{state:?}: {mark} (U+{point:04X}) is a pictograph"
         );
+    }
+}
+
+/// Each task state has a symbol of its own so no two share a glyph, and
+/// that holds in every glyph set an operator can choose, not only the
+/// default one.
+#[test]
+fn no_two_task_states_share_a_glyph_in_any_glyph_set() {
+    for set in ["default", "nerd", "ascii"] {
+        let mut layers = vec![uze_theme::default_file()];
+        layers.extend(uze_theme::glyph_set_file(set));
+        let theme = uze_theme::resolve_stack(
+            &uze_theme::Identity::from_file(set, uze_theme::default_file()),
+            &layers,
+        )
+        .expect("the bundled set resolves")
+        .theme;
+        uze_theme::with_active(theme, || {
+            let marks: Vec<String> = every_task_state()
+                .iter()
+                .chain([&WorkStateView::InReview])
+                .filter_map(task_mark)
+                .map(|(mark, _)| mark)
+                .collect();
+            for (index, mark) in marks.iter().enumerate() {
+                assert!(
+                    !marks[index + 1..].contains(mark),
+                    "{set}: two states draw `{mark}`: {marks:?}"
+                );
+            }
+        });
     }
 }
 

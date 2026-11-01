@@ -74,6 +74,22 @@
       "glyph": "",
       "width": 1
     },
+    "task.published": {
+      "glyph": "",
+      "width": 1
+    },
+    "task.delivering": {
+      "glyph": "󰇘",
+      "width": 1
+    },
+    "task.delivered": {
+      "glyph": "󰁝",
+      "width": 1
+    },
+    "task.shelved": {
+      "glyph": "",
+      "width": 1
+    },
     "status.completed": {
       "glyph": "",
       "width": 1

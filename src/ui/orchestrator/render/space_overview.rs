@@ -27,13 +27,18 @@ const SIDE_BY_SIDE: u16 = 64;
 const INSET: u16 = 2;
 
 /// The rows the overview's parts stand on, from the top of the pane: the
-/// space's name, the section bar and the rule under it, the section's
-/// cause, then the section and its drawer down to the foot.
-const HEADER_ROW: u16 = 1;
-const BAR_ROW: u16 = 3;
-const RULE_ROW: u16 = 4;
-const CAUSE_ROW: u16 = 6;
-const BODY_ROW: u16 = 8;
+/// section bar with where the agent works at its end, the rule under it,
+/// the section's cause, then the section and its drawer down to the foot.
+/// No title row: the agent's name is already its tab's, the sidebar's and
+/// the first section's.
+const BAR_ROW: u16 = 1;
+const RULE_ROW: u16 = 2;
+const CAUSE_ROW: u16 = 4;
+const BODY_ROW: u16 = 6;
+
+/// The least of a path worth drawing beside the section bar; with less
+/// room it is left out rather than cut to an ellipsis and a slash.
+const MIN_PATH_WIDTH: u16 = 12;
 
 /// Under this much room the overview draws nothing at all.
 const MIN_WIDTH: u16 = 20;
@@ -133,26 +138,18 @@ fn render_overview_frame(
     if inner.width < MIN_WIDTH || inner.height < MIN_HEIGHT {
         return;
     }
-    let name = overview
-        .agent
-        .as_ref()
-        .and_then(|agent| model.tab(agent.tab))
-        .map_or_else(String::new, |tab| tab.label.clone());
     let foot = Rect::new(inner.x, inner.bottom() - 1, inner.width, 1);
-    render_header(
-        frame,
-        Rect::new(inner.x, inner.y + HEADER_ROW, inner.width, 1),
-        &name,
-        overview,
-    );
     let bar = Rect::new(inner.x, inner.y + BAR_ROW, inner.width, 1);
     let open = overview
         .sections()
         .iter()
         .position(|section| *section == overview.section);
-    for (rect, index) in tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false) {
+    let placed = tabs::tab_bar(frame, bar, &section_tabs(model, overview), open, false);
+    let tabs_end = placed.last().map_or(bar.x, |(rect, _)| rect.right());
+    for (rect, index) in placed {
         hits.push((rect, WorkspaceHit::OverviewSection(index)));
     }
+    render_where(frame, bar, tabs_end, overview);
     Rule::new(Edge::Top).render(frame, Rect::new(area.x, inner.y + RULE_ROW, area.width, 1));
     let cause = Rect::new(inner.x, inner.y + CAUSE_ROW, inner.width, 1);
     // What stands in for a section that could not be read, as a title and
@@ -361,25 +358,30 @@ fn section_tabs(model: &WorkspaceModel, overview: &SpaceOverviewView) -> Vec<(Ta
         .collect()
 }
 
-/// Whose overview this is: the agent, by its name, and where it works.
-/// Nothing about other agents — what the space holds is the sidebar's.
-fn render_header(
+/// Where the agent works, at the section bar's far end: the one thing the
+/// overview says about it that nothing else on screen does. The sections
+/// keep their room; the path takes what they leave, cut at its head.
+fn render_where(
     frame: &mut ratatui::Frame<'_>,
-    rect: Rect,
-    name: &str,
+    bar: Rect,
+    tabs_end: u16,
     overview: &SpaceOverviewView,
 ) {
-    // What this is, since the strip's door to it no longer says so.
     let path = overview
         .agent
         .as_ref()
         .map_or_else(|| display_path(&overview.root), |agent| agent.path.clone());
-    let line = Line::from(vec![
-        Span::styled("Agent  ", theme::fg(Token::TextDim)),
-        Span::styled(name.to_owned(), theme::fg_bold(Token::TextBright)),
-        Span::styled(format!("  {path}"), theme::fg(Token::TextMuted)),
-    ]);
-    frame.render_widget(Paragraph::new(line), rect);
+    let room = bar.right().saturating_sub(tabs_end + 2 * INSET);
+    if room < MIN_PATH_WIDTH {
+        return;
+    }
+    let shown = text::elide_head(&path, usize::from(room));
+    let width = text::columns(&shown) as u16;
+    let rect = Rect::new(bar.right() - width, bar.y, width, 1);
+    frame.render_widget(
+        Paragraph::new(Span::styled(shown, theme::fg(Token::TextMuted))),
+        rect,
+    );
 }
 
 /// The cause line while the project is being read.

@@ -165,6 +165,42 @@ fn opening_the_overview_again_waits_for_the_reads_already_out() {
     assert_eq!(remembered.agent_support_pending, None);
 }
 
+/// The overview names where the agent works at the end of its section
+/// bar, and carries no title row: the agent's name is already its tab's,
+/// the sidebar's and the first section's.
+#[test]
+fn the_section_bar_ends_with_where_the_agent_works_and_no_title_repeats_it() {
+    let mut model = agent_session_in("/repo");
+    let mut agent = drawer_over(&model);
+    agent.path = "~/repo/.worktrees/a1".to_owned();
+    let (space, behind) = {
+        let space = model.session.as_ref().expect("session").selected_space();
+        (space.id, space.selected_tab)
+    };
+    model.open_space_overview(space, behind, PathBuf::from("/repo"), true);
+    model
+        .space_overview
+        .as_mut()
+        .expect("the overview is open")
+        .agent = Some(agent);
+    let rows = frame_rows_at(&mut model, Rect::new(0, 0, 140, 30));
+    let bar = rows
+        .iter()
+        .find(|row| row.contains("1 Agent"))
+        .expect("the section bar is drawn");
+    assert!(
+        bar.trim_end().ends_with("~/repo/.worktrees/a1"),
+        "the path closes the bar: {bar:?}"
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.contains("~/repo/.worktrees/a1"))
+            .count(),
+        1,
+        "said once, with no title row above the bar: {rows:#?}"
+    );
+}
+
 /// A prompt is read in the Agent section to be used again: enter on it
 /// copies the whole prompt, however its lines were folded.
 #[test]
@@ -2302,7 +2338,7 @@ fn the_wheel_scrolls_the_cards_without_selecting() {
     for (index, rect) in card_rects(&driven) {
         assert_eq!(rect.height, 5, "card {index} is cut: {rect:?}");
         assert!(
-            rect.y > 8 && rect.bottom() < pane.bottom(),
+            rect.y > 6 && rect.bottom() < pane.bottom(),
             "{index}: {rect:?}"
         );
     }

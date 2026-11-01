@@ -39,6 +39,10 @@
 
     "task.ready": "^",
     "task.review": "@",
+    "task.published": ">",
+    "task.delivering": "...",
+    "task.delivered": "#",
+    "task.shelved": "=",
 
     "status.working": ["|", "/", "-", "\\"],
     "status.completed": "*",
@@ -91,7 +95,7 @@
     "icon.chart": "|",
     "icon.list": "=",
     "icon.mail": "m",
-    "icon.comment": "\"",
+    "icon.comment": "",
     "icon.eye": "0",
     "icon.package": "P",
     "icon.shield": "U",
