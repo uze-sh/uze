@@ -166,10 +166,12 @@ on "cancel" must not save first.
   mark while the agent is on a send. The door is drawn from the
   extension's own `door_badge`, never from a read the host makes.
 - A line is marked by its number: a press on the number column marks it,
-  a drag down the numbers or a press with any key held carries the mark
-  (shift, ctrl or alt: Windows Terminal keeps shift+click for its own
-  selection and never reports it), and a press on the text still selects
-  text. Under the marked run stands one line that
+  a drag down the numbers or a press with any key held, on a number or
+  on the line's text, carries the mark (shift, ctrl or alt: Windows
+  Terminal keeps shift+click for its own selection and never reports
+  it); a plain press on the text still selects text. Only numbered text
+  nobody types into marks from its text: in a file typed into, a press is
+  the caret's. Under the marked run stands one line that
   opens a comment on it (`◆ comment on 3 lines`), the affordance a
   pointer needs where the key is `c`. The marked run wears
   `state.diff-marked`, a draft comment's gold held faint, over the diff's

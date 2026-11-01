@@ -464,6 +464,17 @@ impl Attach<'_> {
                 self.mark_line_at(mouse.column, mouse.row, extend);
                 self.model.marking_lines = true;
             }
+            // Shift+click on a line's text carries the mark as in an
+            // editor, and so do ctrl and alt, which reach where the
+            // terminal keeps shift for its own selection.
+            _ if on_surface
+                && carries_the_mark(mouse.modifiers)
+                && self.model.surface_frame.content_marks_lines
+                && self.presses_on_text(mouse.column, mouse.row) =>
+            {
+                self.mark_line_at(mouse.column, mouse.row, true);
+                self.model.marking_lines = true;
+            }
             _ if on_surface && self.presses_on_text(mouse.column, mouse.row) => {
                 self.mark_text_from(mouse.column, mouse.row);
             }

@@ -3304,3 +3304,44 @@ fn a_card_line_is_raised_in_the_text_column_only() {
     );
     assert_eq!(drawn[(0, 0)].bg, theme::color(Token::SurfaceBackground));
 }
+
+/// A diff's lines are marked by their numbers, and so by a press on their
+/// text with a key held; a file typed into keeps every press for its
+/// caret.
+#[test]
+fn only_numbered_text_nobody_types_into_marks_lines_from_its_text() {
+    let marks = |editable: bool| {
+        let mut view = sample();
+        if let Content::Lines { editable: e, .. } = &mut view.content {
+            *e = editable;
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+        let mut hits = Vec::new();
+        let mut rendered = None;
+        terminal
+            .draw(|frame| {
+                rendered = Some(render(
+                    frame,
+                    &view,
+                    frame.area(),
+                    NavigatorFrame {
+                        width: Some(24),
+                        scroll: NavigatorScroll::default(),
+                        resizing: false,
+                        sliding: None,
+                    },
+                    FooterKeys {
+                        scope: uze_keys::Scope::Review,
+                        hovered: None,
+                        host: &[],
+                    },
+                    None,
+                    &mut hits,
+                ));
+            })
+            .unwrap();
+        rendered.unwrap().content_marks_lines
+    };
+    assert!(marks(false), "a diff");
+    assert!(!marks(true), "a file typed into");
+}

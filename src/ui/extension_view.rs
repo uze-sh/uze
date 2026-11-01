@@ -86,6 +86,10 @@ pub(crate) struct Rendered {
     /// the map is a tile or two over, and near an edge is nothing at
     /// all.
     pub(crate) content_gutter: u16,
+    /// Whether a line of the content is marked by its number, and so by a
+    /// press on its text with a key held: numbered text nobody types
+    /// into, a diff's. In a file typed into, a press is the caret's.
+    pub(crate) content_marks_lines: bool,
     /// Whether the content's last line is on screen, so the wheel knows
     /// to stop. Only the drawing can say: lines wrap, and how many rows
     /// the last ones took is settled here and nowhere else.
@@ -336,6 +340,8 @@ fn render_surface(
             medium,
         } => {
             rendered.content_gutter = gutter_width(lines);
+            rendered.content_marks_lines =
+                *medium == Medium::Text && !*editable && rendered.content_gutter > 0;
             rendered.heading = heading.clone();
             (
                 rendered.content_bar,
