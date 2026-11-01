@@ -708,7 +708,7 @@ operator rather than assume.
   icon with no label beside it, which keeps a glyph (the review's `✎`
   count).
 - The spinner is `Symbol::StatusWorking`, whose frames the theme declares
-  (a quarter-filled circle turning, `◐◓◑◒`, in the default theme, one
+  (a quadrant turning in a circle, `◴◵◶◷`, in the default theme, one
   size in every frame); the CLI's is
   `progress::spinner`. Never hand-pick frames.
 - The animated circle is the agents' alone. A shell running a program wears

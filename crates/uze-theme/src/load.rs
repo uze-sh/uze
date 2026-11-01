@@ -1057,6 +1057,22 @@ mod tests {
         }
     }
 
+    /// The spinner is one width in every frame, also where a terminal
+    /// draws East Asian ambiguous characters two cells wide: a frame that
+    /// is wide there and the next that is not shifts the row each tick.
+    #[test]
+    fn the_spinner_keeps_one_width_where_ambiguous_characters_are_wide() {
+        use unicode_width::UnicodeWidthStr;
+        let theme = default_theme();
+        for frame in theme.symbol(Symbol::StatusWorking).frames() {
+            assert_eq!(
+                frame.width(),
+                frame.width_cjk(),
+                "`{frame}` is ambiguous-width"
+            );
+        }
+    }
+
     #[test]
     fn the_default_carries_the_exact_glyphs_that_shipped() {
         let theme = default_theme();
@@ -1067,8 +1083,8 @@ mod tests {
         assert_eq!(theme.glyph(Symbol::TreeLast), "└─");
         assert_eq!(theme.glyph(Symbol::HintSeparator), " · ");
         assert_eq!(theme.symbol(Symbol::StatusWorking).frames().len(), 4);
-        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "◐");
-        assert_eq!(theme.frame(Symbol::StatusWorking, 4), "◐");
+        assert_eq!(theme.frame(Symbol::StatusWorking, 0), "◴");
+        assert_eq!(theme.frame(Symbol::StatusWorking, 4), "◴");
     }
 
     #[test]
