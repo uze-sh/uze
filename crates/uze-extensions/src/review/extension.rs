@@ -926,6 +926,7 @@ impl Extension for ReviewExtension {
     }
 
     fn agents(&mut self, agents: &serde_json::Value) {
+        let before = std::mem::take(&mut self.agents);
         self.agents = agents
             .as_array()
             .map(|agents| {
@@ -940,6 +941,23 @@ impl Extension for ReviewExtension {
                     .collect()
             })
             .unwrap_or_default();
+        // A review is kept for the agent working in a checkout: another
+        // come to work there, or none, and what was kept is not theirs.
+        let workers = |agents: &[(String, PathBuf)], root: &PathBuf| -> Vec<String> {
+            agents
+                .iter()
+                .filter(|(_, checkout)| checkout == root)
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let moved: Vec<PathBuf> = before
+            .iter()
+            .map(|(_, root)| root.clone())
+            .filter(|root| workers(&before, root) != workers(&self.agents, root))
+            .collect();
+        for root in moved {
+            self.records.remove(&root);
+        }
         // An agent gone takes the turn it was on with it.
         if let Some(agent) = &self.working
             && !self.agents.iter().any(|(id, _)| id == agent)
@@ -1295,6 +1313,20 @@ mod tests {
             extension.door.at.is_none(),
             "and the door asks again at once"
         );
+    }
+
+    /// Another agent come to work in a checkout is not offered the one
+    /// before's drafts: what was kept there is let go until its own read.
+    #[test]
+    fn another_agent_in_the_checkout_is_never_offered_the_one_befores_drafts() {
+        let mut extension = ReviewExtension::default();
+        extension.drafted(PathBuf::from("/w"), "a.rs", "check");
+        extension.agents(&serde_json::json!([{ "id": "x", "checkout": "/w" }]));
+        assert_eq!(drafts(&extension), 1);
+        extension.agents(&serde_json::json!([{ "id": "x", "checkout": "/w" }]));
+        assert_eq!(drafts(&extension), 1, "the same agent keeps its review");
+        extension.agents(&serde_json::json!([{ "id": "y", "checkout": "/w" }]));
+        assert_eq!(drafts(&extension), 0, "x's drafts are not y's");
     }
 
     /// What the drawer says of one checkout's send stays that checkout's:
