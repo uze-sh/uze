@@ -475,6 +475,13 @@ pub trait Extension: Send {
 
     fn restore_memory(&mut self, _memory: Opaque) {}
 
+    /// A built-in that is told what agents do, as a declared extension
+    /// granted `agent:observe` is: which agent works where, and when a turn
+    /// ends.
+    fn observes_agents(&self) -> bool {
+        false
+    }
+
     /// What the door of this extension's view says on the tab strip, for
     /// the checkout it is focused on, or `None` for a door that is a name.
     fn door_badge(&self) -> Option<DoorBadge> {

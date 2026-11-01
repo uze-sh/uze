@@ -67,14 +67,17 @@ impl Bridge {
 impl WorkspaceModel {
     /// The extensions switched on that hold `agent:observe`.
     fn observers(&self) -> Vec<Owner> {
-        // The review is told which agent works in which checkout, and when
-        // a turn ends: whom a send goes to, and when it was taken up.
-        let review = Owner::Builtin(uze_extensions::review::CATALOG.id);
-        let builtin = self
-            .offers_extension(uze_extensions::review::CATALOG.id)
-            .then_some(review);
-        builtin
-            .into_iter()
+        let builtins = self
+            .remembered
+            .declared
+            .engines
+            .iter()
+            .filter(|(owner, engine)| {
+                matches!(owner, Owner::Builtin(_)) && engine.observes_agents()
+            })
+            .map(|(owner, _)| owner.clone())
+            .filter(|owner| self.offers_declared(owner));
+        builtins
             .chain(
                 self.remembered
                     .declared

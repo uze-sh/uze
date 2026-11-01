@@ -888,6 +888,11 @@ impl Extension for ReviewExtension {
         Outcome::Stay
     }
 
+    /// Told whom a send goes to and when it was taken up.
+    fn observes_agents(&self) -> bool {
+        true
+    }
+
     fn door_badge(&self) -> Option<DoorBadge> {
         let record = self.record_for_door();
         let drafts = record
