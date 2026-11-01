@@ -19,5 +19,6 @@ mod project_rules;
 mod runtime_shim;
 mod session_continuity;
 mod store_ownership;
+mod uninstall;
 mod util;
 mod workspace_health;

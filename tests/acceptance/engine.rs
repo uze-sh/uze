@@ -33,7 +33,7 @@ const WAIT: Duration = Duration::from_secs(30);
 
 /// One repository, one server, one attached client, and the scripts its
 /// agents will play.
-struct Engine {
+pub(crate) struct Engine {
     env: TestEnvironment,
     scripts: PathBuf,
     server: Child,
@@ -46,7 +46,7 @@ struct Engine {
 }
 
 impl Engine {
-    fn start(lock: &str) -> Self {
+    pub(crate) fn start(lock: &str) -> Self {
         Self::start_with(lock, |_| {})
     }
 
@@ -112,6 +112,10 @@ impl Engine {
         engine
     }
 
+    pub(crate) fn env(&self) -> &TestEnvironment {
+        &self.env
+    }
+
     fn project(&self) -> &Path {
         &self.env.project
     }
@@ -157,7 +161,7 @@ impl Engine {
     /// Launches an agent the way the TUI does: placement first, then a tab
     /// whose first process is the scripted agent, started in the slot.
     /// `start` is what the agent does before it goes quiet.
-    fn launch(&mut self, start: Steps) -> (String, PathBuf) {
+    pub(crate) fn launch(&mut self, start: Steps) -> (String, PathBuf) {
         let placement = self
             .app()
             .workspace()

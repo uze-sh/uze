@@ -59,7 +59,7 @@ fn files_under(root: &Path, skip: &[PathBuf], out: &mut Vec<PathBuf>) {
 }
 
 /// Every `$UZE_HOME` path a harness file names, with the file that names it.
-fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String)> {
+pub(crate) fn uze_home_references(env: &TestEnvironment) -> Vec<(PathBuf, String)> {
     let uze_home = env.uze_home.to_string_lossy().into_owned();
     let skip = [
         env.uze_home.clone(),

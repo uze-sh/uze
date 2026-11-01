@@ -72,15 +72,15 @@
 
 ## 5. `uze uninstall`
 
-- [ ] 5.1 Skip bootstrap, like `upgrade` in `src/main.rs`. Refuse inside a workspace pane and while agents, clients, the terminal runtime with panes, or a background upgrade are alive.
-- [ ] 5.2 Add `UzeApplication::uninstall_plan(purge)`, the read model of design D6. Run interactively without flags, it asks which mode.
-- [ ] 5.3 Add `UzeApplication::uninstall(plan)`. It runs the design D6 steps under the mutation lock, after copying the binary's provenance, each step idempotent. With `--purge`:
+- [x] 5.1 Skip bootstrap, like `upgrade` in `src/main.rs`. Refuse inside a workspace pane and while agents, clients, the terminal runtime with panes, or a background upgrade are alive.
+- [x] 5.2 Add `UzeApplication::uninstall_plan(purge)`, the read model of design D6. Run interactively without flags, it asks which mode.
+- [x] 5.3 Add `UzeApplication::uninstall(plan)`. It runs the design D6 steps under the mutation lock, after copying the binary's provenance, each step idempotent. With `--purge`:
   - plugins are removed before their marketplaces, which drops Codex's `[plugins]` keys;
   - per harness, readers are removed before the material they read.
-- [ ] 5.4 `install.ps1` records its user `Path` edit in `install.json`. On Windows, uninstall undoes the edit and removes the running binary on exit.
-- [ ] 5.5 `install.sh` and `install.ps1` uninstall delegates to `uze uninstall --yes [--purge]` when the binary is present. Otherwise it removes only what the installer placed and prints the reinstall-then-purge path. It never deletes `~/.uze` itself. Update their headers.
-- [ ] 5.6 Add the `uze uninstall [--yes] [--purge]` grammar, a report following the `design-system` skill, `JustifiedSlow` in `src/command_performance.rs`, and help text.
-- [ ] 5.7 Add `tests/acceptance/uninstall.rs` with one test per scenario in `specs/machine-uninstall/spec.md`, using fake harnesses and fake processes for the refusals.
+- [x] 5.4 `install.ps1` records its user `Path` edit in `install.json`. On Windows, uninstall undoes the edit and removes the running binary on exit.
+- [x] 5.5 `install.sh` and `install.ps1` uninstall delegates to `uze uninstall --yes [--purge]` when the binary is present. Otherwise it removes only what the installer placed and prints the reinstall-then-purge path. It never deletes `~/.uze` itself. Update their headers.
+- [x] 5.6 Add the `uze uninstall [--yes] [--purge]` grammar, a report following the `design-system` skill, `JustifiedSlow` in `src/command_performance.rs`, and help text.
+- [x] 5.7 Add `tests/acceptance/uninstall.rs` with one test per scenario in `specs/machine-uninstall/spec.md`, using fake harnesses and fake processes for the refusals.
 - [ ] 5.8 Add `tests/acceptance/migration.rs` covering:
   - the move and digest backfill;
   - an interrupted move;
