@@ -60,7 +60,7 @@ scenes:
         expect: demo-app
         expect_timeout: 20
         pause: 1.0
-      - click: "="
+      - click: "≡"
         say: cross to the management modal by the sidebar's own control
         in: sidebar
         expect: Marketplace
