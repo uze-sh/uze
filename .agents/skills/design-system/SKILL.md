@@ -729,6 +729,11 @@ operator rather than assume.
 **Declutter.**
 - Nothing redundant: a hint the footer already shows, a branch the
   timeline already shows, a label repeated in three places.
+- The space overview has no title row: the agent's name is already its
+  tab's, the sidebar's and the first section's (the operator took the
+  `Agent <name> <path>` line off). Where the agent works is the one thing
+  only it says, muted at the section bar's far end, cut at its head and
+  left out before a section loses room.
 - Details go in the drawer, on selection.
 - Counts are minimal (`1/5`). There are no raw logs in the UI.
 
