@@ -50,8 +50,9 @@ pub struct ReviewExtension {
     /// Each open agent, by the checkout it works in.
     agents: Vec<(String, PathBuf)>,
     sending: Option<(PathBuf, Sending)>,
-    /// The agent a send was typed into, until its turn finishes.
-    working: Option<String>,
+    /// The agent a send was typed into and the checkout it works in, until
+    /// its turn finishes or it is gone: only that checkout's door says so.
+    working: Option<(String, PathBuf)>,
     listing: bool,
     listed_at: Option<Instant>,
     /// Changes made on a review that closed before they were written, by
@@ -649,11 +650,17 @@ impl Extension for ReviewExtension {
                     .collect()
             })
             .unwrap_or_default();
+        // An agent gone takes the turn it was on with it.
+        if let Some((agent, _)) = &self.working
+            && !self.agents.iter().any(|(id, _)| id == agent)
+        {
+            self.working = None;
+        }
     }
 
     fn agent_events(&mut self, happened: &[AgentHappened], _now: Instant) {
         let finished = happened.iter().any(|event| {
-            Some(&event.agent) == self.working.as_ref()
+            self.working.as_ref().map(|(agent, _)| agent) == Some(&event.agent)
                 && event.event == uze_contract::AgentEvent::TurnFinished
         });
         if finished {
@@ -679,7 +686,7 @@ impl Extension for ReviewExtension {
                     ids: sending.ids,
                     agent: sending.agent.clone(),
                 });
-                self.working = Some(sending.agent);
+                self.working = Some((sending.agent, root.clone()));
             }
             AgentWritten::Refused(reason) => {
                 view.notice = Some(Span::new(format!("not sent: {reason}"), Role::Warning));
@@ -831,8 +838,12 @@ impl Extension for ReviewExtension {
             }
             None => spans.push(Span::new("review", Role::Muted)),
         }
-        let quiet = totals.is_none() && drafts == 0 && answered == 0 && self.working.is_none();
-        if self.working.is_some() {
+        let working = self
+            .working
+            .as_ref()
+            .is_some_and(|(_, root)| self.focus.as_ref().map(|focus| &focus.root) == Some(root));
+        let quiet = totals.is_none() && drafts == 0 && answered == 0 && !working;
+        if working {
             spans.push(Span::new(" ◐", Role::Info));
         } else if drafts > 0 {
             spans.push(Span::new(format!(" ◆{drafts}"), Role::Warning));

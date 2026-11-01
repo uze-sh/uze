@@ -482,3 +482,67 @@ fn discarding_a_rename_puts_back_both_of_its_paths() {
     handle_hit(&mut view, ViewHit::Answer(true), SPACE);
     assert_eq!(view.restore, Some(vec![new, old]));
 }
+
+/// The review open on /w, with agent a1 working there and one draft.
+fn sending_extension() -> ReviewExtension {
+    use crate::contract::{Checkout, Extension};
+    let mut extension = ReviewExtension::default();
+    let checkout = Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+    };
+    extension.focus(Some(&checkout));
+    extension.open(SURFACE, &checkout);
+    extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+    extension
+        .review_view_mut()
+        .unwrap()
+        .change(change::Change::Draft {
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "check".to_owned(),
+        });
+    extension
+}
+
+fn badge(extension: &ReviewExtension) -> String {
+    use crate::contract::Extension;
+    extension
+        .door_badge()
+        .unwrap()
+        .spans
+        .iter()
+        .map(|span| span.text.as_str())
+        .collect()
+}
+
+#[test]
+fn the_working_mark_is_the_sent_checkouts_and_goes_with_its_agent() {
+    use crate::contract::{AgentWritten, Checkout, Extension, Outcome};
+    let mut extension = sending_extension();
+    let asked = extension.command(SURFACE, Command::Send, SPACE);
+    assert!(matches!(asked, Outcome::Agent(_)), "{asked:?}");
+    extension.agent_write("review-send", AgentWritten::Typed);
+    let working = badge(&extension);
+    let elsewhere = Checkout {
+        root: PathBuf::from("/other"),
+        display: "/other".to_owned(),
+        target: None,
+    };
+    extension.focus(Some(&elsewhere));
+    assert_ne!(
+        badge(&extension),
+        working,
+        "another checkout's door is not the sent one's"
+    );
+    extension.focus(Some(&Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+    }));
+    assert_eq!(badge(&extension), working);
+    extension.agents(&serde_json::json!([]));
+    assert_ne!(badge(&extension), working, "an agent gone takes its mark");
+}
