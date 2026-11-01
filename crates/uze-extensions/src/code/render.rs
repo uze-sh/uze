@@ -167,8 +167,7 @@ fn map_trail(code: &CodeView) -> Vec<TrailStep> {
 /// The ways this surface can show what it is showing.
 ///
 /// Only for a document, and only while its contents are what is on
-/// screen: offering "preview" beside a diff would be offering to leave
-/// the diff, which is what the diff's own door is for. The map is
+/// screen. The map is
 /// offered wherever there is one, because it is the same checkout seen
 /// another way — and the entry that leaves it is what makes the toggle a
 /// control somebody can point at rather than a key they have to know.
@@ -190,9 +189,8 @@ fn modes(code: &CodeView) -> Vec<Mode> {
         .collect()
 }
 
-/// The halves of this surface, named as the three places they are: the
-/// checkout's files, a picture of where its lines are, and what changed
-/// in it.
+/// The halves of this surface, named as the places they are: the
+/// checkout's files, and a picture of where its lines are.
 ///
 /// Never named after the *rendering* the map happens to be in — that is
 /// what the control below is for, and a chip that said "ASCII" here

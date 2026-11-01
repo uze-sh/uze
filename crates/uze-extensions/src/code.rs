@@ -114,10 +114,8 @@ enum NavigatorMode {
     Search,
 }
 
-/// Which half answers for the selection. Also which door was used: the
-/// mode a person arrives in is the one they chose before pressing
-/// anything, which is why there are two entry points rather than one that
-/// asks again.
+/// Which half answers for the selection: the file read as its text or as
+/// the document it describes, or the checkout drawn as a map.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum ContentMode {
     #[default]
@@ -253,9 +251,10 @@ pub struct CodeView {
 /// [`CodeView::resuming`] the next time that checkout is opened.
 ///
 /// What it holds is navigation and nothing else — the file being read,
-/// the directories opened to reach it, and how far down it. Deliberately not the content mode: the mode is the door that
-/// was used (`Alt+G` reviews, `Alt+E` navigates), and a door that
-/// remembered where it last led would stop being one. Deliberately not a
+/// the directories opened to reach it, and how far down it. Deliberately
+/// not the content mode: the door decides where a fresh opening lands, and
+/// a door that remembered where it last led would stop being one.
+/// Deliberately not a
 /// buffer either: a surface put away with unsaved work is kept whole by
 /// the extension (`CodeExtension::kept`), and one closed on a discard the
 /// viewer answered must not resurrect the typing.
@@ -320,8 +319,8 @@ impl CodeView {
     /// instant it is asked for, saying it is reading, and fills in when
     /// the host's answers land.
     ///
-    /// `mode` is the door: the changes chip and `Alt+G` open on the
-    /// diff, the code chip and `Alt+E` on the tree.
+    /// `mode` is where the door leads: the code chip and `Alt+E` open on
+    /// the tree.
     pub fn opening(cwd: PathBuf, display_root: String, mode: ContentMode) -> Self {
         let mut view = Self {
             root: cwd,
@@ -871,14 +870,8 @@ impl CodeView {
     }
 
     /// Shows `mode` for whatever is selected, bringing the selection with
-    /// it — the switch this whole surface exists for, and what the two
-    /// doors mean once the surface is already open.
-    ///
-    /// The line comes too where it is known: a diff row carries the line
-    /// number it has on the new side, so a reader who was looking at line
-    /// 42 of a diff lands on line 42 of the file. Carrying only the file
-    /// would leave them at the top of something they were reading the
-    /// middle of, which is most of the trip they were trying to avoid.
+    /// it, and the line the reader was on where there is one: a file left
+    /// for its preview and back lands where it was read.
     pub fn show(&mut self, mode: ContentMode) {
         if self.content == mode {
             return;
@@ -994,10 +987,7 @@ impl CodeView {
     /// Goes to one of them.
     ///
     /// The nav is the whole of this surface's navigation, so every half
-    /// is reachable from every other — including the map from the
-    /// changes, which used to be refused on the grounds that the map is
-    /// a way through the files. It is; going there is also leaving the
-    /// changes, and that is what the press said.
+    /// is reachable from every other.
     pub(super) fn show_half(&mut self, half: Half) {
         match half {
             // As whatever the selection is: a document opens as the
