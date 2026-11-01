@@ -486,7 +486,7 @@ fn collect_machine_overview(
                 let snapshot = app.machine_overview_snapshot();
                 let stands = snapshot.as_ref().is_some_and(|(_, at)| {
                     at.elapsed()
-                        .is_ok_and(|age| age < super::machine::STANDS_FOR)
+                        .is_ok_and(|age| age < super::machine::SYNC_EVERY)
                 });
                 if let Some((overview, at)) = snapshot {
                     answer(Some(overview), Some(at), stands && !force);

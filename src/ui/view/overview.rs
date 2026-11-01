@@ -520,11 +520,13 @@ fn summary(model: &TuiModel) -> String {
             parts.push(format!("{look} to look at"));
         }
     }
-    if screen.collecting.is_some() {
+    if screen.reading {
         parts.push(format!(
             "{} reading harnesses",
             theme::frame(Symbol::StatusWorking, model.tick)
         ));
+    } else if let Some(at) = screen.collected_at {
+        parts.push(format!("synced {}", synced_said(at)));
     }
     parts.join(" · ")
 }
@@ -791,6 +793,16 @@ fn uses_said(resource: &OverviewResource, on: On<'_>) -> String {
         said.push_str(" · some harnesses unread");
     }
     said
+}
+
+/// How long ago the last collection was: `just now`, `4 min ago`.
+fn synced_said(at: std::time::SystemTime) -> String {
+    match at.elapsed().map_or(0, |age| age.as_secs()) {
+        seconds if seconds < 60 => "just now".to_owned(),
+        seconds if seconds < 3_600 => format!("{} min ago", seconds / 60),
+        seconds if seconds < 86_400 => format!("{} h ago", seconds / 3_600),
+        seconds => format!("{} days ago", seconds / 86_400),
+    }
 }
 
 /// A day since the epoch as `Oct 22`, with its year when it is not this

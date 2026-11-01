@@ -128,9 +128,14 @@ otherwise it is unknown.
 
 ### 6. Scheduling and the snapshot
 
-A collection starts only while the Overview is the route in front, after a
-short debounce, if the snapshot is older than a minute, or on refresh
-(`f5`). It runs on the management worker, one harness at a time:
+The workspace collects in the background (D13): 20 seconds after it opens
+and every 15 minutes from then on, on a thread of its own
+(`orchestrator::reads::spawn_machine_sync`), whether or not the modal is
+open. An open Overview draws each collection as it lands. The Overview itself
+collects only when what was last collected is older than 15 minutes, after a
+short debounce, or on refresh (`f5`, or `refresh` in its foot). A collection
+holds `state/machine-usage.lock` without waiting: a second workspace finding
+it held skips its turn. It runs one harness at a time:
 1. inventory;
 2. tokens and health;
 3. sessions;
@@ -145,6 +150,13 @@ so the next opening draws at once. Being in `cache/`, it has no shape: if it
 cannot be read, it is collected again. It holds only names, kinds, paths of
 definition files, origins, figures and statuses. No CLI command, the shim or
 a launch calls any of this.
+
+What a harness's deleted records held is moved, per record, to
+`state/machine-usage.json` (`usage::Archive`, D13): a record with a shape,
+since it is the only place those uses are left. A record the harness lists
+again is taken out of it and read live. The archive is written before the
+cache, so a crash in between archives a record twice under one name rather
+than losing it.
 
 ### 7. The screen
 

@@ -20,9 +20,10 @@ use uze_application::machine_overview::{
 
 use super::model::ListScreen;
 
-/// How long a collection stands: opening the Overview inside it asks the
+/// How often the workspace reads the harnesses in the background, and so
+/// how long a collection stands: opening the Overview inside it asks the
 /// machine nothing again.
-pub(crate) const STANDS_FOR: Duration = Duration::from_secs(60);
+pub(crate) const SYNC_EVERY: Duration = Duration::from_secs(15 * 60);
 
 /// How long the Overview stands in front before collecting: passing over
 /// it on the way to another screen asks nothing.
@@ -233,6 +234,9 @@ impl Eq for Cancel {}
 pub(crate) struct MachineScreen {
     pub(crate) overview: Option<MachineOverview>,
     pub(crate) collected_at: Option<SystemTime>,
+    /// The harnesses are being read for this screen, not only its snapshot:
+    /// what the header says is in flight.
+    pub(crate) reading: bool,
     /// The collection in flight, by its id.
     pub(crate) collecting: Option<u64>,
     cancel: Cancel,
@@ -267,7 +271,7 @@ impl MachineScreen {
         }
         let stale = self
             .collected_at
-            .is_none_or(|at| at.elapsed().map_or(true, |age| age >= STANDS_FOR));
+            .is_none_or(|at| at.elapsed().map_or(true, |age| age >= SYNC_EVERY));
         if !force && (now.duration_since(since) < SETTLE || !stale) {
             return None;
         }
@@ -276,6 +280,7 @@ impl MachineScreen {
         let id = ISSUED.fetch_add(1, Ordering::Relaxed);
         self.cancel = Cancel(Arc::new(AtomicBool::new(false)));
         self.collecting = Some(id);
+        self.reading = force;
         Some((id, self.cancel.clone(), force))
     }
 
@@ -313,11 +318,29 @@ impl MachineScreen {
         }
         if collected_at.is_some() {
             self.collected_at = collected_at;
+        } else if !done {
+            self.reading = true;
         }
         if done {
             self.collecting = None;
+            self.reading = false;
         }
         true
+    }
+
+    /// What the workspace's own sync collected, drawn unless a collection
+    /// of the Overview's is in flight, whose answer is newer.
+    pub(crate) fn synced(&mut self, overview: MachineOverview, at: SystemTime) {
+        if self.collecting.is_some() {
+            return;
+        }
+        if let Some(harness) = &self.harness
+            && !overview.harnesses.iter().any(|known| &known.id == harness)
+        {
+            self.harness = None;
+        }
+        self.overview = Some(overview);
+        self.collected_at = Some(at);
     }
 
     /// Whether `resource` is on screen with the harness and filter chosen.

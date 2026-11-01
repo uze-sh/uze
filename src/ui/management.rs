@@ -602,6 +602,7 @@ fn hints<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Hints<'a> {
             crate::ui::machine::Field::Columns => "screens",
         };
         hints = hints.named(Action::FocusNext, next);
+        hints = hints.named(Action::Refresh, "refresh");
     }
     let screens = model::routes().len().min(9) as u8;
     hints.run(Action::SelectTab(1), Action::SelectTab(screens), "section")

@@ -52,6 +52,11 @@
 - [x] 7.8 Collection stage 4 (uses) after sessions; the `uses` column (blank for hooks and rules, `?` unknown, `~` estimate), sortable, and `unused` in the status column and the menu's marks
 - [x] 7.9 Benchmark: first reading and an incremental one over generated records of realistic size, with a pass/fail budget; check on the real machine without printing any record
 
+## 8. Background sync and archive
+
+- [x] 8.1 Background collection in the workspace (20 s after opening, every 15 minutes), one at a time under a `state/` lock; the Overview draws it, collects only past 15 minutes, says when it synced, and offers `refresh` in its foot; the architecture test names the workspace as the one collector
+- [x] 8.2 `usage::Archive` in `state/machine-usage.json`, shaped, per record: a deleted record's uses kept, a relisted one read live, archive written before cache; the header says since when uses count
+
 ## 6. Architecture
 
 - [x] 6.1 Update `docs/architecture/core-components.mmd`; run `make artifacts` and `cargo test -p uze-extensions`

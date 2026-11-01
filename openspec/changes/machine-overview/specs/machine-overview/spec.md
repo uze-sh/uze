@@ -156,6 +156,13 @@ Where a harness's record does not name a use but lets it be inferred from what t
 - **WHEN** a harness records an MCP call only inside the script that made it
 - **THEN** that server's uses read with `~`
 
+### Requirement: Uses outlive the harness's own records
+When a harness deletes a record uze has read, its uses SHALL be kept, in a record of uze's own that declares its shape, and SHALL go on counting. A record the harness lists again SHALL be read live and never counted twice. Losing the cache SHALL NOT lose them; the header SHALL say since when uses are counted.
+
+#### Scenario: A harness deletes a month-old transcript
+- **WHEN** a harness deletes a transcript in which a skill was used twice, after uze read it
+- **THEN** the skill's uses still count those two, and the header's date reaches back to them
+
 ### Requirement: A record already read is not read again
 A record unchanged since the last collection SHALL NOT be opened again, and one only appended to SHALL be read from where the last reading stopped. Losing what was kept between readings SHALL cost only a fresh reading.
 
@@ -164,7 +171,7 @@ A record unchanged since the last collection SHALL NOT be opened again, and one 
 - **THEN** only those ten lines are read
 
 ### Requirement: Only what was used leaves a session's record
-Counting sessions SHALL read at most a record's opening metadata and file time. Counting uses SHALL take from a record only which skill, agent or MCP server was used, by whom and when; nothing collected or kept SHALL hold any other text from a session.
+Counting sessions SHALL read at most a record's opening metadata and file time. Counting uses SHALL take from a record only which skill, agent or MCP server was used, by whom and when; nothing collected, kept or archived SHALL hold any other text from a session.
 
 #### Scenario: A prompt's words
 - **WHEN** a session's prompt carries a phrase alongside a skill's name
@@ -177,16 +184,20 @@ Opening the Overview SHALL draw at once from what was last collected, and a fres
 - **WHEN** the Overview is opened with nothing collected yet
 - **THEN** the screen draws immediately and fills in as each harness answers
 
-### Requirement: Collection runs only while the Overview is in front
-Collection SHALL run only while the Overview is the screen in front, or on its explicit refresh, and SHALL stop when another screen is chosen or the modal closes. It SHALL never run at uze's launch, a harness's launch, in the runtime shim or in any CLI command.
+### Requirement: The workspace collects in the background, and nothing else does
+While the workspace is open it SHALL collect in the background, on a thread of its own, shortly after it opens and every 15 minutes from then on, one collection at a time across every process. The Overview SHALL draw what was last collected, collect itself only when that is older than the interval, and offer a refresh, a key and a click alike. Nothing SHALL be collected by a CLI command, the runtime shim, a harness's launch or an agent's turn.
 
-#### Scenario: Opening the modal on another screen
-- **WHEN** the operator opens the manage modal straight to the Marketplace
-- **THEN** no harness file is read for the Overview
+#### Scenario: Opening the Overview after a background collection
+- **WHEN** the operator opens the Overview five minutes after the workspace collected
+- **THEN** it draws that collection, says when it was made, and reads no harness
+
+#### Scenario: Two workspaces open
+- **WHEN** two workspaces are open on one machine
+- **THEN** only one of them reads the harnesses at a time
 
 #### Scenario: Launching an agent
 - **WHEN** an agent is launched in the workspace
-- **THEN** nothing is collected for the Overview
+- **THEN** its launch waits on nothing collected for the Overview
 
 ### Requirement: A harness that cannot answer degrades alone
 A harness whose integration reports no inventory, no session count or no uses, or whose files this build cannot parse, SHALL show that part as unknown while every other harness is reported in full. A new harness SHALL need no change to the Overview to appear in it.

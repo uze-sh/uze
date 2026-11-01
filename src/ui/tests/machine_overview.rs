@@ -633,3 +633,59 @@ fn the_panel_says_what_a_use_count_rests_on() {
         "{drawn:#?}"
     );
 }
+
+#[test]
+fn clicking_the_foots_refresh_is_pressing_f5() {
+    let mut pressed = model();
+    let mut clicked = model();
+    let by_key = key(&mut pressed, KeyCode::F(5));
+    let by_click = click(&mut clicked, &Hit::OfferedAction(uze_keys::Action::Refresh));
+    for intent in [by_key, by_click] {
+        assert!(
+            matches!(intent, Intent::CollectMachineOverview { force: true, .. }),
+            "{intent:?}"
+        );
+    }
+}
+
+#[test]
+fn opening_on_a_snapshot_says_when_it_was_synced_and_reads_nothing() {
+    let mut model = model();
+    let screen = &mut model.remembered.machine;
+    let start = std::time::Instant::now();
+    assert!(screen.wanted(start, false).is_none(), "it settles first");
+    let (id, _, force) = screen
+        .wanted(start + crate::ui::machine::SETTLE, false)
+        .unwrap();
+    assert!(!force);
+    screen.absorb(id, None, Some(std::time::SystemTime::now()), true);
+    let drawn = rows(&model);
+    assert!(
+        drawn.iter().any(|row| row.contains("synced just now")),
+        "{drawn:#?}"
+    );
+    assert!(!drawn.iter().any(|row| row.contains("reading harnesses")));
+}
+
+#[test]
+fn what_the_workspace_synced_is_drawn_unless_the_overview_is_reading() {
+    let mut model = model();
+    let mut newer = overview();
+    newer.resources.truncate(1);
+    model
+        .remembered
+        .machine
+        .synced(newer.clone(), std::time::SystemTime::now());
+    assert_eq!(model.remembered.machine.overview, Some(newer));
+    let screen = &mut model.remembered.machine;
+    let (id, _, _) = screen
+        .wanted(std::time::Instant::now(), true)
+        .expect("a refresh asks");
+    screen.synced(overview(), std::time::SystemTime::now());
+    assert_eq!(
+        screen.overview.as_ref().map(|o| o.resources.len()),
+        Some(1),
+        "the refresh in flight answers"
+    );
+    assert!(screen.absorb(id, None, None, true));
+}

@@ -1014,16 +1014,18 @@ const PACKAGE_MANAGER_APPLICATION: &[&str] = &[
 /// workspace, which is what a person who only installs plugins must never
 /// meet.
 /// The machine Overview reads every harness's files and spawns a
-/// harness's own statistics command: that cost is paid only where the
-/// Overview asks for it, never by a CLI command, the runtime shim or a
-/// launch. The workspace's worker is the one caller of the collection, and
-/// the application the one place it is defined.
+/// harness's own statistics command: that cost is paid only by the
+/// workspace, on its own thread — the Overview's worker when it is asked,
+/// and the workspace's background sync — never by a CLI command, the
+/// runtime shim or a launch. The application is the one place it is
+/// defined.
 #[test]
-fn only_the_overview_collects_what_the_harnesses_carry() {
+fn only_the_workspace_collects_what_the_harnesses_carry() {
     let root = repository_root();
     let allowed = [
         "crates/uze-application/src/application/machine_overview.rs",
         "src/ui/worker.rs",
+        "src/ui/orchestrator/reads.rs",
     ];
     let mut failures = Vec::new();
     // The integrations answer the two questions; everything that could ask
@@ -1047,8 +1049,8 @@ fn only_the_overview_collects_what_the_harnesses_carry() {
     }
     assert!(
         failures.is_empty(),
-        "the machine inventory is collected outside the Overview. Ask for it through \
-         `Intent::CollectMachineOverview`, which only the Overview in front sends:\n{}",
+        "the machine inventory is collected outside the workspace. Ask for it through \
+         `Intent::CollectMachineOverview` or the workspace's background sync:\n{}",
         failures.join("\n")
     );
 }

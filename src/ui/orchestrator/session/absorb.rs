@@ -636,6 +636,32 @@ impl Attach<'_> {
         }
     }
 
+    /// The machine Overview, collected in the background a moment after
+    /// the workspace opens and on [`MACHINE_SYNC`] from then on, one
+    /// collection at a time; an open Overview draws each as it lands.
+    pub(super) fn absorb_machine_syncs(&mut self) {
+        let now = Instant::now();
+        let due = *self
+            .model
+            .remembered
+            .machine_sync_due
+            .get_or_insert(now + MACHINE_SYNC_FIRST);
+        if !self.model.remembered.machine_sync_pending && now >= due {
+            self.model.remembered.machine_sync_pending = true;
+            spawn_machine_sync(self.home, self.channels.machine_syncs.sender.clone());
+        }
+        while let Ok(synced) = self.channels.machine_syncs.receiver.try_recv() {
+            self.model.remembered.machine_sync_pending = false;
+            self.model.remembered.machine_sync_due = Some(Instant::now() + MACHINE_SYNC);
+            if let Some((overview, at)) = synced.collected
+                && let Some(manage) = self.model.manage.as_mut()
+            {
+                manage.remembered.machine.synced(overview, at);
+                self.model.dirty = true;
+            }
+        }
+    }
+
     /// The operator's names for projects, asked once a session and again
     /// after each one written, so the model only ever holds what the file
     /// says; and what writing one answered.
