@@ -133,11 +133,13 @@ fn home_entries(env: &TestEnvironment) -> Vec<String> {
 }
 
 /// What a fake vendor CLI holds as installed, and the marketplace it holds.
-fn vendor_state(env: &TestEnvironment, vendor: &str) -> (String, Option<String>) {
+/// What a fake vendor CLI holds: the plugins it has installed, and the
+/// marketplaces it has registered as `(name, root)`.
+fn vendor_state(env: &TestEnvironment, vendor: &str) -> (String, Vec<(String, String)>) {
     let state = env.root().join("fake-state").join(vendor);
     (
         fs::read_to_string(state.join("installed")).unwrap_or_default(),
-        fs::read_to_string(state.join("name")).ok(),
+        registered(env, vendor),
     )
 }
 
@@ -408,7 +410,7 @@ fn a_purge_where_everything_matches_leaves_no_trace() {
             "{vendor} still lists {installed}"
         );
         assert!(
-            marketplace.is_none(),
+            marketplace.is_empty(),
             "{vendor} still lists {marketplace:?}"
         );
     }
