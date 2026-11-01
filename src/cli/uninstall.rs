@@ -59,6 +59,9 @@ pub(crate) fn run_uninstall(home: UzeHome, yes: bool, purge: bool) -> Result<()>
     }
     let report = with_spinner("Uninstalling", || app.uninstall(&plan))?;
     print!("{}", progress::for_terminal(&render_report(&report)));
+    if report.needs_the_person() {
+        EXIT_CODE.store(1, std::sync::atomic::Ordering::Relaxed);
+    }
     Ok(())
 }
 
@@ -361,7 +364,15 @@ pub(crate) fn render_report(report: &UninstallReport) -> String {
             Some(&format!("left on {harness}: {reason}")),
         ));
     }
+    for step in &report.manual {
+        lines.push_str(&progress::change(
+            progress::Change::Attention,
+            step,
+            Some("left for you"),
+        ));
+    }
     let outcome = match report.mode {
+        _ if report.needs_the_person() => "Removed uze; finish what is listed above by hand",
         UninstallMode::Program => "Removed uze from this machine; your plugins keep working",
         UninstallMode::Purge if report.left.is_empty() => "Removed uze and everything it delivered",
         UninstallMode::Purge => "Removed uze; what it left is listed above",

@@ -183,8 +183,18 @@ pub struct UninstallReport {
     pub kept: Vec<PathBuf>,
     pub home_removed: bool,
     pub binary: BinaryOutcome,
+    /// What uninstall could not do itself, each with what the person does
+    /// instead: the run went on without it, and its exit status says so.
+    pub manual: Vec<String>,
     pub projects: Vec<ProjectWork>,
     pub provisioned: Vec<String>,
+}
+
+impl UninstallReport {
+    /// Whether something is left for the person to finish by hand.
+    pub fn needs_the_person(&self) -> bool {
+        !self.manual.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -197,6 +207,12 @@ pub enum BinaryOutcome {
     Left {
         path: PathBuf,
         remove_with: Option<String>,
+    },
+    /// The installer's binary, which could not be removed: said in the
+    /// report's manual steps.
+    NotRemoved {
+        path: PathBuf,
+        reason: String,
     },
     Unknown,
 }
@@ -271,6 +287,7 @@ impl UzeApplication {
             kept: Vec::new(),
             home_removed: false,
             binary: BinaryOutcome::Unknown,
+            manual: Vec::new(),
             projects: plan.projects.clone(),
             provisioned: plan.provisioned.clone(),
         };
@@ -289,7 +306,12 @@ impl UzeApplication {
                 .join("~uze");
             let _ = fs::remove_dir(uze_links);
         }
-        report.binary = remove_binary(&plan.binary)?;
+        report.binary = remove_binary(
+            &plan.binary,
+            &mut report.manual,
+            uze_platform::environment::remove_from_user_path,
+            uze_platform::executable::remove_running,
+        );
         for entry in &plan.entries {
             if !entry.remove {
                 report.kept.push(entry.path.clone());
@@ -664,26 +686,52 @@ fn removal_command(path: &Path) -> Option<String> {
         .then(|| "brew uninstall uze".to_owned())
 }
 
-fn remove_binary(plan: &BinaryPlan) -> Result<BinaryOutcome> {
+/// Removes the binary the installer placed and the `PATH` entry it added,
+/// through `unlist` and `remove`. One that cannot be done is said in
+/// `manual`, with what the person does instead, and the rest goes on.
+fn remove_binary(
+    plan: &BinaryPlan,
+    manual: &mut Vec<String>,
+    unlist: impl Fn(&Path) -> std::io::Result<bool>,
+    remove: impl Fn(&Path) -> std::io::Result<()>,
+) -> BinaryOutcome {
     match plan {
         BinaryPlan::Placed { path, path_entry } => {
             let path_entry_removed = match path_entry {
-                Some(directory) => uze_platform::environment::remove_from_user_path(directory)
-                    .map_err(UzeError::write(directory))?
-                    .then(|| directory.clone()),
+                Some(directory) => match unlist(directory) {
+                    Ok(removed) => removed.then(|| directory.clone()),
+                    Err(error) => {
+                        manual.push(format!(
+                            "{} is still on your Path ({error}): take it off yourself",
+                            directory.display()
+                        ));
+                        None
+                    }
+                },
                 None => None,
             };
-            uze_platform::executable::remove_running(path).map_err(UzeError::write(path))?;
-            Ok(BinaryOutcome::Removed {
-                path: path.clone(),
-                path_entry_removed,
-            })
+            match remove(path) {
+                Ok(()) => BinaryOutcome::Removed {
+                    path: path.clone(),
+                    path_entry_removed,
+                },
+                Err(error) => {
+                    manual.push(format!(
+                        "{} was not removed ({error}): remove it yourself",
+                        path.display()
+                    ));
+                    BinaryOutcome::NotRemoved {
+                        path: path.clone(),
+                        reason: error.to_string(),
+                    }
+                }
+            }
         }
-        BinaryPlan::Elsewhere { path, remove_with } => Ok(BinaryOutcome::Left {
+        BinaryPlan::Elsewhere { path, remove_with } => BinaryOutcome::Left {
             path: path.clone(),
             remove_with: remove_with.clone(),
-        }),
-        BinaryPlan::Unknown => Ok(BinaryOutcome::Unknown),
+        },
+        BinaryPlan::Unknown => BinaryOutcome::Unknown,
     }
 }
 
@@ -704,5 +752,68 @@ fn remove_path(path: &Path) -> Result<()> {
             source: error,
         }),
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn placed() -> BinaryPlan {
+        BinaryPlan::Placed {
+            path: PathBuf::from("/opt/uze/bin/uze"),
+            path_entry: Some(PathBuf::from("/opt/uze/bin")),
+        }
+    }
+
+    #[test]
+    fn a_binary_that_cannot_be_removed_is_a_step_for_the_person() {
+        let mut manual = Vec::new();
+
+        let outcome = remove_binary(
+            &placed(),
+            &mut manual,
+            |_| Ok(true),
+            |_| {
+                Err(std::io::Error::other(
+                    "remove /opt/uze/bin/uze.old yourself",
+                ))
+            },
+        );
+
+        assert!(
+            matches!(&outcome, BinaryOutcome::NotRemoved { path, .. } if path == Path::new("/opt/uze/bin/uze")),
+            "{outcome:?}"
+        );
+        assert_eq!(manual.len(), 1, "{manual:?}");
+        assert!(
+            manual[0].contains("remove /opt/uze/bin/uze.old yourself"),
+            "{manual:?}"
+        );
+    }
+
+    #[test]
+    fn a_path_entry_that_cannot_be_undone_is_a_step_and_the_binary_still_goes() {
+        let mut manual = Vec::new();
+
+        let outcome = remove_binary(
+            &placed(),
+            &mut manual,
+            |_| Err(std::io::Error::other("take /opt/uze/bin off it yourself")),
+            |_| Ok(()),
+        );
+
+        assert!(
+            matches!(
+                &outcome,
+                BinaryOutcome::Removed {
+                    path_entry_removed: None,
+                    ..
+                }
+            ),
+            "{outcome:?}"
+        );
+        assert_eq!(manual.len(), 1, "{manual:?}");
+        assert!(manual[0].contains("/opt/uze/bin"), "{manual:?}");
     }
 }
