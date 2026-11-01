@@ -330,7 +330,7 @@ pub(in crate::ui::orchestrator) fn render_sidebar(
     let notice = match (&model.extension_notice, &release) {
         (Some((title, body)), _) => Some((
             crate::ui::SidebarNotice {
-                marker: Symbol::IconBell,
+                marker: Symbol::MarkStanding,
                 tone: Token::StateInfo,
                 headline: title,
                 detail: body,

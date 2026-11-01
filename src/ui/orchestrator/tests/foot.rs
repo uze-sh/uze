@@ -8,7 +8,7 @@ use super::{
     render::{self},
     toggle_spec_summary, toggle_timeline,
 };
-use crate::ui::theme::{self, Token};
+use crate::ui::theme::{self, Symbol, Token};
 use std::time::{Duration, Instant};
 use uze_core::UzeHome;
 
@@ -180,6 +180,16 @@ fn an_extensions_notice_takes_the_release_notices_place_until_put_away() {
     let y = usize::from(mark.y);
     assert!(rows[y].contains("Approval"), "{rows:?}");
     assert!(rows[y + 1].contains("asks for"), "{rows:?}");
+    let headline = rows[y]
+        .split('│')
+        .find(|cell| cell.contains("Approval"))
+        .unwrap();
+    assert!(
+        headline
+            .trim_start()
+            .starts_with(&format!("{} Approval", theme::glyph(Symbol::MarkStanding))),
+        "the notice wears the standing mark, in every glyph set: {headline:?}"
+    );
     assert!(
         !rows.iter().any(|line| line.contains("v0.0.0-alpha.14")),
         "one notice at a time: {rows:?}"
