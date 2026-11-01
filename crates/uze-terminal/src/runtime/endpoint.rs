@@ -371,6 +371,53 @@ pub fn socket_path() -> Result<PathBuf, RuntimeError> {
     })?)
 }
 
+/// The endpoint a server that is no longer running left behind, if one
+/// did: something sits at it, nothing answers there, and no server claims
+/// the workspace. What `uze doctor` reports and `--repair` clears; a
+/// platform whose endpoint leaves nothing behind never has one.
+pub fn stale_endpoint() -> Result<Option<PathBuf>, RuntimeError> {
+    let socket = socket_path()?;
+    if workspace_is_claimed() {
+        return Ok(None);
+    }
+    Ok(left_behind(&socket).then_some(socket))
+}
+
+/// Clears what [`stale_endpoint`] finds, holding the workspace lock while
+/// it does, so a server that starts meanwhile waits rather than losing the
+/// endpoint it just bound. Answers whether anything was cleared; a
+/// workspace someone holds is left alone.
+pub fn clear_stale_endpoint() -> Result<bool, RuntimeError> {
+    let socket = socket_path()?;
+    let file = open_workspace_lock()?;
+    loop {
+        match try_lock(&file, LockMode::Exclusive) {
+            Ok(()) => break,
+            Err(LockRefusal::Interrupted) => {}
+            Err(LockRefusal::Contended) => return Ok(false),
+            Err(LockRefusal::Unsupported(error)) => return Err(RuntimeError::Io(error)),
+        }
+    }
+    let cleared = left_behind(&socket);
+    if cleared {
+        transport::clear(&socket);
+    }
+    unlock(&file);
+    Ok(cleared)
+}
+
+/// Whether something sits at `socket` that nothing answers at.
+fn left_behind(socket: &Path) -> bool {
+    transport::identity(socket).is_some()
+        && matches!(
+            transport::connect(socket),
+            Err(error) if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            )
+        )
+}
+
 /// Asks the running server for a space at `seat` — created when
 /// none is — and answers with its label. For a `uze` started inside one of
 /// the server's own panes: it must not open a client inside a client, so

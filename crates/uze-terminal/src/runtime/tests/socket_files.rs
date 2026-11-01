@@ -187,3 +187,29 @@ fn the_socket_sits_beside_the_workspace_it_serves() {
     assert!(socket.starts_with(&home), "{}", socket.display());
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// A socket a server left when it stopped is found and cleared, and one a
+/// server still listens on is neither: what `uze doctor --repair` asks of
+/// the runtime, which alone knows its endpoint.
+#[test]
+fn only_an_endpoint_nothing_answers_is_stale_and_cleared() {
+    use crate::{clear_stale_endpoint, stale_endpoint};
+    let home = uze_testkit::temp::socket_scratch("stale-endpoint");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &home);
+    let socket = socket_path().unwrap();
+    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
+
+    let listening = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    assert_eq!(stale_endpoint().unwrap(), None);
+    assert!(!clear_stale_endpoint().unwrap());
+    assert!(socket.exists());
+
+    drop(listening);
+    assert_eq!(stale_endpoint().unwrap(), Some(socket.clone()));
+    assert!(clear_stale_endpoint().unwrap());
+    assert!(!socket.exists());
+    assert_eq!(stale_endpoint().unwrap(), None);
+    let _ = std::fs::remove_dir_all(&home);
+}
