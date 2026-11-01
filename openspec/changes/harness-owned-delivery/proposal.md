@@ -39,31 +39,37 @@ deletes them by hand.
   `codex plugin install`, `agy plugin install`, `claude mcp add` and the rest
   stay as they are. What moves is the directory those commands are pointed
   at.
-- **`runtime/packages` is removed.** `${PLUGIN_ROOT}` keeps its one meaning,
-  the whole delivered package, but resolves to the package directory inside
-  the harness's own UZE directory, or to the vendor's own copy where the
-  vendor keeps one. Codex and Antigravity envelopes carry the whole package,
-  as Claude's already does.
-- **`runtime/` becomes truly generated.** It holds only build staging and
-  per-process material (shims, launch context). Deleting it changes nothing a
+- **Harnesses stop reading `runtime/packages`.** `${PLUGIN_ROOT}` keeps its
+  one meaning, the whole delivered package. It now has one answer per
+  harness, on every route: `<harness root>/uze/packages/<id>`. That root is
+  replaced when its package changes and is checked by a marker. Each
+  harness's copy costs disk, but an unchanged package costs no I/O.
+- **Marketplaces are published per package**, into the harness's UZE
+  directory, and repointed by the vendor's CLI. Claude repoints in place.
+  Codex needs a remove and then an add, and its plugins stay enabled across
+  it (measured).
+- **`runtime/` is UZE's alone.** It holds build staging, launch context and
+  the copy UZE's own extension processes use. Deleting it changes nothing a
   harness does.
 - **Machine-level deliveries become ordinary deliveries.** The rules engine,
   OpenCode's `uze.ts` and its hook groups, and the bundled `uze` plugin are
   attached with receipts through the same path as any package. Skills that
   call `uze` say they do not apply when it is absent.
-- **New `uze uninstall`.** A machine-scope command that shows a plan and, once
-  confirmed, does the following:
-  - Detaches every receipt that still matches what UZE wrote. Edited or
-    conflicting ones are left in place and listed.
-  - Refuses while agents UZE launched are alive, and stops the terminal
-    runtime.
+- **New `uze uninstall`.** A machine-scope command that runs no bootstrap.
+  It shows a plan first and acts only once confirmed:
+  - Refuses inside a workspace pane, and while agents, clients or the runtime
+    are alive.
+  - Detaches every receipt that still matches what UZE wrote, removing each
+    harness's readers before the material they read. Edited or conflicting
+    artifacts are left in place and listed.
   - Keeps the operator's records unless `--purge` is given.
   - Never touches a project or unlanded work.
   - Removes `$UZE_HOME`, and the binary when UZE's own installer placed it.
 - **BREAKING (on-disk only):** existing installs are re-delivered to the new
-  locations on the first `install`/`update`/`setup` after upgrade. Receipts
-  in the old shape climb the persisted-state ladder, and the old artifacts
-  are retired by the existing inspect-before-detach rule.
+  locations on the first `install`, `update` or `setup` after the upgrade.
+  The `attachments.json` shape does not change. Old artifacts are retired
+  through the existing inspect-before-detach rule. Codex hooks whose wrapper
+  moved need the person's review again, and the report names them.
 
 ## Capabilities
 
@@ -88,13 +94,14 @@ deletes them by hand.
 - `crates/uze-integrations`:
   - each vertical's marketplace, envelope, skills, MCP, hooks and rules modules
     name the harness-side directory;
-  - `shared/marketplace.rs` and `shared/tree.rs` stage into it;
-  - Codex and Antigravity envelopes mirror the whole package.
+  - `shared/marketplace.rs` publishes into it package by package;
+  - `shared/package_root.rs` resolves `${PLUGIN_ROOT}` into it.
 - `crates/uze-core`:
-  - `machine/home.rs` loses `delivered_packages_dir` and narrows
-    `runtime_attachments_dir` to staging;
-  - `delivery/delivered_root.rs` resolves per harness;
-  - a new receipt shape, plus its ladder rung.
+  - `IntegrationPort::owned_directory`;
+  - `machine/home.rs` keeps `runtime/` for UZE's own use only;
+  - the package digest is cached at ingest.
+
+  `attachments.json` keeps its shape: package roots use `IntegrationOwned`.
 - `crates/uze-application`: an uninstall service (plan, then execute); setup's
   machine artifacts are attached as receipts; the bundled plugin can be
   detached by uninstall alone.

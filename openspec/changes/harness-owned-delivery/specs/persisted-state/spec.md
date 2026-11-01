@@ -23,7 +23,8 @@ any tier under `$UZE_HOME`: it is a delivery in the harness's territory.
 - **WHEN** the operator deletes everything UZE generated
 - **THEN** the next run produces it again, and no record, package or
   checkout is lost
-- **AND** no harness behaves differently in the meantime
+- **AND** no harness behaves differently in the meantime, except an agent
+  the workspace launched with a context directory there
 
 #### Scenario: Deleting the remembered tier
 - **WHEN** the operator deletes what UZE remembered

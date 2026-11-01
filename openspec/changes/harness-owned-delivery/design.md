@@ -2,6 +2,8 @@
 
 See proposal.md for the motivation. This section covers the state on
 `b09b1a92` (uze 1.0.0-beta.22) and the measurements this design rests on.
+Revision 2 folds in two independent reviews (architecture; harness
+feasibility and uninstall) and one more measurement.
 
 **Where the ties are.** Three plugins (`flow`, `hook-plugin`, `mcp-plugin`)
 were installed for all four harnesses in one Lab sandbox. A grep for
@@ -18,230 +20,303 @@ were installed for all four harnesses in one Lab sandbox. A grep for
 | OpenCode | `opencode.json`, `plugins/uze.ts`, `skills/*/SKILL.md` | `runtime/attachments/opencode`, `runtime/packages/*`, `runtime/sessions/opencode` |
 | Antigravity | `config/plugins/*/hooks.json`, `config/plugins/*/mcp_config.json`, `antigravity-cli/skills/*/SKILL.md` | `runtime/attachments/antigravity`, `runtime/packages/*` |
 
+The grep looked only at the harness homes. The code also writes ties to
+places outside them:
+
+- `~/.claude.json`, for user-scope MCP (`claude/mcp.rs`);
+- `~/.agents/skills`, for Codex's loose skills, which OpenCode also reads;
+- `~/.gemini/config/hooks.json` and `mcp_config.json`, Antigravity's
+  per-capability fallback;
+- the workspace's on-disk links `.worktrees/<id>~uze` and `.worktrees/~uze/<agent>`,
+  which point into `runtime/projects`.
+
 **What each vendor does with a marketplace source** (sandbox commands,
 2026-11-01; Claude Code 2.1.316, Codex 0.166.0, Antigravity 1.4.12):
 
-- **Claude.** `installed_plugins.json` records
-  `installPath: ~/.claude/plugins/cache/uze-store/flow/1.0.0`, and that copy is
-  complete (`skills/`, `agents/`, `guides/`, manifest). But `claude plugin list`
-  says `Read from: <runtime/attachments/claude/generated/flow@uze-lab>`. After
-  the source directory is moved away it reports `✘ failed to load — Marketplace
-  uze-store failed to load: cache-miss`, and `claude plugin marketplace update`
-  cannot refresh it. The `HarnessFact` measured on 2.1.283 still holds.
-- **Codex.** It copies the plugin into
-  `~/.codex/plugins/cache/<market>/<plugin>/<version>`. With the local
-  marketplace root moved away, `codex plugin list` fails as a whole: *"marketplace
-  root does not contain a supported manifest"*. `codex plugin marketplace remove`
-  empties the installed list. The marketplace was re-added from a copy under
-  `~/.codex/` and `runtime/` was then deleted; the plugin stays installed and
-  enabled. `marketplace add` accepts a local path, `owner/repo`, HTTPS or SSH
-  Git. It does not accept `file://`.
+- **Claude.**
+  - `installed_plugins.json` records an `installPath` under
+    `~/.claude/plugins/cache/…/1.0.0`, and that copy is complete. Yet
+    `claude plugin list` says `Read from: <the marketplace source>`.
+  - With the source moved away, the plugin reports `✘ failed to load —
+    cache-miss`.
+  - `marketplace add` with an existing name repoints the marketplace and keeps
+    its plugins. `marketplace remove` uninstalls them.
+  - A marketplace placed in `~/.claude/uze/marketplace/…` stays `✔ enabled`
+    with all of `$UZE_HOME` moved away.
+- **Codex.**
+  - It copies the plugin into `~/.codex/plugins/cache/<market>/<plugin>/<version>`.
+  - If the local marketplace root is missing, `codex plugin list` fails as a
+    whole.
+  - `marketplace add` with an existing name from another root is refused:
+    *"remove it before adding this source"*.
+  - `marketplace remove` empties the installed list, but `config.toml` keeps
+    `[plugins."<id>"] enabled = true`. Adding the marketplace back from a root
+    under `~/.codex/` lists the plugin as installed and enabled again, and it
+    stays so with `$UZE_HOME` moved away.
+  - `marketplace add` accepts a local path, `owner/repo`, HTTPS or SSH Git.
+    It does not accept `file://`.
 - **Antigravity.** `agy plugin install` copies into
-  `~/.gemini/config/plugins/<name>`. The only ties are text inside that copy:
-  hook commands, MCP commands and `${PLUGIN_ROOT}`.
+  `~/.gemini/config/plugins/<name>`. The only ties are text inside that copy.
 
 So "compile into a throwaway cache, deliver through the official command,
-discard" works for Antigravity only. For Claude and Codex the marketplace
-source is read for as long as the plugin is installed. What decides the outcome
-is *where* that source lives, not whether it exists.
+discard" works for Antigravity only. For Claude and Codex the source is read
+for as long as the plugin is installed, so what matters is *where* it lives.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Every file a harness reads, and every configuration entry UZE writes, is
-  free of `$UZE_HOME`. A test enforces this, and conformance proves it on the
-  real binaries.
-- One copy fewer per package (`runtime/packages` goes), with no extra work
-  per install.
-- One command removes what UZE delivered, by the same receipts `remove` uses.
+- No file a harness reads, and no configuration entry UZE writes, names
+  `$UZE_HOME`. This is proven by a test over the whole fake home and by
+  conformance on the real binaries.
+- One command removes what UZE delivered, using the same receipts and
+  inspection as `remove`.
+- Delivery does no more I/O than today when nothing changed. Bytes on disk
+  grow by one package-root copy per harness, a cost stated in Risks.
 
 **Non-Goals:**
-- Changing the delivery precedence (ADR-013) or any vendor command UZE runs.
-- Workspace launch contributions (`--add-dir`, `-c`, session documents):
-  they are per process, and the spec names them as the one exception.
-- A Windows hook wrapper, and plugin versioning
-  (`plugin-freshness-and-linked-marketplaces`).
+- Changing the delivery precedence (ADR-013) or the vendor commands UZE runs
+  to install.
+- Workspace launch arguments (`--add-dir`, `-c`, session documents). They
+  live as long as one process. The workspace's on-disk links are not covered
+  by this exception; they are handled in D7.
+- Honouring `CODEX_HOME` (today `codex.rs` hardcodes `~/.codex`). Each UZE
+  directory follows whatever root its integration already resolves.
 
 ## Decisions
 
-### D1. One UZE directory per harness, inside the harness's root
+### D1. One UZE directory per harness, named through the port
 
-Each integration names exactly one directory of its own:
-`<claude_home>/uze/`, `<codex_home>/uze/`, `~/.config/opencode/uze/` and
-`~/.gemini/uze/`. Each integration names its own; core names none, so the
-vendor-neutrality tests still hold. Its layout is shared:
+`IntegrationPort` gains `owned_directory(&UzeHome) -> PathBuf`. Its answers
+are `<claude_home>/uze`, `~/.codex/uze`, `~/.config/opencode/uze` and
+`~/.gemini/uze`. Core still names no harness, but it can now enumerate every
+UZE-owned path. ADR-052's "every path UZE owns is named in `UzeHome`" becomes
+"…in `UzeHome` or in an integration's `owned_directory`", and the layering
+test that enforces it is extended to cover both.
 
 ```
 <harness root>/uze/
-  marketplace/<market>/      # generated / explicit marketplace roots (Claude, Codex)
-  packages/<id>/             # package roots for routes without a vendor copy
-  bin/exec                   # the hook wrapper (ADR-040's file, relocated)
-  rules/                     # the rules engine and its per-session files
+  marketplace/<market>/   # marketplace roots UZE registers (Claude, Codex)
+  packages/<id>/          # the delivered package root, one per package
+  bin/                    # the hook wrapper: exec (POSIX) and exec.ps1 (Windows)
+  rules/                  # the rules engine and its sessions/
+  sessions/               # OpenCode session documents
+  hooks/                  # OpenCode hook-group documents
 ```
 
-Antigravity needs no `marketplace/`, because its install copies.
+*Rejected: a `delivered/` tier under `$UZE_HOME`.* It is honest about cost,
+but `rm -rf ~/.uze` would still break every harness.
 
-*Why not a `delivered/` tier under `$UZE_HOME`?* It would be honest about cost,
-but `rm -rf ~/.uze`, the most common way to drop a tool, would still break
-every harness. *Why not write into the vendor's own directories*, such as
-`~/.claude/plugins/marketplaces/`? Those are the vendor's bookkeeping, and the
-vendor may prune or rewrite them. A directory nobody else names is the vendor's
-"user data" convention, and UZE already owns its loose skill directories the
-same way.
+*Rejected: the vendor's own directories*, such as `plugins/marketplaces/` or
+`config/plugins/`. They are the vendor's bookkeeping, which the vendor may
+prune or rewrite. UZE already owns its loose skill directories this way.
 
-### D2. Marketplace sources are compiled directly into the harness's directory
+### D2. Marketplace roots live in the UZE directory and are published per package
 
-`shared::marketplace` stages each publication beside its destination in
-`<harness>/uze/marketplace/<market>` and swaps it in whole, with the same
-`replace_dir` stage-and-rename. Then UZE registers or refreshes it through the
-vendor's CLI, exactly as now. `runtime/attachments/<h>/` keeps only staging and
-is empty between runs.
+The marketplace root moves to `<harness>/uze/marketplace/<market>`.
+Publication becomes incremental: only a package whose source digest changed
+is staged and swapped (`replace_dir`, per package directory), and the
+catalogue file is swapped last. Registration still goes through the vendor's
+CLI.
 
-*Rejected: a Git marketplace on `file://`.* Codex does not accept that scheme.
-It would also add a Git repository per harness only to make the vendor clone
-what UZE already wrote.
+- **Claude:** repoint with `marketplace add <same name> <new root>`.
+- **Codex:** `marketplace remove` then `marketplace add`, because a
+  same-name add is refused. The measured carry-over of `[plugins]` keeps
+  plugins enabled.
 
-*Rejected: a throwaway build cache plus the official install.* Measured above:
-Claude and Codex keep reading the source.
+The old root is deleted only after every marketplace receipt has been
+repointed and inspected `MATCHED` at the new root.
 
-### D3. `${PLUGIN_ROOT}` resolves inside the harness's territory
+*Rejected: a Git marketplace on `file://`.* Codex does not accept it.
 
-There is still one resolver (`shared::package_root`), one meaning (the whole
-package) and one per-harness answer:
+*Rejected: a throwaway build cache.* Claude and Codex were measured reading
+the source.
 
-- **Claude:** `${CLAUDE_PLUGIN_ROOT}`, which the vendor expands in skills,
-  agents, hooks and MCP (measured, `HarnessFact` "placeholders"). The
-  envelope already holds the whole package.
-- **Codex:** the plugin's directory in `<codex_home>/uze/marketplace/…`,
-  which is the source Codex installs from. The Codex envelope grows from
-  `skills/` and `.mcp.json` to the whole package, through the same mirror the
-  Claude envelope uses.
-- **Antigravity:** `~/.gemini/config/plugins/<name>`, the vendor's own copy.
-  The plugin name is UZE's to choose, so the path is known before install.
-  The envelope carries the whole package.
-- **Loose routes** (no plugin, or OpenCode): `<harness>/uze/packages/<id>`.
+### D3. `${PLUGIN_ROOT}` has one answer: `<harness>/uze/packages/<id>`
 
-A write into the root lands in a directory the harness owns. It is not the
-Store, which keeps the reason `deliver-the-whole-plugin` gave for the copy. The
-next delivery replaces the root whole when its source digest differs.
+There is still one resolver (`shared::package_root`) and one meaning, the
+whole package. Every route and every file kind resolves to the package
+directory in that harness's UZE directory: plugin skills, `settings.json`
+hooks, `claude mcp add`, loose skills and agents.
 
-### D4. A package root is owned by source digest, not by tree hash
+*Rejected: `${CLAUDE_PLUGIN_ROOT}`.* Claude expands it only inside a plugin.
+UZE merges Claude hooks into `settings.json`, and MCP and loose skills
+bypass the plugin. Expansion in agent files was never measured. One answer
+everywhere is simpler than a matrix of placeholders.
 
-A new receipt variant, `PackageRoot { path, source_digest }`, replaces the
-`tree_sha256` inspection for package roots:
+*Rejected: the vendor's copy as the root*, as was proposed for Antigravity.
+UZE cannot restore a vendor copy, and it would be writing into the vendor's
+bookkeeping.
 
-- **Inspection** reads only the receipt (O(1)). A root whose recorded digest
-  equals the Store package's digest is left alone.
-- **Writes into a root** by its own package's hooks are expected. They are
-  not drift: a root is never the operator's to edit.
-- **Detach** removes the directory whole.
+*Rejected: growing the Codex and Antigravity envelopes to the whole
+package.* This is no longer needed, because the root is outside the
+envelope.
 
-Loose skill and agent directories keep `GeneratedTree`, because an edit there
-is the operator's. The new shape climbs the persisted-state ladder: a receipt
-naming a `runtime/packages` path is retired by inspect-before-detach and
-re-attached in the harness's directory.
+The extension MCP launcher in `uze-application` (`extensions/mcp.rs`) is
+UZE's own process, not a harness. It keeps a UZE-only copy under `runtime/`,
+which is legitimate because no harness reads it.
 
-### D5. Setup's machine artifacts are deliveries with receipts
+### D4. A package root is replaced when its package changes, and checked by a marker
 
-The following are attached through the same lifecycle as a package, with
-receipts in `attachments.json`:
+The receipt is `IntegrationOwned { kind: "package-root", detail: {path,
+source_digest} }`. This is an existing variant, so `attachments.json` keeps
+its shape and older builds still read it. The shared helper in
+`uze-integrations/shared` implements it.
 
-- the rules engine;
-- OpenCode's `uze.ts` and its hook-group documents;
-- the wrapper;
-- the bundled `uze` plugin.
+- **Inspection.** The root exists, and its `.uze-root` marker file holds the
+  receipt's digest. Both are O(1). A missing root or marker is `MISSING` and
+  gets re-delivered.
+- **Delivery.** When the Store package's digest differs from the receipt's,
+  the root is rebuilt whole. Otherwise it is left as it is, including
+  anything the package's own hooks wrote into it. That is the rule the
+  fidelity spec now states.
+- **The Store digest** is cached in `packages.json` at ingest, so delivery
+  never walks the Store tree to decide.
+- **Detach** removes the directory whole. Loose skill and agent directories
+  keep `GeneratedTree`, because an edit there is the operator's.
 
-`remove` keeps refusing the bundled plugin, and uninstall is the one caller
-allowed to detach it. The rules engine's per-session files move to
-`<harness>/uze/rules/sessions` and OpenCode's to `<harness>/uze/sessions`. Both
-are created on demand, so an engine running with `$UZE_HOME` gone keeps
-working.
+### D5. Setup's machine artifacts get the receipts they lack
+
+Some setup artifacts already have receipts:
+
+- The rules entries in `settings.json` and `hooks.json` (`SETUP_OWNER`).
+- The hook wrapper, owned by `HookConfigEntry.wrapper`. It keeps that owner,
+  and the field now names `<harness>/uze/bin/exec`.
+
+These gain receipts: the rules engine file, OpenCode's `uze.ts`, OpenCode's
+hook-group documents, and the bundled `uze` plugin's deliveries. `remove`
+keeps refusing the bundled plugin; uninstall is its only remover.
+
+Per-session state moves with its reader:
+
+- **Rules sessions** move to `<harness>/uze/rules/sessions`. The engine
+  already creates that directory on demand.
+- **OpenCode's session documents** move to `<harness>/uze/sessions`. The
+  integration now answers both the sweep (`setup.rs`) and the workspace's
+  deletion of them (`conversation.rs`), instead of `home.session_context_dir`.
 
 The bundled skills that call `uze` gain one opening line: when `uze` is not
-on `PATH`, the skill does not apply.
+on `PATH`, the skill does not apply. The doctor sweep from
+`plugin-freshness-and-linked-marketplaces` recognises references into
+`owned_directory()` as UZE's.
 
-### D6. `uze uninstall` is plan, then execute, over receipts
+### D6. Codex hook trust is part of the migration
 
-`UzeApplication::uninstall_plan()` returns a read model with these parts:
+Codex keys a trusted hook by its command and its index, so relocating the
+wrapper turns every trusted hook into "Modified". `codex exec` then skips
+it without a word.
 
-- per harness, the receipts and their inspection;
-- the setup artifacts;
-- the records directory and its size;
-- the live agents;
-- checkouts with unlanded work;
-- the provisioned harnesses;
-- how the binary was installed.
+- Migration names the Codex hooks that now need the person's review, in its
+  report and in `doctor`.
+- A `HarnessFact` records this behaviour, and conformance checks it.
+- Fresh installs are unaffected.
 
-`execute` then runs these steps in order:
+### D7. `uze uninstall`
 
-1. Refuse if agents are live.
-2. Stop the terminal runtime (`ending-processes` rule).
-3. Detach every `MATCHED` receipt through its integration: vendor uninstall,
-   `mcp remove`, marketplace remove, then directory removal.
-4. Remove each harness's `uze/` directory if it is now empty of anything
-   unowned.
-5. Remove `runtime/`, `cache/` and `store/`, plus `state/` under `--purge`.
-6. Remove the binary when the installer's receipt names it.
+**Before anything.**
+- The command skips bootstrap, as `upgrade` does. Otherwise
+  `ensure_default_plugins` would re-deliver before the first step.
+- It refuses when run inside a workspace pane.
+- It refuses while UZE agents, clients, the terminal runtime with panes, or
+  a background `upgrade` are alive. Each refusal names what is running.
 
-Each step is idempotent, and the plan is recomputed on every run.
+**Plan.** `UzeApplication::uninstall_plan()` is a read model. It lists:
+- per harness, the receipts and their inspection, plus files the vendor CLI
+  wrote that name UZE (marketplace registrations, `~/.claude.json`);
+- setup artifacts, each top-level entry of `$UZE_HOME` with its fate, and
+  the records directory and its size;
+- per project, checkouts and `refs/uze/shelf/*` holding unlanded work, and
+  links pointing into `$UZE_HOME`;
+- provisioned harnesses, how the binary was installed, and whether a vendor
+  CLI is missing.
 
-The command is classified `JustifiedSlow`, because it runs vendor CLIs.
+**Execute.** Run under the mutation lock. It takes a copy of the binary's
+provenance first, then runs these steps in order, each idempotent, with the
+plan recomputed on every run:
 
-### D7. Proof
+1. Per harness, detach readers before what they read:
+   - first configuration entries, `uze.ts` and plugin and marketplace
+     registrations;
+   - then the UZE directory's material.
+
+   This keeps OpenCode's bridge from failing closed on a half-removed state.
+   When a vendor CLI is missing, its registrations are listed as left and
+   never edited by hand.
+2. Remove workspace links that point into `$UZE_HOME`. The
+   `.git/info/exclude` line, checkouts and refs are left and reported.
+3. Remove the binary when the installer placed it, using the
+   `install.json` copy:
+   - Linux and macOS: unlink.
+   - Windows: undo the recorded user `Path` edit, then schedule removal of
+     the running `uze.exe` on exit.
+
+   Otherwise print the command for the way it was installed.
+4. Without `--purge`: clear `packages.json` and `attachments.json`, so no
+   registry outlives its Store, and remove everything except `state/`'s
+   records.
+
+   With `--purge`: remove `$UZE_HOME` last.
+
+The command is classified `JustifiedSlow`.
+
+### D8. Proof
 
 - **Unit:** `vendor_neutral.rs::no_harness_artifact_names_uze_home` installs
-  the canonical fixtures for all four fake harnesses and walks every receipt's
-  artifact and every configuration entry for the `$UZE_HOME` prefix.
-- **Acceptance:** `tests/acceptance/uninstall.rs` covers install,
-  then uninstall, then no UZE directory and no reference left. It also covers
-  an edited skill that is kept, and a second run that is clean.
-- **Conformance:** a contract check per vertical moves `$UZE_HOME` away, then
-  checks that the plugin lists and loads, a deny hook denies, and a rules
-  `always_on` reaches the session.
+  the canonical fixtures for all four fake harnesses. It then walks the
+  **whole fake home** except `$UZE_HOME` for the prefix. That covers files
+  written by vendor CLIs that no receipt names.
+- **Acceptance:** `tests/acceptance/uninstall.rs` covers one case per
+  uninstall scenario in the spec.
+- **Conformance, per vertical:**
+  - with `$UZE_HOME` moved away, plugins list and load, a deny hook denies,
+    and an `always_on` rule reaches the session;
+  - after `uze uninstall --yes --purge`, a grep of `$HOME` finds nothing;
+  - decoy `SKILL.md`, agent and `hooks.json` planted in `<root>/uze/` never
+    load.
 
 ## Risks / Trade-offs
 
-- **[A vendor starts scanning `<root>/uze/`]** → the conformance check
-  "harness ignores the directory" (spec) fails first. The name is one
-  constant per integration.
-- **[Codex's whole-package envelope is larger in its cache]** → this is the
-  same trade Claude already made, and `node_modules`-sized trees are excluded
-  at ingest.
-- **[The Antigravity plugin path depends on the vendor's naming]** →
-  `HarnessFact` records it with the version it was measured on, and
-  conformance asserts it.
-- **[Uninstall runs while a harness session is open]** → Claude reads the
-  marketplace live, so an open session loses the plugin mid-session. The
-  plan names the harnesses that have running processes. This is the same
-  behaviour as `remove`.
-- **[Migration re-delivers every package once]** → this cost is paid on the
-  first `install`, `update` or `setup` after upgrade, and that run is
-  reported.
+- **[Bytes: one package root per harness, up to four, versus one shared
+  `runtime/packages` today]** → mitigations:
+  - `std::fs::copy` clones on CoW filesystems;
+  - copying is gated by digest, so an unchanged package costs no I/O;
+  - `node_modules`-sized trees are excluded at ingest.
+
+  This is the price of each harness standing alone.
+- **[A vendor starts scanning `<root>/uze/`]** → the decoy conformance check
+  fails first.
+- **[Vendor caches still hold the old text after migration]** (cached
+  `SKILL.md` and `.mcp.json` naming `runtime/packages`) → migration
+  reinstalls each repointed plugin through the vendor (`plugin update` or
+  uninstall-install). Task 1.2 measures which command refreshes each cache.
+- **[Uninstall while a harness session is open]** → Claude reads the
+  marketplace live, so the open session loses the plugin. The plan names
+  the running harness processes. This is the same behaviour as `remove`.
+- **[A drifted old artifact keeps naming `$UZE_HOME`]** → it is listed by
+  migration and by uninstall. The spec names it as the one allowed residue.
 
 ## Migration Plan
 
-1. Add the ladder rung for receipts that name `runtime/packages` or
-   `runtime/attachments`.
-2. Run `setup` / `install` / `update`. For each package and harness, retire
-   the old artifact (matched → detached) and attach in the new location.
-   Re-register each marketplace with its new source through the vendor CLI,
-   never by removing it first. Measured on Claude 2.1.316: `marketplace add`
-   with the same name repoints it and keeps the installed plugins ("now points
-   at dir:…/.claude/uze/marketplace/uze-store"), while `marketplace remove`
-   uninstalls them. Once repointed, the plugin stays `✔ enabled` with the
-   whole of `$UZE_HOME` moved away. Measured on Codex 0.166.0: after
-   `marketplace remove` the plugin disappears from `plugin list`, and an
-   `add` of the same name from `<codex_home>/` lists it as installed and
-   enabled again, because `config.toml` kept `[plugins."flow@uze-store"]`.
-3. Afterwards, `runtime/attachments/*` and `runtime/packages` are
-   staging-only and are deleted.
+1. No `attachments.json` shape change: package roots use `IntegrationOwned`.
+   `packages.json` gains an optional cached digest, with a `serde` default
+   and no rung.
+2. Run `setup`, `install` or `update`. For each harness:
+   1. Publish to the new marketplace root.
+   2. Repoint the marketplace (D2).
+   3. Refresh the vendor cache of each plugin.
+   4. Retire old receipts by inspect-before-detach.
+   5. Relocate the wrapper, then report the Codex hooks that need review
+      (D6).
+3. Delete `runtime/attachments/*` and `runtime/packages` only when no
+   receipt names them. A harness that could not be reached keeps its old
+   source until the next run.
 
-Rollback: an older build reads the new receipt shape as one from a newer
-build and refuses it, per persisted-state. The operator reinstalls with the
-older build after `uze uninstall`.
+Rollback: an older build reads the new receipts but resolves nothing under
+`<harness>/uze`. It re-delivers to its own locations on its next install,
+which is the same "two builds on one machine" behaviour as today.
 
 ## Candidate ADRs
 
 - **What a harness reads lives in the harness's territory**: this amends
-  ADR-052 (the generated tier is never read by a harness) and ADR-040 (where
-  the wrapper lives). It binds every future integration.
+  ADR-052 (no tier under `$UZE_HOME` is read by a harness, and integrations
+  name their owned directory) and ADR-040 (where the wrapper lives). It binds
+  every future integration.
