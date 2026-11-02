@@ -253,7 +253,7 @@ impl IntegrationPort for AntigravityIntegration {
     /// No derived view to rebuild; what an earlier layout staged for this
     /// harness and nothing names any more goes.
     fn republish_packages(&self, _packages: &[uze_core::store::StoredPackage]) -> Result<()> {
-        crate::shared::path::retire_unnamed_attachments(&self.uze_home, "antigravity", Vec::new)
+        crate::shared::earlier::retire_unnamed_attachments(&self.uze_home, "antigravity", Vec::new)
     }
 
     fn install_locations(&self) -> Vec<std::path::PathBuf> {
@@ -820,11 +820,8 @@ impl IntegrationPort for AntigravityIntegration {
                 // What an earlier release generated under the runtime tree
                 // goes with the plugin it was installed from; a build is its
                 // own receipt's.
-                if let Some(earlier) = detail_str(detail, "source_path").map(PathBuf::from)
-                    && earlier.starts_with(self.uze_home.runtime_attachments_dir())
-                    && earlier.is_dir()
-                {
-                    fs::remove_dir_all(&earlier).map_err(UzeError::write(&earlier))?;
+                if let Some(earlier) = detail_str(detail, "source_path").map(PathBuf::from) {
+                    crate::shared::earlier::remove_runtime_leftover(&self.uze_home, &earlier)?;
                 }
             }
             ManagedArtifact::VendorConfigEntry { entry_name, .. } => {

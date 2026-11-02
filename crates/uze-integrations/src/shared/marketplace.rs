@@ -37,17 +37,15 @@ use uze_core::{
 };
 
 use crate::shared::build::{RecordedBuild, VendorStore};
+use crate::shared::earlier::{
+    RETIRED_MARKETPLACE, names_retired_marketplace, remove_runtime_leftover,
+};
 use crate::shared::plan::blocked;
 
 pub(crate) use crate::shared::build::Origin;
 
 /// The one marketplace UZE registers with a harness: its vendor store.
 pub(crate) const MARKETPLACE: &str = "uze-store";
-
-/// The marketplace earlier releases registered beside [`MARKETPLACE`] for
-/// packages shipping their own envelope. Read only to retire what they
-/// installed through it.
-pub(crate) const RETIRED_MARKETPLACE: &str = "uze-local";
 
 /// How the catalogue names its owner in a harness's marketplace UI.
 const DISPLAY_NAME: &str = "UZE";
@@ -476,7 +474,7 @@ fn retire_earlier_roots<D: MarketplaceDialect>(
     command_home: &Path,
     uze_home: &UzeHome,
 ) -> Result<()> {
-    crate::shared::path::retire_unnamed_attachments(uze_home, D::STORE.vendor, || {
+    crate::shared::earlier::retire_unnamed_attachments(uze_home, D::STORE.vendor, || {
         [MARKETPLACE, RETIRED_MARKETPLACE]
             .into_iter()
             .filter_map(|name| registered_at::<D>(executable, command_home, name))
@@ -772,10 +770,8 @@ pub(crate) fn detach_package<D: MarketplaceDialect>(
     D::remove_plugin(executable, command_home, selector)?;
     if let ManagedArtifact::IntegrationOwned { detail, .. } = &receipt.artifact
         && let Some(earlier) = detail_path(detail, "package_root")
-        && earlier.starts_with(uze_home.runtime_attachments_dir())
-        && earlier.is_dir()
     {
-        fs::remove_dir_all(&earlier).map_err(UzeError::write(&earlier))?;
+        remove_runtime_leftover(uze_home, &earlier)?;
     }
     if selector.ends_with(&format!("@{RETIRED_MARKETPLACE}"))
         && !names_retired_marketplace(uze_home, receipt)?
@@ -783,19 +779,6 @@ pub(crate) fn detach_package<D: MarketplaceDialect>(
         D::remove_marketplace(executable, command_home, RETIRED_MARKETPLACE)?;
     }
     Ok(())
-}
-
-/// Whether a receipt other than `leaving` still installed something through
-/// [`RETIRED_MARKETPLACE`] on the same harness.
-fn names_retired_marketplace(uze_home: &UzeHome, leaving: &AttachmentReceipt) -> Result<bool> {
-    let suffix = format!("@{RETIRED_MARKETPLACE}");
-    Ok(uze_core::state::receipts(uze_home, None)?
-        .iter()
-        .filter(|receipt| receipt.integration == leaving.integration && *receipt != leaving)
-        .any(|receipt| {
-            matches!(&receipt.artifact, ManagedArtifact::IntegrationOwned { selector, .. }
-                if selector.ends_with(&suffix))
-        }))
 }
 
 /// Reads one path out of an opaque receipt payload.

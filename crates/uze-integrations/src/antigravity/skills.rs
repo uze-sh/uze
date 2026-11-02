@@ -49,7 +49,7 @@ use uze_core::{
 use super::AntigravityIntegration;
 use crate::shared::skill::{
     attach_skill_tree, entry_name, invalid_policy_plan, render_skill_wrapper, skill_label,
-    skill_tree_plan, skill_wrapper_root,
+    skill_tree_plan,
 };
 
 /// What a `harness:` block names Antigravity by.
@@ -86,11 +86,11 @@ impl AntigravityIntegration {
     /// Removes the generated-tier directory an earlier build linked a Skill
     /// entry to, once nothing links to it any more.
     pub(super) fn cleanup_unused_wrapper(&self, target: &Path) -> Result<()> {
-        crate::shared::path::cleanup_unused_wrapper(
+        crate::shared::earlier::cleanup_unused_wrapper(
             target,
-            &crate::shared::path::attachment_root(&self.uze_home, "antigravity"),
+            &crate::shared::earlier::attachment_root(&self.uze_home, "antigravity"),
             &self.skills_dir,
-            &skill_wrapper_root(&self.uze_home, "antigravity"),
+            &crate::shared::earlier::skill_wrapper_root(&self.uze_home, "antigravity"),
             &|wrapper| wrapper.join("SKILL.md").is_file(),
         )
     }
