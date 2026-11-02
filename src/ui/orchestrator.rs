@@ -2312,6 +2312,10 @@ struct PromptBuffer {
     characters: Vec<char>,
     cursor: usize,
     trusted: bool,
+    /// Text was on the line while it could not be vouched for, so erasing
+    /// `characters` afterwards says nothing about the line: what the harness
+    /// made of it is not what was modelled. Only Enter or Ctrl-C ends this.
+    over_text: bool,
 }
 
 impl Default for PromptBuffer {
@@ -2320,6 +2324,7 @@ impl Default for PromptBuffer {
             characters: Vec::new(),
             cursor: 0,
             trusted: true,
+            over_text: false,
         }
     }
 }
@@ -2369,6 +2374,11 @@ impl PromptBuffer {
             Key::End => self.cursor = self.characters.len(),
             _ => self.stop_vouching(chord),
         }
+        self.note_text_over_unknown_line();
+    }
+
+    fn note_text_over_unknown_line(&mut self) {
+        self.over_text |= !self.trusted && !self.characters.is_empty();
     }
 
     /// Says which key cost the line its trust: nothing on screen can, and
@@ -2380,6 +2390,7 @@ impl PromptBuffer {
             tracing::info!(key = %chord, "the agent's input line is no longer known");
         }
         self.trusted = false;
+        self.note_text_over_unknown_line();
     }
 
     fn paste(&mut self, text: &str) {
@@ -2387,6 +2398,7 @@ impl PromptBuffer {
             self.characters.insert(self.cursor, character);
             self.cursor += 1;
         }
+        self.note_text_over_unknown_line();
     }
 
     /// The text to record, or `None` when there is nothing trustworthy to

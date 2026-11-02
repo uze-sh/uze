@@ -571,6 +571,22 @@ fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
     );
 }
 
+/// Erasing what was modelled says nothing once the line was unknown: what
+/// the harness made of the text is not what the buffer holds.
+#[test]
+fn erasing_text_a_key_made_unknown_does_not_make_it_answerable() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-erased"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("tab"));
+    driven.press_key(key("backspace"));
+    let pane = driven.attach.model.focused_pane();
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::UnknownOverText
+    );
+}
+
 /// Only a bundled extension's send, asked about each time, may go over a
 /// line nobody can vouch for: whatever is there would undo what a plugin's
 /// text is held to.

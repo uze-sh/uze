@@ -276,8 +276,8 @@ impl WorkspaceModel {
             return Submission::Busy;
         }
         match self.remembered.prompt_buffers.get(&pane) {
-            Some(buffer) if !buffer.trusted && buffer.characters.is_empty() => Submission::Unknown,
-            Some(buffer) if !buffer.trusted => Submission::UnknownOverText,
+            Some(buffer) if buffer.over_text => Submission::UnknownOverText,
+            Some(buffer) if !buffer.trusted => Submission::Unknown,
             Some(buffer) if !buffer.characters.is_empty() => Submission::Typed,
             _ => Submission::Ok,
         }
