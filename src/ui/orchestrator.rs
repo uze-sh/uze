@@ -2303,10 +2303,11 @@ pub(super) struct CommitDetailPopup {
 /// untrusted buffer is discarded at Enter. Recording nothing is always
 /// preferable to recording a prompt the user never typed.
 ///
-/// The keys a harness spends on itself rather than on its input (an
-/// interrupt, a mode, scrolling back) put nothing on an empty line, and
-/// counting them would hold an instruction back over a key pressed long
-/// before it. With text on the line they still count: Esc may clear it.
+/// The keys a harness spends on itself rather than on its input (a mode,
+/// scrolling back) put nothing on an empty line, and counting them would
+/// hold an instruction back over a key pressed long before it. Esc is not
+/// one of them: an interrupt may hand the prompt back to the line, and a
+/// second one may open a picker.
 struct PromptBuffer {
     characters: Vec<char>,
     cursor: usize,
@@ -2334,7 +2335,7 @@ impl PromptBuffer {
             return;
         }
         match chord.key {
-            Key::Esc | Key::PageUp | Key::PageDown if self.characters.is_empty() => {}
+            Key::PageUp | Key::PageDown if self.characters.is_empty() => {}
             Key::Tab if chord.mods.shift && self.characters.is_empty() => {}
             Key::Char(character) => {
                 // The chord vocabulary folds case, so the buffer takes the

@@ -505,7 +505,7 @@ fn what_will_be_typed_is_shown_to_the_character() {
 #[test]
 fn a_key_that_leaves_an_empty_line_alone_does_not_hold_a_prompt_back() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-empty-line"));
-    for pressed in ["esc", "shift+tab", "pageup", "pagedown"] {
+    for pressed in ["shift+tab", "pageup", "pagedown"] {
         let mut driven = driven(launched_agent(), &home);
         driven.press_key(key(pressed));
         driven.sent();
@@ -521,7 +521,7 @@ fn a_prompt_allowed_over_a_line_nobody_can_vouch_for_is_typed_after_a_warning() 
     let home = UzeHome::at(uze_testkit::temp::scratch(
         "orchestrator-agent-unknown-line",
     ));
-    for pressed in ["up", "tab", "ctrl+y"] {
+    for pressed in ["esc", "up", "tab", "ctrl+y"] {
         let mut driven = driven(launched_agent(), &home);
         driven.press_key(key(pressed));
         driven.sent();
