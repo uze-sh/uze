@@ -62,9 +62,10 @@ and `make install` rebuilds without a version bump, so "same version,
 other bytes" is a developer's rebuild, not tampering. `add` shares the
 phase's helper for one plugin.
 
-**The retired name is moved at seeding.** Already built (`setup.rs`): a
-package under `uze-official` is taken off with its receipts and installed
-again under `uze`, once, before the defaults are seeded.
+**The retired name was moved at seeding** (`setup.rs`): a package under
+`uze-official` was taken off with its receipts and installed again under
+`uze`, once, before the defaults were seeded. `earlier-release-support`
+deleted that step when the release floor passed it.
 
 ## Candidate ADRs
 

@@ -114,7 +114,7 @@ set-aside records with their size, removing them only with
 `--discard-leftovers`.
 
 #### Scenario: A file of an earlier release
-- **WHEN** `state/profiles.json`, which an earlier release wrote and this one retired, is present
+- **WHEN** `cache/release-notes.md`, which an earlier release wrote and this one retired, is present
 - **THEN** it is removed by the next bootstrap, and `--repair` reports anything still present
 
 #### Scenario: Something unknown
