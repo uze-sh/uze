@@ -212,12 +212,7 @@ const RECORD: &str = "a record is the only copy of what it says; uze never write
 pub const CATALOGUE: &[HealthCheck] = &[
     HealthCheck {
         subject: Subject::Receipts,
-        paths: &[
-            "runtime_attachments_dir",
-            "generated_attachments_dir",
-            "delivered_packages_dir",
-            "delivered_package_dir",
-        ],
+        paths: &["delivered_packages_dir", "delivered_package_dir"],
         artifacts: &ManagedArtifact::KINDS,
         registrations: &[],
         lanes: &[
