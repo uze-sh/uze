@@ -206,6 +206,11 @@ impl ReviewView {
         self.composer.is_some()
     }
 
+    /// Whether a file is marked viewed only by hand here.
+    pub fn marks_by_hand_only(&self) -> bool {
+        self.marks_by_hand_only
+    }
+
     /// The checkout-relative spelling of `path`, as the record keeps it.
     pub(crate) fn relative(&self, path: &Path) -> String {
         path.strip_prefix(&self.root)

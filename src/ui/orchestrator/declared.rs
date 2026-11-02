@@ -124,6 +124,12 @@ pub(super) trait Hosted: Extension {
     /// as Git would have answered. Nothing by default.
     #[cfg(test)]
     fn review_showing(&mut self, _root: PathBuf, _diffs: &[(&str, &str)]) {}
+    /// Whether the review open now marks a file viewed only by hand; `None`
+    /// for any other engine, or no review open.
+    #[cfg(test)]
+    fn review_marks_by_hand_only(&self) -> Option<bool> {
+        None
+    }
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -268,6 +274,10 @@ impl Hosted for uze_extensions::review::ReviewExtension {
     #[cfg(test)]
     fn review_showing(&mut self, root: PathBuf, diffs: &[(&str, &str)]) {
         self.showing(root, diffs);
+    }
+    #[cfg(test)]
+    fn review_marks_by_hand_only(&self) -> Option<bool> {
+        self.review_view().map(|view| view.marks_by_hand_only())
     }
 }
 impl Hosted for code::CodeExtension {

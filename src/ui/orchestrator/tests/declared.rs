@@ -2814,3 +2814,32 @@ fn a_floating_drawers_drag_is_its_own_and_a_fitted_card_has_no_edge() {
         "nothing to drag on a fitted card"
     );
 }
+
+/// A built-in's preferences, as a discovery reads them, reach its engine
+/// once, and a review opened afterwards reads them.
+#[test]
+fn a_builtins_preferences_reach_its_engine_when_they_change() {
+    let review = uze_extensions::review::CATALOG.id;
+    let owner = super::Owner::Builtin(review);
+    let mut declared = HostedExtensions::default();
+    let off = serde_json::json!({ uze_extensions::review::MARK_VIEWED_AUTOMATICALLY: false });
+
+    assert!(declared.absorb_preferences(BTreeMap::from([(owner.clone(), off.clone())])));
+    assert!(
+        !declared.absorb_preferences(BTreeMap::from([(owner.clone(), off)])),
+        "the same values again change nothing"
+    );
+    let engine = declared
+        .engines
+        .get_mut(&owner)
+        .expect("the review is hosted");
+    engine.open(
+        uze_extensions::review::SURFACE,
+        &uze_extensions::contract::Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+    assert_eq!(engine.review_marks_by_hand_only(), Some(true));
+}
