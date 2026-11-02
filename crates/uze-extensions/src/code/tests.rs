@@ -3427,6 +3427,22 @@ fn a_document_shown_as_a_preview_from_far_down_its_source_is_not_blank() {
     assert!(!lines.is_empty(), "the preview draws something");
 }
 
+fn search_opened_far_down(view: &mut CodeView, machine: &FakeMachine) {
+    settle(view, machine);
+    press(view, Command::Find);
+    type_text(view, "fog");
+    settle(view, machine);
+    press(view, Command::Newline);
+    settle(view, machine);
+    assert!(view.scroll > 0, "opened down at the match");
+}
+
+fn long_document() -> FakeMachine {
+    // One paragraph: hundreds of lines of source, a few rows of document.
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    FakeMachine::default().with_file("/w/long.md", &long)
+}
+
 /// The field's mark puts the keys in the field, whatever had them: what is
 /// typed next is a search, never a change to the file beside it.
 #[test]
@@ -3451,6 +3467,60 @@ fn clearing_the_field_while_editing_puts_the_keys_in_the_field() {
     assert_eq!(view.search.query, "x");
     assert!(!view.editing());
     assert!(!view.has_unsaved(), "the file was not typed into");
+}
+
+/// The source's place survives its preview, and a preview's its map.
+#[test]
+fn leaving_a_preview_or_the_map_lands_where_it_was_read() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let read = view.scroll;
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    assert_eq!(view.scroll, 0);
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    assert_eq!(view.scroll, read, "back where the source was read");
+
+    press(&mut view, Command::TogglePreview);
+    view.scroll = 2;
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    assert_eq!(view.scroll, 2, "back where the document was read");
+}
+
+/// A document left in its source is handed back in its source, at its place.
+#[test]
+fn a_document_held_in_its_source_comes_back_in_its_source() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let read = view.scroll;
+    let held = view.held();
+
+    let mut back = files_at("/w").returning(held);
+    settle(&mut back, &machine);
+    assert_eq!(back.showing(), ContentMode::Contents);
+    assert_eq!(back.scroll, read);
+    assert_eq!(tab_on_show(&back), "Search");
+}
+
+/// Opened by a door from the place left in a source, a document stands as a
+/// preview at its top: that place is not one of its rows.
+#[test]
+fn a_door_opening_a_document_left_in_its_source_is_not_blank() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let place = view.place();
+
+    let mut back = files_at("/w").resuming(place);
+    settle(&mut back, &machine);
+    assert_eq!(back.showing(), ContentMode::Preview);
+    assert_eq!(back.scroll, 0);
 }
 
 /// Going back to the tree from a search opens it down to the file the

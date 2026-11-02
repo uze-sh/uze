@@ -230,6 +230,9 @@ pub struct CodeView {
     search: search::Search,
     /// The list beside a file: what the map stands over, and comes back to.
     list: NavigatorMode,
+    /// Where the source was being read, while its preview stands in. Its
+    /// lines are not the document's rows, so one scroll cannot serve both.
+    source_scroll: Option<usize>,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -316,6 +319,8 @@ pub struct CodeHeld {
     focus: Focus,
     list: NavigatorMode,
     search: search::Search,
+    scroll: usize,
+    source_scroll: Option<usize>,
 }
 
 impl CodeView {
@@ -348,6 +353,7 @@ impl CodeView {
             closing_tab: None,
             search: search::Search::default(),
             list: NavigatorMode::Files,
+            source_scroll: None,
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -412,6 +418,8 @@ impl CodeView {
             focus,
             list,
             search,
+            scroll,
+            source_scroll,
         } = held;
         let was_files = self.navigator() == NavigatorMode::Files;
         self.content = content;
@@ -427,7 +435,12 @@ impl CodeView {
         self.before_map = before_map;
         self.map_showing = map_showing;
         self.focus = focus;
-        self.resuming(place)
+        let mut back = self.resuming(place);
+        // What stood, whatever a door would decide about the selection.
+        back.content = content;
+        back.scroll = scroll;
+        back.source_scroll = source_scroll;
+        back
     }
 
     /// What this surface keeps for its tab, for [`Self::returning`].
@@ -440,6 +453,8 @@ impl CodeView {
             focus: self.focus,
             list: self.list,
             search: self.search.clone(),
+            scroll: self.scroll,
+            source_scroll: self.source_scroll,
         }
     }
 
@@ -449,7 +464,12 @@ impl CodeView {
             selected_is_a_file: self.selected_is_a_file(),
             selected: self.selected.clone(),
             expanded: self.files.expanded.clone(),
-            scroll: self.scroll,
+            // A door opens a document as a preview, where a place in its
+            // source is no place at all.
+            scroll: match self.content == ContentMode::Contents && self.selected_is_markdown() {
+                true => 0,
+                false => self.scroll,
+            },
         }
     }
 
@@ -863,6 +883,7 @@ impl CodeView {
         }
         self.selected = Some(path);
         self.scroll = 0;
+        self.source_scroll = None;
         self.read_selection_as_what_it_is();
     }
 
@@ -893,10 +914,18 @@ impl CodeView {
         // The menu was opened on the list this leaves.
         self.menu = None;
         let line = self.line_in_view();
-        // A document's rows are not its source's lines, so a scroll into the
-        // source may lie past the end of what the preview draws.
-        if mode == ContentMode::Preview {
-            self.scroll = 0;
+        let from = match self.content {
+            ContentMode::Map => self.before_map,
+            reading => reading,
+        };
+        match (from, mode) {
+            (ContentMode::Contents, ContentMode::Preview) => {
+                self.source_scroll = Some(std::mem::take(&mut self.scroll));
+            }
+            (ContentMode::Preview, ContentMode::Contents) => {
+                self.scroll = self.source_scroll.take().unwrap_or(self.scroll);
+            }
+            _ => {}
         }
         self.content = mode;
         match mode {
