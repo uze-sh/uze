@@ -227,3 +227,9 @@ pub(super) fn within_pane_bounds(dimension: u16) -> u16 {
 pub(super) fn spawnable_pane_bounds(dimension: u16) -> u16 {
     dimension.clamp(1, MAX_PANE_DIMENSION)
 }
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<PersistedWorkspace>(file!())
+}

@@ -560,6 +560,12 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
     })
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ConversationRecord>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

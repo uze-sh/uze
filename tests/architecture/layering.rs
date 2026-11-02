@@ -1207,7 +1207,7 @@ fn occurrences(contents: &str, needle: &str) -> usize {
 /// facade would be worse code rather than better architecture. So a file
 /// some other file declares under `#[cfg(test)]` is skipped outright, and
 /// inline test modules are stripped from the ones that remain.
-fn production_sources(scope: &std::path::Path) -> Vec<(PathBuf, String)> {
+pub(crate) fn production_sources(scope: &std::path::Path) -> Vec<(PathBuf, String)> {
     let mut files = Vec::new();
     collect_rust_files(scope, &mut files);
     files.sort();

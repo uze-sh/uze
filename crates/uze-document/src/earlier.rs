@@ -144,8 +144,45 @@ macro_rules! earlier {
 
 /// The rungs of `T`'s ladder as entries, for the crate that owns `T` to
 /// list among its own.
+///
+/// # Panics
+///
+/// When the ladder is not contiguous, does not end at the shape `T`
+/// writes, or a rung lasts less than the one beneath it: a ladder the
+/// architecture suite gathers is a ladder this checks.
 pub fn rungs<T: crate::Shaped>(site: &'static str) -> Vec<Earlier> {
-    T::ladder()
+    let ladder = T::ladder();
+    for (index, step) in ladder.iter().enumerate() {
+        assert_eq!(
+            step.to,
+            step.from + 1,
+            "{}: rung {index} skips a shape",
+            T::KIND
+        );
+        if let Some(next) = ladder.get(index + 1) {
+            assert_eq!(
+                next.from,
+                step.to,
+                "{}: rungs {index} and {} do not meet",
+                T::KIND,
+                index + 1
+            );
+            assert!(
+                !outlasts(step.lasts, next.lasts),
+                "{}: rung {index} lasts longer than the rung above it",
+                T::KIND
+            );
+        }
+    }
+    if let Some(top) = ladder.last() {
+        assert_eq!(
+            top.to,
+            T::SHAPE,
+            "{}: the ladder stops below the shape written",
+            T::KIND
+        );
+    }
+    ladder
         .iter()
         .map(|step| Earlier {
             name: T::KIND,
@@ -154,6 +191,16 @@ pub fn rungs<T: crate::Shaped>(site: &'static str) -> Vec<Earlier> {
             site,
         })
         .collect()
+}
+
+/// Whether `lower` lasts past `upper`: a record can only be met in a lower
+/// shape for as long as it can be met in every shape above it.
+fn outlasts(lower: Lasts, upper: Lasts) -> bool {
+    match (lower, upper) {
+        (Lasts::Unbounded, Lasts::Until(_)) => true,
+        (Lasts::Until(lower), Lasts::Until(upper)) => lower > upper,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

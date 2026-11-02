@@ -28,6 +28,7 @@
 
 pub mod capability;
 pub mod delivery;
+pub mod earlier;
 pub mod machine;
 pub mod package;
 pub mod project;

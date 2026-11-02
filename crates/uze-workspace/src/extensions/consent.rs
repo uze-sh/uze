@@ -506,6 +506,12 @@ fn canonical(root: &Path) -> PathBuf {
     root.canonical().unwrap_or_else(|_| root.to_path_buf())
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ExtensionsRecord>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

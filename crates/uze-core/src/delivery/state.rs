@@ -683,6 +683,19 @@ pub fn marketplace_get(home: &UzeHome, name: &str) -> Result<Option<MarketplaceR
     Ok(marketplace_list(home)?.remove(name))
 }
 
+/// The rungs of this module's records' ladders, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    let mut v = Vec::new();
+    v.extend(uze_document::earlier::rungs::<MarketplaceRegistry>(file!()));
+    v.extend(uze_document::earlier::rungs::<AttachmentLedger>(file!()));
+    v.extend(uze_document::earlier::rungs::<ProvisioningRegistry>(
+        file!(),
+    ));
+    v.extend(uze_document::earlier::rungs::<UndeliveredRegistry>(file!()));
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;

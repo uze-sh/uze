@@ -404,6 +404,12 @@ fn now_unix() -> u64 {
     uze_platform::clock::since_epoch().as_secs()
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<LaunchOverridesRecord>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
