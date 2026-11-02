@@ -338,9 +338,10 @@ scenes:
         timeout: 20
         say: the board is drawn from its fixture
     then:
-      # A compiled view is named by a 16-digit digest; `costs.json`, what the
-      # workspace measures of each extension, sits beside them.
-      - file: "{uze_home}/runtime/extensions/????????????????.json"
+      # A compiled view is named by a 16-digit digest, under `compiled/`;
+      # `costs.json`, what the workspace measures of each extension, sits
+      # beside that directory.
+      - file: "{uze_home}/runtime/extensions/compiled/????????????????.json"
         count: 1
         about: the compiled view is kept in the generated tier, so the next open parses nothing
       - capture:
@@ -379,7 +380,7 @@ scenes:
         timeout: 5
         say: on the tab the author chose
     then:
-      - file: "{uze_home}/runtime/extensions/????????????????.json"
+      - file: "{uze_home}/runtime/extensions/compiled/????????????????.json"
         count: 2
         about: the save was compiled anew, beside the compile of the files it replaced
       - file: "{uze_home}/sources/plugins/studio/gsd/extensions/gsd-band/board.uze"
