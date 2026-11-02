@@ -13,7 +13,7 @@ use crate::{architect, code, review, spec};
 /// screen renders. Built-ins are compiled into the binary (no loading or
 /// enablement yet), so this is also the shape a future user-installable
 /// extension would populate from its manifest.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct BuiltinExtension {
     pub id: &'static str,
     pub name: &'static str,
@@ -22,17 +22,20 @@ pub struct BuiltinExtension {
     pub surface: &'static str,
     /// One-line how-to-open hint shown in the detail drawer.
     pub usage: &'static str,
+    /// What it lets the operator set, in the order its drawer lists them:
+    /// declared as a manifest declares them, kept and edited the same way.
+    /// Never a `secret`: a built-in reaches nothing a secret opens.
+    pub declares: fn() -> Vec<uze_contract::PreferenceDecl>,
 }
 
-/// What a built-in lets the operator set, in the order its drawer lists
-/// them: declared as a manifest declares them, kept and edited the same
-/// way. Never a `secret`: a built-in reaches nothing a secret opens.
+/// The preferences of a built-in that lets the operator set nothing.
+pub fn no_preferences() -> Vec<uze_contract::PreferenceDecl> {
+    Vec::new()
+}
+
 impl BuiltinExtension {
     pub fn preferences(&self) -> Vec<uze_contract::PreferenceDecl> {
-        match self.id {
-            id if id == review::CATALOG.id => review::preferences(),
-            _ => Vec::new(),
-        }
+        (self.declares)()
     }
 }
 

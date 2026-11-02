@@ -52,6 +52,7 @@ fn extension_filter_narrows_visible_selection() {
                 description: "Review the working tree",
                 surface: "Workspace TUI",
                 usage: "Open from the tab strip",
+                declares: uze_extensions::registry::no_preferences,
             },
             BuiltinExtension {
                 id: "task-list",
@@ -59,6 +60,7 @@ fn extension_filter_narrows_visible_selection() {
                 description: "Track workspace tasks",
                 surface: "Management TUI",
                 usage: "Open from the sidebar",
+                declares: uze_extensions::registry::no_preferences,
             },
         ],
         ..TuiModel::default()

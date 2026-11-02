@@ -68,6 +68,7 @@ pub const CATALOG: BuiltinExtension = BuiltinExtension {
     description: "What a checkout intends: the proposals, designs, tasks and specs a spec-driven-development tool keeps, listed by change and read as documents.",
     surface: "Workspace TUI",
     usage: "Alt+X opens it over the workspace, as does its chip in the tab strip; the change the checkout is working on opens first, and Enter hands a document to the code surface to edit.",
+    declares: crate::registry::no_preferences,
 };
 
 /// What an event asked of the host.

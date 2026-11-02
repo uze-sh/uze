@@ -53,6 +53,7 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     description: "The selected agent's branch against its target, commented line by line and sent back to the agent.",
     surface: "Workspace TUI",
     usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), s to tell the agent its review waits, o to open a line in the code surface.",
+    declares: preferences,
 };
 
 /// The preference that marks a file viewed as it is left, once it was

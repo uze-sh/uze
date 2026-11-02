@@ -64,6 +64,7 @@ pub const CATALOG: BuiltinExtension = BuiltinExtension {
     description: "A project's architecture as diagrams drawn in the terminal: Mermaid flowcharts, C4 views and sequences, laid out in cells with no graphics protocol.",
     surface: "Workspace TUI",
     usage: "Alt+A opens it over the workspace, as does its chip in the tab strip; drag the board to move it, click a box to light what it connects to.",
+    declares: crate::registry::no_preferences,
 };
 
 const PAN_COLUMNS: i32 = 8;
