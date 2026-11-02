@@ -525,21 +525,6 @@ fn home_entries(report: &serde_json::Value) -> Vec<(String, String, bool)> {
         .collect()
 }
 
-/// A file of an earlier release that nothing reads is gone after a
-/// repair, which runs no bootstrap to have removed it first.
-#[test]
-fn a_file_of_an_earlier_release_is_removed() {
-    let env = delivered();
-    let retired = env.uze_home.join("state/profiles.json");
-    fs::write(&retired, "{}").unwrap();
-
-    let (code, report) = repair_json(&env);
-
-    assert_eq!(code, Some(0), "{report:#}");
-    assert!(!retired.exists(), "{report:#}");
-    a_second_run_repairs_nothing(&env);
-}
-
 /// Something no part of this build declares, in the records, the bytes or
 /// the operator's own files, may be a newer build's: reported, never
 /// deleted, however often repair runs.

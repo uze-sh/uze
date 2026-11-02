@@ -120,14 +120,10 @@ impl UzeApplication {
     }
 
     /// Removes the records an earlier release kept that nothing reads any
-    /// more. Runs ahead of every command with the seeding, so a machine
-    /// sheds one the first time a build without its reader runs; costs one
-    /// look at the disk once it is gone.
-    ///
-    /// `state/profiles.json` is the Profiles screen's record, which listing
-    /// the management overview wrote on every machine. The keys an applied
-    /// profile wrote into a harness's own configuration stay: no receipt
-    /// says UZE wrote them, so they are the operator's settings now.
+    /// more: the owned map's retired, disposable paths. Runs ahead of every
+    /// command with the seeding, so a machine sheds one the first time a
+    /// build without its reader runs; costs one look at the disk once it is
+    /// gone.
     pub(crate) fn retire_records_of_earlier_releases(&self) {
         Collectable::collect(&Retired, &self.home);
     }
@@ -138,12 +134,6 @@ impl UzeApplication {
         let Ok(packages) = self.installed_packages_checked() else {
             return false;
         };
-        if packages
-            .iter()
-            .any(|package| super::earlier::under_the_retired_official_name(package.id.as_str()))
-        {
-            return false;
-        }
         let seeded = bootstrap::DEFAULT_PLUGIN_IDS.iter().all(|id| {
             let qualified = format!("{id}@{BUILT_IN_MARKETPLACE}");
             packages
@@ -163,7 +153,7 @@ impl UzeApplication {
     /// lock, which is not reentrant.
     fn ensure_default_plugins_locked(&self) -> Result<bool> {
         let _span = tracing::info_span!("bootstrap.ensure_default_plugins").entered();
-        let mut installed_any = self.move_off_the_retired_official_name()?;
+        let mut installed_any = false;
         for &id in bootstrap::DEFAULT_PLUGIN_IDS {
             installed_any |= self.ensure_default_plugin_installed(id)?;
         }
