@@ -257,15 +257,15 @@ impl Project<'_> {
     ///
     /// One read of each file, and no harness is asked anything.
     fn stale_projection(&self, canonical: &Path) -> Option<StaleProjection> {
-        if !super::retired_regions::applies_at(canonical) {
+        if !super::earlier::regions::applies_at(canonical) {
             return None;
         }
-        let plan = super::retired_regions::plan(&self.0.retired_region_files(canonical))?;
+        let plan = super::earlier::regions::plan(&self.0.leftover_region_files(canonical))?;
         let projected_identity = plan.remove.into_iter().next().or_else(|| {
             plan.bridges
                 .iter()
                 .any(|bridge| !matches!(bridge.fate, BridgeFate::Kept(_)))
-                .then(|| uze_core::retired_region::INSTRUCTION_BRIDGE.to_owned())
+                .then(|| uze_core::project_earlier::INSTRUCTION_BRIDGE.to_owned())
         })?;
         let region = projected_identity.rsplit_once('/').map_or_else(
             || projected_identity.clone(),

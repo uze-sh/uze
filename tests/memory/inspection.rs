@@ -385,7 +385,7 @@ fn context_inspect_never_writes_anything_in_a_populated_project() {
         "context_inspect must not create, delete, or modify any file"
     );
     let retired = status
-        .retired_regions
+        .leftover_regions
         .expect("the old regions are reported");
     assert_eq!(retired.remove, vec!["package:greet:tools:instructions"]);
     assert_eq!(retired.bridges.len(), 1);
@@ -545,7 +545,7 @@ fn scenario_d_manual_agents_md_with_no_packages_is_left_alone() {
         .unwrap();
     assert!(agents_source.has_user_content);
     assert!(agents_source.managed_region_identities.is_empty());
-    assert!(status.retired_regions.is_none());
+    assert!(status.leftover_regions.is_none());
 
     // Reconcile must also leave it alone: there is nothing to take out.
     application.context().reconcile(&project).unwrap();

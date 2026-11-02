@@ -13,5 +13,6 @@ pub fn earlier() -> Vec<Earlier> {
     entries.extend(crate::project::record::rungs());
     entries.extend(crate::delivery::state::rungs());
     entries.extend(crate::UzeHome::earlier());
+    entries.extend(crate::project::earlier::earlier());
     entries
 }

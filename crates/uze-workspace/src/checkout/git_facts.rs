@@ -182,8 +182,8 @@ pub(super) fn instructions_changed_only_by_retiring_regions(root: &Path) -> bool
         Err(_) => return false,
     };
     let retired = |identity: &str| {
-        crate::retired_region::is_retired(identity)
-            || crate::retired_region::is_retired_package(identity)
+        crate::project_earlier::is_retired(identity)
+            || crate::project_earlier::is_retired_package(identity)
     };
     committed != working && crate::text_region::without_regions(&committed, retired) == working
 }

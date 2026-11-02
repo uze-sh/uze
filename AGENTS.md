@@ -233,7 +233,7 @@ when broken; `tests/architecture/layering.rs` and
   says which.
 - **`AGENTS.md` is the operator's.** It is the portable baseline every
   harness reads natively, and no production code writes it except
-  `uze-application`'s `retired_regions.rs`, which takes out the regions
+  `uze-application`'s `earlier/regions.rs`, which takes out the regions
   earlier releases wrote, in a main working tree only
   (`a_retired_region_cleanup_is_the_only_writer_of_agents_md`). This
   repository's own `AGENTS.md` is maintained directly, since this is uze's

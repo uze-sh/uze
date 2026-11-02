@@ -1583,7 +1583,7 @@ struct Channels {
     /// events it recorded.
     inspector: Answers<InspectorAnswer>,
     /// Keeping each project's `AGENTS.md` workspace section in step.
-    retired_regions: Answers<RetiredRegionsNotice>,
+    leftover_regions: Answers<RetiredRegionsNotice>,
     /// Bringing each project's target in line with its remote.
     target_syncs: Answers<TargetSyncReport>,
     /// Pulling the target the operator asked for.
@@ -1773,7 +1773,7 @@ struct Remembered {
     /// The `AGENTS.md` files already reported as holding a workspace section
     /// edited by hand, so the report is made once a session rather than on
     /// every refresh.
-    retired_regions_reported: BTreeSet<PathBuf>,
+    leftover_regions_reported: BTreeSet<PathBuf>,
     /// The projects already said to have a gate this machine cannot run,
     /// so it is said once a session.
     unspelled_gates_reported: BTreeSet<PathBuf>,

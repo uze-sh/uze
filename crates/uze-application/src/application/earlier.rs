@@ -4,6 +4,8 @@
 
 pub use uze_core::document::earlier::{Earlier, FLOOR, Lasts, Release};
 
+pub(crate) mod regions;
+
 use super::{BUILT_IN_MARKETPLACE, UzeApplication, bootstrap};
 use crate::Result;
 use uze_core::trust;

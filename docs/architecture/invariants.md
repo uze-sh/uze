@@ -2884,9 +2884,9 @@ serializes writers of the file, and the architecture suite fails over any
 other production file that writes it.
 
 > `tests/architecture/layering.rs::a_retired_region_cleanup_is_the_only_writer_of_agents_md`
-> `crates/uze-application/src/application/retired_regions.rs::tests::a_package_region_goes_by_its_shape_whatever_it_holds`
-> `crates/uze-application/src/application/retired_regions.rs::tests::a_bridge_only_claude_md_goes_with_the_last_package_region`
-> `crates/uze-application/src/application/retired_regions.rs::tests::the_operators_lines_in_claude_md_stay_when_the_bridge_goes`
+> `crates/uze-application/src/application/earlier/regions.rs::tests::a_package_region_goes_by_its_shape_whatever_it_holds`
+> `crates/uze-application/src/application/earlier/regions.rs::tests::a_bridge_only_claude_md_goes_with_the_last_package_region`
+> `crates/uze-application/src/application/earlier/regions.rs::tests::the_operators_lines_in_claude_md_stay_when_the_bridge_goes`
 > `tests/memory/reconciliation.rs::a_package_region_and_a_bridge_only_claude_md_go_together`
 > `tests/memory/reconciliation.rs::a_linked_worktree_is_left_as_its_branch_has_it`
 > `crates/uze-application/tests/slot_lifecycle.rs::install_in_a_slot_leaves_a_retired_region_as_committed`
@@ -2895,7 +2895,7 @@ other production file that writes it.
 > `tests/projection/retired_regions.rs::a_region_edited_by_hand_is_the_operators_now`
 > `tests/projection/retired_regions.rs::reconciling_a_project_writes_no_uze_text_into_agents_md`
 > `tests/projection/retired_regions.rs::the_workspace_client_only_reads_what_is_left`
-> `crates/uze-application/src/application/retired_regions.rs::tests::a_linked_worktree_is_never_cleaned`
+> `crates/uze-application/src/application/earlier/regions.rs::tests::a_linked_worktree_is_never_cleaned`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::a_launch_writes_nothing_into_agents_md_anywhere`
 > `crates/uze-application/src/application/services/tasks/tests.rs::task_service_tests::isolating_leaves_a_retired_regions_removal_behind_and_carries_the_rest`
 > `crates/uze-core/src/project/project_context.rs::tests::a_second_owner_waits_for_the_first`

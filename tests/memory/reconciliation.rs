@@ -125,7 +125,7 @@ fn a_declared_plugin_shipping_agents_md_adds_nothing_to_the_project() {
     fs::write(project.join("AGENTS.md"), OPERATOR).unwrap();
 
     let report = application.context().reconcile(&project).unwrap();
-    assert!(report.retired_regions.is_none(), "{report:?}");
+    assert!(report.leftover_regions.is_none(), "{report:?}");
     assert_eq!(
         fs::read_to_string(project.join("AGENTS.md")).unwrap(),
         OPERATOR
@@ -141,7 +141,7 @@ fn a_project_without_agents_md_gets_none() {
     let project = primary(&root);
 
     let report = application.context().reconcile(&project).unwrap();
-    assert!(report.retired_regions.is_none());
+    assert!(report.leftover_regions.is_none());
     assert!(!project.join("AGENTS.md").exists());
     assert!(!project.join("CLAUDE.md").exists());
     fs::remove_dir_all(root).unwrap();
@@ -157,7 +157,7 @@ fn a_package_region_and_a_bridge_only_claude_md_go_together() {
     let plan = application.context().plan(&project).unwrap();
     assert!(plan.has_changes());
     let report = application.context().reconcile(&project).unwrap();
-    let regions = report.retired_regions.expect("the old regions were found");
+    let regions = report.leftover_regions.expect("the old regions were found");
     assert_eq!(regions.removed, vec!["package:greet:tools:instructions"]);
     assert_eq!(regions.bridges[0].fate, BridgeFate::File);
     assert_eq!(
@@ -181,7 +181,7 @@ fn the_operators_lines_in_claude_md_stay_when_the_bridge_goes() {
     left_by_an_earlier_release(&project, "# Claude only\n\nPrefer small diffs.\n\n");
 
     let report = application.context().reconcile(&project).unwrap();
-    let regions = report.retired_regions.unwrap();
+    let regions = report.leftover_regions.unwrap();
     assert_eq!(
         regions.bridges[0].fate,
         BridgeFate::Region,
@@ -205,7 +205,7 @@ fn a_linked_worktree_is_left_as_its_branch_has_it() {
     let claude_md = fs::read(slot.join("CLAUDE.md")).unwrap();
 
     let report = application.context().reconcile(&slot).unwrap();
-    assert!(report.retired_regions.is_none());
+    assert!(report.leftover_regions.is_none());
     assert!(!application.context().plan(&slot).unwrap().has_changes());
     assert_eq!(fs::read(slot.join("AGENTS.md")).unwrap(), agents_md);
     assert_eq!(fs::read(slot.join("CLAUDE.md")).unwrap(), claude_md);
@@ -285,7 +285,7 @@ fn a_foreign_looking_managed_region_is_left_untouched() {
     fs::write(project.join("AGENTS.md"), foreign).unwrap();
 
     let report = application.context().reconcile(&project).unwrap();
-    assert!(report.retired_regions.is_none());
+    assert!(report.leftover_regions.is_none());
     assert_eq!(
         fs::read_to_string(project.join("AGENTS.md")).unwrap(),
         foreign

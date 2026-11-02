@@ -29,17 +29,19 @@ use uze_core::{
     Result, digest,
     integration::{AttachmentState, ContextDelivery},
     project_context::AGENTS_MD_FILE_NAME,
-    retired_region::{self, INSTRUCTION_BRIDGE, INSTRUCTION_BRIDGE_CONTENT},
+    project_earlier::{self, INSTRUCTION_BRIDGE, INSTRUCTION_BRIDGE_CONTENT},
     text_region,
 };
 
-use super::{BridgeFate, RetiredBridge, RetiredRegionsPlan, RetiredRegionsStatus, UzeApplication};
+use crate::application::{
+    BridgeFate, RetiredBridge, RetiredRegionsPlan, RetiredRegionsStatus, UzeApplication,
+};
 
 /// The files the cleanup reads in one project: its `AGENTS.md`, and the
 /// harnesses' own files an earlier release bridged it into.
-pub(super) struct Files {
-    pub(super) agents_md: PathBuf,
-    pub(super) bridges: Vec<PathBuf>,
+pub(crate) struct Files {
+    pub(crate) agents_md: PathBuf,
+    pub(crate) bridges: Vec<PathBuf>,
 }
 
 impl UzeApplication {
@@ -47,7 +49,7 @@ impl UzeApplication {
     /// registered harness that declares a bridge file is named, detected
     /// or not: a leftover bridge is in the project whether or not the
     /// harness is still on this machine.
-    pub(super) fn retired_region_files(&self, project_root: &Path) -> Files {
+    pub(crate) fn leftover_region_files(&self, project_root: &Path) -> Files {
         let mut bridges: Vec<PathBuf> = self
             .integrations
             .iter()
@@ -72,7 +74,7 @@ impl UzeApplication {
 /// working tree, and a file is one too unless it points into a repository's
 /// `worktrees/` (a submodule and `--separate-git-dir` point elsewhere). A
 /// project in no repository has no slots to protect.
-pub(super) fn applies_at(project_root: &Path) -> bool {
+pub(crate) fn applies_at(project_root: &Path) -> bool {
     let Some(dot_git) = project_root
         .ancestors()
         .map(|ancestor| ancestor.join(".git"))
@@ -107,7 +109,7 @@ pub(super) fn applies_at(project_root: &Path) -> bool {
 }
 
 fn is_retired(identity: &str) -> bool {
-    retired_region::is_retired(identity) || retired_region::is_retired_package(identity)
+    project_earlier::is_retired(identity) || project_earlier::is_retired_package(identity)
 }
 
 /// The retired regions in `agents_md`, each once, in file order.
@@ -124,7 +126,7 @@ fn present(agents_md: &Path) -> Vec<String> {
 /// while it still holds what it was written with.
 fn reason_to_keep(agents_md: &Path, identity: &str) -> Option<String> {
     let malformed = || Some("its markers are malformed, so it is left as it is".to_owned());
-    if retired_region::is_retired_package(identity) {
+    if project_earlier::is_retired_package(identity) {
         return match text_region::region_shape(agents_md, identity) {
             text_region::RegionShape::WellFormed => None,
             _ => malformed(),
@@ -151,7 +153,7 @@ fn bridge_fate(file: &Path) -> Option<BridgeFate> {
 
 /// What [`remove`] would do, without writing. `None` when nothing retired
 /// is left in any of `files`.
-pub(super) fn plan(files: &Files) -> Option<RetiredRegionsPlan> {
+pub(crate) fn plan(files: &Files) -> Option<RetiredRegionsPlan> {
     let (remove, keep) = present(&files.agents_md).into_iter().fold(
         (Vec::new(), Vec::new()),
         |(mut remove, mut keep), identity| {
@@ -164,7 +166,7 @@ pub(super) fn plan(files: &Files) -> Option<RetiredRegionsPlan> {
     );
     let a_package_region_stays = keep
         .iter()
-        .any(|(identity, _)| retired_region::is_retired_package(identity));
+        .any(|(identity, _)| project_earlier::is_retired_package(identity));
     let bridges: Vec<RetiredBridge> = if a_package_region_stays {
         Vec::new()
     } else {
@@ -192,7 +194,7 @@ pub(super) fn plan(files: &Files) -> Option<RetiredRegionsPlan> {
 
 /// Removes every retired region [`plan`] lets go, and says what it did.
 /// The caller holds `AGENTS.md`'s guard.
-pub(super) fn remove(files: &Files) -> Result<Option<RetiredRegionsStatus>> {
+pub(crate) fn remove(files: &Files) -> Result<Option<RetiredRegionsStatus>> {
     let Some(plan) = plan(files) else {
         return Ok(None);
     };
@@ -273,12 +275,12 @@ mod tests {
         let (dir, files) = project("retired-regions-removed");
         written(
             &files.agents_md,
-            retired_region::WORKTREE_POLICY,
+            project_earlier::WORKTREE_POLICY,
             "## Concurrent work isolation\n",
         );
         written(
             &files.agents_md,
-            retired_region::PLUGIN_AUTHORING,
+            project_earlier::PLUGIN_AUTHORING,
             "## Authoring plugins\n",
         );
 
@@ -301,7 +303,7 @@ mod tests {
         let (dir, files) = project("retired-regions-edited");
         let identity = written(
             &files.agents_md,
-            retired_region::WORKTREE_POLICY,
+            project_earlier::WORKTREE_POLICY,
             "## Concurrent work isolation\n",
         );
         let text = std::fs::read_to_string(&files.agents_md).unwrap();

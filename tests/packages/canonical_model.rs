@@ -221,7 +221,7 @@ fn installing_and_reconciling_never_touch_the_operators_agents_md() {
     }
     let report = application.context().reconcile(&project).unwrap();
 
-    assert!(report.retired_regions.is_none());
+    assert!(report.leftover_regions.is_none());
     assert_eq!(
         fs::read_to_string(&agents_md).unwrap(),
         "# Mine\n\nWrite tests first.\n"

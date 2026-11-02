@@ -9,7 +9,7 @@
 use std::{fs, path::Path, path::PathBuf};
 
 use uze_application::UzeApplication;
-use uze_core::{UzeHome, digest, retired_region, text_region};
+use uze_core::{UzeHome, digest, project_earlier, text_region};
 use uze_integrations::registry::IntegrationRegistry;
 use uze_testkit::git::Repository;
 
@@ -30,11 +30,11 @@ fn project_with_old_regions(label: &str) -> (Repository, PathBuf, Vec<String>) {
     fs::write(&agents_md, OPERATOR_TEXT).unwrap();
     let identities = [
         (
-            retired_region::WORKTREE_POLICY,
+            project_earlier::WORKTREE_POLICY,
             "## Concurrent work isolation\n\n- old text\n",
         ),
         (
-            retired_region::PLUGIN_AUTHORING,
+            project_earlier::PLUGIN_AUTHORING,
             "## Authoring plugins\n\n- old text\n",
         ),
     ]
@@ -65,14 +65,14 @@ fn reconciling_removes_what_an_earlier_release_wrote_and_nothing_else() {
     );
 
     let report = application.context().reconcile(&project).unwrap();
-    let regions = report.retired_regions.expect("the old regions were found");
+    let regions = report.leftover_regions.expect("the old regions were found");
     assert_eq!(regions.removed, identities);
     assert!(regions.kept.is_empty());
     assert_eq!(agents_md(&project), OPERATOR_TEXT, "byte-identical");
 
     let again = application.context().reconcile(&project).unwrap();
     assert!(
-        again.retired_regions.is_none(),
+        again.leftover_regions.is_none(),
         "a second pass finds nothing"
     );
 }
@@ -87,11 +87,11 @@ fn a_region_edited_by_hand_is_the_operators_now() {
         .context()
         .reconcile(&project)
         .unwrap();
-    let regions = report.retired_regions.unwrap();
+    let regions = report.leftover_regions.unwrap();
     assert_eq!(regions.kept.len(), 1, "{regions:?}");
     assert_eq!(regions.kept[0].0, identities[0]);
     assert!(agents_md(&project).contains("- my own rule"));
-    assert!(!agents_md(&project).contains(retired_region::PLUGIN_AUTHORING));
+    assert!(!agents_md(&project).contains(project_earlier::PLUGIN_AUTHORING));
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn the_workspace_client_only_reads_what_is_left() {
 
     let plan = application
         .workspace()
-        .retired_regions(&project)
+        .leftover_regions(&project)
         .expect("the client is told");
     assert_eq!(plan.remove, identities);
     assert_eq!(agents_md(&project), before, "the client writes nothing");

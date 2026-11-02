@@ -307,7 +307,7 @@ fn install_reports_a_cleanup_it_could_not_write_instead_of_no_changes() {
     let body = "## Authoring plugins\n\n- old text\n";
     let identity = format!(
         "{}/{}",
-        uze_core::retired_region::PLUGIN_AUTHORING,
+        uze_core::project_earlier::PLUGIN_AUTHORING,
         uze_core::digest::short_hex(body.as_bytes())
     );
     uze_core::text_region::attach(&agents_md, &identity, body).unwrap();
@@ -1308,7 +1308,7 @@ mod drift {
         let body = "## Authoring plugins\n\n- old text\n";
         let identity = format!(
             "{}/{}",
-            uze_core::retired_region::PLUGIN_AUTHORING,
+            uze_core::project_earlier::PLUGIN_AUTHORING,
             uze_core::digest::short_hex(body.as_bytes())
         );
         uze_core::text_region::attach(&agents_md, &identity, body).unwrap();
@@ -1318,7 +1318,7 @@ mod drift {
             .unwrap()
             .stale_projection;
         assert!(
-            stale.is_some_and(|stale| stale.region == uze_core::retired_region::PLUGIN_AUTHORING),
+            stale.is_some_and(|stale| stale.region == uze_core::project_earlier::PLUGIN_AUTHORING),
             "the old region is reported"
         );
 
