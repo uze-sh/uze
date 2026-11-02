@@ -140,10 +140,18 @@ Add `--test-workspace=true` to judge against the whole workspace, and `--re
 '<pattern>'` to re-run one mutant. Read
 `$AUDIT/boxes/mutants/work/uze/mutants.out/missed.txt`; the file is what proves it.
 
-Local runs can fail for reasons of their own. Bun is absent from the box and some
-timing-sensitive tests of `uze-terminal` (`foreground_status_*`) have failed under
-isolated environments, which would count as "caught". When a result surprises
-you, read that mutant's log under `mutants.out/log/` to see which test failed.
+The box can mislead in three ways:
+
+- **A false `missed`.** Bun is absent, and the OpenCode tests that need it skip
+  themselves. Before calling a survivor in that code a gap, confirm it on a CI run,
+  which installs Bun.
+- **A false `caught`.** A test that fails now and then there reads as catching the
+  mutant, and `uze-terminal`'s `foreground_status_*` have failed in isolated
+  environments. When a result surprises you, read that mutant's log under
+  `mutants.out/log/` to see which test failed.
+- **No result.** A test that always fails there stops the run at the baseline:
+  "no mutants were tested". Find out why it fails. `--baseline=skip` would hide it
+  by making every mutant read `caught`.
 
 ### 6. Deliver
 
