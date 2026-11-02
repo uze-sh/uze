@@ -2765,6 +2765,33 @@ mod hosted {
         assert!(view.has_unsaved(), "the work on a.txt stays");
     }
 
+    /// A line is a line of the source, so a document sent with one opens as
+    /// its source at that line rather than as a blank preview.
+    #[test]
+    fn a_document_sent_with_a_line_opens_in_its_source_at_it() {
+        let long = format!("{}fog\n", "line\n".repeat(300));
+        let machine = FakeMachine::default().with_file("/w/long.md", &long);
+        let mut extension = CodeExtension::default();
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/long.md"),
+                directory: false,
+                line: Some(290),
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert!(view.scroll > 0);
+        let drawn = render::view(view, space());
+        let crate::view::Content::Lines { lines, .. } = drawn.content else {
+            panic!("the file's lines");
+        };
+        assert!(!lines.is_empty());
+    }
+
     /// Typing in `extension`'s open file, then put away the way the host
     /// puts it away when another agent comes to the front.
     fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
@@ -3668,6 +3695,20 @@ fn a_search_come_back_to_is_asked_again_and_keeps_its_cursor() {
     let mut back = files_at("/w").returning(view.held());
     settle(&mut back, &before);
     assert_eq!(back.search.files().len(), 2, "asked again on the way back");
+}
+
+/// A document left in its source under the map hands a door no place in that
+/// source, which a preview would draw nothing at.
+#[test]
+fn a_door_opening_a_document_left_in_its_source_under_the_map_is_not_blank() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    let mut back = files_at("/w").resuming(view.place());
+    settle(&mut back, &machine);
+    assert_eq!(back.scroll, 0);
 }
 
 /// A search still unanswered when the surface was put away gets its answer.

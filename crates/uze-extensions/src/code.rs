@@ -459,13 +459,17 @@ impl CodeView {
 
     /// Where the viewer is, for the host to hand back to [`Self::resuming`].
     pub fn place(&self) -> CodePlace {
+        let reading = match self.content {
+            ContentMode::Map => self.before_map,
+            reading => reading,
+        };
         CodePlace {
             selected_is_a_file: self.selected_is_a_file(),
             selected: self.selected.clone(),
             expanded: self.files.expanded.clone(),
             // A door opens a document as a preview, where a place in its
             // source is no place at all.
-            scroll: match self.content == ContentMode::Contents && self.selected_is_markdown() {
+            scroll: match reading == ContentMode::Contents && self.selected_is_markdown() {
                 true => 0,
                 false => self.scroll,
             },
@@ -1537,6 +1541,11 @@ impl CodeView {
     /// surface sent the viewer, as a search result sends them.
     pub fn go_to_line(&mut self, line: usize) {
         let line = line.max(1);
+        // A line is a line of the source: on a preview's rows it may lie past
+        // the end of what is drawn.
+        if self.content == ContentMode::Preview {
+            self.show(ContentMode::Contents);
+        }
         self.load_selection(Some(line));
         if let Some(open) = self.open.as_mut() {
             open.caret = Caret {
