@@ -42,109 +42,127 @@ printed on failure.
 
 ### D1. The vocabulary lives in `uze-document`
 
-`uze-document` is already "the one rule for reading a record another build
-wrote" and a leaf every crate, the terminal runtime included, may depend
-on. It gains:
+`uze-document` is a leaf (serde, serde_json, thiserror, tracing) that
+`uze-core`, `uze-workspace` and `uze-terminal` already depend on. Its scope
+widens from "reading a record another build wrote" to "what an earlier
+release left", and its crate doc and `document-ladder.md` say so. It gains:
 
 ```rust
-pub struct Release { /* major, minor, patch, beta: Option<u32> */ }
-impl Release { pub const fn beta(n: u32) -> Self; pub const fn stable(..) -> Self }
+pub enum Release { Alpha(u32), Beta(u32), Stable(u32, u32, u32) } // ordered
+pub const FLOOR: Release = Release::Alpha(1);   // raised in task 7
+pub enum Lasts { Until(Release), Unbounded }
 
-/// The oldest release a machine can come from and still be carried across.
-pub const FLOOR: Release = Release::beta(22);
-
-/// One piece of support for an earlier release.
 pub struct Earlier {
-    pub name: &'static str,           // stable id, printed on failure
-    pub last_written_by: Release,     // the last release that wrote it
-    pub site: &'static str,           // file!() of the entry
+    pub name: &'static str,         // stable id, printed on failure
+    pub lasts: Lasts,               // the last release whose run could leave it
+    pub spelled: &'static [&'static str], // literals only this entry may name
+    pub site: &'static str,         // filled by `earlier!` from file!()
 }
 ```
 
-`Step` gains `last_written_by: Release`. `Release` is ordered; a beta is
-below the stable release of the same number. No new dependency: the type
-is the few pre-release forms UZE publishes, not general semver.
+`Step` gains `lasts: Lasts`. `uze-integrations`, `uze-application` and the
+binary reach the type through a re-export from `uze-application` (`src/`
+must not name `uze_core::`, and a direct dependency there would be a second
+door).
 
-Alternative: a new `uze-earlier` crate. Refused — it would be a second
-leaf holding the same rule about another build's state.
+Alternative: a new `uze-earlier` crate — refused, a second leaf for the
+same rule.
 
-### D2. One home per kind
+### D2. `lasts` is the last release whose run could leave it
 
-| kind | home | runner |
+Records are rewritten only by a caller holding their lock, so a shape-1
+`marketplaces.json` from beta.5 can still sit on a beta.22 machine that
+never ran `market add`. An entry is therefore `Until(r)` only when every run
+since `r` carries out what it handles — a disposable retired path removed
+on every bootstrap is; a ladder rung, a carry inside `MutationLock::acquire`,
+a leftover removed on attach are not. Those are `Unbounded`, and the floor
+never passes them. Bounding them needs a release that settles them on every
+run (climb and rewrite every registered record, carry every retired path,
+retire every leftover); that is a later change, and from its release the
+entries become `Until(it)`.
+
+`Until` is derived from history: `git tag --contains <commit that stopped
+writing it> --sort=v:refname | head -1`, then its predecessor in version
+order. An empty result (unreleased) is the newest tag. The suite checks
+`FLOOR <= CARGO_PKG_VERSION` and that `lasts` never decreases up a ladder.
+
+### D3. Declarations in one place per kind; runners stay where they run
+
+| kind | declared in | runner (unchanged call site, now registry-driven) |
 |---|---|---|
-| record shape | the record's `Shaped::ladder()` rungs | `uze_document::read` (unchanged) |
-| home path | `owned.rs` `retired(..)`, gaining `.carried_by(fn)` and `.last_written_by(r)` | one `earlier::carry_home` at bootstrap, under the mutation lock, replacing the hooks in `MutationLock::acquire` and `record::ensure` |
-| harness files | `uze-integrations/src/<vendor>/earlier.rs`, plus `shared/earlier.rs` for what all verticals share (retired marketplace names, wrapper roots, runtime-tree leftovers) | `IntegrationPort::retire_earlier`, called once from the attach and detach lifecycle |
-| project files | `uze-core/src/project/earlier.rs` (today's `retired_region` table) | `uze-application`'s `retired_regions`, which every reader consumes; `StaleProjection` folds into its plan |
-| earlier checkouts | `uze-workspace/src/checkout/earlier.rs` | `reconcile`, which calls it |
+| record shape | the record's `Shaped::ladder()` | `uze_document::read` |
+| home path | `owned.rs` `retired(..)` + `.carried_by(fn)` + `.lasts(..)` | the bootstrap sweep for disposable paths; `MutationLock::acquire` for the sources move; `record::ensure` for a project's records |
+| harness files | `uze-integrations/src/<vendor>/earlier.rs`, `shared/earlier.rs` | today's attach, detach and inspect paths, receipt-checked as the `delivery-model` rule requires |
+| project files | `uze-core/src/project/earlier.rs` (today's `retired_region`) | `uze-application`'s `retired_regions`; `StaleProjection` folds into its plan |
+| earlier checkouts | `uze-workspace/src/checkout/earlier.rs` | `reconcile` |
 | wire and endpoint | `uze-terminal/src/runtime/earlier.rs` | `endpoint::make_way` |
-| command spelling | `src/cli/earlier.rs` | the grammar, which registers each spelling from it |
+| command spelling | `src/cli/earlier.rs` | the grammar |
 
-Every `earlier` module and registry exposes `fn earlier() ->
-&'static [Earlier]`; the architecture suite gathers them all, so one test
-sees every entry in the workspace.
+No runner moves into bootstrap: it takes no lock on a settled machine and
+skips when the mutation lock is held, and `from_env`, tests and the harness
+matrix never run it. No `IntegrationPort` method is added: per-package
+leftovers need the package, and "accepted as matched" happens when a receipt
+is inspected. `IntegrationRegistry::earlier()` gathers the integrations'
+entries.
 
-Every list that today repeats retired names (`setup.rs` `RETIRED`,
-`catalogue.rs` `Subject::Retired`, `uze-official`) is derived from its
-registry instead.
+Each crate exposes one `pub fn earlier() -> Vec<Earlier>`, its ladders'
+rungs included (record types are often private). Lists that repeat retired
+names (`setup.rs` `RETIRED`, `catalogue.rs` `Subject::Retired`,
+`uze-official`) are derived from the registry.
 
-### D3. The floor test
+### D4. The suite (`tests/architecture/earlier.rs`)
 
-`tests/architecture/earlier.rs` fails on every entry, ladder rung and
-retired path whose `last_written_by` is below `FLOOR`, printing its name,
-its site and the instruction "delete this entry". The same suite checks
-that each ladder's rungs are contiguous and each declares a release.
+- **Floor.** Every `Until(r)` with `r < FLOOR` fails, naming entry and site
+  and saying "delete this entry".
+- **Spelled once.** Each literal in an entry's `spelled` appearing in
+  production source outside that entry's file fails, naming both places.
+  This is what holds a retired path, file or marketplace name in one place.
+- **Identifiers.** `legacy_`, `retired_`, `pre_`, `earlier_` in code (not
+  comments) outside the homes fail; today's sites are exact budgets that
+  reach zero. A word scan over comments was measured and refused: about 520
+  lines in ~120 files, most of them design history.
+- **Serde.** `serde(alias` fails anywhere. `serde(default` on a field of a
+  `Shaped` record fails unless the doc line above it says `Additive`: an
+  additive field is how a record stays readable by an older build sharing
+  the machine, and banning it would force shape bumps that make that build
+  refuse the record.
+- **Coverage.** Every file with `impl … Shaped for` belongs to a crate whose
+  `earlier()` includes it; every `Shaped` ladder is contiguous; every rung
+  declares `lasts`.
+- `Standing::Retired` only in `owned.rs` and the registry readers.
 
-### D4. Support outside a registry fails the build
-
-Rules in the existing `layering.rs` shape:
-
-- **Vocabulary scan.** The tokens that mark support for an earlier
-  release (`legacy`, `retired`, `earlier release`, `older build`,
-  `previous release`, `used to`) are refused in production source outside
-  `earlier` modules, `owned.rs`, `uze-document`, and the ladders. Today's
-  sites go into an exact `budget` per file; each migration commit lowers
-  it, and it ends at zero. Comments count: a comment that explains a
-  fallback marks the fallback.
-- **Names written once.** A literal retired path segment or retired
-  marketplace name outside its registry fails, naming both places.
-- **No serde back door.** `#[serde(alias` anywhere, and
-  `#[serde(default` on a field of a `Shaped` record, fail with the remedy
-  "add a rung to the ladder".
-- **`Standing::Retired` only in `owned.rs`.**
-
-A token scan cannot prove intent; it catches the way such code has been
-written here so far, and the exact budget makes every exception visible in
-a diff.
+Failure messages name `.agents/rules/earlier-releases.md` and the remedy.
 
 ### D5. The agent's guide
 
-`.agents/rules/earlier-releases.md`, `model_decision` ("Read before
-writing code that copes with anything an earlier UZE release left") plus a
-glob on `**/earlier.rs`, `**/earlier/**`, `**/machine/home/owned.rs` and
-`crates/uze-document/**`. It says the kinds, their homes, the floor, how to
-pick `last_written_by` (`git tag --contains` of the commit that stopped
-writing it, minus one), and that the tests' remedy is the instruction to
-follow. `document-ladder.md` and `persistence-tiers.md` point at it rather
-than restating it. Every architecture failure message names the rule.
+`.agents/rules/earlier-releases.md`, `model_decision` ("Read before writing
+code that copes with anything an earlier UZE release left") plus a glob on
+`**/earlier.rs`, `**/machine/home/owned.rs` and `crates/uze-document/**`:
+the kinds and their homes, `Until` versus `Unbounded`, how to derive the
+release, and that a failure's remedy is the instruction to follow.
+`document-ladder.md` and `persistence-tiers.md` point at it; the latter's
+"a path is retired only when no supported build reads it" becomes the
+floor.
 
-### D6. Migration order
+### D6. Order
 
-1. Vocabulary, floor and the suite, with today's debt frozen as exact
-   budgets — from this commit no new inline support can land.
-2. One commit per kind moving its sites home, each lowering its budgets.
-3. Find each entry's `last_written_by` from history; delete the entries
-   below `1.0.0-beta.22`.
+1. Vocabulary, the suite and the rule, with `FLOOR = Alpha(1)` (every entry
+   passes) and the identifier budgets frozen: no new inline support lands.
+2. One commit per kind moving its declarations home, lowering budgets.
+3. Derive every `lasts`; raise the floor to `Beta(22)` together with
+   deleting the `Until` entries below it, after `07-upgrade` runs beta.22.
+   `Unbounded` entries stay until a settling release exists.
 
 ## Risks / Trade-offs
 
-- [`last_written_by` set wrong keeps dead code or deletes live support] →
-  each value is derived from `git tag --contains`, and the journeys'
-  `07-upgrade` chapter runs the floor release against this build.
-- [Token scan false positives (`retire_briefing` is current behaviour)] →
-  renamed where the word misleads, sanctioned with a reason otherwise.
-- [`IntegrationPort` gains a method] → it stays one trait (the
-  `delivery-model` rule); the default does nothing.
+- [`lasts` set wrong keeps dead code or deletes live support] → derived
+  from `git tag --contains`, `Unbounded` by default, and `07-upgrade` runs
+  the floor release against this build before the floor is raised.
+- [Most entries start `Unbounded`, so raising the floor deletes little at
+  first] → accepted: deleting a lazily carried rung is data loss; the
+  settling release is what makes them deletable.
+- [Moved tests behind `docs/architecture/invariants.md` citations] →
+  updated in the same commit, `invariants_citations.rs` checks them.
 - [Two open changes modify the same `persisted-state` requirement] →
   `refactor-home-file-shape` drops its beta wording and carries its renames
   as retired entries instead; this change lands first.

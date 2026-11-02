@@ -107,9 +107,10 @@ an agent no project records any more.
 ### D4. Every rename is carried across through the floor's registry
 
 Each old path becomes a `retired(..)` entry of the owned map with
-`.carried_by(step)` and `.last_written_by(Release::beta(22))`, run by the one
-bootstrap carry `earlier-release-support` introduces, under the mutation
-lock. A record step moves the file (and nothing else: the shape is
+`.carried_by(step)`, declared through `earlier-release-support`'s registry
+and run where the move it replaces would run: a machine-wide record from
+`MutationLock::acquire`, a project's records from `record::ensure`. A
+lazily carried entry is `Unbounded`; a disposable one `Until(Beta(22))`. A record step moves the file (and nothing else: the shape is
 unchanged, so no ladder rung is added); a lock is not carried, its old name
 is retired and swept. The two authored moves are carried the same way:
 `theme-overrides.json` is written once into `[appearance.*]` with

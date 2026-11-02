@@ -34,13 +34,19 @@ Each thing UZE does only because an earlier release left something behind
 — a record's shape, a path in its home, a file in a harness's
 configuration or in a project, a wire protocol, a command spelling — SHALL
 be an entry in the registry of its kind, and SHALL name the last release
-that wrote what it handles.
+whose run could still leave what it handles on a machine.
 
 #### Scenario: A new shape for a record
 
 - **WHEN** a change gives a record a new shape
-- **THEN** the step from the previous shape is an entry naming the last
-  release that wrote it
+- **THEN** the step from the previous shape is an entry of that record
+
+#### Scenario: Support whose runner does not run on every run
+
+- **WHEN** an entry is carried out only by an operation that may never run
+  on a machine, such as a record rewritten only when it is next changed
+- **THEN** the entry is unbounded: it names no last release and the floor
+  never passes it, until a release carries it out on every run
 
 #### Scenario: A path an earlier release wrote
 
