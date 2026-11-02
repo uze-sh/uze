@@ -21,7 +21,7 @@
 - [x] 3.2 `opencode/earlier.rs`: the plugin files of their own (`uze-agent-context.ts`, `uze-rules.ts`) and the per-package hook bridge path, read by setup, `rules.rs` and `opencode.rs` where they run today
 - [x] 3.3 `antigravity/earlier.rs` (plugins an earlier build installed straight from the Store); the runtime-tree rules engine joins `shared/earlier.rs`; Claude and Codex keep nothing of their own beyond what `shared/earlier.rs` holds (D-8)
 - [x] 3.4 Receipt retirement in `lifecycle/attach.rs` stays a general reconciliation, not an entry (D-8)
-- [ ] 3.5 Lower the budgets; the Lab passes for every harness
+- [x] 3.5 Budgets unchanged by this group (no marks moved); the Lab passes for every harness: 8/8 legs green (contract and vendor, four harnesses)
 
 ## 4. Project files and checkouts
 
