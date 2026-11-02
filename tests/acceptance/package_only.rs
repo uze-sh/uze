@@ -8,8 +8,8 @@
 
 use std::path::Path;
 
-use uze_core::retired_region::PLUGIN_AUTHORING;
-use uze_core::retired_region::WORKTREE_POLICY as POLICY_REGION_PREFIX;
+use uze_core::project_earlier::PLUGIN_AUTHORING;
+use uze_core::project_earlier::WORKTREE_POLICY as POLICY_REGION_PREFIX;
 use uze_testkit::fixtures;
 use uze_testkit::scenario::PackageOnly;
 use uze_testkit::temp::TestEnvironment;

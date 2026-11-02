@@ -180,7 +180,7 @@ pub(super) fn model_with_data() -> TuiModel {
         root: PathBuf::from("/home/project"),
         canonical: PathBuf::from("/home/project/AGENTS.md"),
         sources: Vec::new(),
-        retired_regions: None,
+        leftover_regions: None,
         harnesses: vec![
             HarnessContextStatus {
                 integration: "claude-code".to_owned(),

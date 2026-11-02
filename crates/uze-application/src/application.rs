@@ -59,7 +59,6 @@ mod project_labels;
 mod read_models;
 mod repair;
 mod requirements;
-mod retired_regions;
 mod rules;
 mod rules_engine;
 mod runtime_shim;

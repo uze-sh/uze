@@ -1219,7 +1219,7 @@ pub(crate) fn drain_worker_results(
 /// read as everything having been taken out.
 fn context_applied(message: String, report: &ContextReconciliationReport) -> Status {
     let problems: Vec<String> = report
-        .retired_regions
+        .leftover_regions
         .iter()
         .flat_map(|regions| {
             regions
@@ -1842,7 +1842,7 @@ mod tests {
     fn reconciled(kept: Vec<(String, String)>) -> ContextReconciliationReport {
         ContextReconciliationReport {
             agents_md: PathBuf::from("AGENTS.md"),
-            retired_regions: Some(uze_application::application::RetiredRegionsStatus {
+            leftover_regions: Some(uze_application::application::RetiredRegionsStatus {
                 file: PathBuf::from("AGENTS.md"),
                 removed: Vec::new(),
                 kept,

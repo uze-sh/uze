@@ -123,7 +123,7 @@ pub(super) struct RetiredRegionsNotice {
 /// Looks, off the frame like every other repository touch, for regions an
 /// earlier release left in each directory's primary `AGENTS.md`. It only
 /// reads: the workspace writes nothing into the operator's files.
-pub(super) fn spawn_retired_region_check(
+pub(super) fn spawn_leftover_region_check(
     home: &UzeHome,
     directories: Vec<PathBuf>,
     sender: mpsc::Sender<RetiredRegionsNotice>,
@@ -134,13 +134,14 @@ pub(super) fn spawn_retired_region_check(
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _pass = crate::telemetry::background_pass!("tui.retired_region_check", parent: &parent);
+        let _pass =
+            crate::telemetry::background_pass!("tui.leftover_region_check", parent: &parent);
         let Ok(app) = tui_application(home) else {
             return;
         };
         let mut seen = std::collections::BTreeSet::new();
         for directory in directories {
-            let Some(plan) = app.workspace().retired_regions(&directory) else {
+            let Some(plan) = app.workspace().leftover_regions(&directory) else {
                 continue;
             };
             if !seen.insert(plan.file.clone()) {

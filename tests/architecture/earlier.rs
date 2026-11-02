@@ -90,6 +90,8 @@ fn shaped_records(source: &str) -> Vec<String> {
 /// module, the owned map's retired entries, and `uze-document` itself.
 fn is_home(relative: &str) -> bool {
     relative.ends_with("/earlier.rs")
+        || relative.contains("/earlier/")
+        || relative == THE_MAP
         || relative.ends_with("machine/home/owned.rs")
         || relative.starts_with("crates/uze-document/")
 }
@@ -116,42 +118,24 @@ fn workspace_sources() -> Vec<(String, String)> {
 const MARKS: &[&str] = &["legacy_", "retired_", "earlier_"];
 
 /// Files that spell a mark for a reason that is not UZE's own past.
-const MARKS_SANCTIONED: &[(&str, &str)] = &[(
-    "src/ui/orchestrator/input.rs",
-    "the X10 mouse encoding is the terminal's legacy, not an earlier UZE release's",
-)];
+const MARKS_SANCTIONED: &[(&str, &str)] = &[
+    (
+        "src/ui/orchestrator/input.rs",
+        "the X10 mouse encoding is the terminal's legacy, not an earlier UZE release's",
+    ),
+    (
+        "crates/uze-application/src/application/schema.rs",
+        "the schema report reads the owned map's retired standing for every path",
+    ),
+    (
+        "crates/uze-application/src/application/read_models.rs",
+        "`retired_regions` is the key the JSON output has always carried",
+    ),
+];
 
 /// Today's inline support, frozen: exact, so moving a site home fails
 /// until its number is lowered, and a new one fails at once.
-const MARKS_BUDGET: &[(&str, usize)] = &[
-    ("crates/uze-application/src/application.rs", 1),
-    ("crates/uze-application/src/application/context.rs", 15),
-    (
-        "crates/uze-application/src/application/project_environment.rs",
-        4,
-    ),
-    ("crates/uze-application/src/application/read_models.rs", 4),
-    (
-        "crates/uze-application/src/application/retired_regions.rs",
-        6,
-    ),
-    ("crates/uze-application/src/application/schema.rs", 2),
-    ("crates/uze-application/src/application/services.rs", 1),
-    (
-        "crates/uze-application/src/application/services/retired_regions.rs",
-        5,
-    ),
-    ("crates/uze-core/src/lib.rs", 1),
-    ("crates/uze-core/src/machine/home.rs", 1),
-    ("crates/uze-core/src/project.rs", 1),
-    ("crates/uze-workspace/src/checkout/git_facts.rs", 2),
-    ("crates/uze-workspace/src/lib.rs", 1),
-    ("src/cli/status.rs", 6),
-    ("src/ui/orchestrator.rs", 2),
-    ("src/ui/orchestrator/reads.rs", 2),
-    ("src/ui/orchestrator/session/absorb.rs", 4),
-    ("src/ui/worker.rs", 1),
-];
+const MARKS_BUDGET: &[(&str, usize)] = &[];
 
 fn marks_in(source: &str) -> usize {
     source
