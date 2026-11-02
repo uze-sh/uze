@@ -64,9 +64,19 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
             if let Some(parent) = now.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            let _ = std::fs::rename(&was, &now);
+            if let Err(error) = move_unless_taken(&was, &now) {
+                tracing::debug!(was = %was.display(), %error, "a record was not carried to its current name");
+            }
         }
     }
+}
+
+/// Moves `was` to `now` only while nothing is at `now`: a link refuses a
+/// taken name where a rename would replace it, so a record another process
+/// wrote since the check is never overwritten by the earlier one.
+fn move_unless_taken(was: &Path, now: &Path) -> std::io::Result<()> {
+    std::fs::hard_link(was, now)?;
+    std::fs::remove_file(was)
 }
 
 /// Carries what an earlier release kept outside `config.toml` into it: the
@@ -216,6 +226,20 @@ mod tests {
             lock.exists(),
             "a lock is not carried: an older build still takes it by name"
         );
+    }
+
+    #[test]
+    fn a_move_never_replaces_what_took_the_name_after_the_check() {
+        let scratch = uze_testkit::temp::scratch("carry-move-unless-taken");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let (was, now) = (scratch.join("was.json"), scratch.join("now.json"));
+        std::fs::write(&was, "older").unwrap();
+        std::fs::write(&now, "newer").unwrap();
+
+        assert!(move_unless_taken(&was, &now).is_err());
+
+        assert_eq!(std::fs::read_to_string(&now).unwrap(), "newer");
+        assert_eq!(std::fs::read_to_string(&was).unwrap(), "older");
     }
 
     #[test]
