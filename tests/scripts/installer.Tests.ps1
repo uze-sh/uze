@@ -42,7 +42,8 @@ BeforeAll {
     $text = $text -replace "(?m)^(\s*)\`$ReleaseKey = '.*'", "`$1`$`$ReleaseKey = '$publicKey'"
     [IO.File]::WriteAllText($installer, $text, (New-Object Text.UTF8Encoding $false))
 
-    # A stand-in uze.exe that answers `--version` and nothing else. Built by
+    # A stand-in uze.exe that answers `--version`, and writes what an
+    # `uninstall` asked of it beside the state it was given. Built by
     # Windows PowerShell, whose Add-Type writes a console program.
     $stand = Join-Path $root 'stand-in'
     New-Item -ItemType Directory -Path $stand | Out-Null
@@ -50,6 +51,10 @@ BeforeAll {
 public static class Program {
     public static int Main(string[] args) {
         if (args.Length > 0 && args[0] == "--version") { System.Console.WriteLine("uze $version"); }
+        if (args.Length > 0 && args[0] == "uninstall") {
+            string home = System.Environment.GetEnvironmentVariable("UZE_HOME");
+            System.IO.File.WriteAllText(System.IO.Path.Combine(home, "uninstall-args.txt"), string.Join(" ", args));
+        }
         return 0;
     }
 }
@@ -242,12 +247,44 @@ Describe 'install.ps1' {
         Join-Path $bin 'uze.exe' | Should -Not -Exist
     }
 
-    It 'uninstalls the binary and its Path entry, and keeps the state' {
+    It 'records the Path entry it added, for uninstall to take back' {
+        (Invoke-Installer).Code | Should -Be 0
+        (Get-Content -Raw (Join-Path $home_ 'state\install.json') | ConvertFrom-Json).path_entry | Should -Be $bin
+    }
+
+    It 'uninstalls through uze uninstall, takes its Path entry back, and keeps the state' {
         (Invoke-Installer).Code | Should -Be 0
         $run = Invoke-Installer -Arguments @('-Uninstall')
         $run.Code | Should -Be 0 -Because $run.Output
-        Join-Path $bin 'uze.exe' | Should -Not -Exist
+        Get-Content -Raw (Join-Path $home_ 'uninstall-args.txt') | Should -Be 'uninstall --yes'
         ((Get-UserPathValue).Value -split ';') | Should -Not -Contain $bin
         $home_ | Should -Exist
+    }
+
+    It 'purges through uze uninstall --yes --purge, never by deleting the state itself' {
+        (Invoke-Installer).Code | Should -Be 0
+        $run = Invoke-Installer -Arguments @('-Uninstall', '-Purge')
+        $run.Code | Should -Be 0 -Because $run.Output
+        Get-Content -Raw (Join-Path $home_ 'uninstall-args.txt') | Should -Be 'uninstall --yes --purge'
+        $home_ | Should -Exist -Because 'the stand-in removed nothing, and the script deletes no state'
+    }
+
+    It 'uninstalls through the binary its record names when it sits elsewhere, keeping the record' {
+        (Invoke-Installer).Code | Should -Be 0
+        $elsewhere = Join-Path $root ("bin-elsewhere-" + [Guid]::NewGuid().ToString('N'))
+        $run = Invoke-Installer -Arguments @('-Uninstall', '-Purge') -Environment @{ UZE_BIN_DIR = $elsewhere }
+        $run.Code | Should -Be 0 -Because $run.Output
+        Get-Content -Raw (Join-Path $home_ 'uninstall-args.txt') | Should -Be 'uninstall --yes --purge'
+        Join-Path $home_ 'state\install.json' | Should -Exist
+    }
+
+    It 'without the binary removes only its own record, and says how to remove the rest' {
+        (Invoke-Installer).Code | Should -Be 0
+        Remove-Item -LiteralPath (Join-Path $bin 'uze.exe') -Force
+        $run = Invoke-Installer -Arguments @('-Uninstall', '-Purge')
+        $run.Code | Should -Be 0 -Because $run.Output
+        Join-Path $home_ 'state\install.json' | Should -Not -Exist
+        $home_ | Should -Exist
+        $run.Output | Should -Match 'uze uninstall --purge'
     }
 }

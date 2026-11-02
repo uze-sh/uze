@@ -86,14 +86,33 @@ pub(crate) fn merge_event_entry(
         .map_err(|reason| UzeError::HarnessConfig(format!("cannot merge hook entry: {reason}")))?;
     let array = event_array(&mut config, event, config_path)
         .map_err(|reason| UzeError::HarnessConfig(format!("cannot merge hook entry: {reason}")))?;
-    for expected in previous {
-        if let Ok(old) = serde_json::from_str::<serde_json::Value>(expected) {
-            array.retain(|candidate| candidate != &old);
+    // A harness that keys its trust by a group's position (Codex) asks
+    // again about every group whose index moves. An earlier version of this
+    // group is therefore replaced where it stands, and a new one goes after
+    // every group already there: a group the operator placed before UZE's
+    // never moves.
+    let earlier: Vec<serde_json::Value> = previous
+        .iter()
+        .filter_map(|expected| serde_json::from_str(expected).ok())
+        .collect();
+    if !array.iter().any(|candidate| candidate == entry) {
+        match array
+            .iter()
+            .position(|candidate| earlier.contains(candidate))
+        {
+            Some(at) => array[at] = entry.clone(),
+            None => array.push(entry.clone()),
         }
     }
-    if !array.iter().any(|candidate| candidate == entry) {
-        array.push(entry.clone());
-    }
+    let mut seen = false;
+    array.retain(|candidate| {
+        if candidate == entry {
+            let first = !seen;
+            seen = true;
+            return first;
+        }
+        !earlier.contains(candidate)
+    });
     json_config::write_object(config_path, &config)?;
     Ok(config_path.to_path_buf())
 }

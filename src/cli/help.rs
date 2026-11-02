@@ -182,9 +182,14 @@ pub(crate) const ROOT_COMMANDS: &[(progress::CommandGroup, &[RootCommand])] = &[
         &[
             ("setup", "[agent...]", "Install and set up your agents"),
             ("config", "<command>", "Appearance, icons and notifications"),
-            ("doctor", "", "Diagnose, and repair what is safe to"),
+            (
+                "doctor",
+                "[--repair]",
+                "Diagnose, and repair what is safe to",
+            ),
             ("usage", "", "What uze uses on this machine"),
             ("upgrade", "", "Install the latest uze"),
+            ("uninstall", "[--purge]", "Take uze off this machine"),
         ],
     ),
 ];
@@ -312,6 +317,10 @@ pub(crate) const COMMAND_EXAMPLES: &[(&str, &[&str])] = &[
     ("remove", &["uze remove lint", "uze remove lint -m"]),
     ("status", &["uze status", "uze status -m"]),
     ("inspect", &["uze inspect lint"]),
+    (
+        "uninstall",
+        &["uze uninstall", "uze uninstall --yes --purge"],
+    ),
     (
         "market",
         &[

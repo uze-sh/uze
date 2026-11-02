@@ -19,9 +19,7 @@ use uze_core::{
     store::StoredPackage,
 };
 
-use crate::shared::marketplace::{
-    MarketplaceDialect, Origin, manifest_fields, marketplace_entries,
-};
+use crate::shared::marketplace::{MarketplaceDialect, manifest_fields, marketplace_entries};
 use crate::shared::path::normalize_declared_relative_path;
 use crate::shared::plan::blocked;
 use crate::shared::process::{json, run_quiet};
@@ -34,16 +32,20 @@ const MARKETPLACE_OWNER_URL: &str = "https://github.com/uze-sh/uze";
 pub(super) struct ClaudeMarketplace;
 
 impl MarketplaceDialect for ClaudeMarketplace {
-    const VENDOR: &'static str = "claude";
+    const STORE: &'static crate::shared::build::VendorStore = &super::STORE;
+    const HOOKS: crate::hooks::HookTarget = super::HOOKS;
     const SETUP_NAME: &'static str = "claude";
     const CATALOGUE_NOUN: &'static str = "Claude marketplace";
     const ENVELOPE_DIR: &'static str = ".claude-plugin";
     const CATALOGUE_PATH: &'static str = ".claude-plugin/marketplace.json";
     const EXPLICIT_KIND: &'static str = "claude-plugin";
     const GENERATED_KIND: &'static str = "claude-plugin-generated";
-    const EXPLICIT_EVIDENCE: &'static str = "The preserved external .claude-plugin/plugin.json is exposed through UZE's derived Claude marketplace. Claude Code owns Skill and MCP loading for this plugin, so UZE must not attach them a second time.";
-    const GENERATED_EVIDENCE: &'static str = "No .claude-plugin/plugin.json was provided. UZE synthesizes one deterministically into a UZE-owned derived directory (never the Store): a copy of the package carrying its skills, agents and mcp.json-declared servers, published through a second, generated-only Claude marketplace, so Claude names every skill and agent under the plugin.";
+    const EXPLICIT_EVIDENCE: &'static str = "The preserved external .claude-plugin/plugin.json is exposed through UZE's Claude marketplace, the vendor store. Claude Code owns Skill and MCP loading for this plugin, so UZE must not attach them a second time.";
+    const GENERATED_EVIDENCE: &'static str = "No .claude-plugin/plugin.json was provided. UZE synthesizes one deterministically into the package's build in Claude Code's vendor store (never the package sources): a copy of the package carrying its skills, agents and mcp.json-declared servers, published through UZE's one Claude marketplace, so Claude names every skill and agent under the plugin.";
     const ENVELOPE_CARRIES_AGENTS: bool = true;
+    // A same-name `marketplace add` from another root repoints it and keeps
+    // its plugins (measured on 2.1.316, `experiments/claude/source-tie.py`).
+    const ADD_REPOINTS: bool = true;
 
     fn catalogue_document(
         name: &str,
@@ -57,22 +59,13 @@ impl MarketplaceDialect for ClaudeMarketplace {
         })
     }
 
-    fn catalogue_entry(
-        package: &StoredPackage,
-        source: String,
-        origin: Origin,
-    ) -> serde_json::Value {
-        let (description, version) = match origin {
-            Origin::Explicit => manifest_fields(
-                &package.root.join(".claude-plugin/plugin.json"),
-                "UZE-managed Claude plugin",
-            ),
-            Origin::Generated => {
-                manifest_fields(&package.manifest, super::generate::GENERATED_DESCRIPTION)
-            }
-        };
+    fn catalogue_entry(name: &str, source: String, build: &Path) -> serde_json::Value {
+        let (description, version) = manifest_fields(
+            &build.join(".claude-plugin/plugin.json"),
+            "UZE-managed Claude plugin",
+        );
         serde_json::json!({
-            "name": package.active_name.as_str(),
+            "name": name,
             "source": source,
             "description": description,
             "version": version
@@ -89,45 +82,51 @@ impl MarketplaceDialect for ClaudeMarketplace {
         !policy.is_invalid()
     }
 
-    fn materialize_envelope(package: &StoredPackage, dir: &Path) -> Result<()> {
-        super::generate::materialize_envelope(package, dir)
+    fn render_envelope(package: &StoredPackage, dir: &Path, root: &Path) -> Result<()> {
+        super::generate::render_envelope(package, dir, root)
     }
 
-    fn generated_receipt_root(package: &StoredPackage, _envelope_dir: &Path) -> PathBuf {
-        package.root.clone()
-    }
-
-    fn marketplace_exists(executable: &Path, home: &Path, root: &Path) -> bool {
-        if let Some(known) = recorded_marketplaces(home) {
-            return known.iter().any(|entry| {
-                [
-                    entry.get("installLocation"),
-                    entry.get("source").and_then(|source| source.get("path")),
-                ]
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .any(|candidate| Path::new(candidate) == root)
-            });
+    fn registered_root(executable: &Path, home: &Path, name: &str) -> Option<PathBuf> {
+        let located = |entry: &serde_json::Value, keys: &[&str]| {
+            keys.iter()
+                .find_map(|key| {
+                    key.split('.')
+                        .try_fold(entry, |value, part| value.get(part))
+                        .and_then(serde_json::Value::as_str)
+                })
+                .map(PathBuf::from)
+        };
+        if let Some(recorded) = Self::recorded_root(home, name) {
+            return recorded;
         }
-        let Ok(listing) = json(
+        let listing = json(
             executable,
             home,
             &["plugin", "marketplace", "list", "--json"],
             "claude",
-        ) else {
-            return false;
-        };
-        marketplace_entries(&listing).is_some_and(|entries| {
-            entries.iter().any(|entry| {
-                ["path", "installLocation"].iter().any(|key| {
-                    entry
-                        .get(*key)
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|candidate| Path::new(candidate) == root)
-                })
-            })
-        })
+        )
+        .ok()?;
+        marketplace_entries(&listing)?
+            .iter()
+            .find(|entry| entry.get("name").and_then(serde_json::Value::as_str) == Some(name))
+            .and_then(|entry| located(entry, &["path", "installLocation"]))
+    }
+
+    fn recorded_root(home: &Path, name: &str) -> Option<Option<PathBuf>> {
+        let known = recorded_marketplaces(home)?;
+        Some(
+            known
+                .iter()
+                .find(|(known_name, _)| known_name == name)
+                .and_then(|(_, entry)| {
+                    ["source.path", "installLocation"].iter().find_map(|key| {
+                        key.split('.')
+                            .try_fold(entry, |value, part| value.get(part))
+                            .and_then(serde_json::Value::as_str)
+                            .map(PathBuf::from)
+                    })
+                }),
+        )
     }
 
     fn add_marketplace(executable: &Path, home: &Path, root: &Path) -> Result<()> {
@@ -197,9 +196,7 @@ impl MarketplaceDialect for ClaudeMarketplace {
 /// copy, or a copy made before the files existed, leaves behind.
 pub(super) fn plugin_unreadable(
     command_home: &Path,
-    uze_home: &uze_core::home::UzeHome,
-    package: &StoredPackage,
-    kind: &str,
+    source: PathBuf,
     selector: &str,
     served: &[&Resource],
 ) -> Vec<UnreadableDelivery> {
@@ -211,13 +208,6 @@ pub(super) fn plugin_unreadable(
                 reason: reason.clone(),
             })
             .collect::<Vec<_>>()
-    };
-    let source = match crate::shared::marketplace::receipt_origin::<ClaudeMarketplace>(kind) {
-        Some(Origin::Explicit) => package.root.clone(),
-        Some(Origin::Generated) => crate::shared::marketplace::generated_package_dir::<
-            ClaudeMarketplace,
-        >(uze_home, package.id.as_str()),
-        None => return Vec::new(),
     };
     if !source.join(".claude-plugin/plugin.json").is_file() {
         return every(format!(
@@ -424,12 +414,16 @@ fn recorded_settings(home: &Path) -> Option<serde_json::Value> {
 
 /// Every marketplace Claude has registered, when its record reads as one
 /// entry per marketplace, each with a source.
-fn recorded_marketplaces(home: &Path) -> Option<Vec<serde_json::Value>> {
+fn recorded_marketplaces(home: &Path) -> Option<Vec<(String, serde_json::Value)>> {
     let known = recorded(home, "known_marketplaces.json")?;
-    let entries: Vec<serde_json::Value> = known.as_object()?.values().cloned().collect();
+    let entries: Vec<(String, serde_json::Value)> = known
+        .as_object()?
+        .iter()
+        .map(|(name, entry)| (name.clone(), entry.clone()))
+        .collect();
     entries
         .iter()
-        .all(|entry| {
+        .all(|(_, entry)| {
             entry
                 .get("source")
                 .is_some_and(serde_json::Value::is_object)
@@ -741,10 +735,16 @@ mod claude_native_coverage_tests {
 
     use super::ClaudeMarketplace;
     use crate::claude::ClaudeIntegration;
-    use crate::shared::marketplace::{Origin, catalogue_document};
+    use crate::shared::marketplace::{catalogue_document, publish_for_test};
 
+    /// The catalogue `packages`' builds make, each published on a home of
+    /// its own.
     fn claude_catalogue_document(packages: &[uze_core::store::StoredPackage]) -> serde_json::Value {
-        catalogue_document::<ClaudeMarketplace>(packages, Origin::Explicit)
+        let home = UzeHome::at(temp_root("catalogue-home"));
+        for package in packages {
+            publish_for_test::<ClaudeMarketplace>(&home, "claude", package);
+        }
+        catalogue_document::<ClaudeMarketplace>(&home, "claude", packages)
     }
     use super::claude_exact_coverage;
 
@@ -1217,7 +1217,7 @@ mod claude_native_coverage_tests {
         let doc1 = claude_catalogue_document(&[pkg1.clone(), pkg2.clone()]);
         let doc1_again = claude_catalogue_document(&[pkg1, pkg2]);
         assert_eq!(doc1, doc1_again);
-        assert_eq!(doc1["name"], "uze-local");
+        assert_eq!(doc1["name"], "uze-store");
         assert_eq!(
             doc1["owner"]["url"], "https://github.com/uze-sh/uze",
             "the owner Claude's marketplace UI shows is this project, not another"
@@ -1299,7 +1299,11 @@ mod claude_native_coverage_tests {
 
 #[cfg(test)]
 mod explicit_marketplace_tests {
-    use std::{collections::BTreeMap, fs, path::PathBuf};
+    use std::{
+        collections::BTreeMap,
+        fs,
+        path::{Path, PathBuf},
+    };
 
     use uze_core::{
         home::UzeHome,
@@ -1359,73 +1363,109 @@ mod explicit_marketplace_tests {
     }
 
     #[test]
-    fn an_explicit_envelope_is_mirrored_out_of_the_store() {
+    fn an_explicit_envelope_is_built_into_the_vendor_store() {
         let root = uze_testkit::temp::scratch("explicit-mirror");
         let home = UzeHome::at(root.join("uze"));
         let package = explicit_package(&root);
-        marketplace::republish::<ClaudeMarketplace>(&home, std::slice::from_ref(&package)).unwrap();
-
-        let mirror = marketplace::explicit_package_dir::<ClaudeMarketplace>(&home, &package);
-        assert!(mirror.starts_with(home.runtime_dir()));
-        assert!(mirror.join(".claude-plugin/plugin.json").is_file());
-        assert!(mirror.join("skills/a/scripts/run.sh").is_file());
-        assert!(!mirror.join("skills").is_symlink());
-        let catalogue = marketplace::marketplace_root::<ClaudeMarketplace>(
+        marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", &package);
+        marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            &root,
             &home,
-            marketplace::Origin::Explicit,
+            "claude",
+            std::slice::from_ref(&package),
         )
-        .join(ClaudeMarketplace::CATALOGUE_PATH);
+        .unwrap();
+
+        let build = home.build_dir("claude", package.id.as_str());
+        assert!(build.starts_with(home.vendor_store_dir("claude")));
+        assert!(build.join(".claude-plugin/plugin.json").is_file());
+        assert!(build.join("skills/a/scripts/run.sh").is_file());
+        assert!(!build.join("skills").is_symlink());
+        let catalogue = marketplace::marketplace_root::<ClaudeMarketplace>(&home)
+            .join(ClaudeMarketplace::CATALOGUE_PATH);
         let document: serde_json::Value =
             serde_json::from_slice(&fs::read(catalogue).unwrap()).unwrap();
-        assert_eq!(document["plugins"][0]["source"], "./plugins/local/kit");
+        assert_eq!(document["name"], "uze-store");
+        assert_eq!(
+            document["plugins"][0]["source"],
+            format!("./{}", package.id.as_str())
+        );
     }
 
+    /// A receipt is matched by the marketplace it names, never its root:
+    /// one whose root moved is repointed, one installed through the
+    /// retired `uze-local` is retired and installed again.
     #[test]
-    fn a_receipt_made_through_the_store_rooted_marketplace_no_longer_serves() {
+    fn only_a_receipt_through_the_retired_marketplace_no_longer_serves() {
         let root = uze_testkit::temp::scratch("explicit-serves");
-        let home = UzeHome::at(root.join("uze"));
         let package = explicit_package(&root);
-        let old = explicit_receipt(&package, home.store_dir());
-        let current = explicit_receipt(
-            &package,
-            marketplace::marketplace_root::<ClaudeMarketplace>(
-                &home,
-                marketplace::Origin::Explicit,
-            ),
-        );
-        assert!(!marketplace::receipt_serves::<ClaudeMarketplace>(
-            &home, &old
-        ));
-        assert!(marketplace::receipt_serves::<ClaudeMarketplace>(
-            &home, &current
-        ));
+        let retired = explicit_receipt(&package, root.join("runtime/explicit"));
+        let mut moved = explicit_receipt(&package, root.join("runtime/generated"));
+        if let ManagedArtifact::IntegrationOwned { selector, .. } = &mut moved.artifact {
+            *selector = "kit@uze-store".to_owned();
+        }
+        assert!(!marketplace::receipt_serves::<ClaudeMarketplace>(&retired));
+        assert!(marketplace::receipt_serves::<ClaudeMarketplace>(&moved));
     }
 
+    /// A package with its own envelope and one without are two plugins of
+    /// the one marketplace, each build recording which it is.
     #[test]
-    fn the_generated_tier_is_pruned_by_reference() {
-        let root = uze_testkit::temp::scratch("explicit-prune");
+    fn both_origins_are_builds_of_one_marketplace() {
+        let root = uze_testkit::temp::scratch("both-origins");
         let home = UzeHome::at(root.join("uze"));
-        let generated = marketplace::generated_root::<ClaudeMarketplace>(&home);
-        let orphan = generated.join("gone@local");
-        let named = generated.join("kept@local");
-        let explicit_orphan =
-            marketplace::explicit_root::<ClaudeMarketplace>(&home).join("plugins/local/gone");
-        for dir in [&orphan, &named, &explicit_orphan] {
-            fs::create_dir_all(dir).unwrap();
-        }
-        let mut receipt = explicit_receipt(&explicit_package(&root), generated.clone());
-        if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
-            detail.insert("package_root".to_owned(), serde_json::json!(named));
-        }
-        uze_core::state::record_receipt(&home, receipt).unwrap();
+        let explicit = explicit_package(&root);
+        let generated_root = root.join("store/plugins/local/flow");
+        fs::create_dir_all(generated_root.join("skills/commit")).unwrap();
+        fs::write(
+            generated_root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: Commit.\n---\n",
+        )
+        .unwrap();
+        fs::write(generated_root.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+        let generated = crate::shared::test_support::stored_at(&generated_root, "flow");
 
-        marketplace::republish::<ClaudeMarketplace>(&home, &[]).unwrap();
-
-        assert!(!orphan.exists() && !explicit_orphan.exists());
-        assert!(
-            named.exists(),
-            "a directory a receipt names waits for its detach"
+        let origins: Vec<_> = [&explicit, &generated]
+            .into_iter()
+            .map(|package| {
+                let receipt =
+                    marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", package);
+                crate::shared::build::RecordedBuild::of(&receipt)
+                    .unwrap()
+                    .origin
+            })
+            .collect();
+        assert_eq!(
+            origins,
+            [
+                Some(marketplace::Origin::Explicit),
+                Some(marketplace::Origin::Generated)
+            ]
         );
+        marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            &root,
+            &home,
+            "claude",
+            &[explicit.clone(), generated.clone()],
+        )
+        .unwrap();
+        let catalogue: serde_json::Value = serde_json::from_slice(
+            &fs::read(
+                marketplace::marketplace_root::<ClaudeMarketplace>(&home)
+                    .join(ClaudeMarketplace::CATALOGUE_PATH),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let names: Vec<&str> = catalogue["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["name"].as_str())
+            .collect();
+        assert_eq!(names, ["flow", "kit"]);
     }
 }
 
@@ -1467,16 +1507,14 @@ mod recorded_state_tests {
         );
         let absent = Path::new("/nonexistent/claude");
 
-        assert!(ClaudeMarketplace::marketplace_exists(
-            absent,
-            &home,
-            Path::new("/uze/generated")
-        ));
-        assert!(!ClaudeMarketplace::marketplace_exists(
-            absent,
-            &home,
-            Path::new("/elsewhere")
-        ));
+        assert_eq!(
+            ClaudeMarketplace::registered_root(absent, &home, "uze-store").as_deref(),
+            Some(Path::new("/uze/generated"))
+        );
+        assert_eq!(
+            ClaudeMarketplace::registered_root(absent, &home, "uze-local"),
+            None
+        );
         assert!(ClaudeMarketplace::plugin_installed(
             absent,
             &home,

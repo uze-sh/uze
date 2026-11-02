@@ -77,7 +77,10 @@ pub(super) fn rendered_skill(uze_home: &UzeHome, resource: &Resource) -> String 
     }
     render_skill_wrapper(
         &label,
-        &resolve_bytes(&resource.capability.payload, &resource.package_root),
+        &resolve_bytes(
+            &resource.capability.payload,
+            &super::STORE.root_of(&resource.package_root),
+        ),
         &markers,
         &["opencode"],
     )

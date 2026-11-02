@@ -5,7 +5,7 @@ import shlex
 import time
 
 from contract import continuity
-from contract.bindings import Bindings, hook_prelude
+from contract.bindings import Bindings, hook_prelude, json_documents
 from contract.tui import Tui
 
 from .scenarios import claude_container, drive_onboarding
@@ -15,6 +15,24 @@ class ClaudeBindings(Bindings):
     harness = "claude"
     integration_id = "claude-code"
     display_name = "Claude Code"
+
+    registry_listing = (
+        "claude plugin marketplace list --json; claude plugin list --json"
+    )
+    plugin_listing = "claude plugin list --json"
+
+    def plugin_enabled(self, listing, plugin):
+        """`claude plugin list --json`: `[{"id": "<plugin>@<market>",
+        "enabled": bool}]` (2.1.316)."""
+        return any(
+            isinstance(entry, dict)
+            and str(entry.get("id", "")).startswith(f"{plugin}@")
+            and entry.get("enabled") is True
+            for document in json_documents(listing)
+            if isinstance(document, list)
+            for entry in document
+        )
+
     compact_command = "/compact"
     launch = "exec claude"
     help_snapshots = ((("--help",), "crates/uze-integrations/src/claude/help.txt"),)

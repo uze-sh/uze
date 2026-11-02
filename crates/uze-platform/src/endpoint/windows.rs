@@ -571,6 +571,12 @@ pub fn peer_pid(stream: &Stream) -> Option<u32> {
 /// A pipe has no file to clear: it goes with the last handle to it.
 pub fn clear(_endpoint: &Path) {}
 
+/// A pipe goes with the last handle to it, so a server that stopped
+/// leaves nothing at its name.
+pub fn lingers(_endpoint: &Path) -> bool {
+    false
+}
+
 /// A pipe is not a file a cleaner can take from under a live server, so
 /// the endpoint a server bound is the one it keeps.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

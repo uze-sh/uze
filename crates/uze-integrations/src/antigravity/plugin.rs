@@ -300,39 +300,41 @@ pub(super) fn attach_generated_plugin(
         UzeError::ExposureUnavailable("package has no usable plugin name".to_owned())
     })?;
     let holders = census(executable, integration, &name)?;
-    let super::PluginContents { hooks, agents } = integration.plugin_contents(package)?;
-    if !hooks.is_empty()
-        && let Some(source) = crate::hooks::wrapper_source(super::HOOKS)
-    {
-        crate::hooks::materialize_wrapper(
-            &super::HOOKS.wrapper_path(&integration.uze_home),
-            &source,
-        )?;
-    }
-    let derived_dir = super::generate::materialize_generated_plugin(
+    let derived_dir = crate::shared::build::recorded_build(
         &integration.uze_home,
-        package,
-        &hooks,
-        &agents,
-    )?;
+        integration.id(),
+        package.id.as_str(),
+    )?
+    .filter(|build| build.origin.is_some())
+    .map(|build| build.root)
+    .ok_or_else(|| {
+        UzeError::DeliveryFailed(format!(
+            "`{}` has no plugin build in Antigravity's vendor store to install",
+            package.id.as_str()
+        ))
+    })?;
     // Antigravity stages a copy named after the plugin's own declared
     // manifest name, not the source directory it was given (verified
-    // against real agy 1.1.22) — the same convention the Store-tree route
-    // above already relies on. `derived_dir`'s own basename is the qualified
-    // Store id, never `name` (`generated_package_dir_for_id`), so it cannot
-    // be used to predict the staged path.
+    // against real agy 1.1.22). The build's own basename is the qualified
+    // package id, never `name`, so it cannot be used to predict the staged
+    // path.
     let staged_dir = integration.plugins_dir.join(&name);
+    let install = || {
+        let args: Vec<&Path> = vec![Path::new("plugin"), Path::new("install"), &derived_dir];
+        run_quiet(
+            Path::new(executable),
+            &integration.command_home,
+            &format!("agy plugin install `{name}`"),
+            &args,
+        )
+    };
     match holders {
-        0 => {
-            let args: Vec<&Path> = vec![Path::new("plugin"), Path::new("install"), &derived_dir];
-            run_quiet(
-                Path::new(executable),
-                &integration.command_home,
-                &format!("agy plugin install `{name}`"),
-                &args,
-            )?;
-        }
+        0 => install()?,
         1 if holds_exactly(&staged_dir, &derived_dir) => {}
+        // The copy UZE installed of an earlier build: installing again
+        // under the same name replaces it (measured on 1.4.12,
+        // `experiments/antigravity/source-tie.py`).
+        1 if installed_by_uze(integration, package, &name)? => install()?,
         _ => return Err(name_held_by_another(&name)),
     }
     let fingerprint = fingerprint_dir(&staged_dir)?;
@@ -346,18 +348,34 @@ pub(super) fn attach_generated_plugin(
             detail: [
                 ("source_path".to_owned(), serde_json::json!(derived_dir)),
                 ("staged_path".to_owned(), serde_json::json!(staged_dir)),
-                ("package_root".to_owned(), serde_json::json!(package.root)),
+                ("package_root".to_owned(), serde_json::json!(derived_dir)),
                 ("fingerprint".to_owned(), serde_json::json!(fingerprint)),
-                ("origin".to_owned(), serde_json::json!("generated")),
-                (
-                    crate::hooks::RUNS_HOOK_WRAPPER.to_owned(),
-                    serde_json::json!(!hooks.is_empty()),
-                ),
             ]
             .into_iter()
             .collect(),
         },
     })
+}
+
+/// Whether a receipt of this package already says UZE installed the plugin
+/// named `name`.
+fn installed_by_uze(
+    integration: &AntigravityIntegration,
+    package: &StoredPackage,
+    name: &str,
+) -> Result<bool> {
+    Ok(
+        uze_core::state::receipts(&integration.uze_home, Some(package.id.as_str()))?
+            .iter()
+            .any(|receipt| {
+                receipt.integration == integration.id()
+                    && matches!(
+                        &receipt.artifact,
+                        uze_core::integration::ManagedArtifact::IntegrationOwned { kind, selector, .. }
+                            if (kind == GENERATED_PLUGIN_KIND || kind == PLUGIN_KIND) && selector == name
+                    )
+            }),
+    )
 }
 
 /// How many plugins Antigravity holds under `name`, before anything is
@@ -649,6 +667,28 @@ mod plugin_tests {
         let _ = fs::remove_dir_all(home);
     }
 
+    /// Publishes `package`'s build as a delivery does, recording its
+    /// receipt, and answers with the build.
+    // Only the tests driving a POSIX shell stand-in `agy` call it.
+    #[cfg(unix)]
+    fn publish(integration: &AntigravityIntegration, package: &StoredPackage) -> PathBuf {
+        let receipt = integration
+            .publish_build(
+                package,
+                &uze_core::integration::BuildInputs {
+                    digest: "digest",
+                    linked: false,
+                },
+                None,
+            )
+            .unwrap()
+            .unwrap();
+        uze_core::state::record_receipt(&integration.uze_home, receipt.clone()).unwrap();
+        crate::shared::build::RecordedBuild::of(&receipt)
+            .unwrap()
+            .root
+    }
+
     /// Uninstalling by name runs only when the CLI names exactly one holder.
     #[test]
     fn uninstall_runs_only_for_a_name_one_plugin_holds() {
@@ -679,6 +719,7 @@ mod plugin_tests {
             &root,
             r#"[{"name":"flow","source":"antigravity-plugins-official","path":"/b"}]"#,
         );
+        publish(&integration, &pkg);
         let refused = attach_generated_plugin(&agy, &integration, &pkg).unwrap_err();
         assert!(
             refused
@@ -703,23 +744,11 @@ mod plugin_tests {
             &root,
             r#"[{"name":"flow","source":"antigravity","path":"/h/.gemini/config/plugins/flow"}]"#,
         );
-        let crate::antigravity::PluginContents { hooks, agents } =
-            integration.plugin_contents(&pkg).unwrap();
-        let lost_ledger = UzeHome::at(root.join("uze-before"));
-        let earlier = crate::antigravity::generate::materialize_generated_plugin(
-            &lost_ledger,
-            &pkg,
-            &hooks,
-            &agents,
-        )
-        .unwrap();
+        // The build UZE renders now is byte for byte the one it installed
+        // before the ledger naming that install was lost.
+        let build = publish(&integration, &pkg);
         let staged = integration.plugins_dir.join("flow");
-        fs::create_dir_all(&staged).unwrap();
-        for entry in fs::read_dir(&earlier).unwrap().flatten() {
-            if entry.path().is_file() {
-                fs::copy(entry.path(), staged.join(entry.file_name())).unwrap();
-            }
-        }
+        uze_testkit::fixtures::copy_tree(&build, &staged);
 
         let receipt = attach_generated_plugin(&agy, &integration, &pkg).unwrap();
         let uze_core::integration::ManagedArtifact::IntegrationOwned { detail, .. } =

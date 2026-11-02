@@ -44,6 +44,27 @@ mod trust;
 mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
+
+/// This harness's vendor store: the one directory under `$UZE_HOME` it
+/// reads, holding one build per package.
+pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
+    vendor: "codex",
+    // 2: what a build leaves out of the plugin root is carried in it.
+    dialect: 2,
+    build_name: crate::shared::build::package_id_name,
+    carried: NOT_PORTABLE,
+};
+
+/// The manifest, the MCP file and the skills a generated envelope writes
+/// itself, and the files Codex reads from a plugin root that the canonical
+/// format does not define.
+const NOT_PORTABLE: &[&str] = &[
+    ".codex-plugin",
+    ".mcp.json",
+    ".app.json",
+    "skills",
+    "hooks/hooks.json",
+];
 pub use mcp::detach_mcp_entry;
 
 use crate::hooks::HookEntry;
@@ -240,6 +261,10 @@ impl IntegrationPort for CodexIntegration {
 
     fn runtime_contribution_would_activate(&self, ctx: &RuntimeContext) -> bool {
         runtime::projection_would_activate(ctx, &self.config_toml_path())
+    }
+
+    fn collect_runtime(&self, home: &UzeHome) -> Vec<std::path::PathBuf> {
+        runtime::collect_role_files(home, self.id())
     }
 
     /// Codex runs its `notify` program when a turn completes, with the
@@ -536,7 +561,7 @@ impl IntegrationPort for CodexIntegration {
     }
 
     fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
-        marketplace::receipt_serves::<CodexMarketplace>(&self.uze_home, receipt)
+        marketplace::receipt_serves::<CodexMarketplace>(receipt)
     }
 
     fn package_exposure_plan(
@@ -604,12 +629,76 @@ impl IntegrationPort for CodexIntegration {
         .map(Some)
     }
 
+    fn registrations(
+        &self,
+        read: uze_core::integration::RegistrationRead,
+    ) -> Vec<uze_core::integration::VendorRegistration> {
+        let executable = self.provisioning_executable();
+        marketplace::registration::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            read,
+        )
+        .into_iter()
+        .collect()
+    }
+
+    fn repoint_registration(
+        &self,
+        registration: &uze_core::integration::VendorRegistration,
+    ) -> Result<()> {
+        let executable = self.provisioning_executable();
+        marketplace::repoint::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            registration,
+        )
+    }
+
+    fn withdraw_registrations(&self) -> Result<Vec<String>> {
+        let executable = self.provisioning_executable();
+        crate::shared::withdraw::marketplaces::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+        )
+    }
+
     fn republish_packages(&self, packages: &[StoredPackage]) -> Result<()> {
-        marketplace::republish::<CodexMarketplace>(&self.uze_home, packages)
+        let executable = self.provisioning_executable();
+        marketplace::republish::<CodexMarketplace>(
+            Path::new(&executable),
+            &self.command_home,
+            &self.uze_home,
+            self.id(),
+            packages,
+        )
     }
 
     fn publication(&self, packages: &[StoredPackage]) -> PublicationStatus {
-        marketplace::publication::<CodexMarketplace>(&self.uze_home, packages)
+        marketplace::publication::<CodexMarketplace>(&self.uze_home, self.id(), packages)
+    }
+
+    fn publish_build(
+        &self,
+        package: &StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&AttachmentReceipt>,
+    ) -> Result<Option<AttachmentReceipt>> {
+        crate::shared::build::publish(
+            crate::shared::build::Publication::new(
+                &STORE,
+                &self.uze_home,
+                self.id(),
+                package,
+                inputs,
+                recorded,
+            ),
+            |dir, root| marketplace::render_build::<CodexMarketplace>(package, dir, root),
+        )
+        .map(Some)
     }
 
     /// Codex skips a project's `AGENTS.md` only when the person marked the
@@ -677,6 +766,9 @@ impl IntegrationPort for CodexIntegration {
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 crate::rules::inspect(artifact)
             }
+            artifact if crate::shared::build::is_build(artifact) => {
+                crate::shared::build::inspect(&STORE, &self.uze_home, receipt)
+            }
             ManagedArtifact::IntegrationOwned {
                 kind,
                 selector,
@@ -705,17 +797,32 @@ impl IntegrationPort for CodexIntegration {
                 mcp::detach_mcp_entry(Path::new(&executable), &self.command_home, entry_name)?;
             }
             artifact @ ManagedArtifact::HookConfigEntry { .. } => {
-                return HOOKS.detach_entry(
-                    &self.uze_home,
-                    self.id(),
-                    &HookEntry::recorded(artifact).expect("a hook config entry"),
-                );
+                let entry = HookEntry::recorded(artifact).expect("a hook config entry");
+                let shifted = trust::shifted_by_removal(&self.config_toml_path(), &entry);
+                let mut detached = HOOKS.detach_entry(&entry)?;
+                if !shifted.is_empty() {
+                    // Codex keys its trust by position: every trusted group
+                    // after this one moves up, and is asked about again.
+                    tracing::warn!(
+                        hooks = %shifted.join(", "),
+                        "removing a hook group moves the trust keys of the groups after it; \
+                         Codex reviews them again"
+                    );
+                    detached.reason.push_str(&format!(
+                        "; Codex will ask you to review again: {}",
+                        shifted.join(", ")
+                    ));
+                }
+                return Ok(detached);
             }
             artifact if crate::rules::is_rules_artifact(artifact) => {
                 return crate::rules::detach(artifact);
             }
+            artifact if crate::shared::build::is_build(artifact) => {
+                return crate::shared::build::detach(&STORE, &self.uze_home, receipt);
+            }
             ManagedArtifact::IntegrationOwned { kind, selector, .. }
-                if let Some(origin) = marketplace::receipt_origin::<CodexMarketplace>(kind) =>
+                if marketplace::receipt_origin::<CodexMarketplace>(kind).is_some() =>
             {
                 let executable = self.provisioning_executable();
                 marketplace::detach_package::<CodexMarketplace>(
@@ -724,7 +831,6 @@ impl IntegrationPort for CodexIntegration {
                     &self.uze_home,
                     receipt,
                     selector,
-                    origin,
                 )?;
             }
             _ => {
@@ -813,7 +919,7 @@ const CODEX_AGENT_DIALECT: AgentDialect = AgentDialect {
 
 fn codex_agent_toml(resource: &Resource, label: &str, keys: &[&str]) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
-    let instructions = resolve_text(&document.body, &resource.package_root);
+    let instructions = resolve_text(&document.body, &STORE.root_of(&resource.package_root));
     format!(
         "name = {}\ndescription = {}\n{}",
         toml_string(label),
@@ -965,6 +1071,60 @@ const FACTS: &[HarnessFact] = &[
         fact: "runs the input a PreToolUse hook hands back as `updatedInput` beside `allow`, and only with `hookEventName` in the document",
         measured_on: VERSION,
         proven_by: "contract/hooks.py::_transform",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "lists an explicit `.codex-plugin` plugin and a generated one from one local marketplace, both installed and enabled",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_explicit_beside_generated",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "installs, enabled, a plugin removed from one local marketplace and added from another that lists it beside a generated plugin, which stays enabled; removing the first marketplace leaves no key of it",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/marketplace-merge.py::_assert_merged_plugin_installs_enabled",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "rewrites an installed plugin's cache in place, same version directory, on `codex plugin add` over it",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_add_rewrites_cache",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "refuses a same-name `marketplace add` from another root until the marketplace is removed",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_same_name_other_root_refused",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "fails `codex plugin list` as a whole while a local marketplace's root is gone",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_list_needs_local_root",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "keeps `[plugins.\"<id>\"] enabled = true` across `marketplace remove`, and lists the plugin installed and enabled once the marketplace is added from a new root",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_remove_then_add_keeps_enabled",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "drops a plugin's `[plugins]` key and its cache on `codex plugin remove`",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_plugin_remove_drops_key_and_cache",
+    },
+    HarnessFact {
+        subject: "marketplaces",
+        fact: "refuses a `file://` marketplace source",
+        measured_on: "0.166.0",
+        proven_by: "experiments/codex/source-tie.py::_assert_file_url_refused",
+    },
+    HarnessFact {
+        subject: "hooks",
+        fact: "keys a hook's trust by `<file>:<event>:<group index>:<handler index>`, holding a hash of the handler's command and defaults, so moving or rewriting a handler asks again",
+        measured_on: "0.160.1",
+        proven_by: "experiments/codex/trust-store.py::run",
     },
 ];
 /// The version the facts above were measured on.

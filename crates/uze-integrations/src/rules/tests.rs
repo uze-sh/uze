@@ -46,11 +46,26 @@ fn each_template_is_its_golden_byte_for_byte_and_stable_across_renders() {
     assert!(golden_plugin().contains("\nasync function rules(ctx) {\n"));
 }
 
+/// The template, not the machine's paths: the engine is a file of the
+/// bundled package, so its path names that package's build (`uze@uze`),
+/// which says where the file is and nothing about what runs it.
 #[test]
 fn nothing_in_a_delivered_template_names_the_packager() {
+    // The plugin names the engine as a string literal, escaped as one: a
+    // Windows path's every `\` is doubled there.
+    let engine_path = serde_json::Value::String(
+        crate::opencode::RULES
+            .engine_path(&golden_home())
+            .display()
+            .to_string(),
+    )
+    .to_string();
     for (what, source) in [
         ("engine", engine::SOURCE.to_owned()),
-        ("plugin", golden_plugin()),
+        (
+            "plugin",
+            golden_plugin().replace(&engine_path, "\"<engine>\""),
+        ),
     ] {
         assert!(
             !source.to_lowercase().contains("uze"),
@@ -80,7 +95,7 @@ fn the_opencode_section_imports_nothing_and_rides_the_two_v2_hooks() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&engine.replace(",\n  ]", "\n  ]")).unwrap(),
         serde_json::json!([
-            "/machine/state/runtime/attachments/opencode/rules/engine",
+            "/machine/state/store/opencode/uze@uze/engine/rules",
             "/machine/state/runtime/rules/sessions"
         ]),
         "the engine is started the way this platform runs a script, with the sessions directory"
@@ -322,7 +337,10 @@ fn opencode_receives_a_section_of_the_runtime_plugin_and_no_config_entry() {
 
     let detached = machine.opencode.detach_receipt(&receipts[0]).unwrap();
     assert_eq!(detached.state, AttachmentState::Missing);
-    assert!(!engine.exists(), "the engine goes with its delivery");
+    assert!(
+        engine.exists(),
+        "the engine is a file of the bundled package's build, which takes it, never its delivery"
+    );
     assert_eq!(
         fs::read_to_string(plugins.join("mine.ts")).unwrap(),
         "export default {};\n",
@@ -498,7 +516,8 @@ fn removal_takes_only_the_engines_entries_and_refuses_an_edited_one() {
         "the engine stays while an entry still starts it"
     );
 
-    // Back as UZE wrote it, the entry goes, and the engine with it.
+    // Back as UZE wrote it, the entry goes; the engine is the bundled
+    // package's build's, and stays for it.
     let mut settings = Machine::json(&machine.claude_settings());
     settings["hooks"]["PostToolUse"][1]["matcher"] =
         serde_json::json!("Read|Edit|MultiEdit|Write|Bash");
@@ -507,7 +526,7 @@ fn removal_takes_only_the_engines_entries_and_refuses_an_edited_one() {
         machine.claude.detach_receipt(post).unwrap().state,
         AttachmentState::Missing
     );
-    assert!(!engine.exists());
+    assert!(engine.exists());
     assert_eq!(
         Machine::json(&machine.claude_settings()),
         foreign_claude_settings(),

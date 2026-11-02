@@ -10,8 +10,11 @@
 # Path. Windows PowerShell
 # 5.1 or PowerShell 7; Windows 10 22H2 or Windows 11, x64 and ARM64.
 #
-# Uninstall (the binary, its Path entry, the harness launchers, and the
-# workspace server), keeping ~\.uze unless -Purge is given:
+# Uninstall, through `uze uninstall` when the binary is here: by default
+# the program goes (with the Path entry this installer added) and every
+# plugin it delivered keeps working; -Purge also uninstalls those plugins
+# and removes ~\.uze. Without the binary, only what this installer placed
+# is removed, and ~\.uze is never deleted by this script:
 #
 #   & ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall [-Purge]
 #
@@ -146,39 +149,55 @@ public static extern IntPtr SendMessageTimeout(
     if ($Uninstall) {
         Write-Host "$Bright$(Centred 'UZE')$Reset"
         Write-Host ''
+        $receipt = Join-Path $uzeHome 'state\install.json'
         if (Test-Path -LiteralPath $binary) {
-            # The server and every pane it runs end before their binary goes.
-            Step 'Stopping the workspace' 'Workspace stopped' {
-                # What a native command says on stderr is an error record in
-                # Windows PowerShell, and a terminating one under `Stop`.
-                $ErrorActionPreference = 'Continue'
-                & $binary workspace stop *> $null
+            # `uze uninstall` knows what uze delivered and how to take it
+            # back, the Path entry this installer recorded included, and
+            # refuses while anything of uze's still runs.
+            $arguments = @('uninstall', '--yes')
+            if ($Purge) { $arguments += '--purge' }
+            $ErrorActionPreference = 'Continue'
+            & $binary @arguments
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+            if ($code -ne 0) { throw "uze uninstall did not finish (exit $code)" }
+        } else {
+            # The receipt names the file this installer placed, which may sit
+            # elsewhere than the directory asked about now: that uze does the
+            # work, and the receipt goes only once the binary it names is gone.
+            $recorded = $null
+            if (Test-Path -LiteralPath $receipt) {
+                try {
+                    $recorded = (Get-Content -Raw -LiteralPath $receipt -ErrorAction Stop | ConvertFrom-Json).binary
+                } catch {
+                    Write-Verbose "the install record could not be read: $_"
+                }
             }
-            Step "Removing $binary" "Removed $binary" {
-                Remove-Item -LiteralPath $binary -Force
-                Get-ChildItem -LiteralPath $binDir -Filter 'uze.exe.old-*' -ErrorAction SilentlyContinue |
-                    Remove-Item -Force -ErrorAction SilentlyContinue
+            if ($recorded -and (Test-Path -LiteralPath $recorded -PathType Leaf)) {
+                $arguments = @('uninstall', '--yes')
+                if ($Purge) { $arguments += '--purge' }
+                $ErrorActionPreference = 'Continue'
+                & $recorded @arguments
+                $code = $LASTEXITCODE
+                $ErrorActionPreference = 'Stop'
+                if ($code -ne 0) { throw "uze uninstall did not finish (exit $code)" }
+            } else {
+                if (Test-Path -LiteralPath $receipt) {
+                    Step 'Removing the install record' "Removed $receipt" {
+                        Remove-Item -LiteralPath $receipt -Force
+                    }
+                }
+                Warn "no uze at $binary, so what it delivered is still in place"
+                Note 'to remove every trace, install uze again, then run: uze uninstall --purge'
             }
         }
+        # The Path entry is this installer's own, whoever took the binary.
         $userPath = Get-UserPath
         $kept = Get-PathWithout $userPath $binDir
         if ($kept -ne $userPath) {
             Step 'Removing it from Path' "Removed $binDir from Path" { Save-UserPath $kept }
         }
         $env:Path = Get-PathWithout $env:Path $binDir
-        $shims = Join-Path $uzeHome 'shims'
-        if (Test-Path -LiteralPath $shims) {
-            Step 'Removing the harness launchers' "Removed $shims" {
-                Remove-Item -LiteralPath $shims -Recurse -Force
-            }
-        }
-        if ($Purge -and (Test-Path -LiteralPath $uzeHome)) {
-            Step "Removing $uzeHome" "Removed $uzeHome" {
-                Remove-Item -LiteralPath $uzeHome -Recurse -Force
-            }
-        } elseif (Test-Path -LiteralPath $uzeHome) {
-            Note "$uzeHome is kept: run again with -Purge to remove it"
-        }
         return
     }
 
@@ -367,29 +386,45 @@ public static extern IntPtr SendMessageTimeout(
             Copy-Item -LiteralPath (Join-Path $unpacked 'uze.exe') -Destination $binary
         }
 
-        # The receipt the updater reads (`src/self_update.rs`): the file this
-        # installer placed, and the release it was. UTF-8 without a byte-order
-        # mark, which the updater's JSON reader requires.
+        # Whether the Path entry is this installer's: added now, or by an
+        # earlier run of it that said so in its receipt.
+        $receiptPath = Join-Path $uzeHome 'state\install.json'
+        $pathEntry = $null
         try {
-            $installed = (Resolve-Path -LiteralPath $binary).ProviderPath
-            $receipt = [ordered]@{ binary = $installed; version = $version }
-            $state = Join-Path $uzeHome 'state'
-            New-Item -ItemType Directory -Force -Path $state | Out-Null
-            [IO.File]::WriteAllText((Join-Path $state 'install.json'),
-                ($receipt | ConvertTo-Json) + "`n", (New-Object Text.UTF8Encoding $false))
+            $earlier = Get-Content -Raw -LiteralPath $receiptPath -ErrorAction Stop | ConvertFrom-Json
+            if (($earlier.PSObject.Properties.Name -contains 'path_entry') -and $earlier.path_entry -and
+                (Test-SameDirectory $earlier.path_entry $binDir)) {
+                $pathEntry = $binDir
+            }
         } catch {
-            Warn 'could not record this install; it will not update itself until the next one'
+            Write-Verbose "no earlier install record to read: $_"
         }
-
         $userPath = Get-UserPath
         $onPath = $userPath -split ';' | Where-Object { $_ -and (Test-SameDirectory ([Environment]::ExpandEnvironmentVariables($_)) $binDir) }
         if (-not $onPath) {
             Step 'Adding it to Path' "Added $binDir to Path" {
                 Save-UserPath ((@($binDir) + ($userPath -split ';' | Where-Object { $_ })) -join ';')
             }
+            $pathEntry = $binDir
         }
         if (-not ($env:Path -split ';' | Where-Object { $_ -and (Test-SameDirectory $_ $binDir) })) {
             $env:Path = "$binDir;$env:Path"
+        }
+
+        # The receipt the updater reads (`src/self_update.rs`): the file this
+        # installer placed, the release it was, and the Path entry it added,
+        # which `uze uninstall` takes back. UTF-8 without a byte-order mark,
+        # which the updater's JSON reader requires.
+        try {
+            $installed = (Resolve-Path -LiteralPath $binary).ProviderPath
+            $receipt = [ordered]@{ binary = $installed; version = $version }
+            if ($pathEntry) { $receipt.path_entry = $pathEntry }
+            $state = Join-Path $uzeHome 'state'
+            New-Item -ItemType Directory -Force -Path $state | Out-Null
+            [IO.File]::WriteAllText((Join-Path $state 'install.json'),
+                ($receipt | ConvertTo-Json) + "`n", (New-Object Text.UTF8Encoding $false))
+        } catch {
+            Warn 'could not record this install; it will not update itself until the next one'
         }
 
         # An unsigned binary is one Smart App Control may refuse to run.

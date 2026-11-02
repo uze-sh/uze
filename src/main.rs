@@ -195,6 +195,7 @@ fn hint_for(error: &uze_application::UzeError) -> Option<String> {
     use uze_application::UzeError;
     match error {
         UzeError::UnknownMarketplace(_) => Some("uze market list".to_owned()),
+        UzeError::UninstallRefused { next, .. } => Some(next.clone()),
         UzeError::Upgrade(reason) if reason.starts_with("not upgraded") => {
             Some("curl -fsSL https://uze.sh/i | sh".to_owned())
         }
@@ -309,6 +310,7 @@ fn run(cli: Cli, leaf: &str) -> Result<()> {
         _ => uze::telemetry::Sink::Stderr,
     };
     let _telemetry = uze::telemetry::init(sink);
+    uze::telemetry::register_collector();
     if !opens_the_tui {
         progress::follow_steps(cli.verbose);
     }
@@ -448,6 +450,22 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
             return Ok(());
         }
         return run_upgrade(&home);
+    }
+    // The same, for the way off the machine: nothing is seeded on it.
+    if let Command::Uninstall { yes, purge } = command {
+        die_quietly_on_a_closed_pipe();
+        return run_uninstall(home, yes, purge);
+    }
+    // And for the way back: what it repairs may be what a bootstrap trips
+    // over.
+    if let Command::Doctor {
+        repair: true,
+        discard_leftovers,
+        format,
+    } = command
+    {
+        die_quietly_on_a_closed_pipe();
+        return run_repair(home, format, discard_leftovers);
     }
     die_quietly_on_a_closed_pipe();
     let app = UzeApplication::from_env(home.clone())?;
@@ -634,9 +652,20 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Agent { action } => run_agent(&app, action)?,
         Command::Config { action } => run_config(&app, &home, action, verbose)?,
         Command::Market { action } => run_market(&app, action)?,
-        Command::Doctor { format } => {
+        Command::Doctor { format, .. } => {
             let spinner = progress::spinner("Running diagnostics");
             let mut report = app.health().report();
+            // The terminal runtime is this binary's to ask about its own
+            // endpoint, not the application's.
+            if let Some(stale) =
+                uze_application::application::TerminalEndpoint::stale(&WorkspaceEndpoint)
+            {
+                report
+                    .health
+                    .push(uze_application::application::HealthFinding::stale_endpoint(
+                        &stale,
+                    ));
+            }
             // The keyboard is this binary's, not the application's: what the
             // installed extensions' keys meet is asked of the keymap in force.
             report.machine_concerns.extend(
@@ -667,6 +696,9 @@ fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
         Command::Upgrade { .. } => {
             unreachable!("the release check returns before application setup")
         }
+        Command::Uninstall { .. } => {
+            unreachable!("uninstall returns before application setup")
+        }
     }
     Ok(())
 }
@@ -683,6 +715,7 @@ fn tells_about_releases(command: &Command) -> bool {
             | Command::Shell { .. }
             | Command::Confine { .. }
             | Command::Upgrade { .. }
+            | Command::Uninstall { .. }
     )
 }
 

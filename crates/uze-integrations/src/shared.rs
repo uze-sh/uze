@@ -14,6 +14,7 @@
 
 pub(crate) mod agent;
 pub(crate) mod agent_context;
+pub(crate) mod build;
 pub(crate) mod dialect;
 pub(crate) mod envelope;
 pub(crate) mod json_config;
@@ -29,3 +30,4 @@ pub(crate) mod skill;
 pub(crate) mod test_support;
 pub(crate) mod transcript;
 pub(crate) mod tree;
+pub(crate) mod withdraw;

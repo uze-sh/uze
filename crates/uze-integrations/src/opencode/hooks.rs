@@ -9,7 +9,7 @@ use crate::rules::{RulesDelivery, RulesTarget};
 /// V2 plugin in the global plugin directory asks it: `context` before every
 /// model request, `execute.after` after every tool call.
 pub(crate) const RULES: RulesTarget = RulesTarget {
-    key: "opencode",
+    store: &super::STORE,
     delivery: RulesDelivery::Plugin,
 };
 
@@ -28,6 +28,7 @@ pub(crate) const RULES_REASON: &str = "OpenCode has no rules of its own; a gener
 /// contract does not have.
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "opencode",
+    store: &super::STORE,
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,

@@ -293,10 +293,10 @@ fn create_private_journal_dir(dir: &std::path::Path) {
 /// writing. A file that cannot be read or removed is skipped — losing a
 /// journal costs nothing, and failing a run over one would be the tail
 /// wagging the dog.
-fn prune_to_size(dir: &std::path::Path, name: &str, budget: u64) {
+fn prune_to_size(dir: &std::path::Path, name: &str, budget: u64) -> Vec<PathBuf> {
     let prefix = format!("{name}.");
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+        return Vec::new();
     };
     let mut journals: Vec<(std::ffi::OsString, u64)> = entries
         .flatten()
@@ -313,12 +313,50 @@ fn prune_to_size(dir: &std::path::Path, name: &str, budget: u64) {
     // clock does — no timestamp is read, and none is trusted.
     journals.sort_by(|left, right| right.0.cmp(&left.0));
     let mut kept = 0u64;
+    let mut removed = Vec::new();
     for (index, (file, bytes)) in journals.iter().enumerate() {
         kept = kept.saturating_add(*bytes);
-        if index > 0 && kept > budget {
-            let _ = std::fs::remove_file(dir.join(file));
+        if index > 0 && kept > budget && std::fs::remove_file(dir.join(file)).is_ok() {
+            removed.push(dir.join(file));
         }
     }
+    removed
+}
+
+/// Every journal this binary keeps: the workspace's, the terminal
+/// server's and the launcher's.
+const JOURNALS: [&str; 3] = ["uze", "terminal", "launcher"];
+
+/// The collector of the journals under `cache/logs/`, by the size rule
+/// each journal already keeps when it opens. Registered by `main`, since
+/// only this binary writes them; a journal another process is writing
+/// keeps its newest day whatever it weighs, which is the one it writes.
+pub struct Journals;
+
+impl uze_application::application::Collectable for Journals {
+    fn name(&self) -> &'static str {
+        "logs"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["logs_dir"]
+    }
+
+    fn collect(&self, home: &uze_application::UzeHome) -> uze_application::application::Collected {
+        let dir = home.logs_dir();
+        uze_application::application::Collected::removed(
+            self.name(),
+            JOURNALS
+                .iter()
+                .flat_map(|name| prune_to_size(&dir, name, JOURNAL_BYTES))
+                .collect(),
+        )
+    }
+}
+
+/// Registers [`Journals`] with every application this process builds.
+pub fn register_collector() {
+    uze_application::application::register_collector(std::sync::Arc::new(Journals));
 }
 
 /// A layer that subscribes to nothing — what is installed when the journal

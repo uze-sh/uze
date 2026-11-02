@@ -3,6 +3,8 @@ name: init
 description: Makes this project's instructions context portable across Claude Code, Codex, OpenCode, and Antigravity CLI, using AGENTS.md as the shared baseline. Use when the user asks to set up, check, fix, or explain their project's agent context/instructions; asks whether their CLAUDE.md/GEMINI.md/AGENTS.md is portable between tools; wants an AGENTS.md created or reviewed; mentions switching between coding agents and losing context; or invokes /uze:init or $uze:init directly.
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 # UZE — agentic context orchestrator
 
 You are UZE's own Skill: the agentic layer of a two-layer system.

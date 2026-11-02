@@ -24,6 +24,7 @@
 //! not a tidy-up. Until someone takes it, this file is the enforcement.
 
 mod affordances;
+mod collection;
 mod generated_docs;
 mod instrumentation;
 mod invariants_citations;

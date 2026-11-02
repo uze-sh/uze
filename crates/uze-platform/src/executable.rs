@@ -110,6 +110,18 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
     imp::replace_running(new, target)
 }
 
+/// Removes the program at `path`, `path` possibly being the image this
+/// very process runs; a file already gone is removed. Unix unlinks it at
+/// once, and the running process keeps the inode it started from. Windows
+/// refuses to delete a running image but lets it be renamed, so it steps
+/// aside and a detached process deletes it once this one has exited; where
+/// the host would end that process with itself (a job that forbids
+/// breakaway), the error names the renamed file for the operator to
+/// remove.
+pub fn remove_running(path: &Path) -> io::Result<()> {
+    imp::remove_running(path)
+}
+
 /// Puts a launcher for `program` at `at`, in a directory this process owns:
 /// running `at` runs `program`, which sees `at`'s name as its own.
 ///
@@ -122,6 +134,13 @@ pub fn replace_running(new: &Path, target: &Path) -> io::Result<()> {
 /// running it.
 pub fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
     imp::place_launcher(program, at)
+}
+
+/// Whether the launcher at `at` runs `program`, as [`place_launcher`] would
+/// leave it: a link to it on Unix, a copy of it (same length, same
+/// modification time) on Windows.
+pub fn is_launcher_of(program: &Path, at: &Path) -> bool {
+    imp::is_launcher_of(program, at)
 }
 
 /// A file of its own at `at` that runs what `program` runs and knows itself
@@ -230,6 +249,17 @@ mod imp {
 
     pub(super) fn sweep_replaced(_running: &Path) {}
 
+    pub(super) fn remove_running(path: &Path) -> io::Result<()> {
+        match fs::remove_file(path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            removed => removed,
+        }
+    }
+
+    pub(super) fn is_launcher_of(program: &Path, at: &Path) -> bool {
+        fs::read_link(at).is_ok_and(|target| target == program)
+    }
+
     pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {
         match fs::symlink_metadata(at) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -319,6 +349,51 @@ mod imp {
         })
     }
 
+    /// Only this process's own image is in its way: any other is deleted
+    /// now. The one it runs is renamed aside, and a hidden PowerShell waits
+    /// for this process to end before deleting it. A host that keeps that
+    /// PowerShell in its job ends it with itself, possibly before the
+    /// deletion: said as an error naming the renamed file, since an `Ok`
+    /// would claim a removal nothing guarantees.
+    pub(super) fn remove_running(path: &Path) -> io::Result<()> {
+        if !path.exists() {
+            return Ok(());
+        }
+        if !in_use(path) {
+            return fs::remove_file(path);
+        }
+        let aside = set_aside_name(path);
+        crate::fs::rename(path, &aside)?;
+        let quoted = aside.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Wait-Process -Id {} -ErrorAction SilentlyContinue; \
+             Remove-Item -LiteralPath '{quoted}' -Force -ErrorAction SilentlyContinue",
+            std::process::id()
+        );
+        let mut command = std::process::Command::new("powershell.exe");
+        command
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+            ])
+            .arg(script)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let deletion = crate::process::spawn_detached(&mut command)?;
+        if deletion.outlives_host {
+            return Ok(());
+        }
+        Err(io::Error::other(format!(
+            "renamed to {aside}, which is deleted after uze exits only while this \
+             terminal stays open: remove {aside} yourself",
+            aside = aside.display()
+        )))
+    }
+
     pub(super) fn sweep_replaced(running: &Path) {
         let (Some(directory), Some(name)) = (running.parent(), running.file_name()) else {
             return;
@@ -337,6 +412,13 @@ mod imp {
                 let _ = fs::remove_file(entry.path());
             }
         }
+    }
+
+    pub(super) fn is_launcher_of(program: &Path, at: &Path) -> bool {
+        let (Ok(source), Ok(placed)) = (fs::metadata(program), fs::metadata(at)) else {
+            return false;
+        };
+        placed.len() == source.len() && placed.modified().ok() == source.modified().ok()
     }
 
     pub(super) fn place_launcher(program: &Path, at: &Path) -> io::Result<()> {

@@ -196,6 +196,14 @@ pub(crate) fn install_package(app: &UzeApplication, install: PackageInstall<'_>)
     let text = matches!(install.format, OutputFormat::Text);
     if text && !install.verbose {
         print!("{}", progress::for_terminal(&render_add_summary(&report)));
+        // A hook a harness holds back runs nowhere until the person reviews
+        // it there: said now, while they are here to act.
+        if !report.held_back.is_empty() {
+            println!(
+                "{}",
+                progress::for_terminal(&super::status::render_held_back(&report.held_back))
+            );
+        }
     } else {
         emit(install.format, &report, |report| {
             format!(

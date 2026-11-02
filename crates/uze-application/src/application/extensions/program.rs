@@ -35,8 +35,14 @@ const CONFINEMENT_NAMESPACE: &str = "uze";
 static RUNS: AtomicU64 = AtomicU64::new(0);
 
 /// How old a run's scratch directory must be before another process takes
-/// it for one a killed run left: far past any program's time limit.
+/// it for one a killed run left, when the platform cannot say whether the
+/// process that made it still runs: far past any program's time limit.
 const STALE_SCRATCH: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// How long a run's scratch may live even while a process with its pid
+/// answers alive: a pid is reused, and no program a view waits on runs for
+/// a week, so past this the process answering is another one.
+const SCRATCH_AGE_CAP: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
 
 /// The scratch directories a killed process left are swept once, by its
 /// successor's first run: a process that lives removes its own runs'.
@@ -46,7 +52,9 @@ static SWEPT: std::sync::Once = std::sync::Once::new();
 /// run of every process, after this process's first one swept what killed
 /// runs left.
 fn scratch_for_run(home: &UzeHome) -> PathBuf {
-    SWEPT.call_once(|| sweep_stale_scratch(home, STALE_SCRATCH));
+    SWEPT.call_once(|| {
+        crate::application::Collectable::collect(&ExtensionScratch, home);
+    });
     let run = format!(
         "{}-{}",
         std::process::id(),
@@ -55,21 +63,76 @@ fn scratch_for_run(home: &UzeHome) -> PathBuf {
     home.extension_scratch_dir(&run)
 }
 
-/// Removes every run's scratch directory last changed more than
-/// `older_than` ago.
-fn sweep_stale_scratch(home: &UzeHome, older_than: std::time::Duration) {
+/// Every run's scratch directory: alive while the process whose id names
+/// it (`{pid}-{run}`) is alive, so a program that runs for hours keeps its
+/// scratch however old it grows. A directory whose process the platform
+/// cannot answer for falls back to its age ([`STALE_SCRATCH`]), and one
+/// older than [`SCRATCH_AGE_CAP`] goes whatever its pid answers, since the
+/// pid may have been reused. Takes no lock: only a process that is gone,
+/// or one too old to be running, loses its scratch.
+pub(crate) struct ExtensionScratch;
+
+impl crate::application::Collectable for ExtensionScratch {
+    fn name(&self) -> &'static str {
+        "extension scratch"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["extension_scratch_dir"]
+    }
+
+    fn collect(&self, home: &UzeHome) -> crate::application::Collected {
+        crate::application::Collected::removed(
+            self.name(),
+            sweep_scratch(home, STALE_SCRATCH, uze_platform::process::alive),
+        )
+    }
+}
+
+/// Removes every run's scratch directory whose process `alive` says is
+/// gone, or, where it cannot say, last changed more than `older_than` ago;
+/// and any last changed more than [`SCRATCH_AGE_CAP`] ago.
+fn sweep_scratch(
+    home: &UzeHome,
+    older_than: std::time::Duration,
+    alive: impl Fn(u32) -> Option<bool>,
+) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(home.extension_scratch_root()) else {
-        return;
+        return Vec::new();
     };
+    let mut removed = Vec::new();
     for entry in entries.flatten() {
-        let stale = entry
-            .metadata()
-            .and_then(|meta| meta.modified())
-            .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= older_than));
-        if stale && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
-            let _ = std::fs::remove_dir_all(entry.path());
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let process = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.split_once('-'))
+            .and_then(|(pid, _)| pid.parse::<u32>().ok());
+        let older = |than: std::time::Duration| {
+            entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age >= than))
+        };
+        let gone = match process.and_then(&alive) {
+            Some(alive) => !alive || older(SCRATCH_AGE_CAP),
+            None => older(older_than),
+        };
+        if gone && std::fs::remove_dir_all(entry.path()).is_ok() {
+            removed.push(entry.path());
         }
     }
+    removed
+}
+
+/// Removes every run's scratch directory last changed more than
+/// `older_than` ago, whatever its process: the rule where liveness cannot
+/// be told.
+#[cfg(test)]
+fn sweep_stale_scratch(home: &UzeHome, older_than: std::time::Duration) {
+    sweep_scratch(home, older_than, |_| None);
 }
 
 /// One question for a program, with everything it is answered from.
@@ -161,8 +224,64 @@ fn ran(asked: &Asked<'_>) -> Result<ProgramOutcome, NotRun> {
 /// The run's own scratch, inside its directory: its `TMPDIR`.
 const SCRATCH: &str = "tmp";
 
-/// The most pictures one run keeps.
+/// The most pictures one run keeps, and one extension's pictures hold.
 const KEPT_PICTURES: usize = 16;
+
+/// The pictures extension programs left, by the bound each run keeps them
+/// to: the newest [`KEPT_PICTURES`] per extension. Takes no lock: a picture
+/// lands whole by a rename, and one taken is written again by its
+/// program's next run.
+pub(crate) struct ExtensionPictures;
+
+impl crate::application::Collectable for ExtensionPictures {
+    fn name(&self) -> &'static str {
+        "extension pictures"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["extension_pictures_dir"]
+    }
+
+    fn collect(&self, home: &UzeHome) -> crate::application::Collected {
+        let pictures = home.extension_pictures_root();
+        let mut removed = Vec::new();
+        for plugin in std::fs::read_dir(&pictures).into_iter().flatten().flatten() {
+            for extension in std::fs::read_dir(plugin.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                removed.extend(bound_pictures(&extension.path(), KEPT_PICTURES));
+            }
+        }
+        crate::application::Collected::removed(self.name(), removed)
+    }
+}
+
+/// Removes all but the newest `kept` pictures in `dir`.
+fn bound_pictures(dir: &Path, kept: usize) -> Vec<PathBuf> {
+    let mut pictures: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
+        .filter(|entry| entry.file_name().to_str().is_some_and(is_picture_name))
+        .map(|entry| {
+            let modified = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            (modified, entry.path())
+        })
+        .collect();
+    pictures.sort_by(|left, right| right.cmp(left));
+    pictures
+        .into_iter()
+        .skip(kept)
+        .map(|(_, path)| path)
+        .filter(|path| std::fs::remove_file(path).is_ok())
+        .collect()
+}
 
 /// Copies the pictures a run left at the top of its scratch into `kept`,
 /// each replacing the one of its name: a PNG, JPEG or GIF, a plain file
@@ -641,6 +760,88 @@ mod tests {
         assert!(left.exists(), "a run that may still be going was swept");
         sweep_stale_scratch(&home, std::time::Duration::ZERO);
         assert!(!left.exists(), "a stale scratch was left");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A program that runs for hours keeps its scratch however old it
+    /// grows, and loses it once its process is gone.
+    // Unix only: `sleep` stands for the long-running program.
+    #[cfg(unix)]
+    #[test]
+    fn a_long_running_programs_scratch_lives_while_its_process_does() {
+        use crate::application::Collectable as _;
+        let root = uze_testkit::temp::scratch("program-scratch-by-pid");
+        let home = UzeHome::at(root.clone());
+        let mut program = std::process::Command::new("sleep")
+            .arg("300")
+            .spawn()
+            .unwrap();
+        let running = home.extension_scratch_dir(&format!("{}-0", program.id()));
+        std::fs::create_dir_all(running.join(SCRATCH)).unwrap();
+        let hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 60 * 60);
+        std::fs::File::open(&running)
+            .unwrap()
+            .set_modified(hours_ago)
+            .unwrap();
+
+        ExtensionScratch.collect(&home);
+        assert!(
+            running.exists(),
+            "the scratch of a running program was swept"
+        );
+
+        program.kill().unwrap();
+        program.wait().unwrap();
+        let collected = ExtensionScratch.collect(&home);
+        assert!(!running.exists(), "a gone program's scratch was left");
+        assert_eq!(collected.removed, [running]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A pid reused by another process keeps answering alive: past the
+    /// cap, the run's scratch goes anyway.
+    #[test]
+    fn scratch_past_the_age_cap_goes_though_its_pid_answers_alive() {
+        let root = uze_testkit::temp::scratch("program-scratch-age-cap");
+        let home = UzeHome::at(root.clone());
+        let reused = home.extension_scratch_dir("4242-0");
+        std::fs::create_dir_all(reused.join(SCRATCH)).unwrap();
+        let fresh = home.extension_scratch_dir("4242-1");
+        std::fs::create_dir_all(fresh.join(SCRATCH)).unwrap();
+        let past_the_cap =
+            std::time::SystemTime::now() - SCRATCH_AGE_CAP - std::time::Duration::from_secs(60);
+        uze_platform::fs::set_modified(&reused, past_the_cap).unwrap();
+
+        let removed = sweep_scratch(&home, STALE_SCRATCH, |_| Some(true));
+
+        assert_eq!(removed, std::slice::from_ref(&reused));
+        assert!(!reused.exists());
+        assert!(fresh.exists(), "a live run's scratch was swept");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_extension_keeps_its_newest_pictures_and_no_more() {
+        let root = uze_testkit::temp::scratch("program-pictures-bound");
+        let dir = root.join("pictures");
+        std::fs::create_dir_all(&dir).unwrap();
+        let start = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        for index in 0..KEPT_PICTURES + 2 {
+            let path = dir.join(format!("shot-{index:02}.png"));
+            std::fs::write(&path, b"png").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(start + std::time::Duration::from_secs(index as u64))
+                .unwrap();
+        }
+        std::fs::write(dir.join("notes.txt"), b"text").unwrap();
+
+        let removed = bound_pictures(&dir, KEPT_PICTURES);
+
+        assert_eq!(removed, [dir.join("shot-01.png"), dir.join("shot-00.png")]);
+        assert!(dir.join("notes.txt").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 

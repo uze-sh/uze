@@ -103,6 +103,11 @@ pub enum UzeError {
     )]
     PackageNameCollides { first: PathBuf, second: PathBuf },
     #[error(
+        "the package ships `{0}`, a path UZE reserves inside every package's build for what it \
+         writes there itself; move the file elsewhere in the package"
+    )]
+    PackageShipsReservedPath(String),
+    #[error(
         "refusing a URL carrying inline credentials; UZE never stores a secret, \
          and authenticated Git is a separate mechanism"
     )]
@@ -120,6 +125,11 @@ pub enum UzeError {
     Upgrade(String),
     #[error("setup incomplete: {0}")]
     ProvisioningIncomplete(String),
+    /// `uze uninstall` would not act, and changed nothing: something of
+    /// UZE's is still running, or nobody confirmed. `next` is what answers
+    /// it, for presentation to print under the reason.
+    #[error("{reason}")]
+    UninstallRefused { reason: String, next: String },
     /// A lifecycle mutation the safety check refused (ADR-009): drift or a
     /// conflicting receipt stopped it and nothing was removed or updated.
     /// Its own variant for the same reason `ProvisioningIncomplete` has
@@ -326,6 +336,15 @@ pub enum UzeError {
     /// access, so no other transport is tried and none is blamed.
     #[error("this machine is offline, or cannot resolve the repository's host\n{detail}")]
     RepositoryOffline { detail: String },
+    /// A plugin's marketplace was unlinked, and the commit it was pinned to
+    /// before the link is not in the marketplace's cached clone: putting it
+    /// back needs the network, and until then the build from the checkout
+    /// stays.
+    #[error(
+        "{plugin} keeps what its linked checkout had: {commit}, the commit it was pinned to \
+         before the link, needs the network to come back"
+    )]
+    PinNeedsNetwork { plugin: String, commit: String },
     /// A short locator matched nothing UZE can read: a bare word, an
     /// ambiguous name, an alias this machine does not have.
     #[error("{0}")]

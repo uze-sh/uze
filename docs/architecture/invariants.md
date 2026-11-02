@@ -13,8 +13,9 @@ with no such test does not belong on this page.
 
 ### Store owns packages, not harness artifacts
 
-The Store writes package bytes and its own registry. It never writes anything
-a harness reads.
+The Store writes package bytes, under `sources/`, and its own registry. It
+never writes anything a harness reads: that is each vendor store's, under
+`store/<vendor>`.
 
 > `tests/integrations/vendor_neutral.rs::the_store_writes_no_harness_owned_artifact_of_its_own_accord`
 
@@ -57,9 +58,9 @@ Codex stages a plugin into its own cache without following symlinks, so a
 generated Codex envelope carries real bytes: every default-policy Skill and
 the `.mcp.json` are mirrored from the Store, a symlink the package keeps
 inside itself is resolved to the file it names, and a link that escapes the
-package is refused by name rather than dropped. The envelope is still a
-Derived Artifact (ADR-013 §5, amended): rebuilt wholesale from the Store on
-every materialization, never authoritative.
+package is refused by name rather than dropped. The envelope is the
+package's Codex build: a Derived Artifact (ADR-013 §5, amended), rendered
+again whole whenever its build key changes, never authoritative.
 
 > `crates/uze-integrations/src/codex/generate.rs::generated_native_tests::materialize_generated_package_never_writes_into_the_store_package`
 > `crates/uze-integrations/src/codex/generate.rs::generated_native_tests::envelope_mirrors_supporting_files_and_resolves_in_package_symlinks`
@@ -201,16 +202,18 @@ linked there is retired before the directory takes its place.
 > `tests/projection/skill_roots.rs::an_entry_an_earlier_build_linked_is_replaced_by_a_directory`
 > `tests/integrations/lifecycle_conformance.rs::every_integration_owns_its_skill_root`
 
-### `${PLUGIN_ROOT}` names a delivered copy, never the Store
+### `${PLUGIN_ROOT}` names the package's build, never its sources
 
 Every `${PLUGIN_ROOT}` a harness receives, in a skill, an agent, an MCP
-server or a hook, names `runtime/packages/<id>`: the whole package, copied
-from the Store before any harness is handed it. A hook that builds into its
-root writes that copy, which the next delivery restores, and never the bytes
-`agents.lock` pins.
+server or a hook, names the package's build for that harness,
+`store/<vendor>/<id>`, on every route of that harness. A hook that writes
+into its root writes the build, never the bytes `agents.lock` pins; the
+file stays while the package is unchanged, and a changed package replaces
+the build whole.
 
 > `tests/projection/skill_roots.rs::the_plugin_root_a_skill_names_is_a_delivered_copy_never_the_store`
-> `crates/uze-core/src/delivery/delivered_root.rs::the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store`
+> `crates/uze-integrations/src/shared/build/tests.rs::a_write_into_the_build_never_reaches_the_sources`
+> `crates/uze-integrations/src/shared/build/tests.rs::only_a_changed_key_renders_again_and_a_file_a_hook_added_survives`
 
 ### A generated directory is replaced whole
 
@@ -1325,20 +1328,17 @@ wherever the author placed it.
 
 The harness invokes a wrapper vendored in the delivered artifact, never the
 `uze` binary, and nothing in that artifact names the packager. The wrapper
-is a per-harness constant, owned alongside the entry that names it: written
-on attach, drift-checked on inspect, removed with the last entry — and only
-once nothing is left that runs it, which an unreadable ledger and a
-hand-edited entry both count as. Where no
-wrapper template covers the platform, nothing is attached at all (see
-below).
+is a per-harness constant written into each package's build at the reserved
+`hooks/uze-exec`: every entry names its own package's copy, inspection
+checks it beside the entry, and it leaves with the build, never with an
+entry. Where no wrapper template covers the platform, nothing is attached
+at all (see below).
 
 > `tests/integrations/hooks.rs::the_generated_wrapper_is_owned_alongside_the_entry_it_serves`
 > `tests/integrations/hooks.rs::reinstalling_replaces_a_previous_packager_entry_and_leaves_foreign_ones`
 > `crates/uze-integrations/src/hooks/wrapper_tests.rs::the_wrapper_is_one_byte_identical_file_per_harness`
 > `crates/uze-integrations/src/hooks/tests.rs::a_wrapper_that_lost_its_executable_bit_is_drift_and_is_repaired`
-> `crates/uze-integrations/src/hooks/tests.rs::the_last_detached_hook_entry_takes_the_shared_wrapper_with_it`
-> `crates/uze-integrations/src/hooks/tests.rs::an_unreadable_ledger_keeps_the_shared_wrapper`
-> `crates/uze-integrations/src/hooks/tests.rs::an_entry_that_drifted_still_counts_as_using_the_wrapper`
+> `crates/uze-integrations/src/hooks/tests.rs::each_build_carries_its_own_wrapper_and_an_entry_leaves_it_to_the_build`
 > `tests/integrations/hooks.rs::an_unreadable_ledger_leaves_the_shared_wrapper_where_it_is`
 
 ### One vocabulary drives matchers, wrappers and handlers
@@ -2696,6 +2696,30 @@ describes it, authoritative-looking and entirely reproducible.
 
 > `crates/uze-core/src/machine/home.rs::tests::nothing_a_record_needs_sits_in_a_tier_that_can_be_deleted`
 > `crates/uze-core/src/machine/harness_runtime.rs::tests::the_sweep_keeps_the_tenants_and_nothing_else`
+
+### A harness reads only its own vendor store
+
+Every `$UZE_HOME` path a harness's configuration or discovery files name lies
+in that harness's vendor store, `store/<vendor>/`, save the scratch a reader
+recreates on demand under `runtime/`. Deleting `runtime/`, `cache/` or
+`sources/` therefore changes nothing a harness does, and a default
+`uze uninstall`, which removes the program and keeps the stores, leaves every
+harness pointed at something that exists.
+
+> `tests/acceptance/store_ownership.rs::no_harness_artifact_names_outside_its_store`
+> `tests/acceptance/uninstall.rs::default_uninstall_leaves_every_harness_pointed_at_something_that_exists`
+
+### The move to `sources/` is fenced before a byte moves
+
+A machine still keeping package bytes under `store/` has its package
+registry and receipt ledger written in the new shape first, so an older
+build refuses both by name instead of pruning entries whose bytes it cannot
+find; only then do the bytes move, one directory at a time, and each
+package's digest is recorded from the moved bytes.
+
+> `crates/uze-core/src/package/sources.rs::tests::the_fence_is_written_and_every_moved_package_gets_its_digest`
+> `crates/uze-core/src/package/sources.rs::tests::the_bytes_move_and_nothing_is_overwritten`
+> `crates/uze-core/src/package/store.rs::tests::a_registry_from_a_newer_build_is_refused_and_nothing_is_pruned`
 
 ### Every path UZE owns is named in one place
 

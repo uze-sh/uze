@@ -11,7 +11,7 @@ use super::*;
 pub(crate) struct PowerShellWrapper;
 
 impl WrapperTemplate for PowerShellWrapper {
-    const RELATIVE_PATH: &'static str = "hooks/exec.ps1";
+    const RELATIVE_PATH: &'static str = "hooks/uze-exec.ps1";
     const HEADER: &'static str = HEADER;
 
     fn source(target: HookTarget) -> Option<String> {

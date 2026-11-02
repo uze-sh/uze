@@ -302,15 +302,22 @@ pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
 /// be shown to still be needed, and the cost of being wrong is one rebuild
 /// on the next launch in that project.
 pub fn prune_projections(home: &UzeHome) -> Vec<String> {
+    prune_projection_paths(home)
+        .into_iter()
+        .filter_map(|path| Some(path.file_name()?.to_string_lossy().into_owned()))
+        .collect()
+}
+
+/// [`prune_projections`], answering each path it swept.
+pub fn prune_projection_paths(home: &UzeHome) -> Vec<PathBuf> {
     let mut pruned = Vec::new();
     let tenants = home.runtime_tenants();
     for entry in read_dir(&home.runtime_dir()) {
         if tenants.contains(&entry.path()) {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().into_owned();
         if remove(&entry.path()) {
-            pruned.push(name);
+            pruned.push(entry.path());
         }
     }
     for entry in read_dir(&home.runtime_projects_dir()) {
@@ -322,7 +329,7 @@ pub fn prune_projections(home: &UzeHome) -> Vec<String> {
             continue;
         }
         if remove(&project_dir) {
-            pruned.push(entry.file_name().to_string_lossy().into_owned());
+            pruned.push(project_dir);
         }
     }
     pruned

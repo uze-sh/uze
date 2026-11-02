@@ -91,6 +91,8 @@ pub(crate) fn agent_file_plan(
 /// always named with the label), the fields it needs set, and which
 /// authored fields it keeps.
 pub(crate) struct MarkdownAgent<'a> {
+    /// The harness's vendor store, whose build the body's package root names.
+    pub(crate) store: &'a crate::shared::build::VendorStore,
     pub(crate) name_in_frontmatter: bool,
     pub(crate) set: &'a [(&'a str, &'a str)],
     pub(crate) keep: fn(&str) -> bool,
@@ -107,7 +109,7 @@ pub(crate) fn markdown_agent(
     keys: &[&str],
 ) -> String {
     let document = AgentDocument::parse(&resource.capability.payload).unwrap_or_default();
-    let body = resolve_text(&document.body, &resource.package_root);
+    let body = resolve_text(&document.body, &shape.store.root_of(&resource.package_root));
     let name = shape.name_in_frontmatter.then_some(label);
     let (block, _) = crate::shared::dialect::agent_block(shape.dialect, keys, &document);
     document.render(name, shape.set, shape.keep, &block, &body)
@@ -193,12 +195,12 @@ pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
     agents
 }
 
-#[cfg(test)]
+// Every case is a symbolic link, which Windows lets an ordinary account
+// make only in developer mode.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
-    #[cfg(unix)]
     #[test]
     fn a_cloned_project_cannot_make_the_agent_walk_endless_or_unbounded() {
         let directory = uze_testkit::temp::scratch("project-agents-hostile");
@@ -224,8 +226,6 @@ mod tests {
         std::fs::remove_dir_all(&directory).ok();
     }
 
-    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
-    #[cfg(unix)]
     #[test]
     fn a_linked_definition_is_not_read() {
         let root = uze_testkit::temp::scratch("project-agents-linked");

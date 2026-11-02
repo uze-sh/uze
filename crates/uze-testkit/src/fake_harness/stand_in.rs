@@ -383,6 +383,47 @@ fn ask_on_the_terminal() {
     let _ = std::io::BufReader::new(input).read_line(&mut answer);
 }
 
+/// The marketplaces a fake vendor CLI has registered, by name, each with
+/// its root: one `<name>\t<root>` line each in `marketplaces`.
+fn registered(state_dir: &Path) -> Vec<(String, String)> {
+    lines(&state_dir.join("marketplaces"))
+        .into_iter()
+        .filter_map(|line| {
+            let (name, root) = line.split_once('\t')?;
+            Some((name.to_owned(), root.to_owned()))
+        })
+        .collect()
+}
+
+fn register(state_dir: &Path, name: &str, root: &str) {
+    let mut known = registered(state_dir);
+    known.retain(|(known_name, _)| known_name != name);
+    known.push((name.to_owned(), root.to_owned()));
+    let text: String = known
+        .iter()
+        .map(|(name, root)| format!("{name}\t{root}\n"))
+        .collect();
+    write(&state_dir.join("marketplaces"), &text);
+}
+
+fn unregister(state_dir: &Path, name: &str) {
+    let mut known = registered(state_dir);
+    known.retain(|(known_name, _)| known_name != name);
+    let text: String = known
+        .iter()
+        .map(|(name, root)| format!("{name}\t{root}\n"))
+        .collect();
+    write(&state_dir.join("marketplaces"), &text);
+}
+
+/// A fake `claude`/`codex` `plugin` CLI, faithful to what each was measured
+/// to do with a local marketplace (`experiments/{claude,codex}/source-tie.py`):
+/// Claude takes a same-name `add` from another root as the new root and
+/// keeps its plugins, and `marketplace remove` uninstalls them; Codex
+/// refuses a same-name `add` from another root, and its `marketplace
+/// remove` leaves the plugins enabled in its config, listed again once a
+/// marketplace of that name is added back. A root named in `refuse-add`
+/// is refused, and a selector in `disabled` is listed switched off.
 fn vendor_marketplace(
     state_dir: &Path,
     vendor: MarketplaceVendor,
@@ -390,31 +431,68 @@ fn vendor_marketplace(
 ) -> ExitCode {
     let _ = fs::create_dir_all(state_dir);
     let joined = arguments.join(" ");
-    let root = read(&state_dir.join("root"));
-    let name = read(&state_dir.join("name"));
+    let known = registered(state_dir);
+    let root_of = |name: &str| {
+        known
+            .iter()
+            .find(|(known_name, _)| known_name == name)
+            .map(|(_, root)| root.clone())
+    };
     if joined.starts_with("plugin marketplace add") {
         let root = arguments.last().cloned().unwrap_or_default();
-        write(&state_dir.join("root"), &root);
+        if lines(&state_dir.join("refuse-add")).contains(&root) {
+            return fail(&format!("cannot add marketplace from {root}"));
+        }
         let name = marketplace_name(Path::new(&root)).unwrap_or_else(|| "uze-store".to_owned());
-        write(&state_dir.join("name"), &name);
-    } else if joined.starts_with("plugin install") || joined.starts_with("plugin add") {
-        if let Some(selector) = arguments.get(2).filter(|selector| !selector.is_empty()) {
-            append_line(&state_dir.join("installed"), selector);
-            if let Some(root) = root.as_deref() {
-                let id = selector.split('@').next().unwrap_or(selector);
-                let _ = fs::create_dir_all(Path::new(root).join(id));
+        match (vendor, root_of(&name)) {
+            (MarketplaceVendor::Codex, Some(existing)) if existing != root => {
+                return fail(&format!(
+                    "marketplace `{name}` is already added from {existing}"
+                ));
+            }
+            _ => register(state_dir, &name, &root),
+        }
+    } else if joined.starts_with("plugin marketplace remove") {
+        let Some(name) = arguments.get(3) else {
+            return fail("which marketplace");
+        };
+        unregister(state_dir, name);
+        if vendor == MarketplaceVendor::Claude {
+            for selector in lines(&state_dir.join("installed")) {
+                if selector.rsplit_once('@').is_some_and(|(_, m)| m == name) {
+                    drop_line(&state_dir.join("installed"), &selector);
+                }
             }
         }
+    } else if joined.starts_with("plugin install") || joined.starts_with("plugin add") {
+        if let Some(selector) = arguments.get(2).filter(|selector| !selector.is_empty()) {
+            let marketplace = selector
+                .rsplit_once('@')
+                .map(|(_, m)| m)
+                .unwrap_or_default();
+            let Some(root) = root_of(marketplace) else {
+                return fail(&format!("unknown marketplace `{marketplace}`"));
+            };
+            if !lines(&state_dir.join("installed")).contains(selector) {
+                append_line(&state_dir.join("installed"), selector);
+            }
+            let id = selector.split('@').next().unwrap_or(selector);
+            let _ = fs::create_dir_all(Path::new(&root).join(id));
+        }
     } else if joined.starts_with("plugin marketplace list") {
-        let listed = match (vendor, &root) {
-            (MarketplaceVendor::Claude, Some(root)) => {
-                json!([{ "name": name.unwrap_or_default(), "path": root }])
-            }
-            (MarketplaceVendor::Claude, None) => json!([]),
-            (MarketplaceVendor::Codex, Some(root)) => {
-                json!({ "marketplaces": [{ "name": name.unwrap_or_default(), "root": root }] })
-            }
-            (MarketplaceVendor::Codex, None) => json!({ "marketplaces": [] }),
+        let listed = match vendor {
+            MarketplaceVendor::Claude => Value::Array(
+                known
+                    .iter()
+                    .map(|(name, root)| json!({ "name": name, "path": root }))
+                    .collect(),
+            ),
+            MarketplaceVendor::Codex => json!({
+                "marketplaces": known
+                    .iter()
+                    .map(|(name, root)| json!({ "name": name, "root": root }))
+                    .collect::<Vec<_>>(),
+            }),
         };
         print!("{listed}");
     } else if joined.starts_with("plugin list") {
@@ -422,23 +500,37 @@ fn vendor_marketplace(
             .iter()
             .position(|argument| argument == "--marketplace")
             .and_then(|at| arguments.get(at + 1));
+        let disabled = lines(&state_dir.join("disabled"));
         let installed: Vec<String> = lines(&state_dir.join("installed"))
             .into_iter()
             .filter(|selector| {
-                only.is_none_or(|only| selector.rsplit_once('@').is_some_and(|(_, m)| m == only))
+                selector
+                    .rsplit_once('@')
+                    .is_some_and(|(_, m)| root_of(m).is_some() && only.is_none_or(|only| m == only))
             })
             .collect();
         let listed = match vendor {
             MarketplaceVendor::Claude => Value::Array(
                 installed
                     .iter()
-                    .map(|selector| json!({ "id": selector, "enabled": true }))
+                    .map(|selector| {
+                        json!({ "id": selector, "enabled": !disabled.contains(selector) })
+                    })
                     .collect(),
             ),
             MarketplaceVendor::Codex => json!({
                 "installed": installed
                     .iter()
-                    .map(|selector| codex_installed(selector, root.as_deref(), name.as_deref()))
+                    .map(|selector| {
+                        let marketplace = selector.rsplit_once('@').map(|(_, m)| m).unwrap_or_default();
+                        let mut entry = codex_installed(
+                            selector,
+                            root_of(marketplace).as_deref(),
+                            Some(marketplace),
+                        );
+                        entry["enabled"] = json!(!disabled.contains(selector));
+                        entry
+                    })
                     .collect::<Vec<_>>(),
             }),
         };

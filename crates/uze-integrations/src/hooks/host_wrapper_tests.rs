@@ -12,7 +12,7 @@ use uze_core::hook::{
 };
 use uze_core::shell::ShellCommand;
 
-use super::wrapper::{WRAPPER_RELATIVE_PATH, wrapper_arguments, wrapper_source};
+use super::wrapper::{Roots, WRAPPER_RELATIVE_PATH, wrapper_arguments, wrapper_source};
 
 /// A package with three handlers, each written for both shells: `guard`
 /// refuses `rm` and allows the rest, reading the command out of the
@@ -70,7 +70,7 @@ fn fire(root: &Path, hook: &PortableHook, payload: &[u8]) -> Answer {
     let source = wrapper_source(crate::claude::HOOKS).expect("Claude Code has a wrapper here");
     uze_testkit::process::install_executable(&wrapper, source.as_bytes());
     let (program, mut arguments) = uze_platform::shell::script(&wrapper.display().to_string());
-    arguments.extend(wrapper_arguments(hook, root, &hook.handlers));
+    arguments.extend(wrapper_arguments(hook, Roots::same(root), &hook.handlers));
     let mut child = Command::new(program)
         .args(arguments)
         .stdin(Stdio::piped())

@@ -14,14 +14,14 @@ flowchart LR
   linked -.->|pins nothing| lock
   acquire --> trust{Trusted?}
   trust -- no --> refuse[Refuse]
-  trust -- yes --> store[(Store)]
-  store --> engine[Engine]
+  trust -- yes --> sources[(sources/<br/>package bytes)]
+  sources --> engine[Engine]
   engine --> router{Router}
   router -->|native| native[Native plugin]
   router -->|generated| generated[Generated package]
   router -->|adapter| adapter[Safe adaptation]
   router -.->|none| unsupported[Unsupported]
-  native & generated & adapter --> runtime[(runtime/<br/>plugins and skill directories,<br/>each harness's harness block rendered,<br/>replaced whole)]
-  runtime --> receipts[(Receipts in state/)]
+  native & generated & adapter --> vendorstore[(store/&lt;vendor&gt;/<br/>one build per package,<br/>the harness's one marketplace,<br/>rebuilt when its key changes)]
+  vendorstore --> receipts[(Receipts in state/)]
   receipts ==> context[Reconcile AGENTS.md]
   receipts -.->|a harness short of the plan| report[Report per harness,<br/>roll back or record it undelivered,<br/>exit non-zero]

@@ -195,8 +195,8 @@ impl UzeApplication {
             return Ok(PackageDelivery::default());
         }
         // Before any harness is handed a path into it: `${PLUGIN_ROOT}`
-        // names this copy, never the Store.
-        uze_core::delivered_root::materialize(&self.home, package)?;
+        // names the package's build, never its sources.
+        let rebuilt = self.publish_build(package, integration)?;
         let mut delivery = PackageDelivery::default();
         let mut provided = BTreeSet::new();
         if let Some(plan) = integration
@@ -221,15 +221,40 @@ impl UzeApplication {
                     })
                     .collect();
             // A route an earlier build took and this one no longer does is
-            // taken back off before the current one is attached.
+            // taken back off before the current one is attached. One that
+            // cannot be (a plugin the person disabled, an edit) is left as it
+            // is and said, and the package is not installed a second time
+            // beside it.
+            let mut kept = None;
             for receipt in package_receipts
                 .iter()
                 .filter(|receipt| !integration.package_receipt_serves(receipt))
             {
-                self.retire_receipt(integration, receipt)?;
+                if !self.retire_receipt(integration, receipt)? {
+                    kept = Some(receipt);
+                }
             }
+            if let Some(receipt) = kept {
+                delivery.plan_set_aside = true;
+                delivery.blocked.push(BlockedDelivery {
+                    integration: integration.id().to_owned(),
+                    capability: package.id.as_str().to_owned(),
+                    reason: format!(
+                        "an earlier delivery, {}, changed since it was made: {}; it is left as it \
+                         is, and this package is not installed again beside it",
+                        receipt.artifact.location().display(),
+                        integration.inspect_receipt(receipt).reason
+                    ),
+                });
+                return Ok(delivery);
+            }
+            // A build rendered again is installed again: a harness that runs
+            // from its own copy refreshes it (Codex's `plugin add`,
+            // Antigravity's `plugin install`), one that reads in place
+            // re-reads the catalogue.
             let already_attached = package_receipts.into_iter().find(|receipt| {
-                integration.package_receipt_serves(receipt)
+                !rebuilt
+                    && integration.package_receipt_serves(receipt)
                     && integration.inspect_receipt(receipt).state == AttachmentState::Matched
             });
             if let Some(receipt) = already_attached {
@@ -350,6 +375,45 @@ impl UzeApplication {
         Ok(delivery)
     }
 
+    /// Renders `package`'s build for `integration`, recording the receipt
+    /// that owns it. Answers whether the build was rendered again (or for
+    /// the first time), which is when what the harness installed from it
+    /// is installed again.
+    pub(crate) fn publish_build(
+        &self,
+        package: &StoredPackage,
+        integration: &dyn IntegrationPort,
+    ) -> Result<bool> {
+        let recorded = state::receipts(&self.home, Some(package.id.as_str()))?
+            .into_iter()
+            .find(|receipt| {
+                receipt.integration == integration.id()
+                    && uze_core::integration::is_build_receipt(receipt)
+            });
+        let digest = match self.store.recorded_digest(&package.id)? {
+            Some(digest) => digest,
+            None => self.store.digest(package).unwrap_or_default(),
+        };
+        let linked = matches!(
+            package.provenance.resolved,
+            uze_core::ResolvedSource::Local { .. }
+        ) && state::marketplace_list(&self.home)?
+            .get(package.id.marketplace())
+            .is_some_and(|record| record.link.is_some());
+        let inputs = uze_core::integration::BuildInputs {
+            digest: &digest,
+            linked,
+        };
+        let Some(receipt) = integration.publish_build(package, &inputs, recorded.as_ref())? else {
+            return Ok(false);
+        };
+        if recorded.as_ref() == Some(&receipt) {
+            return Ok(false);
+        }
+        state::record_receipt(&self.home, receipt)?;
+        Ok(true)
+    }
+
     /// The capability receipts this integration holds for the package that
     /// `plan` now provides.
     pub(crate) fn covered_receipts(
@@ -378,10 +442,15 @@ impl UzeApplication {
         package: &StoredPackage,
         integration: &dyn IntegrationPort,
     ) -> Result<()> {
-        for receipt in state::receipts(&self.home, Some(package.id.as_str()))? {
-            if receipt.integration == integration.id() {
-                self.retire_receipt(integration, &receipt)?;
-            }
+        let mut receipts: Vec<AttachmentReceipt> =
+            state::receipts(&self.home, Some(package.id.as_str()))?
+                .into_iter()
+                .filter(|receipt| receipt.integration == integration.id())
+                .collect();
+        // A build goes after everything that names it.
+        receipts.sort_by_key(uze_core::integration::is_build_receipt);
+        for receipt in &receipts {
+            self.retire_receipt(integration, receipt)?;
         }
         Ok(())
     }

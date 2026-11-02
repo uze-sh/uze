@@ -173,6 +173,8 @@ pub(super) fn model_with_data() -> TuiModel {
         shell_refusal: None,
         ssh_missing: false,
         machine_concerns: Vec::new(),
+        health: Vec::new(),
+        collection: None,
     });
     model.remembered.context_status = Some(ProjectContextStatus {
         root: PathBuf::from("/home/project"),

@@ -3,6 +3,8 @@ name: worktree
 description: For an agent `uze workspace` launched, and no other. Works inside the checkout the workspace placed you in — knowing where you are, committing on your own branch, giving parallel subagents checkouts of their own, and handing your work to UZE's delivery instead of integrating it yourself. Use when coordinating more than one writing agent, when resuming work in an existing checkout, when UZE reports a paused rebase or failed checks on your branch, or when a conflict or an unknown checkout owner needs resolving.
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 # UZE — working where UZE placed you
 
 **This applies only to an agent `uze workspace` launched.** An agent a

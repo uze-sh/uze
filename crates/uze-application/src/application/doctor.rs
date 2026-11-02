@@ -25,26 +25,34 @@ impl Health<'_> {
     pub fn report(&self) -> DoctorReport {
         let maintenance = self.maintain();
         let mut report = self.doctor_shell();
+        let reconciliations: Vec<ReconciliationReport> = report
+            .plugins
+            .iter()
+            .map(|plugin| self.0.reconcile_cached_report(&plugin.id))
+            .collect();
         let (attachments, deliveries) = report
             .plugins
             .iter()
-            .map(|plugin: &PluginSummary| {
-                let reconciliation = self.0.reconcile_cached_report(&plugin.id);
-                let deliveries = PackageDeliveryHealth {
-                    plugin: plugin.id.clone(),
-                    harnesses: self.delivery_health(plugin, &reconciliation),
-                };
-                let attachments = PackageManagedState {
-                    plugin: plugin.id.clone(),
-                    state: managed_state(&reconciliation),
-                    hooks: self.hook_health(&reconciliation),
-                };
-                (attachments, deliveries)
-            })
+            .zip(&reconciliations)
+            .map(
+                |(plugin, reconciliation): (&PluginSummary, &ReconciliationReport)| {
+                    let deliveries = PackageDeliveryHealth {
+                        plugin: plugin.id.clone(),
+                        harnesses: self.delivery_health(plugin, reconciliation),
+                    };
+                    let attachments = PackageManagedState {
+                        plugin: plugin.id.clone(),
+                        state: managed_state(reconciliation),
+                        hooks: self.hook_health(reconciliation),
+                    };
+                    (attachments, deliveries)
+                },
+            )
             .unzip();
         report.attachments = attachments;
         report.deliveries = deliveries;
         report.maintenance = maintenance;
+        report.health = self.observe(super::Inspection::Cached, &reconciliations);
         report
     }
 
@@ -252,6 +260,8 @@ impl Health<'_> {
                 && !uze_core::acquisition::git::ssh_available(),
             program_confinement: super::read_models::ProgramConfinement::of_this_machine(),
             extension_costs: self.0.extensions().measured_costs(),
+            health: Vec::new(),
+            collection: super::CollectionRecord::read(&self.0.home),
             machine_concerns: uze_platform::machine::concerns()
                 .into_iter()
                 .map(|concern| MachineConcern {
@@ -477,12 +487,12 @@ fn integration_status(status: IntegrationStatus) -> String {
     .to_owned()
 }
 
+/// A package whose bytes are there but unreadable as a package. One whose
+/// bytes are gone altogether is missing its bytes, which the health
+/// catalogue reports apart and which blocks nothing.
 fn package_store_inconsistency(package: &StoredPackage) -> Option<String> {
     if !package.root.is_dir() {
-        return Some(format!(
-            "package `{}` store directory is missing",
-            package.id.as_str()
-        ));
+        return None;
     }
     if !package.manifest.is_file() {
         return Some(format!(
@@ -1089,10 +1099,12 @@ fn check_delivery(
                 });
             }
             for one in integration.held_back(package, &entry.receipt, &served_resources) {
-                let capability = served
-                    .iter()
-                    .find(|capability| capability.identity == one.capability)
-                    .map_or_else(|| one.capability.clone(), |capability| name_of(capability));
+                // Named as its author named it (a hook's id), the name the
+                // harness's own review shows beside its command.
+                let capability = resource_of(&one.capability).map_or_else(
+                    || one.capability.clone(),
+                    uze_core::capability::Resource::name,
+                );
                 failing.insert(one.capability);
                 findings.push(DeliveryFinding {
                     capability,
@@ -1237,9 +1249,14 @@ pub(crate) fn held_back_notes(app: &UzeApplication, plugin: Option<&str>) -> Vec
                 })
                 .collect();
             for one in integration.held_back(&package, receipt, &served) {
+                let name = served
+                    .iter()
+                    .find(|resource| resource.identity() == one.capability)
+                    .map_or_else(|| one.capability.clone(), |resource| resource.name());
                 notes.push(HeldBackNote {
                     harness: integration.display_name().to_owned(),
                     plugin: receipt.package_id.clone(),
+                    name,
                     capability: one.capability,
                     action: one.action,
                 });

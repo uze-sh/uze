@@ -54,6 +54,15 @@ mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
 
+/// This harness's vendor store: the one directory under `$UZE_HOME` it
+/// reads, holding one build per package.
+pub(crate) const STORE: crate::shared::build::VendorStore = crate::shared::build::VendorStore {
+    vendor: "opencode",
+    dialect: 1,
+    build_name: crate::shared::build::package_id_name,
+    carried: &[],
+};
+
 use crate::hooks as hook_projection;
 use crate::shared::agent::{
     MarkdownAgent, PORTABLE_AGENT_FIELDS, agent_file_plan, agent_label, delivered_agent,
@@ -140,6 +149,12 @@ impl IntegrationPort for OpenCodeIntegration {
         "opencode"
     }
 
+    /// No derived view to rebuild; what an earlier layout staged for this
+    /// harness and nothing names any more goes.
+    fn republish_packages(&self, _packages: &[uze_core::store::StoredPackage]) -> Result<()> {
+        crate::shared::path::retire_unnamed_attachments(&self.uze_home, "opencode", Vec::new)
+    }
+
     /// `opencode` is both the stable id and the name people type — the
     /// label capitalizes the product name so every harness reads as one.
     fn display_name(&self) -> &'static str {
@@ -203,6 +218,18 @@ impl IntegrationPort for OpenCodeIntegration {
 
     fn rules_route(&self) -> uze_core::integration::RulesRoute {
         crate::rules::adapted_route(hooks::RULES_REASON)
+    }
+
+    /// `uze.ts`, once setup has written it: delivered on no package's
+    /// account, and owned by a receipt like anything else UZE delivers.
+    fn setup_artifacts(&self) -> Vec<ManagedArtifact> {
+        if self.plugin_state() == runtime_plugin::PluginState::Installed {
+            vec![runtime_plugin::artifact(&runtime_plugin::path(
+                self.config_root(),
+            ))]
+        } else {
+            Vec::new()
+        }
     }
 
     /// The rules section rides UZE's plugin, so an operator's file at its
@@ -541,9 +568,41 @@ impl IntegrationPort for OpenCodeIntegration {
             .collect()
     }
 
+    /// The build is the package mirrored for OpenCode: the root
+    /// `${PLUGIN_ROOT}` names on every route here, and where the package's
+    /// hook document is written by the hook's own delivery.
+    fn publish_build(
+        &self,
+        package: &uze_core::store::StoredPackage,
+        inputs: &uze_core::integration::BuildInputs<'_>,
+        recorded: Option<&AttachmentReceipt>,
+    ) -> Result<Option<AttachmentReceipt>> {
+        crate::shared::build::publish(
+            crate::shared::build::Publication::new(
+                &STORE,
+                &self.uze_home,
+                self.id(),
+                package,
+                inputs,
+                recorded,
+            ),
+            |dir, _root| {
+                crate::shared::build::mirror_package(package, dir, &[], &[])?;
+                Ok(None)
+            },
+        )
+        .map(Some)
+    }
+
     fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
         if crate::rules::is_rules_artifact(&receipt.artifact) {
             return crate::rules::inspect(&receipt.artifact);
+        }
+        if crate::shared::build::is_build(&receipt.artifact) {
+            return crate::shared::build::inspect(&STORE, &self.uze_home, receipt);
+        }
+        if let Some(path) = runtime_plugin_path(&receipt.artifact) {
+            return runtime_plugin::inspect(&path);
         }
         if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
             return self.inspect_hook_bridge(receipt, &self.hook_place(receipt, path));
@@ -565,6 +624,12 @@ impl IntegrationPort for OpenCodeIntegration {
         if crate::rules::is_rules_artifact(&receipt.artifact) {
             return crate::rules::detach(&receipt.artifact);
         }
+        if crate::shared::build::is_build(&receipt.artifact) {
+            return crate::shared::build::detach(&STORE, &self.uze_home, receipt);
+        }
+        if let Some(path) = runtime_plugin_path(&receipt.artifact) {
+            return runtime_plugin::detach(&path);
+        }
         let Some(entry) = McpEntry::recorded(&receipt.artifact) else {
             if let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact {
                 return self.detach_hook_bridge(receipt, &self.hook_place(receipt, path));
@@ -574,6 +639,16 @@ impl IntegrationPort for OpenCodeIntegration {
             });
         };
         mcp::detach_mcp_config(&self.config_path, &entry)
+    }
+}
+
+/// The file a runtime-plugin receipt records.
+fn runtime_plugin_path(artifact: &ManagedArtifact) -> Option<PathBuf> {
+    match artifact {
+        ManagedArtifact::IntegrationOwned { kind, detail, .. } if kind == runtime_plugin::KIND => {
+            detail.get("path")?.as_str().map(PathBuf::from)
+        }
+        _ => None,
     }
 }
 
@@ -622,6 +697,7 @@ fn opencode_agent_unreadable(path: &Path) -> Option<String> {
 /// not know is forwarded to the provider as a request field (measured on
 /// 2.0.18).
 const OPENCODE_AGENT: MarkdownAgent = MarkdownAgent {
+    store: &STORE,
     name_in_frontmatter: false,
     set: &[("mode", "subagent")],
     keep: |_| false,
@@ -811,7 +887,12 @@ impl OpenCodeIntegration {
         let references: Vec<&PortableHook> = groups.iter().collect();
         uze_core::persistence::write_atomic(
             bridge_path,
-            hook_projection::opencode_hook_document(HOOKS, &references, package_root).as_bytes(),
+            hook_projection::opencode_hook_document(
+                HOOKS,
+                &references,
+                STORE.root_of(package_root).path(),
+            )
+            .as_bytes(),
         )?;
         if self.plugin_reads_documents() {
             self.retire_package_bridge(package_id)?;
@@ -840,12 +921,13 @@ impl OpenCodeIntegration {
         let Ok(entries) = fs::read_dir(documents) else {
             return Ok(());
         };
+        // One build per package, named by its id, holding its document.
         for entry in entries.flatten() {
-            let path = entry.path();
-            if path
-                .extension()
-                .is_some_and(|extension| extension == "json")
-                && let Some(package_id) = path.file_stem().and_then(|stem| stem.to_str())
+            if entry
+                .path()
+                .join(hook_projection::OPENCODE_DOCUMENT)
+                .is_file()
+                && let Some(package_id) = entry.file_name().to_str()
             {
                 self.retire_package_bridge(package_id)?;
             }
@@ -955,7 +1037,11 @@ impl OpenCodeIntegration {
         };
         let references: Vec<&PortableHook> = groups.iter().collect();
         let legacy = self.is_legacy_bridge(bridge_path);
-        let expected = hook_projection::opencode_hook_document(HOOKS, &references, &package_root);
+        let expected = hook_projection::opencode_hook_document(
+            HOOKS,
+            &references,
+            STORE.root_of(&package_root).path(),
+        );
         let carries = |text: &str| {
             if legacy {
                 hook_projection::bridge_carries_groups(HOOKS, text, &references, &package_root)
@@ -1050,8 +1136,12 @@ impl OpenCodeIntegration {
                 hook_projection::opencode_document_path(&self.uze_home, HOOKS, package_id);
             uze_core::persistence::write_atomic(
                 &document,
-                hook_projection::opencode_hook_document(HOOKS, &references, &package_root)
-                    .as_bytes(),
+                hook_projection::opencode_hook_document(
+                    HOOKS,
+                    &references,
+                    STORE.root_of(&package_root).path(),
+                )
+                .as_bytes(),
             )?;
         }
         Ok(AttachmentInspection {

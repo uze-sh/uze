@@ -322,7 +322,7 @@ fn add_and_inspect_use_the_same_injected_uze_home() {
         report["plugin"]["store_path"]
             .as_str()
             .unwrap()
-            .contains(&uze_testkit::process::native("store/plugins")),
+            .contains(&uze_testkit::process::native("sources/plugins")),
         "store_path should live under the Store's plugins dir, got {}",
         report["plugin"]["store_path"]
     );
@@ -382,7 +382,7 @@ fn setup_reports_absent_harnesses_as_failure_without_writing_state() {
 #[test]
 fn doctor_reports_package_bytes_no_install_records_and_keeps_them() {
     let home = temporary_home("cli-doctor-unregistered-bytes");
-    let stray = home.join("store/plugins/local/stray");
+    let stray = home.join("sources/plugins/local/stray");
     std::fs::create_dir_all(&stray).unwrap();
     std::fs::write(stray.join("plugin.json"), r#"{"name":"stray"}"#).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_uze"))
@@ -631,6 +631,7 @@ fn setup_delivers_a_package_stored_before_the_harness_once_and_natively() {
             .filter(|receipt| {
                 receipt["integration"] == "claude-code"
                     && receipt["package_id"] == "uze-agent-skill-conformance@test"
+                    && receipt["resource_identity"] != "build"
             })
             .collect()
     };
@@ -965,7 +966,7 @@ fn setup_then_add_attaches_transparently_without_a_separate_sync_step() {
         claude_skills_entries.is_empty(),
         "no package should decompose into .claude/skills once generatable, got {claude_skills_entries:?}"
     );
-    let generated_root = uze_home.join("runtime/attachments/claude/generated");
+    let generated_root = uze_home.join("store/claude");
     assert!(
         generated_root
             .join("uze-agent-skill-conformance@test/.claude-plugin/plugin.json")
@@ -1135,7 +1136,7 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     );
     let opencode_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "opencode")
+        .find(|r| r["integration"] == "opencode" && r["resource_identity"] != "build")
         .expect("opencode receipt missing");
     assert!(
         opencode_receipt["artifact"]
@@ -1148,26 +1149,36 @@ fn setup_then_add_attaches_the_mcp_fixture_idempotently_and_removal_works() {
     );
     let claude_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "claude-code")
+        .find(|r| r["integration"] == "claude-code" && r["resource_identity"] != "build")
         .expect("claude receipt missing");
     assert_eq!(
         claude_receipt["artifact"]["INTEGRATION_OWNED"]["kind"], "claude-plugin-generated",
         "claude's receipt for an envelope-less MCP-only package must be the generated package kind, not a resource-level VendorConfigEntry: {claude_receipt:?}"
     );
+    // Which envelope a package carries is its build's record.
+    let claude_build = mcp_receipts
+        .iter()
+        .find(|r| r["integration"] == "claude-code" && r["resource_identity"] == "build")
+        .expect("claude build receipt missing");
     assert_eq!(
-        claude_receipt["artifact"]["INTEGRATION_OWNED"]["origin"],
+        claude_build["artifact"]["INTEGRATION_OWNED"]["origin"],
         "generated"
     );
     let codex_receipt = mcp_receipts
         .iter()
-        .find(|r| r["integration"] == "codex")
+        .find(|r| r["integration"] == "codex" && r["resource_identity"] != "build")
         .expect("codex receipt missing");
     assert_eq!(
         codex_receipt["artifact"]["INTEGRATION_OWNED"]["kind"], "marketplace-plugin-generated",
         "codex's receipt for an envelope-less MCP-only package must be the generated package kind, not a resource-level VendorConfigEntry: {codex_receipt:?}"
     );
+    // Which envelope a package carries is its build's record.
+    let codex_build = mcp_receipts
+        .iter()
+        .find(|r| r["integration"] == "codex" && r["resource_identity"] == "build")
+        .expect("codex build receipt missing");
     assert_eq!(
-        codex_receipt["artifact"]["INTEGRATION_OWNED"]["origin"],
+        codex_build["artifact"]["INTEGRATION_OWNED"]["origin"],
         "generated"
     );
 
@@ -1582,7 +1593,7 @@ fn a_machine_update_of_a_linked_edit_says_it_moved_from_the_working_tree() {
     uze(&["agent", "plugin", "create", "greet", "--market", "tools"]);
     uze(&["add", "-m", "greet@tools"]);
     let stored_skill = || {
-        let store = uze_home.join("store/plugins");
+        let store = uze_home.join("sources/plugins");
         [store.join("tools/greet"), store.join("greet")]
             .iter()
             .map(|root| root.join("skills/greet/SKILL.md"))
@@ -1892,7 +1903,7 @@ fn an_agent_delivered_under_its_old_bare_name_is_renamed_on_the_next_install() {
         .expect("the agent's receipt");
     state::forget_receipt(&uze, &receipt).unwrap();
     fs::remove_file(&labelled).unwrap();
-    let store_definition = fs::read_dir(uze.store_dir().join("plugins"))
+    let store_definition = fs::read_dir(uze.plugins_dir())
         .unwrap()
         .flat_map(|market| fs::read_dir(market.unwrap().path()).unwrap())
         .map(|plugin| plugin.unwrap().path().join("agents/reviewer.md"))

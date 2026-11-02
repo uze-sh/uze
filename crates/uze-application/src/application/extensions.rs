@@ -30,7 +30,7 @@ mod watch;
 
 pub use checked::{CheckedExtension, Overlay};
 pub use checkout::{ExtensionCheckout, NotACheckout};
-pub(crate) use compiled::prune_compiled_cache;
+pub(crate) use compiled::CompiledViews;
 pub use compiled::{ExtensionLoad, FIXTURE_LIMIT, SourceData, extension_stamp};
 pub use consent::{
     Asker, Consented, ExtensionConsent, ExtensionStanding, ExtensionState, ProgramPin, Switched,
@@ -39,6 +39,8 @@ pub use consent::{
 pub use costs::{MeasuredCost, MeasuredCosts, bytes_text};
 pub use installed::InstalledExtension;
 pub(crate) use installed::declared_in;
+pub(crate) use mcp::DeliveredPackages;
+pub(crate) use program::{ExtensionPictures, ExtensionScratch};
 use reach::CheckoutReach;
 pub use report::{
     ExtensionCondition, ExtensionReport, PreferenceRow, grant_meaning, secrets_kept_in,

@@ -73,6 +73,56 @@ pub(super) enum PluginState {
     Foreign(PathBuf),
 }
 
+/// The `IntegrationOwned` kind of the receipt setup records for the plugin.
+pub(crate) const KIND: &str = "runtime-plugin";
+
+/// The plugin's receipt artifact, for the file at `path`.
+pub(crate) fn artifact(path: &Path) -> uze_core::integration::ManagedArtifact {
+    uze_core::integration::ManagedArtifact::IntegrationOwned {
+        kind: KIND.to_owned(),
+        selector: FILE.to_owned(),
+        detail: [("path".to_owned(), serde_json::json!(path))]
+            .into_iter()
+            .collect(),
+    }
+}
+
+/// The plugin a receipt records, by content: UZE's, of any build (setup
+/// writes the current one), or edited into something UZE did not write.
+pub(crate) fn inspect(path: &Path) -> uze_core::integration::AttachmentInspection {
+    use uze_core::integration::{AttachmentInspection, AttachmentState};
+    let (state, reason) = match fs::read(path) {
+        Ok(current) if current.starts_with(OWNED.as_bytes()) => {
+            (AttachmentState::Matched, "UZE's runtime plugin is in place")
+        }
+        Ok(_) => (
+            AttachmentState::Drifted,
+            "the runtime plugin's file holds something UZE did not write",
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            (AttachmentState::Missing, "the runtime plugin is absent")
+        }
+        Err(_) => (AttachmentState::Blocked, "the runtime plugin is unreadable"),
+    };
+    AttachmentInspection {
+        state,
+        reason: reason.to_owned(),
+    }
+}
+
+/// Removes a matched plugin; anything else is answered with its inspection.
+pub(crate) fn detach(path: &Path) -> Result<uze_core::integration::AttachmentInspection> {
+    let inspection = inspect(path);
+    if inspection.state != uze_core::integration::AttachmentState::Matched {
+        return Ok(inspection);
+    }
+    fs::remove_file(path).map_err(UzeError::write(path))?;
+    Ok(uze_core::integration::AttachmentInspection {
+        state: uze_core::integration::AttachmentState::Missing,
+        reason: "UZE's runtime plugin was removed".to_owned(),
+    })
+}
+
 pub(crate) fn path(config_root: &Path) -> PathBuf {
     config_root.join("plugins").join(FILE)
 }

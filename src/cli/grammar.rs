@@ -125,7 +125,23 @@ pub(crate) enum Command {
         action: MarketAction,
     },
     /// Run diagnostics
+    ///
+    /// Every check of uze's own state on this machine, and what it already
+    /// put back on its own. `--repair` also puts back what needs more than
+    /// that: package bytes from where they came from, a marketplace
+    /// registered elsewhere, a stale workspace endpoint and the agents'
+    /// launchers. It never writes over what you changed, and never deletes
+    /// what it does not know: a record it set aside is kept until you pass
+    /// `--discard-leftovers`. It exits 1 when something is left for you,
+    /// and 2 when only the network is missing.
     Doctor {
+        /// Put back what uze can of its own state, then check again
+        #[arg(long)]
+        repair: bool,
+        /// With --repair, also delete the records set aside and the
+        /// versions a failed restore kept
+        #[arg(long, requires = "repair")]
+        discard_leftovers: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
     },
@@ -149,6 +165,21 @@ pub(crate) enum Command {
         /// `uze::self_update`). Silent, and bound by `UZE_AUTOUPDATE`.
         #[arg(long, hide = true)]
         background: bool,
+    },
+    /// Take uze off this machine
+    ///
+    /// By default the program goes: the binary, the workspace's links and
+    /// what uze generated, while every plugin it delivered keeps working
+    /// and a reinstall picks up where it stopped. `--purge` also uninstalls
+    /// every plugin it delivered and removes ~/.uze. The plan is shown
+    /// first, and nothing changes until it is confirmed.
+    Uninstall {
+        /// Act without asking
+        #[arg(long)]
+        yes: bool,
+        /// Remove every trace, the delivered plugins included
+        #[arg(long)]
+        purge: bool,
     },
     /// Provision harness integrations, or inspect their readiness
     Setup {

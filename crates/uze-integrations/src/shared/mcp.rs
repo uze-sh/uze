@@ -14,13 +14,16 @@ use uze_core::{
     store::StoredPackage,
 };
 
-use crate::shared::package_root::resolve_json;
+use crate::shared::package_root::{PluginRoot, resolve_json};
 use crate::shared::plan::unsupported;
 use crate::shared::process::{capture, failed_message, is_cli_safe_token, succeeds};
 
 /// The `mcpServers` value of the package's canonical `mcp.json`, resolved
 /// into the grammar every harness runs: what an envelope carries.
-pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_json::Value> {
+pub(crate) fn delivered_mcp_servers(
+    package: &StoredPackage,
+    root: &PluginRoot,
+) -> Option<serde_json::Value> {
     fs::read(package.root.join("mcp.json"))
         .ok()
         .and_then(|bytes| uze_core::authored::json::<serde_json::Value>(&bytes).ok())
@@ -29,10 +32,10 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
             serde_json::Value::Object(servers) => serde_json::Value::Object(
                 servers
                     .into_iter()
-                    .map(|(name, server)| (name, resolve_server(&server, &package.root)))
+                    .map(|(name, server)| (name, resolve_server(&server, root)))
                     .collect(),
             ),
-            other => resolve_json(&other, &package.root),
+            other => resolve_json(&other, root),
         })
 }
 
@@ -42,8 +45,7 @@ pub(crate) fn delivered_mcp_servers(package: &StoredPackage) -> Option<serde_jso
 /// its own choosing. Its command is then named as a harness starting it
 /// directly reaches it (`npx` through `cmd /c` on Windows, where it is a
 /// batch launcher).
-fn resolve_server(server: &serde_json::Value, package_root: &Path) -> serde_json::Value {
-    let package_root = &crate::shared::package_root::delivered(package_root);
+fn resolve_server(server: &serde_json::Value, package_root: &PluginRoot) -> serde_json::Value {
     let mut server = resolve_json(server, package_root);
     if let Some(entries) = server.as_object_mut() {
         for key in ["command", "cwd"] {
@@ -87,10 +89,13 @@ fn launched_directly(server: &mut serde_json::Map<String, serde_json::Value>) {
 
 /// `{"command": "...", "args": [...]}` from one server's canonical config
 /// object, as MCP resource discovery extracts it from `mcp.json`, with the
-/// package root resolved. `None` without a usable `command`, or with an
+/// package root resolved to `package_root`. `None` without a usable `command`, or with an
 /// argument that is not a string: an entry that runs something other than
 /// what the author declared is not a delivery of it.
-pub(crate) fn stdio_command(payload: &[u8], package_root: &Path) -> Option<(PathBuf, Vec<String>)> {
+pub(crate) fn stdio_command(
+    payload: &[u8],
+    package_root: &PluginRoot,
+) -> Option<(PathBuf, Vec<String>)> {
     let value = resolve_server(&uze_core::authored::json(payload).ok()?, package_root);
     let command = value.get("command")?.as_str()?;
     let args = match value.get("args") {
@@ -132,7 +137,12 @@ pub fn stdio_server_launch(
     if let Some(why) = undeliverable(&payload) {
         return Err(why.to_owned());
     }
-    stdio_command(&payload, &package.root)
+    // UZE starts this server itself: `${PLUGIN_ROOT}` names its own copy of
+    // the package, never a harness's build.
+    let root = uze_core::home::UzeHome::installed_package_of(&package.root)
+        .map(|(home, id)| home.delivered_package_dir(&id))
+        .unwrap_or_else(|| package.root.clone());
+    stdio_command(&payload, &PluginRoot::whole(root))
         .ok_or_else(|| format!("`{server}` declares no command a harness could start"))
 }
 
@@ -174,6 +184,7 @@ fn undeliverable(payload: &[u8]) -> Option<&'static str> {
 /// declares something the entry cannot carry.
 pub(crate) fn managed_stdio_plan(
     resource: &Resource,
+    root: &PluginRoot,
     entry_name: String,
     route: CompatibilityRoute,
     enabled: Option<bool>,
@@ -182,7 +193,7 @@ pub(crate) fn managed_stdio_plan(
     if let Some(reason) = undeliverable(&resource.capability.payload) {
         return Some(unsupported(reason));
     }
-    let (command, args) = stdio_command(&resource.capability.payload, &resource.package_root)?;
+    let (command, args) = stdio_command(&resource.capability.payload, root)?;
     Some(ExposurePlan {
         route,
         mechanism: ExposureMechanism::Managed(ManagedArtifact::VendorConfigEntry {
@@ -363,49 +374,55 @@ pub(crate) fn cli_remove(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uze_core::home::UzeHome;
 
     #[test]
-    fn the_package_root_resolves_in_every_string_a_server_carries_to_the_delivered_copy() {
-        let root = Path::new("/store/plugins/mk/pm");
+    fn the_package_root_resolves_in_every_string_a_server_carries_to_the_build() {
+        let home = UzeHome::at("/home/u/.uze");
+        let id = uze_core::store::PackageId::from_marketplace_plugin(
+            "mk",
+            "pm",
+            Path::new("plugin.json"),
+        )
+        .unwrap();
+        let sources = home.plugin_dir(&id);
         let declared = serde_json::json!({
             "command": "${PLUGIN_ROOT}/bin/server",
             "args": ["--data", "${PLUGIN_ROOT}/data", 3],
             "env": { "HOME_OF": "${PLUGIN_ROOT}" },
         });
-        // The placeholder becomes the delivered copy's path, spelled as this
-        // platform spells it; the rest of each string is the author's.
-        let delivered = crate::shared::package_root::delivered(root);
-        assert_eq!(delivered, Path::new("/runtime/packages/pm@mk"));
-        let delivered = delivered.display();
+        // The placeholder becomes the harness's build, spelled as this
+        // platform spells it; the rest of each string is the author's. A
+        // `bin/` Claude would put on its `PATH` is carried, not at the root.
+        let build = crate::claude::STORE.root_of(&sources);
+        assert_eq!(build.path(), home.build_dir("claude", "pm@mk"));
+        let shown = build.path().display();
         assert_eq!(
-            resolve_json(&declared, root),
+            resolve_json(&declared, &build),
             serde_json::json!({
-                "command": format!("{delivered}/bin/server"),
-                "args": ["--data", format!("{delivered}/data"), 3],
-                "env": { "HOME_OF": delivered.to_string() },
+                "command": format!("{shown}/.uze-carried/bin/server"),
+                "args": ["--data", format!("{shown}/data"), 3],
+                "env": { "HOME_OF": shown.to_string() },
             })
         );
     }
 
     #[test]
     fn an_agent_plugins_relative_command_runs_from_the_package() {
-        let root = Path::new("/store/plugins/mk/pm");
+        let root = Path::new("/store/claude/pm@mk");
         let declared = br#"{"type":"stdio","command":"./bin/server","args":["./not-a-path"]}"#;
         assert_eq!(
-            stdio_command(declared, root),
-            Some((
-                PathBuf::from("/runtime/packages/pm@mk/bin/server"),
-                vec!["./not-a-path".to_owned()]
-            ))
+            stdio_command(declared, &PluginRoot::whole(root)),
+            Some((root.join("bin/server"), vec!["./not-a-path".to_owned()]))
         );
         assert_eq!(
             resolve_server(
                 &serde_json::json!({"command": "./bin/s", "cwd": "./data"}),
-                root
+                &PluginRoot::whole(root)
             ),
             serde_json::json!({
-                "command": crate::shared::package_root::delivered(root).join("bin/s"),
-                "cwd": crate::shared::package_root::delivered(root).join("data"),
+                "command": root.join("bin/s"),
+                "cwd": root.join("data"),
             })
         );
     }
@@ -419,7 +436,7 @@ mod tests {
         ] {
             assert!(undeliverable(declared.as_bytes()).is_some(), "{declared}");
             assert_eq!(
-                stdio_command(declared.as_bytes(), Path::new("/store/pm")).is_some(),
+                stdio_command(declared.as_bytes(), &PluginRoot::whole("/store/pm")).is_some(),
                 !declared.contains("8080")
             );
         }
@@ -456,7 +473,7 @@ mod tests {
     fn a_managed_entry_runs_the_resolved_command() {
         let (command, args) = stdio_command(
             br#"{"command":"python3","args":["${PLUGIN_ROOT}/scripts/server.py"]}"#,
-            Path::new("/store/pm"),
+            &PluginRoot::whole("/store/pm"),
         )
         .unwrap();
         assert_eq!(command, PathBuf::from("python3"));
@@ -475,8 +492,11 @@ mod tests {
             b"#!/bin/sh\nexit \"$1\"\n",
         );
         std::fs::write(root.join("bin").join("serve.cmd"), "@exit /b %1\r\n").unwrap();
-        let (command, args) =
-            stdio_command(br#"{"command":"./bin/serve","args":["6"]}"#, &root).unwrap();
+        let (command, args) = stdio_command(
+            br#"{"command":"./bin/serve","args":["6"]}"#,
+            &PluginRoot::whole(&root),
+        )
+        .unwrap();
         let status = std::process::Command::new(command)
             .args(args)
             .status()
@@ -515,7 +535,7 @@ mod tests {
             (command, args),
             stdio_command(
                 br#"{"command":"bun","args":["run","${PLUGIN_ROOT}/mcp/rtc/src/index.ts"]}"#,
-                &root
+                &PluginRoot::whole(&root)
             )
             .unwrap()
         );

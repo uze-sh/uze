@@ -1581,7 +1581,13 @@ fn every_path_uze_owns_is_named_in_the_map() {
             // this test missed exactly one that way.
             let source: String = source.split_whitespace().collect::<Vec<_>>().join(" ");
             let source = source.replace(" .join(", ".join(").replace("() .", "().");
-            for anchor in ["state_dir()", "cache_dir()", "runtime_dir()"] {
+            for anchor in [
+                "state_dir()",
+                "cache_dir()",
+                "runtime_dir()",
+                "sources_dir()",
+                "store_dir()",
+            ] {
                 let joined = format!("{anchor}.join(");
                 let mut rest = source.as_str();
                 while let Some(at) = rest.find(&joined) {
@@ -1603,6 +1609,17 @@ fn every_path_uze_owns_is_named_in_the_map() {
     }
     offenders.sort();
     offenders.dedup();
+    let unlisted = builders_missing_from_the_list(&root.join(THE_MAP));
+    assert!(
+        unlisted.is_empty(),
+        "architecture rule violated: every path the map composes is in its list\n\n  \
+         these builders and list entries do not match: {unlisted:?}\n\n  \
+         Why: the list is what the health catalogue, its coverage test and a \
+         sweep of the home read; a builder missing from it is a path none of \
+         them knows.\n\n  \
+         Fix: add it to `crates/uze-core/src/machine/home/owned.rs` with its \
+         tier and form."
+    );
     assert!(
         offenders.is_empty(),
         "architecture rule violated: every path UZE owns is named in the map\n\n  \
@@ -1613,6 +1630,33 @@ fn every_path_uze_owns_is_named_in_the_map() {
          Fix: add the path to `{THE_MAP}` with the reason it exists, and call \
          that."
     );
+}
+
+/// The map's builders — every `pub fn name(&self …) -> …PathBuf…` it
+/// declares — that `UzeHome::owned_paths()` does not list, and the listed
+/// names no builder answers to. The home itself and the aggregate of
+/// listed tenants compose nothing of their own.
+fn builders_missing_from_the_list(map: &std::path::Path) -> Vec<String> {
+    const NOT_A_PATH: &[&str] = &["root", "runtime_tenants", "keep_private", "ensure_layout"];
+    let source = std::fs::read_to_string(map).unwrap();
+    let source: String = source.split_whitespace().collect::<Vec<_>>().join(" ");
+    let builders: std::collections::BTreeSet<String> = source
+        .match_indices("pub fn ")
+        .filter_map(|(at, _)| {
+            let rest = &source[at + "pub fn ".len()..];
+            let (name, signature) = rest.split_once('(')?;
+            let signature = signature.split('{').next()?;
+            (signature.trim_start().starts_with("&self")
+                && (signature.contains("PathBuf") || signature.contains("ScatteredProjectRecords")))
+            .then(|| name.to_owned())
+        })
+        .filter(|name| !NOT_A_PATH.contains(&name.as_str()))
+        .collect();
+    let listed: std::collections::BTreeSet<String> = uze_core::home::UzeHome::owned_paths()
+        .iter()
+        .map(|owned| owned.name.to_owned())
+        .collect();
+    builders.symmetric_difference(&listed).cloned().collect()
 }
 
 /// Whether `source` binds one of the map's directories to a name and then

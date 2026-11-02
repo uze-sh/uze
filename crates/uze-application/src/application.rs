@@ -36,6 +36,8 @@ use crate::bootstrap;
 
 mod agent_context;
 mod authoring;
+pub mod catalogue;
+mod collection;
 mod context;
 mod doctor;
 mod extensions;
@@ -54,14 +56,17 @@ mod overview;
 mod project_environment;
 mod project_labels;
 mod read_models;
+mod repair;
 mod requirements;
 mod retired_regions;
 mod rules;
 mod rules_engine;
 mod runtime_shim;
+mod schema;
 pub mod services;
 mod setup;
 mod theme;
+mod uninstall;
 
 pub use agent_context::{AgentContextStatus, ResourceDelivery, UndeliveredReason};
 pub use extensions::{
@@ -79,7 +84,15 @@ pub use rules::{ManifestSummary, NotARuleSummary, RuleSummary, RulesReport, Trig
 pub use rules_engine::RulesSetup;
 pub use setup::ProvisionRoute;
 pub use theme::{GlyphSetSummary, ThemeSummary};
+pub use uninstall::{
+    BinaryOutcome, BinaryPlan, HarnessUninstall, HomeEntry, LeftBinary, ProjectWork, ReceiptFate,
+    ReceiptUninstall, UninstallMode, UninstallPlan, UninstallReport, UnlandedCheckout,
+};
 
+pub use catalogue::{
+    HealthCheck, HealthFinding, Inspection, Lane, REPAIR_COMMAND, Severity, Subject,
+};
+pub use collection::{Collectable, Collected, CollectionRecord, register_collector};
 pub use maintenance::{MaintenanceOutcome, MaintenanceReport};
 pub use overview::{
     ContextState, MarketplaceState, OverviewMarketplace, OverviewWorkspaceSummary,
@@ -91,6 +104,10 @@ pub use project_environment::{
     RemoveProjectPluginReport, RuleCopies, RuleCopyFinding, UpdateOutcome, UpdateReport,
     UpdateScope,
 };
+pub use repair::{
+    NoTerminalEndpoint, RepairEntry, RepairOutcome, RepairPlan, RepairReport, TerminalEndpoint,
+};
+pub use schema::{SchemaEntry, SchemaFinding};
 pub use uze_core::anchor::AnchorKind;
 pub use uze_core::rules::manifest::MANIFEST_FILE as RULES_MANIFEST_FILE;
 pub use uze_core::rules::plugin::ManifestChange as RulesManifestChange;
@@ -348,6 +365,27 @@ impl UzeApplication {
             .iter()
             .map(|integration| integration.as_ref() as &dyn IntegrationPort)
             .collect()
+    }
+
+    /// One receipt's inspection, a fresh `Matched` verdict served from the
+    /// inspection cache as [`reconcile_cached_report`](Self::reconcile_cached_report)
+    /// serves it, and a live one written back for the next reader.
+    pub(crate) fn inspect_receipt_cached(
+        &self,
+        receipt: &uze_core::integration::AttachmentReceipt,
+        integration: &dyn IntegrationPort,
+    ) -> uze_core::integration::AttachmentInspection {
+        let ledger_key = receipt.cache_key();
+        let fingerprint = receipt.artifact.fingerprint();
+        if let Some(cached) = self
+            .inspection_cache
+            .get(&ledger_key, fingerprint.as_deref())
+        {
+            return cached;
+        }
+        let live = integration.inspect_receipt(receipt);
+        self.inspection_cache.put(&ledger_key, &live, fingerprint);
+        live
     }
 
     /// The READ-ONLY cousin of `reconcile`: same report shape, but each

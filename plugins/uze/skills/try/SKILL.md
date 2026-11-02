@@ -6,6 +6,8 @@ invoke:
   user: true
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 # UZE — trying the example plugins
 
 uze's own marketplace, `uze`, built into uze, carries besides the `uze` plugin the

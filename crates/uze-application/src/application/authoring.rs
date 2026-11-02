@@ -46,7 +46,7 @@ impl Project<'_> {
         self.0
             .marketplace()
             .register_typed_source(&PackageSource::Local { path: root.clone() })?;
-        uze_core::state::marketplace_link(&self.0.home, name, &root)?;
+        uze_core::state::marketplace_link(&self.0.home, name, &root, Default::default())?;
         self.0.marketplace_catalogues.invalidate(name);
         Ok(MarketplaceCreated {
             name: name.to_owned(),
@@ -93,7 +93,7 @@ impl Project<'_> {
         self.0
             .marketplace()
             .register_typed_source(&PackageSource::Local { path: root.clone() })?;
-        uze_core::state::marketplace_link(&self.0.home, name, &root)?;
+        uze_core::state::marketplace_link(&self.0.home, name, &root, Default::default())?;
         self.0.marketplace_catalogues.invalidate(name);
         Ok(MarketplaceCreated {
             name: name.to_owned(),

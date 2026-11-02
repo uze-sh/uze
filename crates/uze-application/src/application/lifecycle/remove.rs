@@ -222,6 +222,10 @@ impl UzeApplication {
                 None => by_harness.push((integration.as_ref(), vec![&reconciled.receipt])),
             }
         }
+        // A build goes after everything that names it.
+        for (_, receipts) in &mut by_harness {
+            receipts.sort_by_key(|receipt| uze_core::integration::is_build_receipt(receipt));
+        }
         if !by_harness.is_empty() {
             let names: Vec<&str> = by_harness
                 .iter()

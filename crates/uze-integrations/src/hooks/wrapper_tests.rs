@@ -140,9 +140,11 @@ fn run(execution: Run<'_>) -> Answer {
     // `execve` of a file this process just wrote: a sibling test forking
     // while the write descriptor was open made the kernel answer ETXTBSY.
     let mut command = Command::new("/bin/sh");
-    command
-        .arg(&wrapper)
-        .args(wrapper_arguments(hook, package_root, &hook.handlers));
+    command.arg(&wrapper).args(wrapper_arguments(
+        hook,
+        Roots::same(package_root),
+        &hook.handlers,
+    ));
     if let Some(workspace) = workspace {
         in_workspace(&mut command, target, workspace);
     }
@@ -215,7 +217,7 @@ fn a_terminated_wrapper_runs_no_further_handler() {
     materialize_wrapper(&wrapper, &wrapper_source(crate::claude::HOOKS).unwrap()).unwrap();
     let mut child = Command::new("/bin/sh")
         .arg(&wrapper)
-        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .args(wrapper_arguments(&hook, Roots::same(&root), &hook.handlers))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1098,7 +1100,7 @@ fn a_handler_s_output_is_collected_in_a_private_directory() {
     materialize_wrapper(&wrapper, &wrapper_source(target).unwrap()).unwrap();
     let mut child = Command::new("/bin/sh")
         .arg(&wrapper)
-        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .args(wrapper_arguments(&hook, Roots::same(&root), &hook.handlers))
         .env("TMPDIR", &temp)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1138,7 +1140,7 @@ fn a_handler_s_output_is_collected_in_a_private_directory() {
     fs::set_permissions(&unwritable, fs::Permissions::from_mode(0o500)).unwrap();
     let mut child = Command::new("/bin/sh")
         .arg(&wrapper)
-        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .args(wrapper_arguments(&hook, Roots::same(&root), &hook.handlers))
         .env("TMPDIR", &unwritable)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1264,7 +1266,7 @@ fn a_denial_that_cannot_be_written_exits_with_the_blocking_status() {
         .arg("exec /bin/sh \"$@\" >&-")
         .arg("sh")
         .arg(&wrapper)
-        .args(wrapper_arguments(&hook, &root, &hook.handlers))
+        .args(wrapper_arguments(&hook, Roots::same(&root), &hook.handlers))
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

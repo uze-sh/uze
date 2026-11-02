@@ -1199,6 +1199,8 @@ pub struct HeldBackNote {
     pub harness: String,
     pub plugin: String,
     pub capability: String,
+    /// What a person calls the capability: a hook's own id.
+    pub name: String,
     pub action: String,
 }
 
@@ -1434,6 +1436,12 @@ pub struct DoctorReport {
     /// What the declared extensions cost the workspace that last measured
     /// them, when one did.
     pub extension_costs: Option<super::MeasuredCosts>,
+    /// Every finding of the health catalogue, each in the lane that puts
+    /// it back.
+    pub health: Vec<super::HealthFinding>,
+    /// What the home held when `doctor --repair` last measured it: read,
+    /// never measured here.
+    pub collection: Option<super::CollectionRecord>,
 }
 
 /// Whether this machine confines the programs extensions run, and how,

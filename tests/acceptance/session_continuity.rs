@@ -474,3 +474,40 @@ fn a_claim_no_record_backs_leaves_the_agents_overrides_out_and_says_so() {
         "{said}"
     );
 }
+
+/// The context a launch composes lives under `$UZE_HOME`, outside every
+/// vendor store, and that is allowed only because it is the launch's own:
+/// the path reaches the harness in that process's arguments, and no file
+/// the harness reads on its own names it.
+#[test]
+fn a_launchs_context_under_the_home_reaches_only_that_process() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shim = shim(&env);
+    let (_primary, slot, id) = managed_slot(&env);
+
+    launch(&env, &shim, &slot, &[], Launch::Composed { identity: &id });
+
+    let uze_home = env.uze_home.to_string_lossy().into_owned();
+    let launches = launches(&harness);
+    let carried: Vec<&String> = launches[0]
+        .iter()
+        .filter(|argument| argument.starts_with(&uze_home))
+        .collect();
+    assert!(
+        !carried.is_empty(),
+        "the launch carries its context under the home: {launches:?}"
+    );
+    let named: Vec<_> = crate::store_ownership::uze_home_references(&env)
+        .into_iter()
+        .filter(|(_, path)| {
+            carried
+                .iter()
+                .any(|context| path.starts_with(&crate::store_ownership::slashed(context)))
+        })
+        .collect();
+    assert!(
+        named.is_empty(),
+        "no harness file names the launch's context: {named:?}"
+    );
+}

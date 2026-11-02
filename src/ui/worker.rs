@@ -1769,11 +1769,14 @@ mod tests {
                         integration: "fixture".to_owned(),
                         receipt: "fixture:skill".to_owned(),
                     }],
+                    collected: Vec::new(),
                 },
                 git_found: true,
                 shell_refusal: None,
                 ssh_missing: false,
                 machine_concerns: Vec::new(),
+                health: Vec::new(),
+                collection: None,
             }),
             ..RefreshData::default()
         }

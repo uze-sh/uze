@@ -92,7 +92,7 @@ fn one_plugin_install_is_planned_once_for_native_and_decomposed_harnesses() {
     );
     assert!(
         !home
-            .store_dir()
+            .sources_dir()
             .join(".agents/plugins/marketplace.json")
             .exists(),
         "the Store publishes no harness-owned view of its own accord"

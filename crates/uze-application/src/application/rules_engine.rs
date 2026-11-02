@@ -45,6 +45,9 @@ impl UzeApplication {
             }
             Ok(())
         });
+        if let Err(error) = self.record_setup_artifacts(integration) {
+            tracing::warn!(integration = integration.id(), %error, "setup's own delivery went unrecorded");
+        }
         RulesSetup {
             route,
             delivered: recorded.is_ok(),
@@ -87,7 +90,15 @@ impl UzeApplication {
 
     /// Every receipt machine setup holds for the rules engine.
     fn rules_receipts(&self) -> Result<Vec<AttachmentReceipt>> {
-        state::receipts(&self.home, Some(state::SETUP_OWNER))
+        Ok(state::receipts(&self.home, Some(state::SETUP_OWNER))?
+            .into_iter()
+            .filter(|receipt| {
+                receipt
+                    .resource_identity
+                    .as_deref()
+                    .is_none_or(|identity| identity.starts_with("rules:"))
+            })
+            .collect())
     }
 
     /// Whether setup delivered the rules engine to `integration`: a receipt
@@ -161,6 +172,30 @@ fn missing_dependency(
     })
 }
 
+impl UzeApplication {
+    /// Records what setup delivered to `integration` on no package's
+    /// account beyond the rules engine (OpenCode's `uze.ts`), each under its
+    /// own receipt.
+    pub(crate) fn record_setup_artifacts(&self, integration: &dyn IntegrationPort) -> Result<()> {
+        for artifact in integration.setup_artifacts() {
+            let selector = match &artifact {
+                ManagedArtifact::IntegrationOwned { selector, .. } => selector.clone(),
+                _ => String::new(),
+            };
+            state::record_receipt(
+                &self.home,
+                AttachmentReceipt {
+                    package_id: state::SETUP_OWNER.to_owned(),
+                    resource_identity: Some(format!("setup:{selector}")),
+                    integration: integration.id().to_owned(),
+                    artifact,
+                },
+            )?;
+        }
+        Ok(())
+    }
+}
+
 fn rules_receipt(integration: &str, artifact: ManagedArtifact) -> AttachmentReceipt {
     let selector = match &artifact {
         ManagedArtifact::IntegrationOwned { selector, .. } => selector.clone(),
@@ -177,9 +212,14 @@ fn rules_receipt(integration: &str, artifact: ManagedArtifact) -> AttachmentRece
 /// Deletes every per-session record under `dir` last written more than
 /// `age` before `now`. Generated tier: a record that goes costs at most a
 /// rule handed twice, so anything that cannot be read is simply left.
-pub(crate) fn sweep_rule_sessions(dir: &std::path::Path, now: SystemTime, age: Duration) {
+pub(crate) fn sweep_rule_sessions(
+    dir: &std::path::Path,
+    now: SystemTime,
+    age: Duration,
+) -> Vec<std::path::PathBuf> {
+    let mut removed = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+        return removed;
     };
     for entry in entries.flatten() {
         let stale = entry
@@ -189,9 +229,39 @@ pub(crate) fn sweep_rule_sessions(dir: &std::path::Path, now: SystemTime, age: D
                 now.duration_since(modified)
                     .is_ok_and(|elapsed| elapsed > age)
             });
-        if stale && entry.file_type().is_ok_and(|kind| kind.is_file()) {
-            let _ = std::fs::remove_file(entry.path());
+        if stale
+            && entry.file_type().is_ok_and(|kind| kind.is_file())
+            && std::fs::remove_file(entry.path()).is_ok()
+        {
+            removed.push(entry.path());
         }
+    }
+    removed
+}
+
+/// The per-session records of which rules each session was handed, by
+/// age ([`SESSION_RECORD_AGE`]). Takes no lock: a record that goes costs at
+/// most a rule handed twice.
+pub(crate) struct RuleSessions;
+
+impl super::Collectable for RuleSessions {
+    fn name(&self) -> &'static str {
+        "rule sessions"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["rules_sessions_dir"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> super::Collected {
+        super::Collected::removed(
+            self.name(),
+            sweep_rule_sessions(
+                &home.rules_sessions_dir(),
+                SystemTime::now(),
+                SESSION_RECORD_AGE,
+            ),
+        )
     }
 }
 

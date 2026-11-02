@@ -287,7 +287,9 @@ fn no_duplicate_capability_receipt_when_a_package_covers_the_resource() {
     for vendor in ["claude-code", "codex", "antigravity"] {
         let for_vendor: Vec<_> = receipts
             .iter()
-            .filter(|receipt| receipt.integration == vendor)
+            .filter(|receipt| {
+                receipt.integration == vendor && !uze_core::integration::is_build_receipt(receipt)
+            })
             .collect();
         assert_eq!(
             for_vendor.len(),

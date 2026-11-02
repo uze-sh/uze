@@ -14,6 +14,7 @@ use crate::rules::{RulesDelivery, RulesTarget};
 /// fires natively, matched on the session's source.
 pub(crate) const HOOKS: HookTarget = HookTarget {
     key: "codex",
+    store: &super::STORE,
     events: &[
         HookEvent::PreToolUse,
         HookEvent::PostToolUse,
@@ -78,7 +79,7 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
 /// since code mode (see [`TOOLS`]), with the outer `exec_command` beside
 /// them, in Codex's shell-line entry form.
 pub(crate) const RULES: RulesTarget = RulesTarget {
-    key: "codex",
+    store: &super::STORE,
     delivery: RulesDelivery::Entries {
         shape: EntryShape::EventLine,
         tools: "Bash|exec_command|shell|apply_patch",

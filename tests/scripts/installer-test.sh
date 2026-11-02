@@ -423,5 +423,47 @@ fi
 grep -q "unsupported OS: FreeBSD" "$work/out8.log"
 check "unsupported OS is diagnosed" $?
 
+# Uninstall delegates to the binary when it is here, with the same mode.
+mkdir -p "$work/bin-un"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"%s"\n' "$work/uninstall-args" >"$work/bin-un/uze"
+chmod +x "$work/bin-un/uze"
+env UZE_BIN_DIR="$work/bin-un" UZE_HOME="$work/home-un" sh "$keyed" --uninstall --purge >"$work/out-un.log" 2>&1
+check "uninstall with the binary present succeeds" $?
+grep -qx "uninstall --yes --purge" "$work/uninstall-args"
+check "and runs uze uninstall --yes --purge" $?
+env UZE_BIN_DIR="$work/bin-un" UZE_HOME="$work/home-un" sh "$keyed" --uninstall >"$work/out-un2.log" 2>&1
+grep -qx "uninstall --yes" "$work/uninstall-args"
+check "the default uninstall runs uze uninstall --yes" $?
+
+# Without the binary, only the installer's own record goes, never ~/.uze.
+mkdir -p "$work/home-gone/state" "$work/bin-gone"
+printf '{}\n' >"$work/home-gone/state/install.json"
+printf 'kept\n' >"$work/home-gone/state/packages.json"
+env UZE_BIN_DIR="$work/bin-gone" UZE_HOME="$work/home-gone" sh "$keyed" --uninstall >"$work/out-gone.log" 2>&1
+check "uninstall without the binary succeeds" $?
+[ ! -e "$work/home-gone/state/install.json" ] && [ -f "$work/home-gone/state/packages.json" ]
+check "and removes only the install record" $?
+grep -q "uze uninstall --purge" "$work/out-gone.log"
+check "and says how to remove every trace" $?
+# A receipt naming a binary elsewhere than the directory asked about: that
+# binary does the work, and the receipt stays for it.
+mkdir -p "$work/home-moved/state" "$work/bin-moved" "$work/bin-elsewhere"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >"%s"\n' "$work/moved-args" >"$work/bin-elsewhere/uze"
+chmod +x "$work/bin-elsewhere/uze"
+printf '{\n  "binary": "%s",\n  "version": "1.0.0"\n}\n' "$work/bin-elsewhere/uze" \
+  >"$work/home-moved/state/install.json"
+env UZE_BIN_DIR="$work/bin-moved" UZE_HOME="$work/home-moved" sh "$keyed" --uninstall --purge >"$work/out-moved.log" 2>&1
+check "uninstall with the recorded binary elsewhere succeeds" $?
+grep -qx "uninstall --yes --purge" "$work/moved-args"
+check "and runs the binary the receipt names" $?
+[ -f "$work/home-moved/state/install.json" ]
+check "and keeps the receipt for it" $?
+
+if env UZE_BIN_DIR="$work/bin-gone" sh "$keyed" --purge >"$work/out-purge-alone.log" 2>&1; then
+  check "--purge alone is refused" 1
+else
+  check "--purge alone is refused" 0
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

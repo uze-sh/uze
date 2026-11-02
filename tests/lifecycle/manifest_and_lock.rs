@@ -655,6 +655,236 @@ fn a_machine_update_of_a_linked_edit_reports_the_package_updated() {
     );
 }
 
+/// A project whose `flow@mkt` was installed at `pinned` from a marketplace
+/// beside it, then linked to that marketplace's checkout, edited there with
+/// no commit, followed by an update, and unlinked: the Store holds the edit,
+/// and the lock still names `pinned`.
+struct Unlinked {
+    application: UzeApplication,
+    home: UzeHome,
+    root: std::path::PathBuf,
+    market: std::path::PathBuf,
+    pinned: String,
+    lock: String,
+}
+
+fn unlinked_after_an_edit(label: &str) -> Unlinked {
+    let repository = uze_testkit::git::Repository::new(label);
+    repository.commit_file("README.md", "# p\n");
+    let home = UzeHome::at(uze_testkit::temp::scratch(&format!("{label}-home")));
+    let application = UzeApplication::new(home.clone(), Vec::new());
+    let root = repository.root().to_path_buf();
+    let market = root.parent().unwrap().join("market");
+    let pinned = marketplace_beside(&repository, &market, "pinned body");
+    application
+        .marketplace()
+        .add(&format!("file://{}", market.display()))
+        .unwrap();
+    application
+        .project()
+        .add(
+            "flow",
+            "mkt",
+            &root,
+            &AlwaysTrust,
+            &uze_application::NoNameCollisionAuthority,
+        )
+        .unwrap();
+    let lock = fs::read_to_string(root.join("agents.lock")).unwrap();
+    application.marketplace().link("mkt", &market).unwrap();
+    write_skill(&market, "edited, never committed");
+    application
+        .project()
+        .update(&root, None, false, &AlwaysTrust)
+        .unwrap();
+    assert!(stored_skill(&application).contains("edited, never committed"));
+    assert!(application.marketplace().unlink("mkt").unwrap());
+    // Unlinking leaves the bytes alone until something asks for them.
+    assert!(stored_skill(&application).contains("edited, never committed"));
+    Unlinked {
+        application,
+        home,
+        root,
+        market,
+        pinned,
+        lock,
+    }
+}
+
+fn stored_skill(application: &UzeApplication) -> String {
+    let stored = application
+        .plugins()
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|plugin| plugin.id == "flow@mkt")
+        .expect("the plugin is installed")
+        .store_path
+        .join("skills/one/SKILL.md");
+    fs::read_to_string(stored).unwrap()
+}
+
+fn pins_before_link(home: &UzeHome) -> std::collections::BTreeMap<String, String> {
+    uze_core::state::marketplace_get(home, "mkt")
+        .unwrap()
+        .unwrap()
+        .pinned_before_link
+}
+
+/// After `uze market unlink`, the next resolution puts back the commit the
+/// plugin was pinned to before the link, from the marketplace's cached
+/// clone: offline, with the lock untouched.
+#[test]
+fn the_update_after_an_unlink_puts_back_the_pinned_commit_from_the_cached_clone() {
+    use uze_application::application::UpdateOutcome;
+    let unlinked = unlinked_after_an_edit("unlink-restores");
+    assert_eq!(
+        pins_before_link(&unlinked.home).get("flow"),
+        Some(&unlinked.pinned),
+        "the link kept the commit the plugin was pinned to"
+    );
+    // No network: the marketplace's source is gone.
+    fs::rename(
+        &unlinked.market,
+        unlinked.market.with_file_name("market-away"),
+    )
+    .unwrap();
+
+    let report = unlinked
+        .application
+        .project()
+        .update(&unlinked.root, None, false, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(
+            report.outcomes.as_slice(),
+            [UpdateOutcome::Moved { revision, .. }] if *revision == unlinked.pinned
+        ),
+        "{report:?}"
+    );
+    assert!(
+        stored_skill(&unlinked.application).contains("pinned body"),
+        "the Store holds the pinned commit's bytes again"
+    );
+    let installed = unlinked.application.plugins().list().unwrap();
+    let flow = installed
+        .iter()
+        .find(|plugin| plugin.id == "flow@mkt")
+        .unwrap();
+    assert_eq!(
+        flow.commit.as_deref(),
+        Some(unlinked.pinned.as_str()),
+        "the provenance is the pinned commit again"
+    );
+    assert_eq!(
+        fs::read_to_string(unlinked.root.join("agents.lock")).unwrap(),
+        unlinked.lock,
+        "agents.lock is unchanged"
+    );
+    assert!(
+        pins_before_link(&unlinked.home).is_empty(),
+        "a restored pin is forgotten"
+    );
+}
+
+/// The same with the pinned commit out of the cached clone and no network:
+/// it is said to need the network, and what the checkout delivered stays —
+/// until the network is back.
+#[test]
+fn an_unlinked_plugin_whose_pin_is_not_cached_needs_the_network_and_keeps_its_bytes() {
+    use uze_application::application::UpdateOutcome;
+    let unlinked = unlinked_after_an_edit("unlink-offline");
+    let away = unlinked.market.with_file_name("market-away");
+    fs::rename(&unlinked.market, &away).unwrap();
+    fs::remove_dir_all(unlinked.home.marketplace_cache_dir()).unwrap();
+
+    let report = unlinked
+        .application
+        .project()
+        .update(&unlinked.root, None, false, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(
+            report.outcomes.as_slice(),
+            [UpdateOutcome::Held { reason, .. }] if reason.contains("needs the network")
+        ),
+        "{report:?}"
+    );
+    assert!(stored_skill(&unlinked.application).contains("edited, never committed"));
+    assert_eq!(
+        pins_before_link(&unlinked.home).get("flow"),
+        Some(&unlinked.pinned),
+        "the pin waits for the network"
+    );
+    assert_eq!(
+        fs::read_to_string(unlinked.root.join("agents.lock")).unwrap(),
+        unlinked.lock
+    );
+
+    // The network is back: the install puts the pinned commit back.
+    fs::rename(&away, &unlinked.market).unwrap();
+    unlinked
+        .application
+        .project()
+        .install(&unlinked.root, &AlwaysTrust)
+        .unwrap();
+    assert!(stored_skill(&unlinked.application).contains("pinned body"));
+    assert!(pins_before_link(&unlinked.home).is_empty());
+    assert_eq!(
+        fs::read_to_string(unlinked.root.join("agents.lock")).unwrap(),
+        unlinked.lock
+    );
+}
+
+/// Machine maintenance, which `doctor` and the workspace run, is a
+/// resolution too: it puts the pinned commit back without asking anyone.
+#[test]
+fn maintenance_after_an_unlink_puts_back_the_pinned_commit() {
+    let unlinked = unlinked_after_an_edit("unlink-maintain");
+
+    let report = unlinked.application.health().maintain();
+
+    assert!(
+        report
+            .outcomes
+            .iter()
+            .any(|outcome| outcome.to_string().contains("pinned to before the link")),
+        "{report:?}"
+    );
+    assert!(stored_skill(&unlinked.application).contains("pinned body"));
+}
+
+/// Maintenance never contacts the network (ADR-037): a pinned commit the
+/// cached clone lacks is reported as needing the network, with no fetch,
+/// though the marketplace is reachable; `update` is what fetches it.
+#[test]
+fn maintenance_fetches_no_pinned_commit_the_cached_clone_lacks() {
+    let unlinked = unlinked_after_an_edit("unlink-maintain-offline");
+    fs::remove_dir_all(unlinked.home.marketplace_cache_dir()).unwrap();
+
+    let report = unlinked.application.health().maintain();
+
+    assert!(
+        report.outcomes.iter().any(|outcome| matches!(
+            outcome,
+            uze_application::application::MaintenanceOutcome::NeedsNetwork { .. }
+        )),
+        "{report:?}"
+    );
+    assert!(
+        !unlinked.home.marketplace_cache_dir().exists(),
+        "maintenance cloned the marketplace"
+    );
+    assert!(stored_skill(&unlinked.application).contains("edited, never committed"));
+    assert_eq!(
+        pins_before_link(&unlinked.home).get("flow"),
+        Some(&unlinked.pinned),
+        "the pin waits for a command that may fetch"
+    );
+}
+
 /// Linking refuses a checkout holding some other repository: a link says
 /// "read this marketplace here", and a directory holding a different
 /// project is not that marketplace wherever it sits.

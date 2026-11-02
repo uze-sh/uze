@@ -73,13 +73,22 @@ fn claude_generated_package_covers_a_user_only_skill_and_materializes_the_marker
         plan.provided_resource_identities.contains(&r.identity()),
         "Claude preserves user-only semantics in the generated envelope (marker injection)"
     );
-    // `republish_packages` materializes the generated envelope (the only
-    // path that rebuilds derived artifact directories).
-    claude.republish_packages(&[package]).unwrap();
+    // The package's build carries the generated envelope.
+    claude
+        .publish_build(
+            &package,
+            &uze_core::integration::BuildInputs {
+                digest: "digest",
+                linked: false,
+            },
+            None,
+        )
+        .unwrap();
     // The generated envelope materializes the marker file, not a symlink of
     // the raw canonical bytes.
-    let generated_root = home.runtime_dir().join("attachments/claude/generated");
-    let generated_skill = generated_root.join("flow@local/skills/review/SKILL.md");
+    let generated_skill = home
+        .build_dir("claude", "flow@local")
+        .join("skills/review/SKILL.md");
     assert!(
         generated_skill.is_file(),
         "materialized SKILL.md expected at {}",

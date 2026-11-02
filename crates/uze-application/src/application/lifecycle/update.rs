@@ -8,10 +8,124 @@ use uze_core::{
     trust::{self, SourceOrigin, TrustAuthority},
 };
 
+use crate::application::marketplace::{CachedMiss, Fetch};
 use crate::application::services::Plugins;
 use crate::application::*;
 
+/// What putting a plugin's pre-link commit back came to.
+pub(crate) enum PinRestoration {
+    /// The commit was ingested again from the cached clone, and every build
+    /// rendered from it as pinned.
+    Restored {
+        report: UpdatePluginReport,
+        commit: String,
+    },
+    /// The clone lacks the commit or its content, and no fetch reached
+    /// them: what the checkout delivered stays.
+    NeedsNetwork(UzeError),
+}
+
 impl Plugins<'_> {
+    /// Puts back the commit `installed` was pinned to before its
+    /// marketplace was linked, once that marketplace is unlinked and the
+    /// Store still holds what the checkout had: what the resolution after
+    /// `uze market unlink` does first, whichever command it is. `None` when
+    /// there is nothing to put back.
+    ///
+    /// Read from the marketplace's cached clone, never from its ref: the
+    /// bytes come back as they were before the link, `agents.lock` is not
+    /// written, and moving to anything newer is the next update's.
+    ///
+    /// `fetch` says whether the clone may be fetched when it lacks the
+    /// commit: maintenance never fetches, and leaves that to a command.
+    pub(crate) fn restore_pinned(
+        &self,
+        installed: &uze_core::StoredPackage,
+        authority: &dyn TrustAuthority,
+        fetch: Fetch,
+    ) -> Option<Result<PinRestoration>> {
+        let marketplace = installed.id.marketplace();
+        let plugin = installed.id.plugin_name();
+        let record = state::marketplace_get(&self.0.home, marketplace).ok()??;
+        if record.link.is_some() {
+            return None;
+        }
+        let commit = record.pinned_before_link.get(plugin)?.clone();
+        if !matches!(
+            installed.provenance.resolved,
+            uze_core::ResolvedSource::Local { .. }
+        ) {
+            // Nothing was ingested from the checkout while it was linked:
+            // the bytes installed are the pinned ones already. Forgetting
+            // the pin can wait for the next resolution if it fails now.
+            if let Err(error) = self.forget_pin(marketplace, plugin) {
+                tracing::warn!(%error, plugin, "a pre-link pin was not forgotten");
+            }
+            return None;
+        }
+        Some(self.restore_commit(installed, &record, commit, authority, fetch))
+    }
+
+    fn restore_commit(
+        &self,
+        installed: &uze_core::StoredPackage,
+        record: &state::MarketplaceRecord,
+        commit: String,
+        authority: &dyn TrustAuthority,
+        fetch: Fetch,
+    ) -> Result<PinRestoration> {
+        let marketplace = installed.id.marketplace();
+        let plugin = installed.id.plugin_name();
+        // A local marketplace's source that is gone is as unreachable as a
+        // remote one offline: said for this plugin, never failing the rest.
+        let materialized = crate::application::marketplace::MarketplaceRequest::of(&record.source)
+            .map_err(|error| CachedMiss::Unreached(Some(error)))
+            .and_then(|request| {
+                request.materialize_cached(
+                    plugin,
+                    crate::application::marketplace::MirrorAt {
+                        home: &self.0.home,
+                        marketplace,
+                        recent: None,
+                        fetched: &self.0.mirrors_fetched,
+                        catalogues: &self.0.marketplace_catalogues,
+                    },
+                    &commit,
+                    fetch,
+                )
+            });
+        let materialized = match materialized {
+            Ok(materialized) => materialized,
+            Err(error) => {
+                tracing::warn!(
+                    error = ?error,
+                    plugin = installed.id.as_str(),
+                    commit,
+                    "the commit pinned before the link is not in the cached clone"
+                );
+                return Ok(PinRestoration::NeedsNetwork(UzeError::PinNeedsNetwork {
+                    plugin: installed.id.as_str().to_owned(),
+                    commit: short_commit(&commit).to_owned(),
+                }));
+            }
+        };
+        let report = self.replace_with(
+            installed.id.as_str(),
+            materialized,
+            authority,
+            record.origin(),
+        )?;
+        if matches!(report, UpdatePluginReport::Updated { .. }) {
+            self.forget_pin(marketplace, plugin)?;
+        }
+        Ok(PinRestoration::Restored { report, commit })
+    }
+
+    fn forget_pin(&self, marketplace: &str, plugin: &str) -> Result<()> {
+        let _mutation = uze_core::persistence::MutationLock::acquire(&self.0.home)?;
+        state::marketplace_forget_pin(&self.0.home, marketplace, plugin)
+    }
+
     /// The package re-read through the marketplace it was installed from:
     /// the checkout the marketplace is linked to, or its mirror. `None`
     /// for a package no registered marketplace offers.
@@ -70,6 +184,19 @@ impl Plugins<'_> {
         // reporting the client's own pid back at them. Nothing is written
         // until `deliver` below, which is where the lock belongs.
         let installed = self.0.package_by_name(id)?;
+
+        // The first resolution after `uze market unlink` puts back what was
+        // pinned before the link.
+        if let Some(restoration) = self.restore_pinned(
+            &installed,
+            authority,
+            crate::application::marketplace::Fetch::Allowed,
+        ) {
+            return match restoration? {
+                PinRestoration::Restored { report, .. } => Ok(report),
+                PinRestoration::NeedsNetwork(error) => Err(error),
+            };
+        }
 
         // Re-resolve the *request*, not the resolution: that is what makes a
         // branch move forward while a pinned commit stays put.
@@ -450,4 +577,9 @@ impl Plugins<'_> {
             })
             .collect()
     }
+}
+
+/// A commit as a person reads it.
+pub(crate) fn short_commit(commit: &str) -> &str {
+    commit.get(..12).unwrap_or(commit)
 }

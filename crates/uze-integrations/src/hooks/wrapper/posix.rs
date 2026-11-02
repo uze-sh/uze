@@ -22,7 +22,7 @@ use super::*;
 pub(crate) struct PosixWrapper;
 
 impl WrapperTemplate for PosixWrapper {
-    const RELATIVE_PATH: &'static str = "hooks/exec";
+    const RELATIVE_PATH: &'static str = "hooks/uze-exec";
     const HEADER: &'static str = HEADER;
 
     fn source(target: HookTarget) -> Option<String> {

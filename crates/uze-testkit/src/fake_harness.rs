@@ -145,7 +145,7 @@ pub enum McpNames {
 }
 
 /// Vendor flavor for [`Action::VendorMarketplace`].
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MarketplaceVendor {
     Claude,
     Codex,

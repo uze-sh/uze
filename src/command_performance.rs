@@ -241,12 +241,34 @@ pub const CLASSIFICATION: &[(&str, PerformanceClass)] = &[
         ),
     ),
     (
+        "uninstall",
+        PerformanceClass::JustifiedSlow(
+            "asks every agent's own CLI to uninstall what uze delivered, and removes the \
+             directories uze holds",
+        ),
+    ),
+    (
         "upgrade",
         PerformanceClass::JustifiedSlow(
             "asks for the latest release and downloads it — in the foreground when asked, in a detached process when a command hands off a stale check",
         ),
     ),
 ];
+
+/// A flag that turns a leaf command into another operation with a cost of
+/// its own: `(command, flag, class)`. The leaf keeps its own class in
+/// `CLASSIFICATION` for the command without the flag, and
+/// `tests::every_flag_classification_names_a_flag_of_its_command` fails on
+/// a flag the command no longer has.
+pub const FLAG_CLASSIFICATION: &[(&str, &str, PerformanceClass)] = &[(
+    "doctor",
+    "repair",
+    PerformanceClass::JustifiedSlow(
+        "acquires missing package bytes again, which may fetch a marketplace, and asks each \
+         harness's own CLI where it has uze's marketplace registered, to repair what plain \
+         `doctor` only reports",
+    ),
+)];
 
 /// Every command in `CLASSIFICATION` marked `Budgeted`, for the
 /// complementary check that each one has an actual performance-budget
@@ -535,6 +557,29 @@ mod tests {
                 source.contains(&format!("fn {function}(")),
                 "{command}: BUDGETED_COMMAND_TESTS names {test}, but {} has no fn {function}",
                 file.display()
+            );
+        }
+    }
+
+    #[test]
+    fn every_flag_classification_names_a_flag_of_its_command() {
+        let root = Cli::command();
+        for (path, flag, class) in FLAG_CLASSIFICATION {
+            let command = path.split(' ').fold(root.clone(), |command, word| {
+                command
+                    .find_subcommand(word)
+                    .unwrap_or_else(|| panic!("{path} is not a command"))
+                    .clone()
+            });
+            assert!(
+                command
+                    .get_arguments()
+                    .any(|argument| argument.get_long() == Some(flag)),
+                "FLAG_CLASSIFICATION names `{path} --{flag}`, which is not a flag of {path}"
+            );
+            assert!(
+                !matches!(class, PerformanceClass::JustifiedSlow(reason) if reason.trim().is_empty()),
+                "{path} --{flag} is JustifiedSlow with an empty reason"
             );
         }
     }

@@ -367,6 +367,32 @@ impl MarketplaceCatalogues {
         fetched
     }
 
+    /// Forgets what `name`'s listing says in both tiers, and keeps its
+    /// mirror: what a link or an unlink changes is who answers for the
+    /// marketplace, not the clone of its source, which is where the commit
+    /// pinned before a link is put back from.
+    pub fn forget_listing(&self, name: &str) {
+        self.memo
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(name);
+        let _held = self.hold(name);
+        let Ok(entries) = fs::read_dir(self.entry_dir(name)) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry.file_name() == REPOSITORY_DIR {
+                continue;
+            }
+            let path = entry.path();
+            let _ = if path.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+        }
+    }
+
     /// Forgets `name` in both tiers. Best effort, as cache: an entry a
     /// writer kept past the wait is removed all the same.
     pub fn invalidate(&self, name: &str) {
@@ -747,7 +773,8 @@ fn publish(out: &Path, write: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
 /// left, once each is `cold_after` old ([`MAX_AGE`] when an entry is
 /// recorded). Never `commit`'s own plugins, nor anything recent, which a
 /// reader in another process may be reading.
-fn prune_materialized(materialized: &Path, commit: &str, cold_after: Duration) {
+fn prune_materialized(materialized: &Path, commit: &str, cold_after: Duration) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
     let cold = |path: &Path| {
         fs::metadata(path)
             .and_then(|metadata| metadata.modified())
@@ -756,7 +783,7 @@ fn prune_materialized(materialized: &Path, commit: &str, cold_after: Duration) {
             .is_some_and(|age| age >= cold_after)
     };
     let Ok(entries) = fs::read_dir(materialized) else {
-        return;
+        return removed;
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -767,13 +794,64 @@ fn prune_materialized(materialized: &Path, commit: &str, cold_after: Duration) {
                     .to_string_lossy()
                     .starts_with(STAGING_PREFIX)
                     && cold(&staged.path())
+                    && fs::remove_dir_all(staged.path()).is_ok()
                 {
-                    let _ = fs::remove_dir_all(staged.path());
+                    removed.push(staged.path());
                 }
             }
-        } else if cold(&path) {
-            let _ = fs::remove_dir_all(&path);
+        } else if cold(&path) && fs::remove_dir_all(&path).is_ok() {
+            removed.push(path);
         }
+    }
+    removed
+}
+
+/// The plugins each marketplace mirror materialized, by
+/// [`prune_materialized`]'s rule: the commit its entry records, or anything
+/// touched within [`MAX_AGE`], stays. Each mirror is collected under its
+/// own [`MirrorHold`]'s lock, waited for only as long as the background
+/// pass waits; a mirror another process holds is that process's to prune,
+/// as recording its entry does.
+pub(crate) struct MarketplaceMirrors;
+
+impl super::Collectable for MarketplaceMirrors {
+    fn name(&self) -> &'static str {
+        "marketplace mirrors"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["marketplace_cache_dir"]
+    }
+
+    fn collect(&self, home: &UzeHome) -> super::Collected {
+        let mut removed = Vec::new();
+        for entry in fs::read_dir(home.marketplace_cache_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let Some(commit) = fs::read(entry.path().join(META_FILE))
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Meta>(&bytes).ok())
+                .and_then(|meta| meta.commit)
+            else {
+                continue;
+            };
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(_held) = uze_core::persistence::FileLock::acquire(
+                &home.marketplace_mirror_lock_path(&directory_name(&name)),
+                BACKGROUND_PATIENCE,
+                Duration::from_millis(1),
+            ) else {
+                continue;
+            };
+            removed.extend(prune_materialized(
+                &entry.path().join(MATERIALIZED_DIR),
+                &commit,
+                MAX_AGE,
+            ));
+        }
+        super::Collected::removed(self.name(), removed)
     }
 }
 

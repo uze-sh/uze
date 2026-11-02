@@ -47,9 +47,9 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     );
 
     // Claude: generated native package envelope under UZE_HOME state.
-    let claude_envelope = env.uze_home.join(
-        "runtime/attachments/claude/generated/uze-agent-skill-conformance@test/.claude-plugin/plugin.json",
-    );
+    let claude_envelope = env
+        .uze_home
+        .join("store/claude/uze-agent-skill-conformance@test/.claude-plugin/plugin.json");
     assertions::assert_file(&claude_envelope, "claude generated envelope");
 
     // OpenCode: a directory of its own preserving the canonical body while
@@ -86,9 +86,13 @@ fn one_plugin_reaches_every_harness_with_no_duplicate_delivery() {
     let receipts = ledger["receipts"].as_array().unwrap();
     let for_package: Vec<_> = receipts
         .iter()
-        .filter(|receipt| receipt["package_id"] == "uze-agent-skill-conformance@test")
+        .filter(|receipt| {
+            receipt["package_id"] == "uze-agent-skill-conformance@test"
+                && receipt["resource_identity"] != "build"
+        })
         .collect();
-    // One package-level (or one capability-level) receipt per integration —
+    // Each harness also holds the package's build, which delivers nothing
+    // by itself. One package-level (or one capability-level) receipt per integration —
     // never both, never two of the same kind. The exact count differs by
     // harness; the invariant is: no integration appears more than once.
     let mut integrations: Vec<&str> = for_package
@@ -170,9 +174,9 @@ fn invocation_policy_projects_per_harness_classification() {
     );
     // Codex's generated envelope carries its own `agents/openai.yaml` with
     // implicit invocation disabled.
-    let codex_policy = env.uze_home.join(
-        "runtime/attachments/codex/generated/policy-fixture@test/skills/review/agents/openai.yaml",
-    );
+    let codex_policy = env
+        .uze_home
+        .join("store/codex/policy-fixture@test/skills/review/agents/openai.yaml");
     assert!(
         codex_policy.is_file(),
         "codex user-only delivery must carry the policy sidecar"

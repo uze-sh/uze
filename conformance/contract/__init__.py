@@ -33,8 +33,11 @@ from . import (
     lifecycle,
     mcp,
     memory,
+    repair,
     rules,
     skill,
+    stores,
+    upgrade,
 )
 
 #: Every capability contract, in the order a run exercises them.
@@ -53,6 +56,9 @@ CONTRACTS = (
     instructions,
     memory,
     rules,
+    stores,
+    upgrade,
+    repair,
 )
 
 

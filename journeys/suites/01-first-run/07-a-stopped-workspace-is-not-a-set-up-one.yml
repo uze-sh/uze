@@ -4,10 +4,11 @@ proves: web/content/docs/installation.mdx
 about: |
   `uze workspace stop` is a command a person can run before they ever
   opened the workspace: from a script, from habit, or to be sure nothing
-  is running. What it leaves under UZE's state belongs to the terminal
-  runtime, and none of it is a harness being set up. An empty machine that
-  ran it first is still an empty machine, and is still asked which
-  harnesses to install.
+  is running. Asking whether a workspace runs writes nothing: an earlier
+  build left the terminal runtime's state behind and then read that
+  directory as a machine already set up, and the stop now leaves no such
+  directory to misread. An empty machine that ran it first is still an
+  empty machine, and is still asked which harnesses to install.
 
   This is its own world rather than a scene of the chooser's journey: the
   claim is about what came before the first open, and it must fail on its
@@ -20,7 +21,7 @@ world:
   first_run: true
 
 scenes:
-  - scene: stopping a workspace nobody opened leaves state behind, and sets nothing up
+  - scene: stopping a workspace nobody opened writes nothing, and sets nothing up
     when:
       - shell: rm -f {world}/bin/claude {world}/bin/codex {world}/bin/opencode {world}/bin/agy
         say: take every harness off the machine, keeping only the installer fetcher
@@ -28,10 +29,12 @@ scenes:
         say: stop the workspace before it was ever opened
     then:
       - dir: "{uze_home}/state/terminal"
-        exists: true
+        exists: false
         about: |
-          the stop leaves the terminal runtime's own state under UZE's, the
-          directory an earlier build read as a machine already set up
+          the stop leaves no terminal runtime state behind: finding no
+          workspace running is answered without creating its lock, so the
+          directory an earlier build read as a machine already set up is
+          never begun
       - file: "{uze_home}/state/provisioning.json"
         exists: false
         about: but no harness is recorded as provisioned by a stop

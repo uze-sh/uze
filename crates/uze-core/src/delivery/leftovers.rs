@@ -38,6 +38,11 @@ impl Leftover {
     pub const REMEDY: &'static str = "nothing reads it; remove it when you no longer want it";
 }
 
+/// Whether `file_name` is a record set aside under a name nothing reads.
+pub fn is_set_aside(file_name: &str) -> bool {
+    uze_document::set_aside_stamp(file_name).is_some()
+}
+
 /// Every set-aside record under this home, newest first.
 ///
 /// Walks `state/` rather than asking each subsystem for its own, because

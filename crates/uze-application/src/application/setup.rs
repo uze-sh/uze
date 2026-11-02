@@ -21,6 +21,63 @@ pub enum ProvisionRoute {
 /// release recorded its plugins under.
 const RETIRED_BUILT_IN_MARKETPLACE: &str = "uze-official";
 
+/// The paths an earlier release wrote that no supported build reads and
+/// nothing carries across: the retired list of the map
+/// (`UzeHome::owned_paths`, retired and disposable), removed on the
+/// bootstrap trigger, every command and `uze setup`. Takes no lock of its
+/// own, as the bootstrap never did: nothing reads a retired path, so no
+/// writer can race its removal, and a warm bootstrap writes nothing —
+/// not even a lock's holder. `uze setup` removes it under the mutation
+/// lock it already holds.
+pub(crate) struct Retired;
+
+/// The retired list. A path joins it only once no supported build reads
+/// it, and its name is never used for anything else (the
+/// `persistence-tiers` rule).
+const RETIRED: &[&str] = &["retired_profiles_path"];
+
+impl Retired {
+    /// What of the retired list is still on this machine.
+    fn present(home: &UzeHome) -> Vec<PathBuf> {
+        RETIRED
+            .iter()
+            .filter_map(|name| UzeHome::owned_path(name))
+            .map(|owned| owned.path(home))
+            .filter(|path| std::fs::symlink_metadata(path).is_ok())
+            .collect()
+    }
+
+    /// Removes what of the retired list is present.
+    pub(crate) fn remove_present(home: &UzeHome) -> Vec<PathBuf> {
+        Self::present(home)
+            .into_iter()
+            .filter(|retired| {
+                let removed = super::collection::remove(retired);
+                if removed {
+                    tracing::info!(path = %retired.display(), "retired a record nothing reads");
+                } else {
+                    tracing::warn!(path = %retired.display(), "a retired record could not be removed");
+                }
+                removed
+            })
+            .collect()
+    }
+}
+
+impl Collectable for Retired {
+    fn name(&self) -> &'static str {
+        "retired paths"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        RETIRED
+    }
+
+    fn collect(&self, home: &UzeHome) -> Collected {
+        Collected::removed(self.name(), Self::remove_present(home))
+    }
+}
+
 impl UzeApplication {
     /// Ensures every plugin `bootstrap::DEFAULT_PLUGIN_IDS` names is present
     /// in the Store. Each default plugin's *first install* goes through the
@@ -75,14 +132,7 @@ impl UzeApplication {
     /// profile wrote into a harness's own configuration stay: no receipt
     /// says UZE wrote them, so they are the operator's settings now.
     pub(crate) fn retire_records_of_earlier_releases(&self) {
-        let retired = self.home.retired_profiles_path();
-        match std::fs::remove_file(&retired) {
-            Ok(()) => tracing::info!(path = %retired.display(), "retired a record nothing reads"),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                tracing::warn!(path = %retired.display(), %error, "a retired record could not be removed")
-            }
-        }
+        Collectable::collect(&Retired, &self.home);
     }
 
     /// Every default plugin is in the Store and every derived view matches
@@ -251,7 +301,7 @@ impl UzeApplication {
         route: ProvisionRoute,
     ) -> Result<Vec<SetupResult>> {
         let _mutation = uze_core::persistence::MutationLock::acquire(&self.home)?;
-        self.retire_records_of_earlier_releases();
+        Retired::remove_present(&self.home);
         // Seed the default marketplace plugins before any provisioning, so a
         // fresh `UZE_HOME` gets the Skill without a manual `uze add` and so
         // an updated binary heals its attachment on next `setup`.
@@ -265,11 +315,7 @@ impl UzeApplication {
         // `setup` is the documented way to repair a derived view that
         // failed to publish, so it always rebuilds them.
         self.republish_all_reporting();
-        rules_engine::sweep_rule_sessions(
-            &self.home.rules_sessions_dir(),
-            std::time::SystemTime::now(),
-            rules_engine::SESSION_RECORD_AGE,
-        );
+        Collectable::collect(&rules_engine::RuleSessions, &self.home);
         for result in results.iter_mut().filter(|result| result.configured) {
             if let Some(integration) = self
                 .integrations
@@ -408,8 +454,18 @@ impl UzeApplication {
                 let _span =
                     tracing::debug_span!("integration.install", integration = integration.id())
                         .entered();
-                if let Err(error) = integration.install(&self.home, &detection) {
-                    first_refusal.get_or_insert(error);
+                match integration.install(&self.home, &detection) {
+                    // What preparing wrote on no package's account (OpenCode's
+                    // `uze.ts`) is owned from the moment it exists, so a purge
+                    // finds it however the harness came to be prepared.
+                    Ok(()) => {
+                        if let Err(error) = self.record_setup_artifacts(integration.as_ref()) {
+                            tracing::warn!(integration = integration.id(), %error, "setup's own delivery went unrecorded");
+                        }
+                    }
+                    Err(error) => {
+                        first_refusal.get_or_insert(error);
+                    }
                 }
             }
         }

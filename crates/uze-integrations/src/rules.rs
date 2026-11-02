@@ -81,8 +81,9 @@ pub(crate) const NO_ENGINE_TEMPLATE: &str = "the rules engine is a POSIX `sh` sc
 /// How one harness starts the engine.
 #[derive(Clone, Copy)]
 pub(crate) struct RulesTarget {
-    /// The harness's name in UZE's own state: where its engine is kept.
-    pub key: &'static str,
+    /// The harness's vendor store, where the bundled package's build
+    /// carries the engine.
+    pub store: &'static crate::shared::build::VendorStore,
     pub delivery: RulesDelivery,
 }
 
@@ -139,6 +140,15 @@ impl<'a> Delivered<'a> {
     }
 }
 
+/// Where earlier releases kept a harness's engine, on its own beside the
+/// hook wrapper, under the runtime tree.
+const RETIRED_ENGINE_PATH: &str = "rules/engine";
+
+/// The package that ships the engine: the bundled one.
+fn engine_package() -> String {
+    format!("uze@{}", uze_core::manifest::BUILT_IN_MARKETPLACE)
+}
+
 /// Whether `artifact` is one of the rules engine's.
 pub(crate) fn is_rules_artifact(artifact: &ManagedArtifact) -> bool {
     matches!(artifact, ManagedArtifact::IntegrationOwned { kind, .. } if kind == KIND)
@@ -168,10 +178,14 @@ pub(crate) fn adapted_route(reason: &str) -> RulesRoute {
 }
 
 impl RulesTarget {
-    /// Where this harness's engine is kept: generated tier, beside its hook
-    /// wrapper, and byte-identical on every harness.
+    /// Where this harness's engine is: a file of the bundled `uze` package,
+    /// inside its build in this harness's vendor store, byte-identical on
+    /// every harness. No package is special-cased to put it there; the
+    /// bundled one simply ships it.
     pub(crate) fn engine_path(self, uze_home: &UzeHome) -> PathBuf {
-        crate::shared::path::attachment_root(uze_home, self.key).join(engine::RELATIVE_PATH)
+        self.store
+            .build_dir(uze_home, &engine_package())
+            .join(engine::RELATIVE_PATH)
     }
 
     /// The artifacts this harness is handed. `place` is the config file the
@@ -447,7 +461,8 @@ fn state(state: AttachmentState, reason: &str) -> AttachmentInspection {
     }
 }
 
-/// Removes a matched delivery, then the engine once nothing starts it.
+/// Removes a matched delivery. The engine it starts is a file of the bundled
+/// package's build, and leaves with that build, never with this entry.
 /// Anything not matched is answered with its inspection and left alone.
 pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection> {
     let inspection = inspect(artifact);
@@ -455,9 +470,7 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
         return Ok(inspection);
     }
     let delivered = Delivered::recorded(artifact).expect("an inspected rules artifact");
-    // A plugin section goes with the runtime plugin, which setup owns; the
-    // engine it names is taken out below, and the section then answers
-    // nothing.
+    // A plugin section goes with the runtime plugin, which setup owns.
     if let Some(event) = delivered.event {
         remove_event_entry(&delivered.place, event, delivered.expected)?;
     } else if delivered
@@ -466,10 +479,12 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
         .is_some_and(|name| name == plugin::RETIRED_FILE)
     {
         // An earlier release's plugin of its own, matched above: it would
-        // go on starting the engine taken out below.
+        // go on starting the engine.
         fs::remove_file(&delivered.place).map_err(UzeError::write(&delivered.place))?;
     }
-    if delivered.event.is_none() || !still_started(&delivered) {
+    // An engine an earlier release kept on its own, outside every build, has
+    // nothing left to start it.
+    if delivered.engine.ends_with(RETIRED_ENGINE_PATH) && !still_started(&delivered) {
         let _ = fs::remove_file(&delivered.engine);
         if let Some(parent) = delivered.engine.parent() {
             let _ = fs::remove_dir(parent);

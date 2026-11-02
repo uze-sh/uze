@@ -1,0 +1,5 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "store-tie",
+  "description": "Every capability that can name its own package root: a skill that reads a guide, an MCP server and a hook handler, each through ${PLUGIN_ROOT}. Used to prove where a harness is pointed."
+}

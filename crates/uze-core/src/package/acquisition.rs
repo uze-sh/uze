@@ -249,6 +249,18 @@ pub struct Provenance {
 }
 
 impl Provenance {
+    /// What acquiring `path` from this machine records, for a test of a
+    /// module that may name no source mechanism.
+    #[cfg(test)]
+    pub(crate) fn of_local_path(path: &Path) -> Self {
+        Self {
+            requested: PackageSource::local(path),
+            resolved: ResolvedSource::Local {
+                path: path.to_path_buf(),
+            },
+        }
+    }
+
     /// Whether two installations came from the same origin.
     ///
     /// The rule lives here rather than in the Store because only this module
@@ -502,6 +514,7 @@ pub struct InspectedPackage {
 
 pub fn inspect_capabilities(package: &MaterializedPackage) -> Result<InspectedPackage> {
     crate::store::assert_self_contained(package.root())?;
+    crate::store::assert_no_reserved_path(package.root())?;
     let manifest = crate::store::read_plugin_manifest(package.root())?;
     let id = crate::store::PackageId::from_plugin_name(&manifest.name, &manifest.path)?;
     Ok(InspectedPackage {

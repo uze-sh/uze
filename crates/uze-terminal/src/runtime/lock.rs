@@ -166,8 +166,13 @@ pub(super) fn parse_claimant(recorded: &str) -> Option<Claimant> {
 
 /// Whether a live server holds the workspace claim. A filesystem that
 /// cannot lock answers "claimed": the lock proves nothing there, and
-/// replacing a server on no evidence would end a live session.
+/// replacing a server on no evidence would end a live session. No lock
+/// file at all is no server, and asking leaves none behind: a question
+/// that wrote the file it asked about changed the machine it only read.
 pub(super) fn workspace_is_claimed() -> bool {
+    if !workspace_lock_path().exists() {
+        return false;
+    }
     open_workspace_lock()
         .and_then(|file| held_by_a_server(&file))
         .unwrap_or(true)

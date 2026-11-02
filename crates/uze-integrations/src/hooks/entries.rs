@@ -118,9 +118,9 @@ pub(crate) fn agy_named_entry(
     target: HookTarget,
     hook: &PortableHook,
     wrapper: &Path,
-    package_root: &Path,
+    roots: Roots<'_>,
 ) -> serde_json::Value {
-    let invocation = HookInvocation::Line(sealed_wrapper_command_line(wrapper, hook, package_root));
+    let invocation = HookInvocation::Line(sealed_wrapper_command_line(wrapper, hook, roots));
     let entries = if agy_event_is_grouped(hook.event) {
         vec![group_entry(target, hook, &invocation)]
     } else {

@@ -3,6 +3,8 @@ name: architect
 description: Writing and changing the Mermaid diagrams a project keeps under `workspace.artifacts` — choosing which diagram and which level a change belongs in, naming it so it reads where a reader expects, and proving it still draws with `uze agent artifacts check`, which needs no workspace. Use when adding or editing a `.mmd`/`.mermaid` file, when asked to diagram or document an architecture, when a diagram does not draw, or when setting up where a project keeps its architecture.
 ---
 
+> This skill runs `uze`. If `uze` is not on `PATH`, UZE is not installed here and nothing below applies.
+
 # UZE — a project's architecture, as files somebody wrote
 
 A project tells UZE where its architecture lives:

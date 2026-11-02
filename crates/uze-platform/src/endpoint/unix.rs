@@ -177,6 +177,11 @@ pub fn peer_pid(stream: &Stream) -> Option<u32> {
     crate::probe::socket_peer(stream)
 }
 
+/// The socket file stays after its server stops, until it is removed.
+pub fn lingers(endpoint: &Path) -> bool {
+    fs::metadata(endpoint).is_ok()
+}
+
 /// Removes the socket file a stopped server leaves.
 pub fn clear(endpoint: &Path) {
     let _ = fs::remove_file(endpoint);

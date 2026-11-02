@@ -29,6 +29,7 @@ use std::{
 };
 
 use uze_core::{
+    UzeHome,
     harness_runtime::{self, HarnessRuntimeContribution, RuntimeContext},
     project_context::{self, AgentsDirectoryResource},
 };
@@ -99,11 +100,10 @@ fn project_agents_override(
         .join("agents");
     fs::create_dir_all(&roles).map_err(|error| error.to_string())?;
 
-    let mut taken = HashSet::new();
     let mut written = Vec::new();
     let mut entries = Vec::new();
-    for agent in &agents {
-        let file = roles.join(role_file_name(&agent.label, &mut taken));
+    for (agent, name) in agents.iter().zip(role_file_names(&agents)) {
+        let file = roles.join(name);
         refresh(
             &file,
             &codex_role_config(&agent.document, &agent.document.body, keys),
@@ -118,6 +118,15 @@ fn project_agents_override(
     }
     sweep(&roles, &written);
     Ok(Some(format!("agents={{ {} }}", entries.join(", "))))
+}
+
+/// Each agent's role file name, in order, no two alike.
+fn role_file_names(agents: &[crate::shared::agent::ProjectAgent]) -> Vec<String> {
+    let mut taken = HashSet::new();
+    agents
+        .iter()
+        .map(|agent| role_file_name(&agent.label, &mut taken))
+        .collect()
 }
 
 /// A file name for `label`'s role that no other role of this launch has:
@@ -154,19 +163,57 @@ fn refresh(file: &Path, content: &str) -> std::result::Result<(), String> {
 
 /// Removes the role files of agents the project no longer has. Best effort:
 /// nothing names a stale file any more, so one left behind costs nothing.
-fn sweep(roles: &Path, kept: &[PathBuf]) {
+fn sweep(roles: &Path, kept: &[PathBuf]) -> Vec<PathBuf> {
     let Ok(entries) = fs::read_dir(roles) else {
-        return;
+        return Vec::new();
     };
-    for path in entries.flatten().map(|entry| entry.path()) {
-        if path
-            .extension()
-            .is_some_and(|extension| extension == "toml")
-            && !kept.contains(&path)
-        {
-            let _ = fs::remove_file(path);
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "toml")
+                && !kept.contains(path)
+        })
+        .filter(|path| fs::remove_file(path).is_ok())
+        .collect()
+}
+
+/// The role files of every projected project, by the same rule a launch
+/// sweeps them with: a file is kept while the project still has the agent
+/// it was written for. A project whose root is gone is the projections'
+/// collector's, which takes its whole directory.
+pub(super) fn collect_role_files(home: &UzeHome, integration: &str) -> Vec<PathBuf> {
+    let mut removed = Vec::new();
+    for entry in fs::read_dir(home.runtime_projects_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let Some(root) = harness_runtime::projection_root(&entry.path()) else {
+            continue;
+        };
+        if !root.is_dir() {
+            continue;
         }
+        let project = entry.file_name().to_string_lossy().into_owned();
+        let roles = home
+            .runtime_projection_dir(integration, &project)
+            .join("agents");
+        if !roles.is_dir() {
+            continue;
+        }
+        let agents = project_context::resolve(&root)
+            .resource_directory(AgentsDirectoryResource::Agents)
+            .map(|directory| project_agents(&directory))
+            .unwrap_or_default();
+        let kept: Vec<PathBuf> = role_file_names(&agents)
+            .into_iter()
+            .map(|name| roles.join(name))
+            .collect();
+        removed.extend(sweep(&roles, &kept));
     }
+    removed
 }
 
 #[cfg(test)]

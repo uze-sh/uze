@@ -106,9 +106,9 @@ scenes:
         at: marketplaces.studio.link
         exists: false
         about: the marketplace follows no working tree
-      - file: "{uze_home}/store/plugins/studio/notes/extensions/notes/items.uze"
+      - file: "{uze_home}/sources/plugins/studio/notes/extensions/notes/items.uze"
         contains: read_checkout
-        about: the extension's script was installed from the clone, into the Store
+        about: the extension's script was installed from the clone, into UZE's sources
       - file: "{project}/agents.yaml"
         contains: notes
         about: the project declares the plugin

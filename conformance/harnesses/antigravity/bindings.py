@@ -15,6 +15,8 @@ from .scenarios import PERMISSION_PROMPTS, PROMPT_MARKER, agy_setup, answer_firs
 class AntigravityBindings(Bindings):
     harness = "antigravity"
     display_name = "Antigravity"
+
+    registry_listing = "agy plugin list --json"
     #: UZE installs this harness's launcher under the name people type.
     launcher = "agy"
     compact_command = "/compact"

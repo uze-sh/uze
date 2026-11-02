@@ -57,7 +57,7 @@ scenes:
         at: integrations.antigravity.version
         exists: true
         about: antigravity is recorded with the version it reported
-      - dir: "{uze_home}/store/plugins/demo"
+      - dir: "{uze_home}/sources/plugins/demo"
         exists: false
         about: provisioning delivers nothing on its own
 
@@ -70,21 +70,21 @@ scenes:
         at: marketplaces.demo
         exists: true
         about: the marketplace is recorded by name
-      - dir: "{uze_home}/store/plugins/demo"
+      - dir: "{uze_home}/sources/plugins/demo"
         exists: false
         about: registering a source installs nothing
 
-  - scene: installing keeps one copy of the bytes, in the Store
+  - scene: installing keeps one copy of the bytes, in UZE's sources
     when:
       - shell: "{uze} add -m flow@demo"
         say: install the plugin once
     then:
-      - file: "{uze_home}/store/plugins/demo/flow/plugin.json"
+      - file: "{uze_home}/sources/plugins/demo/flow/plugin.json"
         contains: '"name": "flow"'
-        about: the package's own manifest is in the Store
-      - file: "{uze_home}/store/plugins/demo/flow/skills/commit/SKILL.md"
+        about: the package's own manifest is in UZE's sources
+      - file: "{uze_home}/sources/plugins/demo/flow/skills/commit/SKILL.md"
         contains: The body a harness would read
-        about: the Store holds the bytes verbatim, not a rewrite of them
+        about: UZE's sources hold the bytes verbatim, not a rewrite of them
       - file: "{world}/market/plugins/flow/skills/commit/SKILL.md"
         contains: The body a harness would read
         about: the source it came from was never written to
@@ -95,21 +95,29 @@ scenes:
 
   - scene: every harness reads it where that harness reads things
     then:
-      - dir: "{uze_home}/runtime/attachments/claude/generated/flow@demo"
+      - file: "{uze_home}/store/claude/flow@demo/.claude-plugin/plugin.json"
         exists: true
-        about: Claude Code gets a generated native package
-      - dir: "{uze_home}/runtime/attachments/codex/generated"
-        exists: true
+        about: Claude Code gets a generated native package, built in its own store
+      - json: "{uze_home}/store/claude/.claude-plugin/marketplace.json"
+        at: plugins.*.name
+        includes: [flow]
+        about: listed in the one marketplace UZE registers with Claude Code
+      - json: "{uze_home}/store/codex/.agents/plugins/marketplace.json"
+        at: plugins.*.name
+        includes: [flow]
         about: Codex gets its own generated catalogue entry
+      - file: "{uze_home}/store/codex/flow@demo/.codex-plugin/plugin.json"
+        exists: true
+        about: naming a build of its own in Codex's store
       - file: "{home}/.gemini/config/plugins/flow/plugin.json"
         contains: '"name": "flow"'
         about: Antigravity gets a byte copy, staged by its own CLI
       - file: "{home}/.config/opencode/skills/flow:commit/SKILL.md"
         contains: The body a harness would read
         about: OpenCode's own skill root carries the same skill
-      - dir: "{uze_home}/store/plugins/demo/*"
+      - dir: "{uze_home}/sources/plugins/demo/*"
         count: 1
-        about: and all of that came from one package in the Store
+        about: and all of that came from one package in UZE's sources
 
   - scene: every delivery left a receipt naming what it owns
     then:

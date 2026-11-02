@@ -1,11 +1,12 @@
-//! The package root every harness is handed.
+//! The package root UZE's own extension MCP launcher hands a server it
+//! starts itself.
 //!
-//! A harness that installs a plugin reads files beside its skills —
-//! `phases/`, a UI, a script a hook runs — through the root `${PLUGIN_ROOT}`
-//! names, and a hook may write there (a build, a dependency install). That
-//! root is therefore a copy in the generated tier rather than the Store: a
-//! write into it changes nothing the lock pins, and the next delivery puts
-//! the package back as it is.
+//! UZE-internal: every harness is handed its own build in its vendor store
+//! instead (`UzeHome::build_dir`). A server started by UZE reads files
+//! beside it through the root `${PLUGIN_ROOT}` names and may write there,
+//! so that root is a copy in the generated tier rather than the sources: a
+//! write into it changes nothing the lock pins, and the next launch puts the
+//! package back as it is.
 
 use std::path::PathBuf;
 
@@ -72,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn the_delivered_root_is_a_copy_a_write_cannot_carry_into_the_store() {
+    fn the_launchers_copy_is_one_a_write_cannot_carry_into_the_sources() {
         let (_scratch, home, package) = installed("rooted");
         let root = materialize(&home, &package).unwrap();
         assert!(root.starts_with(home.runtime_dir()));

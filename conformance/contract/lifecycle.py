@@ -37,9 +37,18 @@ RESIDUE_END = "UZE_LIFECYCLE_RESIDUE_END"
 #: in front of its model are what carry them.
 PROMPT = "which probe does this machine keep?"
 
-#: Where a harness keeps what it loads, under the run's home. UZE's own
-#: home is not among them: its store keeps bytes a removal may keep.
-HARNESS_HOMES = (".claude", ".claude.json", ".codex", ".config/opencode", ".gemini")
+#: Where a harness keeps what it loads, under the run's home: each vendor's
+#: configuration and discovery files, and `.agents`, the cross-vendor skills
+#: root one of them reads. UZE's own home is not among them: its store keeps
+#: bytes a removal may keep.
+HARNESS_HOMES = (
+    ".claude",
+    ".claude.json",
+    ".codex",
+    ".config/opencode",
+    ".gemini",
+    ".agents",
+)
 
 #: What a harness keeps after its *own* uninstall, measured against the
 #: vendor's native flow rather than assumed: Claude Code 2.1.290 leaves

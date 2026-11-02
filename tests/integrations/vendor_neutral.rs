@@ -180,8 +180,8 @@ fn the_store_writes_no_harness_owned_artifact_of_its_own_accord() {
     // The package tree and UZE's own state are the only things the Store
     // produces. A catalogue beside them would mean the Store still knows a
     // harness.
-    let store_entries: BTreeSet<String> = fs::read_dir(home.store_dir())
-        .expect("store dir exists")
+    let store_entries: BTreeSet<String> = fs::read_dir(home.sources_dir())
+        .expect("sources dir exists")
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(
