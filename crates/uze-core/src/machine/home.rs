@@ -179,6 +179,28 @@ impl UzeHome {
         self.project_dir(project_id).join("conversations")
     }
 
+    /// What the remembered tier's files were named before this build
+    /// renamed them: observed again under the new name, so the old ones
+    /// are only removed.
+    pub fn retired_detection_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("harness_detection.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_overview_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-overview.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_transcripts_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-usage.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_changelog_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("release-notes.md")
+    }
+
     /// What a record was named before this build renamed it (see the
     /// owned map's retired entries, each naming the builder it became):
     /// read only by the step that carries it to its current name.
@@ -798,7 +820,7 @@ impl UzeHome {
     /// `detection_cache`). Reconstructable at any time from a live probe —
     /// never authoritative, hence `cache_dir()` rather than `state_dir()`.
     pub fn harness_detection_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("harness_detection.json")
+        self.cache_dir().join("detection.json")
     }
 
     /// What each requirement's executable answered when it was last asked
@@ -817,7 +839,7 @@ impl UzeHome {
     /// The last machine Overview collected (see `machine::inventory`):
     /// observed again whenever it is missing or cannot be read.
     pub fn machine_overview_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("machine-overview.json")
+        self.cache_dir().join("overview.json")
     }
 
     /// The uses the machine Overview read from records a harness has since
@@ -838,7 +860,7 @@ impl UzeHome {
     /// between readings (see `machine::usage`): read again from the start
     /// whenever it is missing or cannot be read.
     pub fn machine_usage_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("machine-usage.json")
+        self.cache_dir().join("transcripts.json")
     }
 
     /// Cross-invocation cache of per-receipt attachment *read* results
@@ -862,7 +884,7 @@ impl UzeHome {
     /// at that release's tag. Observed again whenever it is missing, so it is
     /// a cache and never a record.
     pub fn release_notes_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("release-notes.md")
+        self.cache_dir().join("changelog.md")
     }
 
     /// Cross-invocation cache of registered marketplaces' catalogues (see

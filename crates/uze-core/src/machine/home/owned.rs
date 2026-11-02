@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use uze_document::earlier::{Earlier, Lasts};
+use uze_document::earlier::{Earlier, Lasts, Release};
 
 use crate::store::PackageId;
 
@@ -216,6 +216,11 @@ impl OwnedPath {
             disposable: true,
             ..self
         }
+    }
+
+    /// How long a machine can still hold this retired path.
+    const fn lasts(self, lasts: Lasts) -> Self {
+        OwnedPath { lasts, ..self }
     }
 
     /// The names only this retired path spells.
@@ -479,6 +484,40 @@ const OWNED: &[OwnedPath] = &[
         home.scattered_project_records(PROJECT).agents
     })
     .spelled(&["prompt-history"]),
+    // The remembered tier's earlier names: observed again under the new
+    // ones, so only removed, by the retired collector on every bootstrap.
+    retired(
+        "retired_detection_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_detection_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    retired(
+        "retired_overview_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_overview_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    retired(
+        "retired_transcripts_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_transcripts_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    retired(
+        "retired_changelog_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_changelog_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
     // Records this build renamed, each carried to the name it now has by
     // `earlier::carry_renamed`, run where their readers and writers start;
     // only as often as those run, so unbounded. Their locks are not

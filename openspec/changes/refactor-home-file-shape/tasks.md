@@ -30,7 +30,7 @@
 
 ## 5. Rename the remembered tier
 
-- [ ] 5.1 `harness_detection.json` → `detection.json`, `machine-overview.json` → `overview.json`, `machine-usage.json` → `transcripts.json`, `release-notes.md` → `changelog.md`
+- [x] 5.1 `harness_detection.json` → `detection.json`, `machine-overview.json` → `overview.json`, `machine-usage.json` → `transcripts.json`, `release-notes.md` → `changelog.md`; the old names are retired swept entries lasting until beta.22, removed by the retired collector on every bootstrap
 
 ## 6. Settings file
 
