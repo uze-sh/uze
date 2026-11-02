@@ -43,7 +43,7 @@ pub use file::{CURRENT_VERSION, ColorValue, GlyphSet, SymbolValue, SyntaxSection
 pub use load::{
     BUNDLED_SYNTAX_THEMES, DEFAULT_THEME, Identity, LoadError, Loaded, Warning, builtin,
     builtin_file, builtin_names, default_file, default_theme, glyph_set_file, glyph_sets,
-    parse_file, resolve_stack,
+    parse_file, parse_value, resolve_stack,
 };
 pub use schema::json_schema;
 pub use symbol::{Symbol, SymbolDef};

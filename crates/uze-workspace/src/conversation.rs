@@ -287,6 +287,7 @@ impl uze_document::Shaped for ConversationRecord {
         &[uze_document::Step {
             from: 2,
             to: 3,
+            lasts: uze_document::earlier::Lasts::Unbounded,
             // Shape 2's briefing named a generated file under `runtime/`,
             // which is not carried across; the conversations are.
             climb: |mut document| {
@@ -381,12 +382,7 @@ pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
 /// are listed and before the records are read: where a launch landing
 /// mid-collection falls.
 fn collect_session_documents_with(home: &UzeHome, between: impl FnOnce()) -> Vec<PathBuf> {
-    if home
-        .scattered_project_records("")
-        .directories
-        .iter()
-        .any(|directory| directory.exists())
-    {
+    if uze_core::project_earlier::holds_records_before_the_move(home) {
         return Vec::new();
     }
     // Documents are listed before the records are read: a launch records
@@ -519,7 +515,7 @@ pub struct Claim<'a> {
 pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
     let cwd = cwd.canonical().unwrap_or_else(|_| cwd.to_path_buf());
     cwd.ancestors()
-        .find(|root| task::store_path(home, root).exists())
+        .find(|root| task::is_recorded(home, root))
         .map(Path::to_path_buf)
 }
 
@@ -541,7 +537,7 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
         .canonical()
         .unwrap_or_else(|_| claim.cwd.to_path_buf());
     cwd.ancestors().find_map(|root| {
-        if !task::store_path(home, root).exists() {
+        if !task::is_recorded(home, root) {
             return None;
         }
         let store = task::load(home, root).ok()?;
@@ -557,6 +553,12 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
             isolated: record.is_isolated(),
         })
     })
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ConversationRecord>(file!())
 }
 
 #[cfg(test)]

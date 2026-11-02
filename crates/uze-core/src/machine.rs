@@ -10,6 +10,7 @@
 //! package, a capability, or a project.
 
 pub mod detection_cache;
+pub mod earlier;
 pub mod extension_program;
 pub mod harness_runtime;
 pub mod home;

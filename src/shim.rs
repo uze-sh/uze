@@ -206,14 +206,11 @@ pub fn run(shim_name: &str) -> ! {
     );
 }
 
-/// Whether the operator asked, in `config.toml`'s `[memory] harness`, for
+/// Whether the operator asked, in `config.toml`'s `[memory] native`, for
 /// a harness's own memory to be off in the agents the workspace launches.
 /// Anything but `off` keeps it as the operator configured it.
 fn harness_memory_off(home: &uze_core::UzeHome) -> bool {
-    uze_core::config::get(home, "memory", "harness")
-        .ok()
-        .flatten()
-        .is_some_and(|setting| setting.trim() == "off")
+    uze_core::earlier::memory_native_setting(home).is_some_and(|setting| setting.trim() == "off")
 }
 
 /// The agent identity this launch owns, and the key it was issued, if it

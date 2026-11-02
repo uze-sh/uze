@@ -367,10 +367,10 @@ impl Attach<'_> {
             opened.clone(),
             self.channels.extension_offers.sender.clone(),
         );
-        spawn_retired_region_check(
+        spawn_leftover_region_check(
             self.home,
             opened,
-            self.channels.retired_regions.sender.clone(),
+            self.channels.leftover_regions.sender.clone(),
         );
         if self
             .model
@@ -405,10 +405,10 @@ impl Attach<'_> {
                 self.model
                     .schedule_evaluation(self.home, cwd.clone(), &self.channels.tasks.sender);
             }
-            spawn_retired_region_check(
+            spawn_leftover_region_check(
                 self.home,
                 directories,
-                self.channels.retired_regions.sender.clone(),
+                self.channels.leftover_regions.sender.clone(),
             );
             // On the same clock, and for every agent rather than the
             // selected one: this is also where a launch left pending by a
@@ -734,12 +734,12 @@ impl Attach<'_> {
         );
     }
 
-    pub(super) fn absorb_retired_regions(&mut self) {
-        while let Ok(notice) = self.channels.retired_regions.receiver.try_recv() {
+    pub(super) fn absorb_leftover_regions(&mut self) {
+        while let Ok(notice) = self.channels.leftover_regions.receiver.try_recv() {
             if !self
                 .model
                 .remembered
-                .retired_regions_reported
+                .leftover_regions_reported
                 .insert(notice.file.clone())
             {
                 continue;

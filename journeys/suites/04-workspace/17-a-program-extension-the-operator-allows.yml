@@ -16,7 +16,7 @@ about: |
   checkout.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json` with `exec:sh` allowed, `sh` pinned to an
+  `state/extensions/consent.json` with `exec:sh` allowed, `sh` pinned to an
   absolute path that exists, whether confinement held recorded, and the
   project enabled; the checkout the program read and never wrote; and no
   scratch folder of a run left behind. Whether this machine confines is
@@ -88,7 +88,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/lines/extensions/lines/bin/count"
         contains: "wc -l"
         about: the extension's program was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
       - file: "{world}/install.log"
@@ -132,7 +132,7 @@ scenes:
         expect: "extension enabled"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.lines@studio/lines.accepted_grants.*
         count: 2
         includes: ["exec:sh", "clipboard"]
@@ -141,17 +141,17 @@ scenes:
           run: |
             {python} -I -c "
             import json, os, sys
-            record = json.load(open('{uze_home}/state/extensions.json'))
+            record = json.load(open('{uze_home}/state/extensions/consent.json'))
             pinned = record['extensions']['lines@studio/lines']['exec_paths']['sh']
             print(pinned)
             sys.exit(0 if os.path.isabs(pinned) and os.access(pinned, os.X_OK) else 1)
             "
         about: sh is pinned to an absolute path of a program that is there, so no run searches PATH again
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.lines@studio/lines.enforced_at_accept
         exists: true
         about: whether this machine confined it when it was allowed is recorded with the consent
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.lines@studio/lines.enabled_in.*
         equals: "{project}"
         count: 1

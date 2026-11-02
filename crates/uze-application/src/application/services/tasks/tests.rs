@@ -1538,7 +1538,7 @@ mod task_service_tests {
         let body = "## Concurrent work isolation\n\n- old text\n";
         let identity = format!(
             "{}/{}",
-            uze_core::retired_region::WORKTREE_POLICY,
+            uze_core::project_earlier::WORKTREE_POLICY,
             uze_core::digest::short_hex(body.as_bytes())
         );
         std::fs::write(
@@ -3850,7 +3850,7 @@ mod overrides_tests {
 
         placed(&app, &root, "one", "");
 
-        assert!(!app.home.launch_overrides_path().exists());
+        assert!(!app.home.launches_path().exists());
     }
 
     #[test]

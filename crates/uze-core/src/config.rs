@@ -1,8 +1,8 @@
 //! The operator's own settings: one TOML file, one section per concern.
 //!
 //! Choices someone makes and may want to make by hand, so they live beside
-//! `keys.json` and `theme-overrides.json` at the root rather than under
-//! `state/`, in a format with comments.
+//! `keys.json` and `themes/` at the root rather than under `state/`, in a
+//! format with comments.
 //!
 //! This module knows files and sections, never what a setting means: a
 //! concern (`appearance`, `notifications`) owns its section and reads
@@ -156,6 +156,59 @@ pub fn set_scalar_in_table(
     write(home, &document)
 }
 
+/// The tables under `section` (its `[section.<name>]`), each as JSON with
+/// arrays and nested tables kept: what an owner whose section carries
+/// structure — the appearance's overrides — reads and checks itself.
+pub fn tables_in(
+    home: &UzeHome,
+    section: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let document = read(home)?;
+    Ok(document
+        .get(section)
+        .and_then(Item::as_table_like)
+        .map(|tables| {
+            tables
+                .iter()
+                .filter_map(|(name, item)| {
+                    let table = item.as_table_like()?;
+                    Some((name.to_owned(), json_of_table(table)))
+                })
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+fn json_of_table(table: &dyn TableLike) -> serde_json::Value {
+    serde_json::Value::Object(
+        table
+            .iter()
+            .filter_map(|(key, item)| Some((key.to_owned(), json_of_item(item)?)))
+            .collect(),
+    )
+}
+
+fn json_of_item(item: &Item) -> Option<serde_json::Value> {
+    match item {
+        Item::Value(value) => json_of_value(value),
+        Item::Table(table) => Some(json_of_table(table)),
+        Item::ArrayOfTables(tables) => Some(serde_json::Value::Array(
+            tables.iter().map(|table| json_of_table(table)).collect(),
+        )),
+        Item::None => None,
+    }
+}
+
+fn json_of_value(value: &Value) -> Option<serde_json::Value> {
+    match value {
+        Value::Array(items) => Some(serde_json::Value::Array(
+            items.iter().filter_map(json_of_value).collect(),
+        )),
+        Value::InlineTable(table) => Some(json_of_table(table)),
+        scalar => scalar_of(scalar),
+    }
+}
+
 fn scalar_of(value: &Value) -> Option<serde_json::Value> {
     match value {
         Value::String(text) => Some(text.value().clone().into()),
@@ -210,6 +263,82 @@ fn set_value(home: &UzeHome, section: &str, key: &str, setting: Value) -> Result
         .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
     replace_keeping_decor(table, key, setting);
     write(home, &document)
+}
+
+/// Writes each of `tables` into `[section.<name>]`, key by key, only where
+/// the file has no such key yet, so nothing the operator wrote there is
+/// replaced. Answers whether anything was written.
+pub(crate) fn add_tables(
+    home: &UzeHome,
+    section: &str,
+    tables: &serde_json::Map<String, serde_json::Value>,
+) -> Result<bool> {
+    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
+    let mut document = read(home)?;
+    let parent = table_like_mut(document.as_table_mut(), section, true)
+        .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
+    let mut wrote = false;
+    for (name, value) in tables {
+        let serde_json::Value::Object(entries) = value else {
+            continue;
+        };
+        let table = table_like_mut(parent, name, false)
+            .ok_or_else(|| malformed(home, format!("`{section}.{name}` is not a table")))?;
+        for (key, entry) in entries {
+            if table.contains_key(key) {
+                continue;
+            }
+            if let Some(entry) = toml_of_json(entry) {
+                table.insert(key, Item::Value(entry));
+                wrote = true;
+            }
+        }
+    }
+    if wrote {
+        write(home, &document)?;
+    }
+    Ok(wrote)
+}
+
+/// Renames `section.from` to `section.to`, keeping its value and the
+/// comment beside it, unless `to` is set already. Answers whether it did.
+pub(crate) fn rename_key(home: &UzeHome, section: &str, from: &str, to: &str) -> Result<bool> {
+    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
+    let mut document = read(home)?;
+    let Some(table) = document.get_mut(section).and_then(Item::as_table_like_mut) else {
+        return Ok(false);
+    };
+    if table.contains_key(to) {
+        return Ok(false);
+    }
+    let Some(item) = table.remove(from) else {
+        return Ok(false);
+    };
+    table.insert(to, item);
+    write(home, &document)?;
+    Ok(true)
+}
+
+fn toml_of_json(value: &serde_json::Value) -> Option<Value> {
+    match value {
+        serde_json::Value::Array(items) => {
+            let mut array = toml_edit::Array::new();
+            for item in items.iter().filter_map(toml_of_json) {
+                array.push(item);
+            }
+            Some(Value::Array(array))
+        }
+        serde_json::Value::Object(entries) => {
+            let mut table = toml_edit::InlineTable::new();
+            for (key, entry) in entries {
+                if let Some(entry) = toml_of_json(entry) {
+                    table.insert(key, entry);
+                }
+            }
+            Some(Value::InlineTable(table))
+        }
+        scalar => value_of(scalar),
+    }
 }
 
 /// The table `name` in `parent`, made when missing; `None` when `name`

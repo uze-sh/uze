@@ -234,7 +234,7 @@ fn an_archive_reads_back_as_it_was_saved_and_a_newer_one_is_left_alone() {
         Archive::load(&home).unwrap().oldest_day("probe"),
         archive.oldest_day("probe")
     );
-    std::fs::write(home.machine_usage_path(), br#"{"schema_version": 99}"#).unwrap();
+    std::fs::write(home.usage_path(), br#"{"schema_version": 99}"#).unwrap();
     assert!(Archive::load(&home).is_none());
 }
 
@@ -284,7 +284,7 @@ fn losing_what_was_kept_costs_only_a_fresh_reading() {
     ledger.save(&home).unwrap();
     let mut kept = Ledger::load(&home);
     assert_eq!(read(&mut kept, &harness, &carried).unwrap(), first);
-    std::fs::write(home.machine_usage_cache_path(), b"{not json").unwrap();
+    std::fs::write(home.transcripts_cache_path(), b"{not json").unwrap();
     let mut lost = Ledger::load(&home);
     assert_eq!(read(&mut lost, &harness, &carried).unwrap(), first);
 }

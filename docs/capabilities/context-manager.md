@@ -27,7 +27,7 @@ of this boundary later:
   hand-written `GEMINI.md`, are never compared, judged equivalent, or combined.
   The Context Manager observes and reports; it never decides that two pieces of
   text mean the same thing.
-- **No LLM.** No function in `text_region.rs`, `retired_regions.rs`, or the
+- **No LLM.** No function in `text_region.rs`, `earlier/regions.rs`, or the
   application's `Context` service calls a model, and none ever will as part of
   this boundary.
 - **`AGENTS.md` is the baseline.** The one file every recognized harness reads
@@ -44,13 +44,13 @@ uze-core:
   text_region.rs     inspect / detach / remove_unconditionally / region_shape /
                      region_body / has_content_outside_managed_regions /
                      region_identities_present / without_regions
-  retired_region.rs  the identities earlier releases wrote: is_retired
+  project/earlier.rs  the identities earlier releases wrote: is_retired
                      (project:*, digest-checked), is_retired_package
                      (package:<plugin>:<market>:instructions, by shape),
                      INSTRUCTION_BRIDGE (the @AGENTS.md region of CLAUDE.md)
 
 uze-application:
-  retired_regions.rs  plan / remove: the one production writer of AGENTS.md
+  earlier/regions.rs  plan / remove: the one production writer of AGENTS.md
   context.rs          Context::inspect(project_root)    read-only
                       Context::plan(project_root)       read-only
                       Context::reconcile(project_root)  the cleanup, nothing else
@@ -162,7 +162,7 @@ the way a human editing it would. Nothing in that flow requires `uze-core` or
 
 ## Vendor-neutrality
 
-`text_region.rs`, `retired_region.rs` and `retired_regions.rs` name no
+`text_region.rs`, `project/earlier.rs` and `earlier/regions.rs` name no
 harness, and neither does `uze-application`. Which file a
 harness keeps beside `AGENTS.md` is each integration's own
 `IntegrationPort::context_delivery()` declaration in `uze-integrations`; the

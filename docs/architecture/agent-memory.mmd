@@ -47,7 +47,7 @@ flowchart TD
   projectFacts -.-> lookup
   machineFacts -.-> lookup
   claudeMemory -.-> lookup
-  memoryOff[memory.harness = off] -.->|Codex launches only| viaCodex
+  memoryOff[memory.native = off] -.->|Codex launches only| viaCodex
   compose --> viaClaude[Claude: CLAUDE.md<br/>in a per-agent --add-dir]
   compose --> viaCodex[Codex: SessionStart hook<br/>on a -c layer]
   compose --> viaOpencode[OpenCode: uze.ts plugin, agent-context section<br/>reads runtime/sessions/opencode/session-id.md<br/>on every request]

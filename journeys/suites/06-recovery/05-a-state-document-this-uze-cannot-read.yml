@@ -81,7 +81,7 @@ scenes:
       # nobody authored.
       - shell: |
           set -e
-          for document in {uze_home}/state/projects/*/agents.json; do
+          for document in {uze_home}/state/projects/*/tasks.json; do
             printf '{"schema_version": 1, "tasks": []}' > "$document"
           done
         say: the machine is left holding the state an older uze wrote
@@ -98,7 +98,7 @@ scenes:
         expect_timeout: 90
         pause: 2.0
     then:
-      - file: "{uze_home}/state/projects/*/agents.json.unreadable-*"
+      - file: "{uze_home}/state/projects/*/tasks.json.unreadable-*"
         count: 1
         contains: '"schema_version": 1'
         about: |

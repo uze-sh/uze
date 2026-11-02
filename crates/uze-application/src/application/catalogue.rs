@@ -212,12 +212,7 @@ const RECORD: &str = "a record is the only copy of what it says; uze never write
 pub const CATALOGUE: &[HealthCheck] = &[
     HealthCheck {
         subject: Subject::Receipts,
-        paths: &[
-            "runtime_attachments_dir",
-            "generated_attachments_dir",
-            "delivered_packages_dir",
-            "delivered_package_dir",
-        ],
+        paths: &["delivered_packages_dir", "delivered_package_dir"],
         artifacts: &ManagedArtifact::KINDS,
         registrations: &[],
         lanes: &[
@@ -298,8 +293,8 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "provisioning_state_path",
             "marketplaces_path",
             "hosts_path",
-            "launch_overrides_path",
-            "extensions_record_path",
+            "launches_path",
+            "consent_path",
             "extension_stores_dir",
             "extension_plugin_stores_dir",
             "extension_store_path",
@@ -307,20 +302,20 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "extension_secrets_set_path",
             "extension_plugin_secrets_dir",
             "client_layout_path",
-            "binary_path",
+            "release_path",
             "install_receipt_path",
-            "machine_usage_path",
+            "usage_path",
             "machine_memory_dir",
             "proposed_memory_dir",
             "projects_dir",
             "project_dir",
             "project_marker_path",
             "tasks_path",
-            "approved_commands_path",
+            "approvals_path",
             "conversations_dir",
             "conversation_path",
             "review_path",
-            "prompt_history_path",
+            "prompts_path",
             "project_memory_dir",
         ],
         artifacts: &[],
@@ -332,20 +327,20 @@ pub const CATALOGUE: &[HealthCheck] = &[
         paths: &[
             "mutation_lock_path",
             "config_lock_path",
-            "launch_overrides_lock_path",
-            "extensions_record_lock_path",
+            "launches_lock_path",
+            "consent_lock_path",
             "extension_store_lock_path",
             "extension_secrets_set_lock_path",
-            "binary_check_lock_path",
-            "marketplace_fetch_lock_path",
-            "marketplace_mirror_lock_path",
-            "machine_usage_lock_path",
-            "agents_lock_path",
+            "release_lock_path",
+            "fetch_lock_path",
+            "mirror_lock_path",
+            "usage_lock_path",
+            "tasks_lock_path",
             "delivery_lock_path",
             "agents_md_lock_path",
             "conversations_lock_path",
             "review_lock_path",
-            "prompt_history_lock_path",
+            "prompts_lock_path",
             "memory_lock_path",
             "agent_reports_lock_path",
         ],
@@ -358,12 +353,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::Authored,
-        paths: &[
-            "config_path",
-            "keymap_path",
-            "theme_overrides_path",
-            "themes_dir",
-        ],
+        paths: &["config_path", "keymap_path", "themes_dir"],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -383,6 +373,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "session_context_dir",
             "runtime_rules_dir",
             "rules_sessions_dir",
+            "runtime_extensions_dir",
             "compiled_extensions_dir",
             "compiled_extension_path",
             "extension_scratch_root",
@@ -390,21 +381,24 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "extension_pictures_root",
             "extension_pictures_dir",
             "extension_costs_path",
+            "runtime_agents_dir",
+            "agent_runtime_dir",
             "agent_reports_path",
             "cache_dir",
             "harnesses_cache_path",
-            "harness_detection_cache_path",
+            "detection_cache_path",
             "requirement_probe_cache_path",
             "shell_observation_cache_path",
-            "machine_overview_cache_path",
-            "machine_usage_cache_path",
+            "overview_cache_path",
+            "transcripts_cache_path",
             "inspection_cache_path",
             "appearance_cache_path",
-            "release_notes_cache_path",
+            "changelog_cache_path",
             "marketplace_cache_dir",
             "collection_record_path",
             "logs_dir",
             "gate_log_path",
+            "setup_log_path",
         ],
         artifacts: &[],
         registrations: &[],
@@ -415,11 +409,9 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::Retired,
-        paths: &[
-            "pre_sources_layout",
-            "retired_profiles_path",
-            "scattered_project_records",
-        ],
+        // Every retired path the owned map lists, read from the map rather
+        // than spelled again here (the `earlier-releases` rule).
+        paths: &[],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -608,14 +600,14 @@ impl Health<'_> {
                 Box::new(|| self.0.marketplace().hosts().err().map(|e| e.to_string())),
             ),
             (
-                "extensions_record_path",
+                "consent_path",
                 "extension consent",
-                Box::new(|| unparsed(&home.extensions_record_path())),
+                Box::new(|| unparsed(&home.consent_path())),
             ),
             (
-                "launch_overrides_path",
+                "launches_path",
                 "launch overrides",
-                Box::new(|| unparsed(&home.launch_overrides_path())),
+                Box::new(|| unparsed(&home.launches_path())),
             ),
         ];
         reads
@@ -778,6 +770,15 @@ mod tests {
             for path in check.paths {
                 checked.entry(path).or_default().push(check.subject);
             }
+        }
+        for retired in UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
+        {
+            checked
+                .entry(retired.name)
+                .or_default()
+                .push(Subject::Retired);
         }
         let unchecked: Vec<&str> = UzeHome::owned_paths()
             .iter()
@@ -959,11 +960,12 @@ mod tests {
             ("marketplaces_path", UzeHome::marketplaces_path),
             ("undelivered_path", UzeHome::undelivered_path),
             ("hosts_path", UzeHome::hosts_path),
-            ("extensions_record_path", UzeHome::extensions_record_path),
-            ("launch_overrides_path", UzeHome::launch_overrides_path),
+            ("consent_path", UzeHome::consent_path),
+            ("launches_path", UzeHome::launches_path),
         ];
         for (name, path) in records {
             let (app, home, base) = damaged(&format!("catalogue-corrupt-{name}"));
+            std::fs::create_dir_all(path(&home).parent().unwrap()).unwrap();
             std::fs::write(path(&home), "{ not a record").unwrap();
             let report = app.health().report();
             assert!(

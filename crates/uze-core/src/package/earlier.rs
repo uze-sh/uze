@@ -1,4 +1,8 @@
-//! The move that gave the package bytes a directory of their own.
+//! What the package concern does only because an earlier release left it
+//! (the `earlier-releases` rule): the move that gave the package bytes a
+//! directory of their own, declared as `pre_sources_layout` in the owned
+//! map, and the package copies earlier releases kept under the runtime
+//! tree (`retired_packages_dir`).
 //!
 //! Package bytes lived in `store/plugins` and `store/superseded`. They now
 //! live in `sources/`, so `store/` can be what the harnesses read, one
@@ -26,7 +30,13 @@
 use std::fs;
 use std::path::Path;
 
-use crate::{Result, UzeError, UzeHome, UzeStore, state};
+use crate::{Result, UzeError, UzeHome, UzeStore, state, store::PackageId};
+
+/// The copy of package `id` an earlier release made under the runtime tree
+/// for every harness to read, which goes with the package.
+pub(crate) fn package_copy(home: &UzeHome, id: &PackageId) -> std::path::PathBuf {
+    home.retired_package_dir(id)
+}
 
 /// Carries the package bytes of a machine on the old layout into
 /// `sources/`. A no-op, after one `stat` per old directory, on a machine

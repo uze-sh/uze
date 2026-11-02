@@ -236,7 +236,7 @@ fn recorded(home: &UzeHome, primary: &Path) -> Option<String> {
 }
 
 fn path(home: &UzeHome, canonical_root: &Path) -> PathBuf {
-    home.approved_commands_path(&project_id_for(canonical_root))
+    home.approvals_path(&project_id_for(canonical_root))
 }
 
 fn canonical(root: &Path) -> PathBuf {
@@ -270,9 +270,26 @@ fn is_hidden_effect(character: char) -> bool {
         )
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ApprovedCommands>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_approval_the_floor_release_recorded_still_runs_the_commands() {
+        let (home, project) = home("approval-earlier-name");
+        let declared = policy(&["pnpm install"], &["pnpm test"]);
+        approve(&home, &project, &ProjectCommands::of(&declared)).unwrap();
+        let id = project_id_for(&project);
+        std::fs::rename(home.approvals_path(&id), home.retired_approvals_path(&id)).unwrap();
+
+        assert!(consent(&home, &project, &declared).setup().is_some());
+    }
 
     fn home(label: &str) -> (UzeHome, PathBuf) {
         let root = uze_testkit::temp::scratch(label);

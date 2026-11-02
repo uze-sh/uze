@@ -83,7 +83,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/bridge/extensions/jump/extension.kdl"
         contains: "focus-agent"
         about: the extension was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -130,7 +130,7 @@ scenes:
         expect: "the second agent was told this"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/jump.accepted_grants.*
         count: 1
         includes: ["agent:observe"]

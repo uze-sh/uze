@@ -67,7 +67,7 @@ ENV PATH="/usr/local/.local/bin:/usr/local/.opencode/bin:/usr/local/bin:/usr/sbi
 # layer that failed, which is discarded, and the report alone only says
 # which installer exited unsuccessfully, never why.
 RUN HOME=/usr/local /usr/local/bin/uze setup \
-    || { tail -n 50 /usr/local/.uze/cache/logs/setup-*.log; exit 1; }; \
+    || { tail -n 50 /usr/local/.uze/cache/logs/setup/*.log; exit 1; }; \
     chown -R node:node /usr/local/.local /usr/local/.opencode
 
 COPY --from=uze-build --chown=node:node /out/uze-mcp-conformance-fixture /usr/local/bin/uze-mcp-conformance-fixture

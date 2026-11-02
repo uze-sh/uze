@@ -1352,7 +1352,7 @@ mod mirror_tests {
             .create(true)
             .truncate(false)
             .write(true)
-            .open(home.marketplace_fetch_lock_path())
+            .open(home.fetch_lock_path())
             .unwrap();
         uze_platform::lock::try_lock(&held, uze_platform::lock::Mode::Exclusive).unwrap();
 

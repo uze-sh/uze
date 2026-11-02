@@ -116,6 +116,13 @@ impl Themes<'_> {
         appearance::glyphs(&self.0.home)
     }
 
+    /// The operator's overrides of whichever theme is active, as written
+    /// in `config.toml`, and where they were read from.
+    #[tracing::instrument(name = "themes.overrides", level = "debug", skip_all, err)]
+    pub fn overrides(&self) -> Result<Option<(serde_json::Value, &'static str)>> {
+        Ok(appearance::overrides(&self.0.home)?.map(|layer| (layer, appearance::OVERRIDES_SOURCE)))
+    }
+
     /// The theme an adaptive selection draws in on this background, or
     /// `None` while the operator has not said.
     #[tracing::instrument(name = "themes.adaptive", skip_all, err)]

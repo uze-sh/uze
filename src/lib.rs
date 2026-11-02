@@ -2,6 +2,7 @@
 //! the CLI.
 
 pub mod asker;
+pub mod earlier;
 pub mod keymap;
 pub mod self_update;
 pub mod size;

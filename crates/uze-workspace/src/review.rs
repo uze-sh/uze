@@ -178,7 +178,7 @@ pub fn agent_of_checkout(
         .canonical()
         .unwrap_or_else(|_| checkout.to_path_buf());
     let found = checkout.ancestors().find_map(|root| {
-        if !task::store_path(home, root).exists() {
+        if !task::is_recorded(home, root) {
             return None;
         }
         let store = task::load(home, root).ok()?;
@@ -373,6 +373,12 @@ fn bounded(answer: &str) -> String {
         cut -= 1;
     }
     format!("{} … (cut)", &clean[..cut])
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ReviewRecord>(file!())
 }
 
 #[cfg(test)]

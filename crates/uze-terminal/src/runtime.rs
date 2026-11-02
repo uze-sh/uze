@@ -28,6 +28,7 @@ use crate::{
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
+pub(crate) mod earlier;
 mod endpoint;
 mod framing;
 mod host;
@@ -47,6 +48,7 @@ pub use endpoint::*;
 pub use framing::*;
 pub use key::server_key;
 use key::*;
+pub use lock::workspace_is_claimed;
 use lock::*;
 use operator::*;
 use outbox::*;

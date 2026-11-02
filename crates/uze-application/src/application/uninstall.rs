@@ -414,8 +414,10 @@ impl UzeApplication {
     /// marketplace registered under the runtime tree, as an earlier
     /// release left them.
     fn reads_the_runtime_tree(&self) -> Vec<String> {
-        let copies = serde_json::to_string(&self.home.delivered_packages_dir().to_string_lossy())
-            .unwrap_or_default();
+        let copies = serde_json::to_string(
+            &crate::application::earlier::package_copies_dir(&self.home).to_string_lossy(),
+        )
+        .unwrap_or_default();
         let copies = copies.trim_matches('"');
         let receipts = state::receipts(&self.home, None).unwrap_or_default();
         let mut harnesses: Vec<String> = Vec::new();
@@ -675,7 +677,6 @@ impl UzeApplication {
             (home.state_dir(), "records", false),
             (home.config_path(), "settings", false),
             (home.keymap_path(), "settings", false),
-            (home.theme_overrides_path(), "settings", false),
             (home.themes_dir(), "settings", false),
         ];
         let Ok(listing) = fs::read_dir(home.root()) else {

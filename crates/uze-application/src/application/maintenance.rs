@@ -210,6 +210,28 @@ impl Collectable for ConversationSessions {
     }
 }
 
+/// What each agent reported about itself, by the workspace's rule
+/// (`reports::collect_unrecorded_agents`): kept while a project records the
+/// agent. Takes no lock: an agent is recorded before its pane can report.
+pub(crate) struct AgentReports;
+
+impl Collectable for AgentReports {
+    fn name(&self) -> &'static str {
+        "agent reports"
+    }
+
+    fn roots(&self) -> &'static [&'static str] {
+        &["agent_runtime_dir"]
+    }
+
+    fn collect(&self, home: &uze_core::UzeHome) -> Collected {
+        Collected::removed(
+            self.name(),
+            uze_workspace::reports::collect_unrecorded_agents(home),
+        )
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MaintenanceReport {
     pub outcomes: Vec<MaintenanceOutcome>,

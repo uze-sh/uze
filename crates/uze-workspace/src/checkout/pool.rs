@@ -65,14 +65,6 @@ impl CheckoutId {
         Self(name.to_owned())
     }
 
-    /// Whether the name is the `agent-<n>` the builds before slots gave
-    /// their checkouts, which carry no record of their own.
-    pub(super) fn is_legacy(&self) -> bool {
-        self.0.strip_prefix("agent-").is_some_and(|number| {
-            !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
-        })
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }

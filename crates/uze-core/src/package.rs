@@ -14,9 +14,9 @@
 
 pub mod acquisition;
 pub mod authoring;
+pub(crate) mod earlier;
 pub mod hosts;
 pub mod naming;
 pub mod requirement;
-pub(crate) mod sources;
 pub mod store;
 pub mod trust;

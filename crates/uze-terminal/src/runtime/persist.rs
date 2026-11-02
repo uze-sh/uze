@@ -51,6 +51,7 @@ impl uze_document::Shaped for PersistedWorkspace {
             uze_document::Step {
                 from: 1,
                 to: 2,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     for space in spaces_of(&mut document) {
                         space.remove("kind");
@@ -61,6 +62,7 @@ impl uze_document::Shaped for PersistedWorkspace {
             uze_document::Step {
                 from: 2,
                 to: 3,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     let mut count = 0;
                     for (index, space) in spaces_of(&mut document).enumerate() {
@@ -224,4 +226,10 @@ pub(super) fn within_pane_bounds(dimension: u16) -> u16 {
 /// alone" to express: a grid of nothing is not a terminal.
 pub(super) fn spawnable_pane_bounds(dimension: u16) -> u16 {
     dimension.clamp(1, MAX_PANE_DIMENSION)
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<PersistedWorkspace>(file!())
 }

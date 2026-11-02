@@ -232,7 +232,7 @@ pub fn project_id_for(canonical_project_root: &Path) -> String {
 /// exercise in reading back artifacts an integration derived: the root is
 /// the one fact deciding whether any of them still has a reason to exist,
 /// and no vendor's own output is obliged to state it.
-pub const PROJECTION_MARKER: &str = "project.json";
+pub const PROJECTION_MARKER: &str = "root.json";
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ProjectionMarker {
@@ -272,14 +272,20 @@ pub fn prepare_projection(
 pub fn prepare_project_dir(home: &UzeHome, canonical_project_root: &Path) -> Result<PathBuf> {
     let project_dir = home.runtime_project_dir(&project_id_for(canonical_project_root));
     create_dir(&project_dir)?;
-    write_marker(&project_dir, canonical_project_root)?;
+    write_marker(home, &project_dir, canonical_project_root)?;
     Ok(project_dir)
 }
 
 /// The canonical project root a project's runtime directory records, when
 /// it still records one a reader can understand.
 pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
-    let raw = fs::read(project_dir.join(PROJECTION_MARKER)).ok()?;
+    read_marker(&project_dir.join(PROJECTION_MARKER))
+        .or_else(|| crate::machine::earlier::projection_root(project_dir))
+}
+
+/// The root a projection marker at `path` names.
+pub(crate) fn read_marker(path: &Path) -> Option<PathBuf> {
+    let raw = fs::read(path).ok()?;
     serde_json::from_slice::<ProjectionMarker>(&raw)
         .ok()
         .map(|marker| marker.root)
@@ -355,16 +361,16 @@ fn create_dir(path: &Path) -> Result<()> {
 /// sessions on one project compute the same directory and the same marker,
 /// so a same-content write is skipped entirely rather than replacing a file
 /// the other one is being identified by.
-fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()> {
+fn write_marker(home: &UzeHome, project_dir: &Path, canonical_project_root: &Path) -> Result<()> {
     let path = project_dir.join(PROJECTION_MARKER);
     let desired = serde_json::to_vec_pretty(&ProjectionMarker {
         root: canonical_project_root.to_path_buf(),
     })
     .expect("marker serialization is infallible");
-    if fs::read(&path).is_ok_and(|current| current == desired) {
-        return Ok(());
+    if !fs::read(&path).is_ok_and(|current| current == desired) {
+        write_atomic_unsynced(&path, &desired)?;
     }
-    write_atomic_unsynced(&path, &desired)
+    crate::machine::earlier::write_projection_marker(home, project_dir, &desired)
 }
 
 #[cfg(test)]

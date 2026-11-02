@@ -142,7 +142,7 @@ fn deleting_the_snapshot_costs_only_a_collection() {
     let first = app
         .collect_machine_overview(&AtomicBool::new(false), |_| {})
         .unwrap();
-    std::fs::remove_file(UzeHome::at(root.join("uze")).machine_overview_cache_path()).unwrap();
+    std::fs::remove_file(UzeHome::at(root.join("uze")).overview_cache_path()).unwrap();
     assert!(app.machine_overview_snapshot().is_none());
     let again = app
         .collect_machine_overview(&AtomicBool::new(false), |_| {})
@@ -158,7 +158,7 @@ fn a_collection_already_running_elsewhere_is_left_to_finish() {
     let home = UzeHome::at(root.join("uze"));
     let app = UzeApplication::new(home.clone(), vec![Box::new(Harness::new("a"))]);
     let _elsewhere = uze_core::persistence::FileLock::acquire(
-        &home.machine_usage_lock_path(),
+        &home.usage_lock_path(),
         std::time::Duration::ZERO,
         std::time::Duration::ZERO,
     )

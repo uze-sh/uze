@@ -24,8 +24,9 @@ which the marketplace's rename to `uze` now refuses.
 - Built-in plugins follow the binary that runs: bytes another uze build
   left, on the machine or in the lock, are replaced by this binary's and
   reported as updated, never refused, since the binary is the only source.
-- The official marketplace is named `uze` (was `uze-official`); a machine
-  an earlier release seeded is moved under the new name once.
+- The official marketplace is named `uze` (was `uze-official`). A machine
+  an earlier release seeded was moved under the new name once, until
+  `earlier-release-support` raised the release floor past that release.
 - **BREAKING** (no released users): the `gsd`, `focus` and `contributions`
   plugins become one plugin, `workspace`, carrying the three extensions; an
   extension's identity follows its plugin (`workspace@uze/focus`).
@@ -42,8 +43,7 @@ which the marketplace's rename to `uze` now refuses.
   only a source on its name, and a bundled plugin, are refused.
 - `agents-lock`: built-in plugins are pinned by the uze version and their
   bytes, follow the binary, and have no marketplace entry.
-- `marketplace`: the embedded official marketplace is registered as `uze`,
-  and an earlier release's `uze-official` records are moved under it.
+- `marketplace`: the embedded official marketplace is registered as `uze`.
 
 ## Impact
 

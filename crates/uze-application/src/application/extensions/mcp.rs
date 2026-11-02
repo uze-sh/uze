@@ -194,10 +194,10 @@ fn launch_of(call: &Call<'_>, server: &str) -> Result<McpLaunch, String> {
 
 /// The copies UZE's extension MCP launcher hands a server it starts
 /// (`UzeHome::delivered_package_dir`), kept while their package is
-/// installed and declares an MCP server (`mcp.json`), and while a receipt
-/// still names one, as an earlier release pointed every harness there; the
-/// rest are copies of the earlier layout nothing reads. One is made again
-/// on the next launch that needs it. Collects under the mutation lock,
+/// installed and declares an MCP server (`mcp.json`); one is made again on
+/// the next launch that needs it. And the copies an earlier release made
+/// for every harness, kept while a receipt names one
+/// (`earlier::collect_package_copies`). Collects under the mutation lock,
 /// which keeps it from an install replacing the packages it judges by.
 pub(crate) struct DeliveredPackages;
 
@@ -207,13 +207,21 @@ impl crate::application::Collectable for DeliveredPackages {
     }
 
     fn roots(&self) -> &'static [&'static str] {
-        &["delivered_package_dir"]
+        &[
+            "delivered_package_dir",
+            crate::application::earlier::PACKAGE_COPIES,
+        ]
     }
 
     fn collect(&self, home: &UzeHome) -> crate::application::Collected {
-        let Ok(entries) = std::fs::read_dir(home.delivered_packages_dir()) else {
+        let entries: Vec<_> = std::fs::read_dir(home.delivered_packages_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect();
+        if entries.is_empty() && !crate::application::earlier::holds_package_copies(home) {
             return crate::application::Collected::removed(self.name(), Vec::new());
-        };
+        }
         let _mutation = match uze_core::persistence::MutationLock::acquire(home) {
             Ok(lock) => lock,
             Err(error) => {
@@ -234,16 +242,22 @@ impl crate::application::Collectable for DeliveredPackages {
             );
         };
         let named = serde_json::to_string(&receipts).unwrap_or_default();
-        let mut removed = Vec::new();
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let serves = packages.iter().any(|package| {
-                home.delivered_package_dir(&package.id) == path
-                    && package.root.join("mcp.json").is_file()
+        let servers: std::collections::BTreeSet<&str> = packages
+            .iter()
+            .filter(|package| package.root.join("mcp.json").is_file())
+            .map(|package| package.id.as_str())
+            .collect();
+        let serves = |id: &str| servers.contains(id);
+        let floor_release_may_run = uze_core::earlier::holds_uncarried_records(home);
+        let mut removed =
+            crate::application::earlier::collect_package_copies(home, &named, &|id| {
+                floor_release_may_run && serves(id)
             });
-            if serves || named.contains(path.to_string_lossy().as_ref()) {
+        for entry in entries {
+            if serves(&entry.file_name().to_string_lossy()) {
                 continue;
             }
+            let path = entry.path();
             let gone = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 std::fs::remove_dir_all(&path)
             } else {

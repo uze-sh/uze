@@ -16,6 +16,7 @@ pub(crate) mod agent;
 pub(crate) mod agent_context;
 pub(crate) mod build;
 pub(crate) mod dialect;
+pub(crate) mod earlier;
 pub(crate) mod envelope;
 pub(crate) mod json_config;
 pub(crate) mod marketplace;

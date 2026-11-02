@@ -144,12 +144,17 @@ fn render_home(home: &std::path::Path, entries: &[SchemaEntry]) -> String {
                 (Change::Removed, "left by an earlier version".to_owned())
             }
             (SchemaFinding::EmptyDirectory, true) => (Change::Removed, "empty".to_owned()),
-            (SchemaFinding::SetAside | SchemaFinding::Superseded, true) => {
-                (Change::Removed, format!("{size} discarded"))
-            }
+            (
+                SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded,
+                true,
+            ) => (Change::Removed, format!("{size} discarded")),
             (SchemaFinding::SetAside, false) => (
                 Change::Attention,
                 format!("{size}, a record set aside that nothing reads"),
+            ),
+            (SchemaFinding::Stranded, false) => (
+                Change::Attention,
+                format!("{size}, written under a record's earlier name: nothing reads it"),
             ),
             (SchemaFinding::Superseded, false) => (
                 Change::Attention,
@@ -285,11 +290,17 @@ mod tests {
         };
         let report = RepairReport {
             home: vec![
-                entry("state/profiles.json", SchemaFinding::Retired, None, true),
+                entry("cache/release-notes.md", SchemaFinding::Retired, None, true),
                 entry(
                     "state/hosts.json.unreadable-1",
                     SchemaFinding::SetAside,
                     Some(2048),
+                    false,
+                ),
+                entry(
+                    "state/launch-overrides.json",
+                    SchemaFinding::Stranded,
+                    Some(1024),
                     false,
                 ),
                 entry("state/newer.json", SchemaFinding::Unknown, None, false),
@@ -298,11 +309,17 @@ mod tests {
         };
         let text = plain(&render_repair(home, &report));
         assert!(
-            text.contains("state/profiles.json   left by an earlier version"),
+            text.contains("cache/release-notes.md   left by an earlier version"),
             "{text}"
         );
         assert!(
             text.contains("state/hosts.json.unreadable-1   2.0 KB, a record set aside"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "state/launch-overrides.json   1.0 KB, written under a record's earlier name"
+            ),
             "{text}"
         );
         assert!(

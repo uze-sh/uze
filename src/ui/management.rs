@@ -70,6 +70,35 @@ pub(crate) struct ManagementMemory {
     /// The plugins' revision ([`crate::ui::extension_switch::plugins_revision`])
     /// the last resolution read.
     resolved_revision: Option<u64>,
+    /// How the machine's records stood when the last resolution was asked;
+    /// `None` until the modal first looks.
+    resolved_records: Option<RecordsStamp>,
+    /// When the modal last looked at them.
+    records_looked_at: Instant,
+}
+
+/// How often an open modal looks whether a command changed the machine.
+const RECORDS_LOOK_EVERY: Duration = Duration::from_secs(1);
+
+/// When the records a command changes without telling this client were last
+/// written, and how long they are: a command in a pane (`uze market unlink`,
+/// `uze add`) is heard of nowhere else. A `stat` of each, on the drawing
+/// thread because it waits on nothing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RecordsStamp(Vec<Option<(std::time::SystemTime, u64)>>);
+
+impl RecordsStamp {
+    fn of(home: &UzeHome) -> Self {
+        let stamp = |path: PathBuf| {
+            std::fs::metadata(path)
+                .ok()
+                .and_then(|file| Some((file.modified().ok()?, file.len())))
+        };
+        Self(vec![
+            stamp(home.marketplaces_path()),
+            stamp(home.registry_path()),
+        ])
+    }
 }
 
 impl ManagementMemory {
@@ -108,6 +137,8 @@ impl ManagementMemory {
             in_flight: false,
             resolved_for: None,
             resolved_revision: None,
+            resolved_records: None,
+            records_looked_at: Instant::now(),
         }
     }
 
@@ -148,8 +179,13 @@ impl ManagementMemory {
         // The workspace changed what is installed or allowed (an offer
         // answered, a plugin added): what the last opening read is no
         // longer the machine, however recent.
-        let revised =
-            self.resolved_revision != Some(crate::ui::extension_switch::plugins_revision());
+        let records = RecordsStamp::of(home);
+        let revised = self.resolved_revision
+            != Some(crate::ui::extension_switch::plugins_revision())
+            || self
+                .resolved_records
+                .as_ref()
+                .is_some_and(|resolved| *resolved != records);
         if opening_asks_again(
             model.remembered.resolved_at,
             elsewhere,
@@ -165,6 +201,7 @@ impl ManagementMemory {
             );
             self.resolved_for = Some(model.context_root.clone());
             self.resolved_revision = Some(crate::ui::extension_switch::plugins_revision());
+            self.resolved_records = Some(records);
             self.in_flight = true;
         }
         model.maintenance_in_flight = self.in_flight;
@@ -198,6 +235,31 @@ impl ManagementMemory {
         (layout, first_steps)
     }
 
+    /// Asks the machine again when a command changed its records while the
+    /// modal is open. Behind the frame, as an opening's asking is: the lists
+    /// stay on screen until the answer replaces them. One asking at a time;
+    /// a change it missed is seen by the next look after it lands.
+    fn look_at_the_records(&mut self, model: &mut TuiModel, home: &UzeHome) {
+        if model.maintenance_in_flight || self.records_looked_at.elapsed() < RECORDS_LOOK_EVERY {
+            return;
+        }
+        self.records_looked_at = Instant::now();
+        let records = RecordsStamp::of(home);
+        let unseen = self
+            .resolved_records
+            .replace(records.clone())
+            .is_some_and(|resolved| resolved != records);
+        if !unseen {
+            return;
+        }
+        model.maintenance_in_flight = true;
+        spawn_refresh(
+            home.clone(),
+            self.sender.clone(),
+            model.context_root.clone(),
+        );
+    }
+
     /// One turn of the modal's own clock, taken by the workspace loop
     /// before each frame it draws the modal in: the spinner advances,
     /// transient status expires, every answer that arrived is absorbed,
@@ -219,6 +281,7 @@ impl ManagementMemory {
         changed |= model.expire_status();
         changed |= model.expire_update_badges();
         changed |= drain_worker_results(model, &self.receiver);
+        self.look_at_the_records(model, home);
         let drawer = if model.selection_settling(Instant::now()) {
             Intent::None
         } else {
@@ -676,6 +739,21 @@ fn footer_leading<'a>(model: &TuiModel, scopes: &'a [uze_keys::Scope]) -> Leadin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_writing_a_record_changes_what_the_modal_compares() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("records-stamp"));
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        let before = RecordsStamp::of(&home);
+        assert_eq!(before, RecordsStamp::of(&home), "nothing changed");
+
+        std::fs::write(home.marketplaces_path(), "{}").unwrap();
+        let registered = RecordsStamp::of(&home);
+        assert_ne!(before, registered);
+
+        std::fs::write(home.registry_path(), "{}").unwrap();
+        assert_ne!(registered, RecordsStamp::of(&home));
+    }
 
     /// The workspace loop turns the modal's clock every few milliseconds;
     /// a turn that moved nothing must not cost a frame, and a spinner on

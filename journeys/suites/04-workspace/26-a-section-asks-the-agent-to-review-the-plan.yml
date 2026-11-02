@@ -12,7 +12,7 @@ about: |
 
   What reached the agent is read from the conversation the stand-in
   records; that the script only read the checkout is read from the
-  checkout itself, and the consent from `state/extensions.json`. The
+  checkout itself, and the consent from `state/extensions/consent.json`. The
   screen only gates each gesture.
 
 world:
@@ -110,7 +110,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/bridge/extensions/plan-review/plan.uze"
         contains: "read_checkout"
         about: the extension's script was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -156,12 +156,12 @@ scenes:
         timeout: 5
         say: every one of them
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/plan-review.accepted_grants.*
         count: 2
         includes: ["read:checkout", "agent:prompt"]
         about: the consent holds exactly the grants its question showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/plan-review.enabled_in.*
         equals: "{project}"
         count: 1

@@ -420,7 +420,7 @@ impl MutationLock {
         let lock = Self { _file: file };
         // Every mutation passes here, so this is where a machine still on
         // the layout before `sources/` is carried across: once, held.
-        crate::package::sources::carry_into_sources(home)?;
+        crate::package::earlier::carry_into_sources(home)?;
         Ok(lock)
     }
 }
@@ -512,6 +512,17 @@ pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mutation_leaves_a_record_where_the_floor_release_reads_it() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("mutation-no-carry").join("uze"));
+        fs::create_dir_all(home.state_dir()).unwrap();
+        fs::write(home.retired_release_path(), "{}").unwrap();
+
+        let _held = MutationLock::acquire(&home).unwrap();
+
+        assert!(home.retired_release_path().is_file());
+    }
 
     fn siblings(dir: &Path) -> Vec<String> {
         let mut names: Vec<String> = fs::read_dir(dir)

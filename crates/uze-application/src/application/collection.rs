@@ -130,6 +130,7 @@ impl UzeApplication {
             Box::new(super::extensions::DeliveredPackages),
             Box::new(super::marketplace_catalogue::MarketplaceMirrors),
             Box::new(super::maintenance::ConversationSessions),
+            Box::new(super::maintenance::AgentReports),
             Box::new(super::setup::Retired),
         ]
     }

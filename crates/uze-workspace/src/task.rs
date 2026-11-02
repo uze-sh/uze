@@ -591,6 +591,11 @@ pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
     home.tasks_path(&project_id(project_root))
 }
 
+/// Whether `project_root` has tasks recorded.
+pub fn is_recorded(home: &UzeHome, project_root: &Path) -> bool {
+    store_path(home, project_root).exists()
+}
+
 fn project_id(project_root: &Path) -> String {
     let canonical = project_root
         .canonical()
@@ -644,6 +649,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 3,
                 to: 4,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
@@ -670,6 +676,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 4,
                 to: 5,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
@@ -796,8 +803,8 @@ pub fn locked_reporting<T>(
     // release's agents behind at the old name while this build recorded
     // its own beside nothing.
     crate::record::ensure(home, project_root)?;
+    let _held = guard_at_the_records_lock(home, project_root)?;
     let path = store_path(home, project_root);
-    let _held = MutationGuard::acquire(&home.agents_lock_path(&project_id(project_root)))?;
     // Read in the document crate's own vocabulary rather than through
     // `read_document`, so the direction rule — which shape may be set
     // aside and which may never be — is asked of the one place that holds
@@ -818,6 +825,21 @@ pub fn locked_reporting<T>(
         save(home, project_root, &store)?;
     }
     Ok((outcome, recovery))
+}
+
+/// The record's mutation lock, taken again if the record moved to today's
+/// name during the wait: the lock it waited on guards nothing any more, and
+/// a path composed before the wait names a file that is gone, which would
+/// read as no agents and replace the record that moved.
+fn guard_at_the_records_lock(home: &UzeHome, project_root: &Path) -> Result<MutationGuard> {
+    let id = project_id(project_root);
+    loop {
+        let lock = home.tasks_lock_path(&id);
+        let guard = MutationGuard::acquire(&lock)?;
+        if home.tasks_lock_path(&id) == lock {
+            return Ok(guard);
+        }
+    }
 }
 
 /// Proof that no other delivery in the project is running: held from the
@@ -922,6 +944,12 @@ impl Drop for MutationGuard {
     }
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<AgentStore>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,6 +1028,62 @@ mod tests {
             "main".into(),
         );
         assert_eq!(unprompted.label, unprompted.id.as_str());
+    }
+
+    #[test]
+    fn agents_the_floor_release_recorded_are_still_loaded() {
+        let home = home("tasks-earlier-name");
+        let root = uze_testkit::temp::scratch("tasks-earlier-name-project");
+        let kept = task("kept");
+        let mut store = AgentStore::default();
+        store.upsert(kept.clone());
+        save(&home, &root, &store).unwrap();
+        let current = store_path(&home, &root);
+        let id = current
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        std::fs::rename(&current, home.retired_tasks_path(&id)).unwrap();
+
+        assert!(load(&home, &root).unwrap().get(&kept.id).is_some());
+    }
+
+    #[test]
+    fn a_mutation_waiting_while_the_record_moves_finds_it_where_it_went() {
+        let home = home("tasks-moved-during-wait");
+        let root = uze_testkit::temp::scratch("tasks-moved-during-wait-project");
+        let kept = task("kept");
+        let mut store = AgentStore::default();
+        store.upsert(kept.clone());
+        save(&home, &root, &store).unwrap();
+        let current = store_path(&home, &root);
+        let id = project_id(&root);
+        let (was, was_lock) = (
+            home.retired_tasks_path(&id),
+            home.retired_tasks_lock_path(&id),
+        );
+        std::fs::rename(&current, &was).unwrap();
+        let holder = crate::persistence::FileLock::acquire(
+            &was_lock,
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_millis(5),
+        )
+        .unwrap();
+
+        let (waiter_home, waiter_root) = (home.clone(), root.clone());
+        let waiter = std::thread::spawn(move || {
+            locked(&waiter_home, &waiter_root, |store| Ok(store.agents.len()))
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::fs::rename(&was, &current).unwrap();
+        std::fs::remove_file(&was_lock).unwrap();
+        drop(holder);
+
+        assert_eq!(waiter.join().unwrap().unwrap(), 1, "it read the record");
+        assert!(load(&home, &root).unwrap().get(&kept.id).is_some());
     }
 
     /// The property the split exists for: everything keyed on the task is

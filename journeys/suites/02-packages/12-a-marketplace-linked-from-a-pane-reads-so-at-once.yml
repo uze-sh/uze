@@ -1,0 +1,93 @@
+journey: the Marketplace screen says at once what a command in a pane did to a marketplace
+tags: [packages, tui, gate]
+proves: web/content/docs/reference/cli.mdx
+about: |
+  `uze market link` and `uze market unlink` run in another process, usually
+  in one of the workspace's own panes, and the client hears nothing about
+  them. The screen used to stand on its last answer for thirty seconds after
+  any opening, and never asked again while it was open, so an operator who
+  unlinked a marketplace went on reading "linked" until they restarted the
+  client.
+
+  What the machine must show is what the screen says, so the check is the
+  word on the row, right after the registry on disk changed.
+
+world:
+  project: demo-app
+  files:
+    market/marketplace.json: |
+      {
+        "name": "demo",
+        "description": "A marketplace this journey stages.",
+        "plugins": [
+          { "name": "flow", "source": "./plugins/flow", "description": "Canonical skill plugin." }
+        ]
+      }
+    market/plugins/flow/plugin.json: |
+      {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": "flow",
+        "version": "1.0.0",
+        "description": "Canonical: one package, no vendor manifests."
+      }
+    market/plugins/flow/skills/commit/SKILL.md: |
+      ---
+      name: commit
+      description: Write a commit message from the staged diff.
+      ---
+
+      The body a harness would read.
+
+scenes:
+  - scene: the screen stays open while the marketplace is linked and unlinked
+    when:
+      - open: ["{uze}", "workspace"]
+        say: the workspace opens on the project
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - shell: "{uze} market add {world}/market"
+        say: register the staged marketplace
+      - click: "≡"
+        say: cross to the management modal
+        in: sidebar
+        expect: Marketplace
+        expect_timeout: 20
+      - click: "Marketplace"
+        say: open the Marketplace screen
+        expect: "flow"
+        expect_timeout: 60
+      - shell: "{uze} market link demo {world}/market"
+        say: link it from another process
+      - wait: screen
+        until: 'linked'
+        timeout: 10
+        say: the screen says it is linked
+      - shell: "{uze} market unlink demo"
+        say: unlink it from another process
+      - wait: screen
+        until: '(?s)\A(?!.*linked)'
+        timeout: 10
+        say: and the screen no longer does
+      - key: ["Escape", "Escape"]
+        say: put the modal away
+        pause: 0.5
+      - shell: "{uze} market link demo {world}/market"
+        say: link it again with the modal closed
+      - click: "≡"
+        say: open the modal right away
+        in: sidebar
+        expect: Marketplace
+      - click: "Marketplace"
+        say: back on the Marketplace screen
+        expect: "flow"
+        expect_timeout: 30
+      - wait: screen
+        until: 'linked'
+        timeout: 10
+        say: the first look already says so
+    then:
+      - cmd:
+          run: "{uze} market list"
+          stdout_contains: linked
+        about: and the machine agrees with what the screen said

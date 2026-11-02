@@ -220,7 +220,7 @@ pub(crate) mod disk;
 mod launchers;
 mod overrides;
 mod policy_commands;
-mod retired_regions;
+mod regions;
 mod space_overview;
 mod tasks;
 mod work;

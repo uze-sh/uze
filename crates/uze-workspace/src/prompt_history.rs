@@ -13,13 +13,13 @@
 //! # Storage
 //!
 //! One newline-delimited JSON file per project, at
-//! `UzeHome::prompt_history_path`, oldest line first. Per-project rather
+//! `UzeHome::prompts_path`, oldest line first. Per-project rather
 //! than one shared file so a busy project cannot evict another's entries,
 //! and append-only so recording a prompt costs one small `O_APPEND` write
 //! on the caller's thread instead of a read-modify-write of every entry.
 //! The file is compacted back to `MAX_ENTRIES` once it grows past
 //! `COMPACT_ABOVE_BYTES`; appends and compactions take
-//! `UzeHome::prompt_history_lock_path`, since a compaction rewrites the
+//! `UzeHome::prompts_lock_path`, since a compaction rewrites the
 //! file from what it read and would drop a line another client appended
 //! in between.
 //!
@@ -198,13 +198,14 @@ pub fn record(
         return Ok(());
     };
     crate::record::ensure(home, workspace_root)?;
-    let file = path(home, workspace_root);
     let mut line = serde_json::to_vec(&entry).expect("prompt entry serialization is infallible");
     line.push(b'\n');
     let _held = crate::file_lock::Held::acquire(
-        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
+    // Composed under the lock: the record may have moved during the wait.
+    let file = path(home, workspace_root);
     append_line(&file, &line)?;
     if fs::metadata(&file).is_ok_and(|metadata| metadata.len() > COMPACT_ABOVE_BYTES) {
         compact(&file)?;
@@ -239,9 +240,11 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
         return Ok(());
     }
     let _held = crate::file_lock::Held::acquire(
-        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
+    // Composed again under the lock: the record may have moved during the wait.
+    let file = path(home, workspace_root);
     let kept: Vec<PromptEntry> = load(&file)
         .into_iter()
         .filter(|entry| entry.agent.as_deref() != Some(agent))
@@ -250,7 +253,7 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
 }
 
 fn path(home: &UzeHome, workspace_root: &Path) -> PathBuf {
-    home.prompt_history_path(&project_id_for(workspace_root))
+    home.prompts_path(&project_id_for(workspace_root))
 }
 
 /// Oldest first — the order the file is written in.
@@ -343,6 +346,21 @@ fn truncate_chars(value: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompts_the_floor_release_recorded_are_still_listed() {
+        let temp = TempHome::new("prompts-earlier-name");
+        let root = Path::new("/tmp/ws-earlier");
+        record(&temp.home, root, &origin(1, "agent"), "kept").unwrap();
+        let id = project_id_for(root);
+        fs::rename(
+            temp.home.prompts_path(&id),
+            temp.home.retired_prompts_path(&id),
+        )
+        .unwrap();
+
+        assert_eq!(list_for_agent(&temp.home, root, "agent", 10).len(), 1);
+    }
 
     struct TempHome {
         home: UzeHome,

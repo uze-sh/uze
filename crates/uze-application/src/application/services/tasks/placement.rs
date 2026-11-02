@@ -591,7 +591,7 @@ impl Workspace<'_> {
     /// worked there, keyed by that directory; `None` for any other.
     fn resume_in_the_root(&self, root: &Path, task_id: &str) -> Result<Option<AgentPlacement>> {
         let root = canonical(root);
-        if !task::store_path(&self.0.home, &root).exists() {
+        if !task::is_recorded(&self.0.home, &root) {
             return Ok(None);
         }
         let revived = task::locked(&self.0.home, &root, |store| {

@@ -6,9 +6,10 @@
 //!   removed (the bootstrap normally already did);
 //! - an empty directory in the bytes, store or record tiers that the map
 //!   does not declare, and no declared path lies under, is removed;
-//! - a set-aside record and a revision a failed restore left in
+//! - a set-aside record, a record left under its earlier name beside the
+//!   one it moved to, and a revision a failed restore left in
 //!   `sources/superseded/` are reported with their size, and removed only
-//!   when the person asks (`--discard-leftovers`): either may be the only
+//!   when the person asks (`--discard-leftovers`): any of them may be the only
 //!   copy of something;
 //! - anything else undeclared in the bytes, store, record or authored tiers
 //!   is reported as unknown — possibly a newer build's — and never deleted.
@@ -35,6 +36,11 @@ pub enum SchemaFinding {
     SetAside,
     /// The revision a failed restore left, its only copy.
     Superseded,
+    /// A record under the name an earlier release gave it, beside the one
+    /// it was carried to: written again by that release after the carry.
+    /// Nothing reads it, and it may hold what nothing else does, so it is
+    /// kept until the person says.
+    Stranded,
     /// Nothing this build declares: possibly a newer build's.
     Unknown,
 }
@@ -57,7 +63,7 @@ impl SchemaEntry {
     pub fn is_leftover(&self) -> bool {
         matches!(
             self.finding,
-            SchemaFinding::SetAside | SchemaFinding::Superseded
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
         )
     }
 }
@@ -83,7 +89,9 @@ pub(crate) fn compare(home: &UzeHome, discard_leftovers: bool) -> Vec<SchemaEntr
         entry.removed = match entry.finding {
             SchemaFinding::Retired => super::collection::remove(&entry.path),
             SchemaFinding::EmptyDirectory => std::fs::remove_dir(&entry.path).is_ok(),
-            SchemaFinding::SetAside | SchemaFinding::Superseded if discard_leftovers => {
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+                if discard_leftovers =>
+            {
                 super::collection::remove(&entry.path)
             }
             _ => false,
@@ -139,6 +147,8 @@ impl Walk<'_> {
             if let Some(retired) = self.retired_at(&here) {
                 if retired.disposable {
                     self.found(path, tier, SchemaFinding::Retired);
+                } else if self.carried_beside(retired, &here) {
+                    self.found(path, tier, SchemaFinding::Stranded);
                 }
                 continue;
             }
@@ -178,6 +188,31 @@ impl Walk<'_> {
             .find(|owned| owned.matches(self.home, here))
     }
 
+    /// Whether the record a retired name at `here` was renamed to is on
+    /// disk too, its placeholders spelled as `here` spells them: the
+    /// earlier name was written again after the carry, and is never
+    /// carried over the newer state.
+    fn carried_beside(&self, retired: &OwnedPath, here: &[String]) -> bool {
+        let Some(current) = retired.renamed_to.and_then(UzeHome::owned_path) else {
+            return false;
+        };
+        let spelled: std::collections::BTreeMap<String, &String> = retired
+            .pattern(self.home)
+            .into_iter()
+            .zip(here)
+            .filter(|(segment, _)| segment.starts_with('{'))
+            .collect();
+        let mut path = self.home.root().to_path_buf();
+        for segment in current.pattern(self.home) {
+            match spelled.get(&segment) {
+                Some(value) => path.push(value.as_str()),
+                None if segment.starts_with('{') => return false,
+                None => path.push(segment),
+            }
+        }
+        path.exists()
+    }
+
     /// Whether a declared path lies under `here`, so the walk goes on.
     fn leads_somewhere(&self, here: &[String]) -> bool {
         self.current
@@ -186,7 +221,10 @@ impl Walk<'_> {
     }
 
     fn found(&mut self, path: PathBuf, tier: Tier, finding: SchemaFinding) {
-        let kept = matches!(finding, SchemaFinding::SetAside | SchemaFinding::Superseded);
+        let kept = matches!(
+            finding,
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+        );
         self.found.push(SchemaEntry {
             bytes: kept.then(|| measure(&path, &[]).0),
             path,
@@ -243,11 +281,36 @@ mod tests {
     }
 
     #[test]
-    fn the_unknown_is_reported_and_kept_and_the_retired_removed() {
+    fn an_earlier_name_beside_its_current_record_is_reported_and_kept() {
+        let (home, root) = home("schema-stranded");
+        let current = home.launches_path();
+        std::fs::write(home.retired_launches_path(), "older").unwrap();
+        std::fs::write(&current, "newer").unwrap();
+        std::fs::create_dir_all(home.retired_tasks_path("p1").parent().unwrap()).unwrap();
+        std::fs::write(home.retired_tasks_path("p1"), "not carried yet").unwrap();
+
+        let entries = compare(&home, false);
+
+        assert_eq!(
+            findings(&entries),
+            [(
+                SchemaFinding::Stranded,
+                "launch-overrides.json".to_owned(),
+                false
+            )]
+        );
+        assert!(entries[0].is_leftover());
+        assert!(home.retired_launches_path().exists());
+        compare(&home, true);
+        assert!(!home.retired_launches_path().exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_unknown_is_reported_and_kept() {
         let (home, root) = home("schema-unknown");
         std::fs::write(home.state_dir().join("from-a-newer-build.json"), "{}").unwrap();
         std::fs::write(home.root().join("notes.txt"), "mine").unwrap();
-        std::fs::write(home.retired_profiles_path(), "{}").unwrap();
         std::fs::create_dir_all(home.state_dir().join("empty")).unwrap();
 
         let entries = compare(&home, false);
@@ -262,12 +325,10 @@ mod tests {
                     "from-a-newer-build.json".to_owned(),
                     false
                 ),
-                (SchemaFinding::Retired, "profiles.json".to_owned(), true),
             ]
         );
         assert!(home.state_dir().join("from-a-newer-build.json").is_file());
         assert!(home.root().join("notes.txt").is_file());
-        assert!(!home.retired_profiles_path().exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

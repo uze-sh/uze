@@ -14,6 +14,8 @@
 
 use std::path::PathBuf;
 
+use uze_document::earlier::{Earlier, Lasts, Release};
+
 use crate::store::PackageId;
 
 use super::UzeHome;
@@ -132,6 +134,16 @@ pub struct OwnedPath {
     /// (`every_disposable_root_has_one_collector`); the map holds no rule
     /// of its own.
     pub disposable: bool,
+    /// For a retired path, how long a machine can still hold it (the
+    /// `earlier-releases` rule); a current path lasts as long as it is
+    /// written.
+    pub lasts: Lasts,
+    /// For a retired path, the names only it spells: no production code
+    /// outside this map writes them.
+    pub spelled: &'static [&'static str],
+    /// For a retired record, the builder of the name it now has: the one
+    /// carry (`earlier::carry_all`) moves it there.
+    pub renamed_to: Option<&'static str>,
     compose: fn(&UzeHome) -> PathBuf,
 }
 
@@ -144,6 +156,7 @@ impl std::fmt::Debug for OwnedPath {
             .field("form", &self.form)
             .field("standing", &self.standing)
             .field("disposable", &self.disposable)
+            .field("lasts", &self.lasts)
             .finish()
     }
 }
@@ -152,7 +165,7 @@ impl OwnedPath {
     /// Where it is in `home`, parameterised segments spelled as
     /// placeholders (`{project}`).
     pub fn path(&self, home: &UzeHome) -> PathBuf {
-        (self.compose)(home)
+        (self.compose)(&home.names_only())
     }
 
     /// Its place relative to the home, one segment per component, every
@@ -201,6 +214,24 @@ impl OwnedPath {
     const fn swept(self) -> Self {
         OwnedPath {
             disposable: true,
+            ..self
+        }
+    }
+
+    /// How long a machine can still hold this retired path.
+    const fn lasts(self, lasts: Lasts) -> Self {
+        OwnedPath { lasts, ..self }
+    }
+
+    /// The names only this retired path spells.
+    const fn spelled(self, spelled: &'static [&'static str]) -> Self {
+        OwnedPath { spelled, ..self }
+    }
+
+    /// The builder this retired record was renamed to.
+    const fn renamed_to(self, current: &'static str) -> Self {
+        OwnedPath {
+            renamed_to: Some(current),
             ..self
         }
     }
@@ -256,6 +287,9 @@ const fn owned(
         form,
         standing: Standing::Current,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
+        renamed_to: None,
         compose,
     }
 }
@@ -272,6 +306,9 @@ const fn retired(
         form,
         standing: Standing::Retired,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
+        renamed_to: None,
         compose,
     }
 }
@@ -343,18 +380,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::marketplaces_path,
     ),
     owned("hosts_path", Record, Document, UzeHome::hosts_path),
-    owned(
-        "launch_overrides_path",
-        Record,
-        Document,
-        UzeHome::launch_overrides_path,
-    ),
-    owned(
-        "extensions_record_path",
-        Record,
-        Document,
-        UzeHome::extensions_record_path,
-    ),
+    owned("launches_path", Record, Document, UzeHome::launches_path),
+    owned("consent_path", Record, Document, UzeHome::consent_path),
     owned(
         "extension_stores_dir",
         Record,
@@ -382,19 +409,14 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::client_layout_path,
     ),
-    owned("binary_path", Record, Document, UzeHome::binary_path),
+    owned("release_path", Record, Document, UzeHome::release_path),
     owned(
         "install_receipt_path",
         Record,
         Document,
         UzeHome::install_receipt_path,
     ),
-    owned(
-        "machine_usage_path",
-        Record,
-        Document,
-        UzeHome::machine_usage_path,
-    ),
+    owned("usage_path", Record, Document, UzeHome::usage_path),
     owned(
         "machine_memory_dir",
         Record,
@@ -417,8 +439,8 @@ const OWNED: &[OwnedPath] = &[
     owned("tasks_path", Record, Document, |home| {
         home.tasks_path(PROJECT)
     }),
-    owned("approved_commands_path", Record, Document, |home| {
-        home.approved_commands_path(PROJECT)
+    owned("approvals_path", Record, Document, |home| {
+        home.approvals_path(PROJECT)
     }),
     owned("conversations_dir", Record, Directory, |home| {
         home.conversations_dir(PROJECT)
@@ -429,8 +451,8 @@ const OWNED: &[OwnedPath] = &[
     owned("review_path", Record, Document, |home| {
         home.review_path(PROJECT, AGENT)
     }),
-    owned("prompt_history_path", Record, Document, |home| {
-        home.prompt_history_path(PROJECT)
+    owned("prompts_path", Record, Document, |home| {
+        home.prompts_path(PROJECT)
     }),
     owned("project_memory_dir", Record, Directory, |home| {
         home.project_memory_dir(PROJECT)
@@ -441,17 +463,145 @@ const OWNED: &[OwnedPath] = &[
         Opaque,
         UzeHome::terminal_runtime_dir,
     ),
-    // Nothing carries it across: the retired collector removes it.
-    retired(
-        "retired_profiles_path",
-        Record,
-        Document,
-        UzeHome::retired_profiles_path,
-    )
-    .swept(),
+    // Carried into `projects/<id>/` by `record::ensure` when a project's
+    // directory is first made: only as often as that happens, so unbounded.
     retired("scattered_project_records", Record, Document, |home| {
         home.scattered_project_records(PROJECT).agents
+    })
+    .spelled(&["prompt-history"]),
+    // The remembered tier's earlier names: observed again under the new
+    // ones, so only removed, by the retired collector on every bootstrap.
+    retired(
+        "retired_detection_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_detection_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["harness_detection.json"]),
+    retired(
+        "retired_overview_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_overview_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["machine-overview.json"]),
+    retired(
+        "retired_transcripts_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_transcripts_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["machine-usage.json"]),
+    retired(
+        "retired_changelog_cache_path",
+        Remembered,
+        Document,
+        UzeHome::retired_changelog_cache_path,
+    )
+    .swept()
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["release-notes.md"]),
+    // Records this build renamed, each carried to the name it now has by
+    // `earlier::carry_all` once no client of an earlier release can be open,
+    // which only a later start finds out, so unbounded. Until then the builders
+    // answer with the earlier name and lock. Their locks are removed then.
+    retired("retired_tasks_path", Record, Document, |home| {
+        home.retired_tasks_path(PROJECT)
+    })
+    .renamed_to("tasks_path"),
+    retired("retired_approvals_path", Record, Document, |home| {
+        home.retired_approvals_path(PROJECT)
+    })
+    .renamed_to("approvals_path")
+    .spelled(&["approved-commands.json"]),
+    retired("retired_prompts_path", Record, Document, |home| {
+        home.retired_prompts_path(PROJECT)
+    })
+    .renamed_to("prompts_path")
+    .spelled(&["prompt-history.json"]),
+    retired(
+        "retired_release_path",
+        Record,
+        Document,
+        UzeHome::retired_release_path,
+    )
+    .renamed_to("release_path")
+    .spelled(&["update.json"]),
+    retired(
+        "retired_launches_path",
+        Record,
+        Document,
+        UzeHome::retired_launches_path,
+    )
+    .renamed_to("launches_path")
+    .spelled(&["launch-overrides.json"]),
+    retired(
+        "retired_usage_path",
+        Record,
+        Document,
+        UzeHome::retired_usage_path,
+    )
+    .renamed_to("usage_path"),
+    retired(
+        "retired_consent_path",
+        Record,
+        Document,
+        UzeHome::retired_consent_path,
+    )
+    .renamed_to("consent_path")
+    .spelled(&["extensions.json"]),
+    retired("retired_tasks_lock_path", Record, Lock, |home| {
+        home.retired_tasks_lock_path(PROJECT)
     }),
+    retired("retired_prompts_lock_path", Record, Lock, |home| {
+        home.retired_prompts_lock_path(PROJECT)
+    })
+    .spelled(&["prompt-history.lock"]),
+    retired(
+        "retired_release_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_release_lock_path,
+    )
+    .spelled(&["update.lock"]),
+    retired(
+        "retired_launches_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_launches_lock_path,
+    )
+    .spelled(&["launch-overrides.lock"]),
+    retired(
+        "retired_usage_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_usage_lock_path,
+    )
+    .spelled(&["machine-usage.lock"]),
+    retired(
+        "retired_consent_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_consent_lock_path,
+    )
+    .spelled(&["extensions.lock"]),
+    retired(
+        "retired_fetch_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_fetch_lock_path,
+    )
+    .spelled(&["marketplace-fetch.lock"]),
+    retired("retired_mirror_lock_path", Record, Lock, |home| {
+        home.retired_mirror_lock_path("{entry}")
+    })
+    .spelled(&["marketplace-mirrors"]),
     // Locks, beside the records they guard and never under a swept tree.
     owned(
         "mutation_lock_path",
@@ -461,16 +611,16 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("config_lock_path", Record, Lock, UzeHome::config_lock_path),
     owned(
-        "launch_overrides_lock_path",
+        "launches_lock_path",
         Record,
         Lock,
-        UzeHome::launch_overrides_lock_path,
+        UzeHome::launches_lock_path,
     ),
     owned(
-        "extensions_record_lock_path",
+        "consent_lock_path",
         Record,
         Lock,
-        UzeHome::extensions_record_lock_path,
+        UzeHome::consent_lock_path,
     ),
     owned("extension_store_lock_path", Record, Lock, |home| {
         home.extension_store_lock_path(PLUGIN, EXTENSION, Some(PROJECT))
@@ -479,28 +629,18 @@ const OWNED: &[OwnedPath] = &[
         home.extension_secrets_set_lock_path(PLUGIN, EXTENSION)
     }),
     owned(
-        "binary_check_lock_path",
+        "release_lock_path",
         Record,
         Lock,
-        UzeHome::binary_check_lock_path,
+        UzeHome::release_lock_path,
     ),
-    owned(
-        "marketplace_fetch_lock_path",
-        Record,
-        Lock,
-        UzeHome::marketplace_fetch_lock_path,
-    ),
-    owned("marketplace_mirror_lock_path", Record, Lock, |home| {
-        home.marketplace_mirror_lock_path("{entry}")
+    owned("fetch_lock_path", Record, Lock, UzeHome::fetch_lock_path),
+    owned("mirror_lock_path", Record, Lock, |home| {
+        home.mirror_lock_path("{entry}")
     }),
-    owned(
-        "machine_usage_lock_path",
-        Record,
-        Lock,
-        UzeHome::machine_usage_lock_path,
-    ),
-    owned("agents_lock_path", Record, Lock, |home| {
-        home.agents_lock_path(PROJECT)
+    owned("usage_lock_path", Record, Lock, UzeHome::usage_lock_path),
+    owned("tasks_lock_path", Record, Lock, |home| {
+        home.tasks_lock_path(PROJECT)
     }),
     owned("delivery_lock_path", Record, Lock, |home| {
         home.delivery_lock_path(PROJECT)
@@ -514,21 +654,30 @@ const OWNED: &[OwnedPath] = &[
     owned("review_lock_path", Record, Lock, |home| {
         home.review_lock_path(PROJECT)
     }),
-    owned("prompt_history_lock_path", Record, Lock, |home| {
-        home.prompt_history_lock_path(PROJECT)
+    owned("prompts_lock_path", Record, Lock, |home| {
+        home.prompts_lock_path(PROJECT)
     }),
     owned("memory_lock_path", Record, Lock, |home| {
         home.memory_lock_path(&home.machine_memory_dir())
     }),
+    owned(
+        "agent_reports_lock_path",
+        Record,
+        Lock,
+        UzeHome::agent_reports_lock_path,
+    ),
     // Authored.
     owned("config_path", Authored, Document, UzeHome::config_path),
     owned("keymap_path", Authored, Document, UzeHome::keymap_path),
-    owned(
-        "theme_overrides_path",
+    // Carried into `config.toml` by `earlier::carry_all`; only as often as
+    // that runs, so unbounded.
+    retired(
+        "retired_theme_overrides_path",
         Authored,
         Document,
-        UzeHome::theme_overrides_path,
-    ),
+        UzeHome::retired_theme_overrides_path,
+    )
+    .spelled(&["theme-overrides.json"]),
     owned("themes_dir", Authored, Directory, UzeHome::themes_dir),
     // Generated.
     owned("runtime_dir", Generated, Directory, UzeHome::runtime_dir).swept(),
@@ -549,15 +698,32 @@ const OWNED: &[OwnedPath] = &[
     owned("agent_context_dir", Generated, Directory, |home| {
         home.agent_context_dir(PROJECT, AGENT)
     }),
-    owned(
+    // Where earlier releases kept what harnesses read; nothing writes here
+    // since #345. Each integration removes what it left once no receipt
+    // names it, which happens only when its package is next delivered or
+    // detached: unbounded, and still a runtime tenant so no sweep takes a
+    // path a receipt names.
+    retired(
         "runtime_attachments_dir",
         Generated,
         Directory,
         UzeHome::runtime_attachments_dir,
     ),
-    owned("generated_attachments_dir", Generated, Directory, |home| {
+    retired("generated_attachments_dir", Generated, Directory, |home| {
         home.generated_attachments_dir(VENDOR)
     }),
+    // Earlier releases' package copies, kept while a receipt names one;
+    // the delivered-packages collector removes the rest.
+    retired(
+        "retired_packages_dir",
+        Generated,
+        Directory,
+        UzeHome::retired_packages_dir,
+    ),
+    retired("retired_package_dir", Generated, Directory, |home| {
+        home.retired_package_dir(&package())
+    })
+    .swept(),
     owned(
         "delivered_packages_dir",
         Generated,
@@ -589,6 +755,21 @@ const OWNED: &[OwnedPath] = &[
         Generated,
         Directory,
         UzeHome::rules_sessions_dir,
+    )
+    .swept(),
+    owned(
+        "runtime_extensions_dir",
+        Generated,
+        Directory,
+        UzeHome::runtime_extensions_dir,
+    ),
+    // Compiled views an earlier release kept loose in the extensions'
+    // corner; the compiled-views collector removes them when it next runs.
+    retired(
+        "loose_compiled_extension_path",
+        Generated,
+        Document,
+        |home| home.loose_compiled_extension_path("{digest}"),
     )
     .swept(),
     owned(
@@ -627,11 +808,18 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::extension_costs_path,
     ),
+    owned(
+        "runtime_agents_dir",
+        Generated,
+        Directory,
+        UzeHome::runtime_agents_dir,
+    ),
+    owned("agent_runtime_dir", Generated, Directory, |home| {
+        home.agent_runtime_dir(AGENT)
+    })
+    .swept(),
     owned("agent_reports_path", Generated, Document, |home| {
         home.agent_reports_path(AGENT)
-    }),
-    owned("agent_reports_lock_path", Generated, Lock, |home| {
-        home.agent_reports_lock_path(AGENT)
     }),
     owned("shims_dir", Generated, Directory, UzeHome::shims_dir),
     owned("shim_path", Generated, Document, |home| {
@@ -646,10 +834,10 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::harnesses_cache_path,
     ),
     owned(
-        "harness_detection_cache_path",
+        "detection_cache_path",
         Remembered,
         Document,
-        UzeHome::harness_detection_cache_path,
+        UzeHome::detection_cache_path,
     ),
     owned(
         "requirement_probe_cache_path",
@@ -664,16 +852,16 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::shell_observation_cache_path,
     ),
     owned(
-        "machine_overview_cache_path",
+        "overview_cache_path",
         Remembered,
         Document,
-        UzeHome::machine_overview_cache_path,
+        UzeHome::overview_cache_path,
     ),
     owned(
-        "machine_usage_cache_path",
+        "transcripts_cache_path",
         Remembered,
         Document,
-        UzeHome::machine_usage_cache_path,
+        UzeHome::transcripts_cache_path,
     ),
     owned(
         "inspection_cache_path",
@@ -688,10 +876,10 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::appearance_cache_path,
     ),
     owned(
-        "release_notes_cache_path",
+        "changelog_cache_path",
         Remembered,
         Document,
-        UzeHome::release_notes_cache_path,
+        UzeHome::changelog_cache_path,
     ),
     owned(
         "marketplace_cache_dir",
@@ -710,6 +898,16 @@ const OWNED: &[OwnedPath] = &[
     owned("gate_log_path", Remembered, Document, |home| {
         home.gate_log_path(AGENT)
     }),
+    owned("setup_log_path", Remembered, Document, |home| {
+        home.setup_log_path("{harness}")
+    }),
+    // The logs' collector removes what earlier releases left loose here.
+    retired("loose_gate_log_path", Remembered, Document, |home| {
+        home.loose_gate_log_path(AGENT)
+    }),
+    retired("loose_setup_log_path", Remembered, Document, |home| {
+        home.loose_setup_log_path("{harness}")
+    }),
 ];
 
 impl UzeHome {
@@ -722,6 +920,20 @@ impl UzeHome {
     /// The owned path a builder composes, by the builder's name.
     pub fn owned_path(name: &str) -> Option<&'static OwnedPath> {
         OWNED.iter().find(|owned| owned.name == name)
+    }
+
+    /// Every retired path, as the entries the release floor holds.
+    pub fn earlier() -> Vec<Earlier> {
+        OWNED
+            .iter()
+            .filter(|owned| owned.standing == Standing::Retired)
+            .map(|owned| Earlier {
+                name: owned.name,
+                lasts: owned.lasts,
+                spelled: owned.spelled,
+                site: file!(),
+            })
+            .collect()
     }
 
     /// Every path UZE sweeps: each has exactly one collector.
@@ -795,6 +1007,55 @@ mod tests {
         assert!(superseded.matches(&home, &path("sources/superseded/flow@ai")));
         assert!(segment_matches("gate-{agent}.log", "gate-a.log"));
         assert!(!segment_matches("gate-{agent}.log", "gate.log"));
+    }
+
+    /// The `persisted-state` naming rule: no file name UZE owns stands in
+    /// two tiers, and no directory holds a file and a directory of one stem
+    /// — save the lock guarding that directory, which shares its stem on
+    /// purpose. Placeholders and opaque subtrees are another owner's.
+    #[test]
+    fn no_name_uze_owns_stands_for_two_things() {
+        let home = UzeHome::at("/uze-home");
+        let current: Vec<&OwnedPath> = UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == Standing::Current && owned.form != Form::Opaque)
+            .collect();
+        let named = |owned: &OwnedPath| {
+            let pattern = owned.pattern(&home);
+            let last = pattern.last().cloned().unwrap_or_default();
+            (!last.contains('{')).then_some((pattern, last))
+        };
+        let mut problems = Vec::new();
+        let files: Vec<_> = current
+            .iter()
+            .filter(|owned| matches!(owned.form, Form::Document | Form::Lock))
+            .filter_map(|owned| named(owned).map(|(pattern, last)| (owned, pattern, last)))
+            .collect();
+        for (index, (left, _, name)) in files.iter().enumerate() {
+            for (right, _, other) in &files[index + 1..] {
+                if name == other && left.tier != right.tier {
+                    problems.push(format!("{name}: {} and {}", left.name, right.name));
+                }
+            }
+        }
+        let stem = |name: &str| name.split('.').next().unwrap_or(name).to_owned();
+        for directory in current.iter().filter(|owned| owned.form == Form::Directory) {
+            let Some((dir_pattern, dir_name)) = named(directory) else {
+                continue;
+            };
+            for (file, file_pattern, file_name) in &files {
+                let beside = file_pattern.len() == dir_pattern.len()
+                    && file_pattern[..file_pattern.len() - 1]
+                        == dir_pattern[..dir_pattern.len() - 1];
+                if beside && stem(file_name) == dir_name && file.form != Form::Lock {
+                    problems.push(format!(
+                        "{dir_name}/ beside {file_name}: {} and {}",
+                        directory.name, file.name
+                    ));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
     }
 
     #[test]

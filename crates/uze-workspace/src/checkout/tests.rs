@@ -1150,9 +1150,14 @@ fn a_checkout_added_by_hand_beside_the_slots_is_never_taken_as_one() {
 
 #[test]
 fn only_the_numbered_names_before_slots_are_legacy() {
-    assert!(CheckoutId::adopted("agent-2").is_legacy());
+    assert!(super::earlier::made_before_slots(&CheckoutId::adopted(
+        "agent-2"
+    )));
     for chosen in ["hardening-integrations", "abc123", "agent-", "agent-x"] {
-        assert!(!CheckoutId::adopted(chosen).is_legacy(), "{chosen}");
+        assert!(
+            !super::earlier::made_before_slots(&CheckoutId::adopted(chosen)),
+            "{chosen}"
+        );
     }
 }
 

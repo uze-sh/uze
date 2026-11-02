@@ -21,6 +21,9 @@ pub use owned::{Form, OwnedPath, Standing, Tier};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UzeHome {
     root: PathBuf,
+    /// Set on the copy the owned map composes with: it reads what each
+    /// builder is named, never where a record happens to be on this disk.
+    names_only: bool,
 }
 
 /// The previous layout of one project's records: see
@@ -44,7 +47,47 @@ impl UzeHome {
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            names_only: false,
+        }
+    }
+
+    /// This home, its builders answering only with today's names.
+    pub(crate) fn names_only(&self) -> Self {
+        Self {
+            root: self.root.clone(),
+            names_only: true,
+        }
+    }
+
+    /// `current`, unless the record is still under the name the floor
+    /// release gave it. A client of that release may be open until the
+    /// restart, and it reads no other name, so the record stays there until
+    /// `earlier::carry_all` moves it, and every build reads and writes it
+    /// where it is.
+    fn where_it_is(&self, current: PathBuf, earlier: PathBuf) -> PathBuf {
+        if !self.names_only && !current.exists() && earlier.is_file() {
+            earlier
+        } else {
+            current
+        }
+    }
+
+    /// `current`, unless `record` is at `earlier_record`: a record's writers
+    /// exclude each other only under one lock, so a build beside the floor
+    /// release takes the lock that release takes.
+    fn its_lock(
+        record: &Path,
+        earlier_record: &Path,
+        current: PathBuf,
+        earlier: PathBuf,
+    ) -> PathBuf {
+        if record == earlier_record {
+            earlier
+        } else {
+            current
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -144,7 +187,10 @@ impl UzeHome {
     /// not — keyed on the project id so removing a checkout can never
     /// remove history.
     pub fn tasks_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("agents.json")
+        self.where_it_is(
+            self.project_dir(project_id).join("tasks.json"),
+            self.retired_tasks_path(project_id),
+        )
     }
 
     /// The project commands the operator approved for one project: the
@@ -152,8 +198,11 @@ impl UzeHome {
     /// to run. A record, because nothing else on the machine knows a
     /// person said yes, and kept beside the project's other records so
     /// forgetting the project forgets the approval with it.
-    pub fn approved_commands_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("approved-commands.json")
+    pub fn approvals_path(&self, project_id: &str) -> PathBuf {
+        self.where_it_is(
+            self.project_dir(project_id).join("approvals.json"),
+            self.retired_approvals_path(project_id),
+        )
     }
 
     /// One agent's recorded conversations, beside the agents that name it.
@@ -177,6 +226,107 @@ impl UzeHome {
     /// Every agent's recorded conversations in one project.
     pub fn conversations_dir(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("conversations")
+    }
+
+    /// What the remembered tier's files were named before this build
+    /// renamed them: observed again under the new name, so the old ones
+    /// are only removed.
+    pub fn retired_detection_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("harness_detection.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_overview_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-overview.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_transcripts_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("machine-usage.json")
+    }
+
+    /// See [`Self::retired_detection_cache_path`].
+    pub fn retired_changelog_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("release-notes.md")
+    }
+
+    /// What a record was named before this build renamed it (see the
+    /// owned map's retired entries, each naming the builder it became):
+    /// where a record stays, and every build uses it, until it is carried.
+    pub fn retired_tasks_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("agents.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_tasks_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("agents.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_approvals_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("approved-commands.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_prompts_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("prompt-history.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_prompts_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("prompt-history.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_release_path(&self) -> PathBuf {
+        self.state_dir().join("update.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_release_lock_path(&self) -> PathBuf {
+        self.state_dir().join("update.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_launches_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_launches_lock_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_usage_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_usage_lock_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_consent_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_consent_lock_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_fetch_lock_path(&self) -> PathBuf {
+        self.state_dir().join("marketplace-fetch.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_mirror_lock_path(&self, entry: &str) -> PathBuf {
+        self.state_dir()
+            .join("marketplace-mirrors")
+            .join(format!("{entry}.lock"))
     }
 
     /// Where one project's records lived before [`Self::project_dir`]
@@ -237,30 +387,34 @@ impl UzeHome {
     /// The overrides each agent was launched with, per harness, and the
     /// sets of them the operator used lately. A record: only what the
     /// operator typed says it. Owner-only, since a value may be a secret.
-    pub fn launch_overrides_path(&self) -> PathBuf {
-        self.state_dir().join("launch-overrides.json")
+    pub fn launches_path(&self) -> PathBuf {
+        self.where_it_is(
+            self.state_dir().join("launches.json"),
+            self.retired_launches_path(),
+        )
     }
 
     /// The guard every read-modify-write of the launch overrides takes: the
     /// workspace records them and a relaunching shim may be reading. A
     /// lock, not a record.
-    pub fn launch_overrides_lock_path(&self) -> PathBuf {
-        self.state_dir().join("launch-overrides.lock")
-    }
-
-    /// Where the removed Profiles screen kept its record. Nothing reads it:
-    /// it is named only so the application can remove what earlier
-    /// releases left there.
-    pub fn retired_profiles_path(&self) -> PathBuf {
-        self.state_dir().join("profiles.json")
+    pub fn launches_lock_path(&self) -> PathBuf {
+        Self::its_lock(
+            &self.launches_path(),
+            &self.retired_launches_path(),
+            self.state_dir().join("launches.lock"),
+            self.retired_launches_lock_path(),
+        )
     }
 
     /// The operator's consent to each declared extension, by identity:
     /// the grants accepted, the digest of the code they were accepted for
     /// and the projects it is enabled in. A record: only a person's answer
     /// says it, and nothing on the machine derives it again.
-    pub fn extensions_record_path(&self) -> PathBuf {
-        self.state_dir().join("extensions.json")
+    pub fn consent_path(&self) -> PathBuf {
+        self.where_it_is(
+            self.state_dir().join("extensions").join("consent.json"),
+            self.retired_consent_path(),
+        )
     }
 
     /// What each declared extension keeps between answers, one document
@@ -334,23 +488,33 @@ impl UzeHome {
             .join(plugin)
     }
 
+    /// Every agent's corner of the runtime tree: a tenant, so the runtime
+    /// sweep leaves it to its own collector, which keeps an agent's corner
+    /// while a project still records the agent.
+    pub fn runtime_agents_dir(&self) -> PathBuf {
+        self.runtime_dir().join("agents")
+    }
+
+    /// What the runtime keeps for agent `agent`.
+    pub fn agent_runtime_dir(&self, agent: &str) -> PathBuf {
+        self.runtime_agents_dir().join(agent)
+    }
+
     /// What the agent `agent` reported about itself through `uze agent
     /// report`, newest last, bounded: generated, since a report is a claim
     /// about now and losing it costs nothing.
     pub fn agent_reports_path(&self, agent: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("agents")
-            .join(agent)
-            .join("reports.jsonl")
+        self.agent_runtime_dir(agent).join("reports.jsonl")
     }
 
-    /// The lock every append to agent `agent`'s journal holds, so a cut
-    /// down to its newest half never drops a report appended meanwhile.
-    pub fn agent_reports_lock_path(&self, agent: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("agents")
-            .join(agent)
-            .join("reports.lock")
+    /// The lock every append to an agent's journal holds, so a cut down to
+    /// its newest half never drops a report appended meanwhile. One for
+    /// every agent: an append is short, and one per agent would outlive
+    /// each. In `state/` rather than beside the journals, because the
+    /// runtime tree is swept, and unlinking a lock another process holds
+    /// hands the next caller a fresh file and the exclusion is gone.
+    pub fn agent_reports_lock_path(&self) -> PathBuf {
+        self.state_dir().join("reports.lock")
     }
 
     /// The scratch directory one program run of an extension may write,
@@ -365,7 +529,7 @@ impl UzeHome {
     /// one a killed UZE left behind is swept by the next process's first
     /// run, once older than any run could be.
     pub fn extension_scratch_root(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("scratch")
+        self.runtime_extensions_dir().join("scratch")
     }
 
     /// The pictures the programs of extension `id` of `plugin@marketplace`
@@ -378,21 +542,26 @@ impl UzeHome {
 
     /// Every extension's [`Self::extension_pictures_dir`].
     pub fn extension_pictures_root(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("pictures")
+        self.runtime_extensions_dir().join("pictures")
     }
 
     /// What each declared extension cost the workspace that last measured
     /// it: runs per minute, p95 and memory, which `uze doctor` reads.
     /// Generated: the next workspace measures them again.
     pub fn extension_costs_path(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("costs.json")
+        self.runtime_extensions_dir().join("costs.json")
     }
 
     /// The guard every read-modify-write of the extensions record takes:
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.
-    pub fn extensions_record_lock_path(&self) -> PathBuf {
-        self.state_dir().join("extensions.lock")
+    pub fn consent_lock_path(&self) -> PathBuf {
+        Self::its_lock(
+            &self.consent_path(),
+            &self.retired_consent_path(),
+            self.state_dir().join("extensions").join("consent.lock"),
+            self.retired_consent_lock_path(),
+        )
     }
 
     /// What the TUI was left looking like, in both of its modes (see
@@ -419,21 +588,16 @@ impl UzeHome {
         self.root.join("config.toml")
     }
 
-    /// The operator's own last word on appearance, applied over whichever
-    /// theme is active.
-    ///
-    /// Beside `themes/` rather than inside it, because it is not a theme:
-    /// it never becomes selectable, and it does not stop applying when the
-    /// theme changes. That is exactly what it is for — a Nerd Font's glyphs
-    /// belong to the machine, not to whichever palette is on today, and
-    /// forking every theme to carry them is how they get out of step.
-    pub fn theme_overrides_path(&self) -> PathBuf {
+    /// Where earlier releases kept the operator's overrides of the active
+    /// theme, now `[appearance.colors|symbols|syntax]` in `config.toml`:
+    /// read once by the step that writes them there.
+    pub fn retired_theme_overrides_path(&self) -> PathBuf {
         self.root.join("theme-overrides.json")
     }
 
     /// The operator's own keyboard, applied over the built-in keymap.
     ///
-    /// Beside `theme-overrides.json` rather than under `state/` for the
+    /// Beside `config.toml` rather than under `state/` for the
     /// same reason: it is something someone wrote, never something UZE can
     /// rebuild. It holds only what differs from the default, so a chord
     /// nobody had an opinion about still moves when a later release moves
@@ -482,8 +646,13 @@ impl UzeHome {
     /// ever touched. It stays in `state/`, never under the runtime tree,
     /// because that tree is swept, and unlinking a lock another process
     /// holds hands the next caller a fresh file and the exclusion is gone.
-    pub fn agents_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("agents.lock")
+    pub fn tasks_lock_path(&self, project_id: &str) -> PathBuf {
+        Self::its_lock(
+            &self.tasks_path(project_id),
+            &self.retired_tasks_path(project_id),
+            self.project_dir(project_id).join("tasks.lock"),
+            self.retired_tasks_lock_path(project_id),
+        )
     }
 
     /// Held by a delivery from the moment it claims a task until it has
@@ -521,28 +690,41 @@ impl UzeHome {
     /// The guard a project's prompt history is appended and compacted
     /// under, so a compaction never drops a line another client appended
     /// while it read. A lock, not a record.
-    pub fn prompt_history_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompt-history.lock")
+    pub fn prompts_lock_path(&self, project_id: &str) -> PathBuf {
+        Self::its_lock(
+            &self.prompts_path(project_id),
+            &self.retired_prompts_path(project_id),
+            self.project_dir(project_id).join("prompts.lock"),
+            self.retired_prompts_lock_path(project_id),
+        )
     }
 
     /// What UZE remembers about its own binary between runs: when it last
     /// asked for the latest release, and what the operator was told.
-    pub fn binary_path(&self) -> PathBuf {
-        self.state_dir().join("update.json")
+    pub fn release_path(&self) -> PathBuf {
+        self.where_it_is(
+            self.state_dir().join("release.json"),
+            self.retired_release_path(),
+        )
     }
 
     /// Held by the one process asking for the latest release, so clients
     /// that wake together ask once. A lock, not a record.
-    pub fn binary_check_lock_path(&self) -> PathBuf {
-        self.state_dir().join("update.lock")
+    pub fn release_lock_path(&self) -> PathBuf {
+        Self::its_lock(
+            &self.release_path(),
+            &self.retired_release_path(),
+            self.state_dir().join("release.lock"),
+            self.retired_release_lock_path(),
+        )
     }
 
     /// Held by the one process fetching marketplaces in the background,
     /// so clients that wake together fetch once. In `state/` rather than
     /// beside the mirrors, because the cache tier may be deleted under its
     /// holder. A lock, not a record.
-    pub fn marketplace_fetch_lock_path(&self) -> PathBuf {
-        self.state_dir().join("marketplace-fetch.lock")
+    pub fn fetch_lock_path(&self) -> PathBuf {
+        self.state_dir().join("fetch.lock")
     }
 
     /// Held by whatever writes the mirror of the marketplace whose cache
@@ -550,17 +732,17 @@ impl UzeHome {
     /// [`Self::marketplace_cache_dir`]): a fetch, a clone, its removal. Two
     /// processes fetching one bare repository at once fight over its ref
     /// locks and its `origin`. In `state/`, beside the other locks, for the
-    /// reason [`Self::marketplace_fetch_lock_path`] gives. A lock, not a
+    /// reason [`Self::fetch_lock_path`] gives. A lock, not a
     /// record.
-    pub fn marketplace_mirror_lock_path(&self, entry: &str) -> PathBuf {
+    pub fn mirror_lock_path(&self, entry: &str) -> PathBuf {
         self.state_dir()
-            .join("marketplace-mirrors")
+            .join("mirrors")
             .join(format!("{entry}.lock"))
     }
 
     /// The receipt `install.sh` leaves: the file it placed and the release
     /// it was. Inbound — UZE reads it and never writes it — which is why it
-    /// is a document of its own rather than part of [`Self::binary_path`].
+    /// is a document of its own rather than part of [`Self::release_path`].
     pub fn install_receipt_path(&self) -> PathBuf {
         self.state_dir().join("install.json")
     }
@@ -586,8 +768,11 @@ impl UzeHome {
     }
 
     /// One project's prompt history, beside its other records.
-    pub fn prompt_history_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompt-history.json")
+    pub fn prompts_path(&self, project_id: &str) -> PathBuf {
+        self.where_it_is(
+            self.project_dir(project_id).join("prompts.json"),
+            self.retired_prompts_path(project_id),
+        )
     }
 
     /// Where UZE writes its own log when asked to. Disposable, which is
@@ -600,20 +785,36 @@ impl UzeHome {
     /// what the agent is pointed at instead of having it typed into its
     /// pane. One per agent, replaced by the next refusal.
     pub fn gate_log_path(&self, agent: &str) -> PathBuf {
+        self.logs_dir().join("gate").join(format!("{agent}.log"))
+    }
+
+    /// What `uze setup` last printed while it set `harness` up, buffered
+    /// so the screen keeps the summary; replaced by the next setup.
+    pub fn setup_log_path(&self, harness: &str) -> PathBuf {
+        self.logs_dir().join("setup").join(format!("{harness}.log"))
+    }
+
+    /// Where earlier releases kept a gate's and a setup's output: loose in
+    /// the logs, by a prefix. Removed by the logs' collector.
+    pub fn loose_gate_log_path(&self, agent: &str) -> PathBuf {
         self.logs_dir().join(format!("gate-{agent}.log"))
     }
 
-    /// Where an integration stages what it writes before it moves into place,
-    /// and where earlier releases kept what harnesses read: a generated
-    /// marketplace, a hook wrapper, the rules engine. No harness reads from
-    /// here any more ([`Self::vendor_store_dir`] is what they read), so
-    /// deleting it costs nothing; what an earlier release left here is
-    /// removed once no receipt names it.
+    /// See [`Self::loose_gate_log_path`].
+    pub fn loose_setup_log_path(&self, harness: &str) -> PathBuf {
+        self.logs_dir().join(format!("setup-{harness}.log"))
+    }
+
+    /// Where earlier releases kept what harnesses read: a generated
+    /// marketplace, a hook wrapper, the rules engine. Retired: no harness
+    /// reads from here any more ([`Self::vendor_store_dir`] is what they
+    /// read), and what an earlier release left is removed once no receipt
+    /// names it.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
         self.runtime_attachments_dir().join(vendor)
     }
 
-    /// The parent of every [`Self::generated_attachments_dir`]: staging only.
+    /// The parent of every [`Self::generated_attachments_dir`]: retired.
     pub fn runtime_attachments_dir(&self) -> PathBuf {
         self.runtime_dir().join("attachments")
     }
@@ -638,7 +839,19 @@ impl UzeHome {
 
     /// The parent of every [`Self::delivered_package_dir`]: UZE-internal.
     pub fn delivered_packages_dir(&self) -> PathBuf {
+        self.runtime_dir().join("servers")
+    }
+
+    /// Where earlier releases kept a copy of every installed package and
+    /// pointed every harness at it. Retired: kept while a receipt names a
+    /// copy, as one an earlier release made still does.
+    pub fn retired_packages_dir(&self) -> PathBuf {
         self.runtime_dir().join("packages")
+    }
+
+    /// One package's copy in [`Self::retired_packages_dir`].
+    pub fn retired_package_dir(&self, id: &PackageId) -> PathBuf {
+        self.retired_packages_dir().join(id.as_str())
     }
 
     /// The home and package whose bytes are `plugin_dir`, read back from the
@@ -687,8 +900,8 @@ impl UzeHome {
     /// Cross-invocation cache of `IntegrationPort::detect()` results (see
     /// `detection_cache`). Reconstructable at any time from a live probe —
     /// never authoritative, hence `cache_dir()` rather than `state_dir()`.
-    pub fn harness_detection_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("harness_detection.json")
+    pub fn detection_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("detection.json")
     }
 
     /// What each requirement's executable answered when it was last asked
@@ -706,29 +919,37 @@ impl UzeHome {
 
     /// The last machine Overview collected (see `machine::inventory`):
     /// observed again whenever it is missing or cannot be read.
-    pub fn machine_overview_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("machine-overview.json")
+    pub fn overview_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("overview.json")
     }
 
     /// The uses the machine Overview read from records a harness has since
     /// deleted (see `machine::usage::Archive`): a record, the only place
     /// they are left.
-    pub fn machine_usage_path(&self) -> PathBuf {
-        self.state_dir().join("machine-usage.json")
+    pub fn usage_path(&self) -> PathBuf {
+        self.where_it_is(
+            self.state_dir().join("usage.json"),
+            self.retired_usage_path(),
+        )
     }
 
     /// The guard one reading of the harnesses' records takes, so two
     /// workspaces never read and move the same records at once. A lock, not
     /// a record.
-    pub fn machine_usage_lock_path(&self) -> PathBuf {
-        self.state_dir().join("machine-usage.lock")
+    pub fn usage_lock_path(&self) -> PathBuf {
+        Self::its_lock(
+            &self.usage_path(),
+            &self.retired_usage_path(),
+            self.state_dir().join("usage.lock"),
+            self.retired_usage_lock_path(),
+        )
     }
 
     /// What the machine Overview kept of each harness's session records
     /// between readings (see `machine::usage`): read again from the start
     /// whenever it is missing or cannot be read.
-    pub fn machine_usage_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("machine-usage.json")
+    pub fn transcripts_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("transcripts.json")
     }
 
     /// Cross-invocation cache of per-receipt attachment *read* results
@@ -751,8 +972,8 @@ impl UzeHome {
     /// The changelog of the release the updater last installed, as published
     /// at that release's tag. Observed again whenever it is missing, so it is
     /// a cache and never a record.
-    pub fn release_notes_cache_path(&self) -> PathBuf {
-        self.cache_dir().join("release-notes.md")
+    pub fn changelog_cache_path(&self) -> PathBuf {
+        self.cache_dir().join("changelog.md")
     }
 
     /// Cross-invocation cache of registered marketplaces' catalogues (see
@@ -795,17 +1016,28 @@ impl UzeHome {
     /// seconds after the launch that wrote it. `rules` holds which rules
     /// each running session was already given: sweeping it would deliver
     /// them all again on the session's next tool call. `extensions` holds
-    /// compiled extension views: sweeping it costs a compile on the next
-    /// open, so it is kept rather than swept by every `doctor`.
-    pub fn runtime_tenants(&self) -> [PathBuf; 6] {
+    /// compiled extension views, programs' scratch and pictures and their
+    /// costs, each with its own collector: sweeping the views costs a
+    /// compile on the next open. `agents`
+    /// holds what each agent reported while it runs: its own collector
+    /// keeps it while a project records the agent.
+    pub fn runtime_tenants(&self) -> [PathBuf; 8] {
         [
             self.runtime_projects_dir(),
+            self.runtime_agents_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
+            self.retired_packages_dir(),
             self.runtime_sessions_dir(),
             self.runtime_rules_dir(),
-            self.compiled_extensions_dir(),
+            self.runtime_extensions_dir(),
         ]
+    }
+
+    /// The extensions' corner of the runtime tree: their compiled views,
+    /// their programs' scratch and pictures, and what they cost.
+    pub fn runtime_extensions_dir(&self) -> PathBuf {
+        self.runtime_dir().join("extensions")
     }
 
     /// Declared extensions as last compiled, one file per digest of an
@@ -813,7 +1045,13 @@ impl UzeHome {
     /// time the extension is opened, and an entry no extension's files
     /// digest to any more is simply never read again.
     pub fn compiled_extensions_dir(&self) -> PathBuf {
-        self.runtime_dir().join("extensions")
+        self.runtime_extensions_dir().join("compiled")
+    }
+
+    /// Where an earlier release kept one compiled extension: loose in the
+    /// extensions' corner, beside what is not a view.
+    pub fn loose_compiled_extension_path(&self, digest: &str) -> PathBuf {
+        self.runtime_extensions_dir().join(format!("{digest}.json"))
     }
 
     /// One compiled extension, by the digest of the files it was compiled
@@ -1093,12 +1331,12 @@ mod tests {
             home.undelivered_path(),
             home.client_layout_path(),
             home.provisioning_state_path(),
-            home.binary_path(),
+            home.release_path(),
             home.tasks_path("abc"),
             home.conversation_path("abc", "def"),
-            home.prompt_history_path("abc"),
-            home.extensions_record_path(),
-            home.launch_overrides_path(),
+            home.prompts_path("abc"),
+            home.consent_path(),
+            home.launches_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
             home.extension_secrets_set_path("gsd@market", "gsd-band"),
@@ -1121,10 +1359,10 @@ mod tests {
         // And the things that *are* rebuildable say so by where they are.
         for rebuilt in [
             home.harnesses_cache_path(),
-            home.harness_detection_cache_path(),
+            home.detection_cache_path(),
             home.inspection_cache_path(),
             home.marketplace_cache_dir(),
-            home.release_notes_cache_path(),
+            home.changelog_cache_path(),
             home.appearance_cache_path(),
             home.logs_dir(),
             home.generated_attachments_dir("claude"),

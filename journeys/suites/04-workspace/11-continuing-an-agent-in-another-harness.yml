@@ -74,7 +74,7 @@ scenes:
     then:
       - agents: { count: 1, live: 1, isolated: 0 }
         about: still the one agent, standing where it stood
-      - file: "{uze_home}/state/projects/*/agents.json"
+      - file: "{uze_home}/state/projects/*/tasks.json"
         contains: '"harness": "codex"'
         about: and its record names the harness it runs now
       - file: "{uze_home}/state/projects/*/conversations/*.json"
@@ -192,7 +192,7 @@ scenes:
     then:
       - agents: { count: 1, live: 1, isolated: 0 }
         about: still the one agent
-      - file: "{uze_home}/state/projects/*/agents.json"
+      - file: "{uze_home}/state/projects/*/tasks.json"
         contains: '"harness": "claude-code"'
         about: and its record names Claude again
       - cmd:

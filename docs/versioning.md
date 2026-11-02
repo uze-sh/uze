@@ -110,6 +110,21 @@ next push to `main` publishes the version from its own commit, and the only
 tag a failed run can leave is one written seconds before the release call
 failed, which re-running that run reuses.
 
+## The release floor
+
+`uze_document::earlier::FLOOR` is the oldest release a machine can come from
+and still be carried across: its records climb their ladders, its renamed
+paths move to their current names, what it left in a harness or a project is
+retired. Every piece of that support is an `Earlier` entry naming how long it
+lasts (`.agents/rules/earlier-releases.md`).
+
+Raising the floor is a release decision, made in its own commit: set
+`FLOOR`, run `cargo test --test architecture earlier`, and delete every entry
+it names with its tests. Nothing else should need to change. The
+`07-upgrade/01` journey pins the floor release, so move its `released:` tag
+with it. An entry that is `Unbounded` is not deleted by a raised floor; it
+needs a release that carries it out on every run first.
+
 ## What the release page says
 
 Two documents come out of the same commits, and they are not the same
@@ -245,7 +260,7 @@ every pane keeps running. Once it runs, both sidebars say so — its version
 and "see what's new" — until the notice is put away. Clicking the notice
 opens that release's notes in a modal — its own section of the
 `CHANGELOG.md` at its tag, fetched with the release and kept in
-`~/.uze/cache/release-notes.md` — from which its entry in the site's
+`~/.uze/cache/changelog.md` — from which its entry in the site's
 changelog (`uze.sh/docs/changelog#<version>`) opens. That is the only thing they say about releases: one that
 is merely available, or that this binary will not install itself, is left
 to `uze upgrade`. The first CLI command after an update mentions it once.
@@ -258,9 +273,9 @@ only waiting for it. `uze upgrade` does not wait on either channel.
 
 An open workspace wakes about every 15 minutes and asks for the latest
 release only when the machine's last answer is over an hour old; one
-process asks, under `~/.uze/state/update.lock`, and the others read its
+process asks, under `~/.uze/state/release.lock`, and the others read its
 answer. The same wake fetches the marketplaces whose answer is over an hour
-old, under `~/.uze/state/marketplace-fetch.lock`, and applies the plugin
+old, under `~/.uze/state/fetch.lock`, and applies the plugin
 updates that need no new consent; an update that asks to run something new
 is only announced, and waits for the operator on the plugins screen.
 
@@ -281,7 +296,7 @@ governs only the automatic check; asking is consent enough.
 `UZE_AUTOUPDATE=off` stops the check, `notify` checks without replacing,
 and `on` is the default — except where `CI` is set, which is off unless the
 variable says otherwise. What the updater remembers between runs is in
-`~/.uze/state/update.json`.
+`~/.uze/state/release.json`.
 
 `UZE_BASE_URL` is the installer's alone. The updater downloads a binary and
 renames it over the one in `PATH`, so where it downloads from is a constant

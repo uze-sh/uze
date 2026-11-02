@@ -74,7 +74,7 @@ scenes:
           set -e
           {python} -c "
           import json, glob
-          [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
+          [store] = glob.glob('{uze_home}/state/projects/*/tasks.json')
           [agent] = [a for a in json.load(open(store))['agents'] if a.get('isolation')]
           print(agent['isolation']['branch'])
           " > {world}/branch

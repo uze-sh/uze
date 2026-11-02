@@ -100,7 +100,7 @@ mkdir -p {records} {UZE_HOME}/shims
 cat > {records}/project.json <<'UZE_EOF'
 {{ "root": "{PROJECT}" }}
 UZE_EOF
-cat > {records}/agents.json <<'UZE_EOF'
+cat > {records}/tasks.json <<'UZE_EOF'
 {{
   "schema_version": 4,
   "agents": [

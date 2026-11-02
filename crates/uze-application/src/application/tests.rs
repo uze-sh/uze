@@ -1994,41 +1994,6 @@ fn an_official_plugin_uze_does_not_bundle_is_removed_and_stays_removed() {
     fs::remove_dir_all(root).unwrap();
 }
 
-/// A machine an earlier release seeded keeps the official plugins under
-/// the marketplace's old name, `uze-official`. Seeding takes each off as a
-/// removal would and installs it again under `uze`: nothing is left under
-/// the old name, and the bundled one is not installed twice.
-#[test]
-fn seeding_moves_plugins_off_the_official_marketplaces_old_name() {
-    let root = uze_testkit::temp::scratch("retired-official-name");
-    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
-    for name in ["uze", "workspace"] {
-        app.plugins()
-            .install_materialized(
-                bootstrap::materialize(name).unwrap(),
-                "uze-official",
-                None,
-                &uze_core::trust::AlwaysTrust,
-                &uze_core::naming::NoNameCollisionAuthority,
-                uze_core::trust::SourceOrigin::Operator,
-            )
-            .unwrap();
-    }
-
-    app.ensure_default_plugins().unwrap();
-
-    let mut ids: Vec<String> = app
-        .store
-        .package_ids()
-        .unwrap()
-        .iter()
-        .map(|id| id.as_str().to_owned())
-        .collect();
-    ids.sort();
-    assert_eq!(ids, ["uze@uze", "workspace@uze"]);
-    fs::remove_dir_all(root).unwrap();
-}
-
 #[test]
 fn local_spoof_named_uze_is_not_protected() {
     let root = uze_testkit::temp::scratch("spoof-not-protected");
@@ -2963,4 +2928,16 @@ fn a_delivery_refused_below_the_floor_names_the_version_needed() {
         "the refusal must name the version needed: {error}"
     );
     fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn building_the_application_leaves_a_record_where_the_floor_release_reads_it() {
+    let root = uze_testkit::temp::scratch("app-no-carry");
+    let home = UzeHome::at(root.join("uze"));
+    fs::create_dir_all(home.state_dir()).unwrap();
+    fs::write(home.retired_launches_path(), "{}").unwrap();
+
+    let _app = UzeApplication::new(home.clone(), Vec::new());
+
+    assert!(home.retired_launches_path().is_file());
 }

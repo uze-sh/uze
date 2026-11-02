@@ -1,7 +1,7 @@
 ## 1. The official marketplace and its packages
 
 - [x] 1.1 Name the built-in marketplace `uze` (`BUILT_IN_MARKETPLACE`), its tests, journeys and docs with it
-- [x] 1.2 Move a package recorded under `uze-official` under `uze` once, at seeding, with a test from an earlier release's Store
+- [x] 1.2 Move a package recorded under `uze-official` under `uze` once, at seeding, with a test from an earlier release's Store (later deleted by `earlier-release-support`, when the release floor passed it)
 - [x] 1.3 Ship `gsd`, `focus` and `contributions` as one plugin, `workspace`, in `marketplace.json` and `plugins/workspace`
 - [x] 1.4 Point the tests and journeys that install the official extensions at `workspace@uze`
 

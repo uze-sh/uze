@@ -49,7 +49,7 @@ pub fn ensure(home: &UzeHome, project_root: &Path) -> Result<PathBuf> {
     let fresh = !directory.is_dir();
     create_private(&directory)?;
     if fresh {
-        carry_across_the_move(home, &id);
+        crate::project::earlier::carry_across_the_move(home, &id);
     }
     let marker = home.project_marker_path(&id);
     let recorded = match uze_document::read::<ProjectMarker>(&marker) {
@@ -104,46 +104,6 @@ pub fn forget(home: &UzeHome, project_root: &Path) -> Result<()> {
     }
 }
 
-/// The rung for the release that gathered a project's records into one
-/// directory.
-///
-/// Moving a path *is* a version change, and a version change with no rung
-/// is how state gets lost — which is the whole reason this module exists.
-/// A machine coming from the previous release has its agents at
-/// `state/tasks/<id>.json`, its conversations at
-/// `state/conversations/<id>/` and its prompt history at
-/// `state/prompt-history/<id>.json`; leaving them there would have this
-/// build open on a project with no agents and every checkout orphaned.
-///
-/// Best-effort and silent, like every other climb: what it carries is
-/// UZE's own bookkeeping, and a rename that fails leaves the bytes exactly
-/// where they were for the operator to find. Runs once — only when the
-/// project directory is being created — and is removable once no machine
-/// can still be on the previous layout.
-fn carry_across_the_move(home: &UzeHome, id: &str) {
-    let scattered = home.scattered_project_records(id);
-    let carried = [
-        (scattered.agents, home.tasks_path(id)),
-        (scattered.conversations, home.conversations_dir(id)),
-        (scattered.prompt_history, home.prompt_history_path(id)),
-    ];
-    for (was, now) in carried {
-        if was.exists() && !now.exists() {
-            let _ = fs::rename(&was, &now);
-        }
-    }
-    // The lock beside the old store is not carried: it guards a path that
-    // no longer exists, and the new store mints its own. Left behind it is
-    // a file nothing will ever open again.
-    let _ = fs::remove_file(scattered.agents_lock);
-    // And the directories the three used to live in, when nothing else is
-    // in them. `remove_dir` refuses a directory with anything left, so a
-    // project still on the old layout keeps its own.
-    for emptied in scattered.directories {
-        let _ = fs::remove_dir(emptied);
-    }
-}
-
 /// Owner-only, because of what is in here.
 ///
 /// A project's records hold the prompts its agents were given — which is
@@ -170,9 +130,29 @@ fn canonical(project_root: &Path) -> PathBuf {
         .unwrap_or_else(|_| project_root.to_path_buf())
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ProjectMarker>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opening_a_project_leaves_a_record_where_the_floor_release_reads_it() {
+        let (home, root) = home("project-record-carries");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let id = project_id_for(&canonical(&project));
+        fs::create_dir_all(home.project_dir(&id)).unwrap();
+        fs::write(home.retired_approvals_path(&id), "{}").unwrap();
+
+        ensure(&home, &project).unwrap();
+
+        assert!(home.retired_approvals_path(&id).is_file());
+    }
 
     fn home(name: &str) -> (UzeHome, PathBuf) {
         let root = uze_testkit::temp::scratch(name);
@@ -204,11 +184,11 @@ mod tests {
         ensure(&home, &project).unwrap();
         let id = project_id_for(&project.canonical().unwrap());
         let locks = [
-            home.agents_lock_path(&id),
+            home.tasks_lock_path(&id),
             home.delivery_lock_path(&id),
             home.agents_md_lock_path(&id),
             home.conversations_lock_path(&id),
-            home.prompt_history_lock_path(&id),
+            home.prompts_lock_path(&id),
         ];
         for lock in &locks {
             fs::write(lock, b"").unwrap();
@@ -340,7 +320,7 @@ mod tests {
             "and so does what each of them was talking to"
         );
         assert!(
-            home.prompt_history_path(&id).exists(),
+            home.prompts_path(&id).exists(),
             "and the prompts they were given"
         );
         assert!(
