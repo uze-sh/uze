@@ -1005,7 +1005,8 @@ pub struct ProjectContextStatus {
     /// Regions an earlier release wrote, present only until the main
     /// working tree's `uze install` removes them. `None` in a linked
     /// worktree, where the files are the branch's.
-    pub retired_regions: Option<RetiredRegionsPlan>,
+    #[serde(rename = "retired_regions")]
+    pub leftover_regions: Option<RetiredRegionsPlan>,
     pub harnesses: Vec<HarnessContextStatus>,
     pub portability: Portability,
     /// Human-readable notices for a state worth surfacing but that is not
@@ -1075,12 +1076,13 @@ pub struct ContextPlan {
     pub agents_md: PathBuf,
     /// Regions an earlier release wrote, present only until they are
     /// removed.
-    pub retired_regions: Option<RetiredRegionsPlan>,
+    #[serde(rename = "retired_regions")]
+    pub leftover_regions: Option<RetiredRegionsPlan>,
 }
 
 impl ContextPlan {
     pub fn has_changes(&self) -> bool {
-        self.retired_regions
+        self.leftover_regions
             .as_ref()
             .is_some_and(RetiredRegionsPlan::has_changes)
     }
@@ -1271,7 +1273,8 @@ pub struct ContextReconciliationReport {
     pub agents_md: PathBuf,
     /// What removing the regions an earlier release wrote did; `None` when
     /// there were none, or in a linked worktree.
-    pub retired_regions: Option<RetiredRegionsStatus>,
+    #[serde(rename = "retired_regions")]
+    pub leftover_regions: Option<RetiredRegionsStatus>,
 }
 
 #[derive(Clone, Debug, Serialize)]

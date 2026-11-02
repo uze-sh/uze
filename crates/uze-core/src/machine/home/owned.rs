@@ -14,6 +14,8 @@
 
 use std::path::PathBuf;
 
+use uze_document::earlier::{Earlier, Lasts};
+
 use crate::store::PackageId;
 
 use super::UzeHome;
@@ -132,6 +134,13 @@ pub struct OwnedPath {
     /// (`every_disposable_root_has_one_collector`); the map holds no rule
     /// of its own.
     pub disposable: bool,
+    /// For a retired path, how long a machine can still hold it (the
+    /// `earlier-releases` rule); a current path lasts as long as it is
+    /// written.
+    pub lasts: Lasts,
+    /// For a retired path, the names only it spells: no production code
+    /// outside this map writes them.
+    pub spelled: &'static [&'static str],
     compose: fn(&UzeHome) -> PathBuf,
 }
 
@@ -144,6 +153,7 @@ impl std::fmt::Debug for OwnedPath {
             .field("form", &self.form)
             .field("standing", &self.standing)
             .field("disposable", &self.disposable)
+            .field("lasts", &self.lasts)
             .finish()
     }
 }
@@ -204,6 +214,11 @@ impl OwnedPath {
             ..self
         }
     }
+
+    /// The names only this retired path spells.
+    const fn spelled(self, spelled: &'static [&'static str]) -> Self {
+        OwnedPath { spelled, ..self }
+    }
 }
 
 /// How [`package`]'s placeholder id is spelled in a path, and the
@@ -256,6 +271,8 @@ const fn owned(
         form,
         standing: Standing::Current,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
         compose,
     }
 }
@@ -272,6 +289,8 @@ const fn retired(
         form,
         standing: Standing::Retired,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
         compose,
     }
 }
@@ -441,17 +460,12 @@ const OWNED: &[OwnedPath] = &[
         Opaque,
         UzeHome::terminal_runtime_dir,
     ),
-    // Nothing carries it across: the retired collector removes it.
-    retired(
-        "retired_profiles_path",
-        Record,
-        Document,
-        UzeHome::retired_profiles_path,
-    )
-    .swept(),
+    // Carried into `projects/<id>/` by `record::ensure` when a project's
+    // directory is first made: only as often as that happens, so unbounded.
     retired("scattered_project_records", Record, Document, |home| {
         home.scattered_project_records(PROJECT).agents
-    }),
+    })
+    .spelled(&["prompt-history"]),
     // Locks, beside the records they guard and never under a swept tree.
     owned(
         "mutation_lock_path",
@@ -520,6 +534,12 @@ const OWNED: &[OwnedPath] = &[
     owned("memory_lock_path", Record, Lock, |home| {
         home.memory_lock_path(&home.machine_memory_dir())
     }),
+    owned(
+        "agent_reports_lock_path",
+        Record,
+        Lock,
+        UzeHome::agent_reports_lock_path,
+    ),
     // Authored.
     owned("config_path", Authored, Document, UzeHome::config_path),
     owned("keymap_path", Authored, Document, UzeHome::keymap_path),
@@ -549,13 +569,18 @@ const OWNED: &[OwnedPath] = &[
     owned("agent_context_dir", Generated, Directory, |home| {
         home.agent_context_dir(PROJECT, AGENT)
     }),
-    owned(
+    // Where earlier releases kept what harnesses read; nothing writes here
+    // since #345. Each integration removes what it left once no receipt
+    // names it, which happens only when its package is next delivered or
+    // detached: unbounded, and still a runtime tenant so no sweep takes a
+    // path a receipt names.
+    retired(
         "runtime_attachments_dir",
         Generated,
         Directory,
         UzeHome::runtime_attachments_dir,
     ),
-    owned("generated_attachments_dir", Generated, Directory, |home| {
+    retired("generated_attachments_dir", Generated, Directory, |home| {
         home.generated_attachments_dir(VENDOR)
     }),
     owned(
@@ -627,11 +652,18 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::extension_costs_path,
     ),
+    owned(
+        "runtime_agents_dir",
+        Generated,
+        Directory,
+        UzeHome::runtime_agents_dir,
+    ),
+    owned("agent_runtime_dir", Generated, Directory, |home| {
+        home.agent_runtime_dir(AGENT)
+    })
+    .swept(),
     owned("agent_reports_path", Generated, Document, |home| {
         home.agent_reports_path(AGENT)
-    }),
-    owned("agent_reports_lock_path", Generated, Lock, |home| {
-        home.agent_reports_lock_path(AGENT)
     }),
     owned("shims_dir", Generated, Directory, UzeHome::shims_dir),
     owned("shim_path", Generated, Document, |home| {
@@ -722,6 +754,20 @@ impl UzeHome {
     /// The owned path a builder composes, by the builder's name.
     pub fn owned_path(name: &str) -> Option<&'static OwnedPath> {
         OWNED.iter().find(|owned| owned.name == name)
+    }
+
+    /// Every retired path, as the entries the release floor holds.
+    pub fn earlier() -> Vec<Earlier> {
+        OWNED
+            .iter()
+            .filter(|owned| owned.standing == Standing::Retired)
+            .map(|owned| Earlier {
+                name: owned.name,
+                lasts: owned.lasts,
+                spelled: owned.spelled,
+                site: file!(),
+            })
+            .collect()
     }
 
     /// Every path UZE sweeps: each has exactly one collector.

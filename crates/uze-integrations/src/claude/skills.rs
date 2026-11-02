@@ -28,8 +28,8 @@ impl ClaudeIntegration {
     /// the plugin manifest beside the `SKILL.md` — the shim root is the
     /// vendor root itself, not a `skills` directory inside it.
     pub(super) fn cleanup_unused_wrapper(&self, shim_root: &Path) -> Result<()> {
-        let managed_root = crate::shared::path::attachment_root(&self.uze_home, "claude");
-        crate::shared::path::cleanup_unused_wrapper(
+        let managed_root = crate::shared::earlier::attachment_root(&self.uze_home, "claude");
+        crate::shared::earlier::cleanup_unused_wrapper(
             shim_root,
             &managed_root,
             &self.skills_dir,

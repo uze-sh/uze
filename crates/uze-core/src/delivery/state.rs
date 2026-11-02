@@ -62,6 +62,7 @@ mod shapes {
             &[uze_document::Step {
                 from: 1,
                 to: 2,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: Ok,
             }]
         }
@@ -86,6 +87,7 @@ mod shapes {
                 uze_document::Step {
                     from: 1,
                     to: 2,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: |mut document| {
                         if let Some(receipts) = document.get_mut("receipts")
                             && let Some(keyed) = receipts.as_object()
@@ -99,11 +101,13 @@ mod shapes {
                 uze_document::Step {
                     from: 2,
                     to: 3,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: Ok,
                 },
                 uze_document::Step {
                     from: 3,
                     to: 4,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: Ok,
                 },
             ]
@@ -677,6 +681,19 @@ pub fn marketplace_list(home: &UzeHome) -> Result<BTreeMap<String, MarketplaceRe
 
 pub fn marketplace_get(home: &UzeHome, name: &str) -> Result<Option<MarketplaceRecord>> {
     Ok(marketplace_list(home)?.remove(name))
+}
+
+/// The rungs of this module's records' ladders, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    let mut v = Vec::new();
+    v.extend(uze_document::earlier::rungs::<MarketplaceRegistry>(file!()));
+    v.extend(uze_document::earlier::rungs::<AttachmentLedger>(file!()));
+    v.extend(uze_document::earlier::rungs::<ProvisioningRegistry>(
+        file!(),
+    ));
+    v.extend(uze_document::earlier::rungs::<UndeliveredRegistry>(file!()));
+    v
 }
 
 #[cfg(test)]

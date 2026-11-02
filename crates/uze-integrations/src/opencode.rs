@@ -41,6 +41,7 @@ use uze_core::{
 
 mod agent_context;
 mod distribution;
+pub(crate) mod earlier;
 mod flags;
 mod hooks;
 mod inventory;
@@ -152,7 +153,7 @@ impl IntegrationPort for OpenCodeIntegration {
     /// No derived view to rebuild; what an earlier layout staged for this
     /// harness and nothing names any more goes.
     fn republish_packages(&self, _packages: &[uze_core::store::StoredPackage]) -> Result<()> {
-        crate::shared::path::retire_unnamed_attachments(&self.uze_home, "opencode", Vec::new)
+        crate::shared::earlier::retire_unnamed_attachments(&self.uze_home, "opencode", Vec::new)
     }
 
     /// `opencode` is both the stable id and the name people type — the
@@ -939,7 +940,7 @@ impl OpenCodeIntegration {
     /// hooks as, once its document is in place: the two would run its
     /// groups twice. A file there that is not one of those plugins is left.
     fn retire_package_bridge(&self, package_id: &str) -> Result<()> {
-        let legacy = hook_projection::opencode_bridge_path(self.config_root(), package_id);
+        let legacy = earlier::hook_bridge_path(self.config_root(), package_id);
         if fs::read_to_string(&legacy)
             .is_ok_and(|text| text.starts_with(hook_projection::BRIDGE_HEADER))
         {

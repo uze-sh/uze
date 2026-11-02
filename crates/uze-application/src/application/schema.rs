@@ -243,11 +243,10 @@ mod tests {
     }
 
     #[test]
-    fn the_unknown_is_reported_and_kept_and_the_retired_removed() {
+    fn the_unknown_is_reported_and_kept() {
         let (home, root) = home("schema-unknown");
         std::fs::write(home.state_dir().join("from-a-newer-build.json"), "{}").unwrap();
         std::fs::write(home.root().join("notes.txt"), "mine").unwrap();
-        std::fs::write(home.retired_profiles_path(), "{}").unwrap();
         std::fs::create_dir_all(home.state_dir().join("empty")).unwrap();
 
         let entries = compare(&home, false);
@@ -262,12 +261,10 @@ mod tests {
                     "from-a-newer-build.json".to_owned(),
                     false
                 ),
-                (SchemaFinding::Retired, "profiles.json".to_owned(), true),
             ]
         );
         assert!(home.state_dir().join("from-a-newer-build.json").is_file());
         assert!(home.root().join("notes.txt").is_file());
-        assert!(!home.retired_profiles_path().exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

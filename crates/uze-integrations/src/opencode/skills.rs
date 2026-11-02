@@ -51,7 +51,7 @@ use super::OpenCodeIntegration;
 use crate::shared::plan::unsupported;
 use crate::shared::skill::{
     attach_skill_tree, entry_name, invalid_policy_plan, render_skill_wrapper, setup_pending_plan,
-    skill_label, skill_tree_plan, skill_wrapper_root,
+    skill_label, skill_tree_plan,
 };
 
 /// The SKILL.md UZE writes for one Skill: the stable namespaced label as
@@ -90,12 +90,12 @@ impl OpenCodeIntegration {
     /// Removes the generated-tier directory an earlier build linked a Skill
     /// entry to, once nothing links to it any more.
     pub(super) fn cleanup_unused_wrapper(&self, target: &Path) -> Result<()> {
-        let managed_root = crate::shared::path::attachment_root(&self.uze_home, "opencode");
-        crate::shared::path::cleanup_unused_wrapper(
+        let managed_root = crate::shared::earlier::attachment_root(&self.uze_home, "opencode");
+        crate::shared::earlier::cleanup_unused_wrapper(
             target,
             &managed_root,
             &self.skills_dir,
-            &skill_wrapper_root(&self.uze_home, "opencode"),
+            &crate::shared::earlier::skill_wrapper_root(&self.uze_home, "opencode"),
             &|wrapper| wrapper.join("SKILL.md").is_file(),
         )
     }

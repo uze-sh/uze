@@ -140,10 +140,6 @@ impl<'a> Delivered<'a> {
     }
 }
 
-/// Where earlier releases kept a harness's engine, on its own beside the
-/// hook wrapper, under the runtime tree.
-const RETIRED_ENGINE_PATH: &str = "rules/engine";
-
 /// The package that ships the engine: the bundled one.
 fn engine_package() -> String {
     format!("uze@{}", uze_core::manifest::BUILT_IN_MARKETPLACE)
@@ -476,7 +472,7 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
     } else if delivered
         .place
         .file_name()
-        .is_some_and(|name| name == plugin::RETIRED_FILE)
+        .is_some_and(|name| name == crate::opencode::earlier::RETIRED_RULES_FILE)
     {
         // An earlier release's plugin of its own, matched above: it would
         // go on starting the engine.
@@ -484,7 +480,11 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
     }
     // An engine an earlier release kept on its own, outside every build, has
     // nothing left to start it.
-    if delivered.engine.ends_with(RETIRED_ENGINE_PATH) && !still_started(&delivered) {
+    if delivered
+        .engine
+        .ends_with(crate::shared::earlier::RETIRED_ENGINE_PATH)
+        && !still_started(&delivered)
+    {
         let _ = fs::remove_file(&delivered.engine);
         if let Some(parent) = delivered.engine.parent() {
             let _ = fs::remove_dir(parent);

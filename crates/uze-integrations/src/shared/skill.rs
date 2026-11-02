@@ -88,12 +88,6 @@ pub(crate) fn skill_label(uze_home: &UzeHome, resource: &Resource) -> Option<Str
         .next()
 }
 
-/// The root an earlier build generated `vendor`'s Skill wrappers under,
-/// which an entry detached from that build may still point into.
-pub(crate) fn skill_wrapper_root(uze_home: &UzeHome, vendor: &str) -> PathBuf {
-    crate::shared::path::attachment_root(uze_home, vendor).join("skills")
-}
-
 /// A generated SKILL.md: `name` and the canonical description, each
 /// quoted where YAML would read it otherwise (never raw-interpolated), the
 /// vendor's own `markers` as frontmatter lines, the fields `keys` are

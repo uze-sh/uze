@@ -6,6 +6,7 @@
 pub mod antigravity;
 pub mod claude;
 pub mod codex;
+pub mod earlier;
 pub mod opencode;
 pub mod registry;
 

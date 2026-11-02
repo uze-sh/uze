@@ -996,7 +996,7 @@ const PACKAGE_MANAGER_APPLICATION: &[&str] = &[
     "crates/uze-application/src/application/lifecycle.rs",
     "crates/uze-application/src/application/project_environment.rs",
     "crates/uze-application/src/application/context.rs",
-    "crates/uze-application/src/application/retired_regions.rs",
+    "crates/uze-application/src/application/earlier/regions.rs",
     "crates/uze-application/src/application/marketplace.rs",
     "crates/uze-application/src/application/marketplace_catalogue.rs",
     "crates/uze-application/src/application/authoring.rs",
@@ -1207,7 +1207,7 @@ fn occurrences(contents: &str, needle: &str) -> usize {
 /// facade would be worse code rather than better architecture. So a file
 /// some other file declares under `#[cfg(test)]` is skipped outright, and
 /// inline test modules are stripped from the ones that remain.
-fn production_sources(scope: &std::path::Path) -> Vec<(PathBuf, String)> {
+pub(crate) fn production_sources(scope: &std::path::Path) -> Vec<(PathBuf, String)> {
     let mut files = Vec::new();
     collect_rust_files(scope, &mut files);
     files.sort();
@@ -2080,7 +2080,7 @@ fn only_the_program_runner_starts_an_extension_program() {
 fn a_retired_region_cleanup_is_the_only_writer_of_agents_md() {
     /// Each writer, and why it may write.
     const SANCTIONED: &[(&str, &str)] = &[(
-        "crates/uze-application/src/application/retired_regions.rs",
+        "crates/uze-application/src/application/earlier/regions.rs",
         "takes out the regions an earlier release wrote, once, in a main working tree",
     )];
     const NAMES: &[&str] = &["AGENTS_MD_FILE_NAME", "\"AGENTS.md\"", "agents_md"];

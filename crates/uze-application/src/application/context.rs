@@ -2,7 +2,7 @@
 //! harnesses' own files beside it, and how each harness reads it.
 //!
 //! The file is the operator's. Nothing here writes it, except to take out
-//! what an earlier release left there (`retired_regions`).
+//! what an earlier release left there (`leftover_regions`).
 
 use std::{
     collections::BTreeSet,
@@ -16,7 +16,7 @@ use uze_core::{
     text_region,
 };
 
-use super::retired_regions;
+use super::earlier::regions;
 
 use super::services::Context;
 use super::*;
@@ -80,13 +80,13 @@ impl Context<'_> {
 
         let portability = derive_portability(agents_md_exists, &sources);
         let warnings = derive_warnings(agents_md_exists, &sources);
-        let retired_regions = self.retired_regions(&canonical);
+        let leftover_regions = self.leftover_regions(&canonical);
 
         Ok(ProjectContextStatus {
             root: project_root.to_path_buf(),
             canonical,
             sources,
-            retired_regions,
+            leftover_regions,
             harnesses,
             portability,
             warnings,
@@ -98,7 +98,7 @@ impl Context<'_> {
         let canonical = self.scope(project_root)?;
         Ok(ContextPlan {
             agents_md: canonical.join(AGENTS_MD_FILE_NAME),
-            retired_regions: self.retired_regions(&canonical),
+            leftover_regions: self.leftover_regions(&canonical),
         })
     }
 
@@ -107,25 +107,25 @@ impl Context<'_> {
     #[tracing::instrument(name = "context.reconcile", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn reconcile(&self, project_root: &Path) -> Result<ContextReconciliationReport> {
         let canonical = self.scope(project_root)?;
-        let files = self.0.retired_region_files(&canonical);
-        let retired_regions = if retired_regions::applies_at(&canonical) {
+        let files = self.0.leftover_region_files(&canonical);
+        let leftover_regions = if regions::applies_at(&canonical) {
             // A whole-file read-modify-write, so one pass at a time per project.
             let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
-            retired_regions::remove(&files)?
+            regions::remove(&files)?
         } else {
             None
         };
         Ok(ContextReconciliationReport {
             agents_md: files.agents_md,
-            retired_regions,
+            leftover_regions,
         })
     }
 
     /// What the cleanup would take out at `canonical`, or `None` in a
     /// linked worktree or when nothing is left to take.
-    fn retired_regions(&self, canonical: &Path) -> Option<RetiredRegionsPlan> {
-        retired_regions::applies_at(canonical)
-            .then(|| retired_regions::plan(&self.0.retired_region_files(canonical)))
+    fn leftover_regions(&self, canonical: &Path) -> Option<RetiredRegionsPlan> {
+        regions::applies_at(canonical)
+            .then(|| regions::plan(&self.0.leftover_region_files(canonical)))
             .flatten()
     }
 

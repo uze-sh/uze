@@ -28,6 +28,7 @@ use crate::{
     state::{OpenedSpace, PLACEHOLDER_PANE_SIZE, SpaceSeed, TabSeed},
 };
 
+pub(crate) mod earlier;
 mod endpoint;
 mod framing;
 mod host;

@@ -17,10 +17,6 @@ pub enum ProvisionRoute {
     Existing,
 }
 
-/// The official marketplace's name before it was `uze`: what an earlier
-/// release recorded its plugins under.
-const RETIRED_BUILT_IN_MARKETPLACE: &str = "uze-official";
-
 /// The paths an earlier release wrote that no supported build reads and
 /// nothing carries across: the retired list of the map
 /// (`UzeHome::owned_paths`, retired and disposable), removed on the
@@ -31,17 +27,12 @@ const RETIRED_BUILT_IN_MARKETPLACE: &str = "uze-official";
 /// lock it already holds.
 pub(crate) struct Retired;
 
-/// The retired list. A path joins it only once no supported build reads
-/// it, and its name is never used for anything else (the
-/// `persistence-tiers` rule).
-const RETIRED: &[&str] = &["retired_profiles_path"];
-
 impl Retired {
-    /// What of the retired list is still on this machine.
+    /// What of the retired list — the map's retired, disposable paths — is
+    /// still on this machine.
     fn present(home: &UzeHome) -> Vec<PathBuf> {
-        RETIRED
-            .iter()
-            .filter_map(|name| UzeHome::owned_path(name))
+        UzeHome::disposable_paths()
+            .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
             .map(|owned| owned.path(home))
             .filter(|path| std::fs::symlink_metadata(path).is_ok())
             .collect()
@@ -70,7 +61,13 @@ impl Collectable for Retired {
     }
 
     fn roots(&self) -> &'static [&'static str] {
-        RETIRED
+        static ROOTS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+            UzeHome::disposable_paths()
+                .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
+                .map(|owned| owned.name)
+                .collect()
+        });
+        &ROOTS
     }
 
     fn collect(&self, home: &UzeHome) -> Collected {
@@ -123,14 +120,10 @@ impl UzeApplication {
     }
 
     /// Removes the records an earlier release kept that nothing reads any
-    /// more. Runs ahead of every command with the seeding, so a machine
-    /// sheds one the first time a build without its reader runs; costs one
-    /// look at the disk once it is gone.
-    ///
-    /// `state/profiles.json` is the Profiles screen's record, which listing
-    /// the management overview wrote on every machine. The keys an applied
-    /// profile wrote into a harness's own configuration stay: no receipt
-    /// says UZE wrote them, so they are the operator's settings now.
+    /// more: the owned map's retired, disposable paths. Runs ahead of every
+    /// command with the seeding, so a machine sheds one the first time a
+    /// build without its reader runs; costs one look at the disk once it is
+    /// gone.
     pub(crate) fn retire_records_of_earlier_releases(&self) {
         Collectable::collect(&Retired, &self.home);
     }
@@ -141,13 +134,6 @@ impl UzeApplication {
         let Ok(packages) = self.installed_packages_checked() else {
             return false;
         };
-        let retired = format!("@{RETIRED_BUILT_IN_MARKETPLACE}");
-        if packages
-            .iter()
-            .any(|package| package.id.as_str().ends_with(&retired))
-        {
-            return false;
-        }
         let seeded = bootstrap::DEFAULT_PLUGIN_IDS.iter().all(|id| {
             let qualified = format!("{id}@{BUILT_IN_MARKETPLACE}");
             packages
@@ -167,7 +153,7 @@ impl UzeApplication {
     /// lock, which is not reentrant.
     fn ensure_default_plugins_locked(&self) -> Result<bool> {
         let _span = tracing::info_span!("bootstrap.ensure_default_plugins").entered();
-        let mut installed_any = self.move_off_the_retired_official_name()?;
+        let mut installed_any = false;
         for &id in bootstrap::DEFAULT_PLUGIN_IDS {
             installed_any |= self.ensure_default_plugin_installed(id)?;
         }
@@ -183,51 +169,6 @@ impl UzeApplication {
         // was most of what a read-only command cost.
         if let Ok(packages) = self.installed_packages_checked() {
             let _ = self.republish_unpublished(&packages);
-        }
-        Ok(installed_any)
-    }
-
-    /// Every plugin an earlier release installed under the official
-    /// marketplace's old name, taken off as a removal takes it (its receipts
-    /// say what it delivered) and installed again under `uze`; the bundled
-    /// ones are seeded again right after. Answers whether it installed any.
-    fn move_off_the_retired_official_name(&self) -> Result<bool> {
-        let retired = format!("@{RETIRED_BUILT_IN_MARKETPLACE}");
-        let names: Vec<String> = self
-            .store
-            .package_ids()?
-            .iter()
-            .filter_map(|id| id.as_str().strip_suffix(&retired).map(str::to_owned))
-            .collect();
-        for name in &names {
-            let id = format!("{name}{retired}");
-            if let Err(error) = self.plugins().detach_and_remove_unpublished(&id, true) {
-                tracing::warn!(plugin = %id, %error, "a plugin under the retired name stayed");
-            }
-        }
-        let mut installed_any = false;
-        for name in names
-            .iter()
-            .filter(|name| !bootstrap::DEFAULT_PLUGIN_IDS.contains(&name.as_str()))
-        {
-            let installed = bootstrap::materialize(name).and_then(|materialized| {
-                self.plugins().install_materialized(
-                    materialized,
-                    BUILT_IN_MARKETPLACE,
-                    None,
-                    &trust::NoTrustAuthority,
-                    &uze_core::naming::NoNameCollisionAuthority,
-                    trust::SourceOrigin::Operator,
-                )
-            });
-            match installed {
-                Ok(_) => installed_any = true,
-                Err(error) => tracing::warn!(
-                    plugin = %name,
-                    %error,
-                    "a plugin under the retired name was not installed again"
-                ),
-            }
         }
         Ok(installed_any)
     }

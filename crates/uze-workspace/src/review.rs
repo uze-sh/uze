@@ -375,6 +375,12 @@ fn bounded(answer: &str) -> String {
     format!("{} … (cut)", &clean[..cut])
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ReviewRecord>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

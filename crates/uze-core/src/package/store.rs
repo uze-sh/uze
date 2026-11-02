@@ -391,7 +391,7 @@ struct RawPackageRegistry {
 /// otherwise go on recreating `store/plugins` and installing into it, bytes
 /// this build never reads, so it must refuse the registry as newer than
 /// itself; the step up carries every entry unchanged, and the digests are
-/// backfilled by the move (`package::sources`), which can read the disk.
+/// backfilled by the move (`package::earlier`), which can read the disk.
 impl uze_document::Shaped for RawPackageRegistry {
     const SHAPE: u32 = 2;
     const KIND: &'static str = "packages";
@@ -400,6 +400,7 @@ impl uze_document::Shaped for RawPackageRegistry {
         &[uze_document::Step {
             from: 1,
             to: 2,
+            lasts: uze_document::earlier::Lasts::Unbounded,
             climb: Ok,
         }]
     }
@@ -1199,6 +1200,12 @@ fn copy_symlink(source: &Path, destination: &Path) -> Result<()> {
         source: source_error,
     })?;
     crate::persistence::create_symlink(&target, destination)
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<RawPackageRegistry>(file!())
 }
 
 #[cfg(test)]

@@ -1,0 +1,131 @@
+# Decisions
+
+## D1 — Ladder checks live in `uze_document::earlier::rungs`
+
+- status:   pending
+- task:     1.4
+- commit:   c06be4a7
+- trigger:  the task list as planned (1.4) did not fit what the code showed
+- decided:  `rungs::<T>()` asserts the ladder is contiguous, ends at `T::SHAPE` and that `lasts` never grows going down; the architecture suite calls every crate's `earlier()`, so every ladder is checked there.
+- rejected: a separate suite walking ladders, which needs every record type to be visible to the root test crate (most are private to their module). — the check sits where the ladder is turned into entries, and a module that forgets `rungs()` gets a dead-code warning (`-D warnings`) or the suite's coverage scan.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D2 — A crate-level `earlier` module in `uze-core`, outside the five concerns
+
+- status:   pending
+- task:     1.3
+- commit:   c06be4a7
+- trigger:  the task list as planned (1.3) did not fit what the code showed
+- decided:  `uze_core::earlier`, gathering the concerns' entries, beside `capability/`, `delivery/` and the rest.
+- rejected: one aggregator per concern, re-exported at the root. — it is a registry the suite reads, not a concern of its own; one door per crate is what the suite needs.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D3 — Identifier marks are `legacy_`, `retired_` and `earlier_`; `pre_` is dropped
+
+- status:   pending
+- task:     1.5
+- commit:   de2025f2
+- trigger:  the task list as planned (1.5) did not fit what the code showed
+- decided:  three prefixes, counted at a word start on code lines, with `src/ui/orchestrator/input.rs` sanctioned (the X10 mouse encoding).
+- rejected: the design's four, including `pre_`. — measured, `pre_` matched `pre_tool_use` (17, a hook event) and `pre_exec` (6, `CommandExt`) and only three real sites (`pre_sources_layout`), which `spelled` covers once that entry is declared.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D4 — The unmarked-default rule freezes today's 43 defaults as exact budgets
+
+- status:   pending
+- task:     1.5
+- commit:   de2025f2
+- trigger:  the task list as planned (1.5) did not fit what the code showed
+- decided:  a per-file exact budget of `#[serde(default)]` attributes without `Additive` in the doc above, in files that implement `Shaped`.
+- rejected: annotating all 43 now. — each one needs a judgement (additive versus an earlier shape's absence, which belongs in a rung); freezing them stops new ones today and leaves the judgement to the commit that touches each record.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D5 — A retired owned path gains `lasts` and `spelled`, not `carried_by`
+
+- status:   pending
+- task:     2.1
+- commit:   aa503978
+- trigger:  the task list as planned (2.1) did not fit what the code showed
+- decided:  `.lasts(..)` and `.spelled(..)` on `OwnedPath`; `UzeHome::earlier()` turns every retired entry into an `Earlier`.
+- rejected: the design's `.carried_by(fn)`. — D3 keeps every runner where it runs, so a function pointer on the entry would be called by nothing; the entry names its runner in a comment instead (`record::ensure`, `MutationLock::acquire`, the bootstrap sweep).
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D6 — The carries move into `earlier` modules; their fences stay beside their records
+
+- status:   pending
+- task:     2.2
+- commit:   aa503978
+- trigger:  the task list as planned (2.2) did not fit what the code showed
+- decided:  `package/sources.rs` becomes `package/earlier.rs`, and `carry_across_the_move` moves to `project/earlier.rs`; `rewrite_registry_with_digests`, `rewrite_ledger` and `rewrite_marketplaces` stay in `store.rs` and `state.rs`.
+- rejected: moving the fences too. — each fence rewrites a record through types private to its module (`RawPackageRegistry`, `MarketplaceRegistry`); moving them would widen those types for one caller. They are named in the carry they serve and go with it.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D7 — `retired_profiles_path` lasts until beta.20
+
+- status:   pending
+- task:     2.1
+- commit:   aa503978
+- trigger:  the task list as planned (2.1) did not fit what the code showed
+- decided:  `Until(1.0.0-beta.20)`: #324 retired it and sweeps it on every bootstrap; its first release is beta.21.
+- rejected: leaving it `Unbounded` until task 6.1. — a swept path is the one kind that can be bounded today, and the builder `.lasts()` needs a first user.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D8 — Generated-tier staleness and receipt reconciliation are not entries
+
+- status:   pending
+- task:     3.3, 3.4
+- commit:   258cbdfb
+- trigger:  the task list as planned (3.3, 3.4) did not fit what the code showed
+- decided:  no `Earlier` entry for a hook wrapper or rules engine "generated by an earlier build" that inspection accepts as matched (`hooks.rs`, `rules.rs`), nor for `retire_package_receipts`, `retire_superseded_receipts` and `release_obsolete_co_holders` in `lifecycle/attach.rs`.
+- rejected: declaring each, as tasks 3.3 and 3.4 planned. — none handles what one release left. Each is how the generated tier and the receipt model treat *any* earlier build's output — produced again, retired by receipt — and none ever becomes removable, so an entry would sit `Unbounded` forever and teach the floor nothing. What one release left (the runtime-tree engine path, the uze-local marketplace, plugins installed straight from the Store) is declared.
+- blast:    revert the commit; no record or path on disk changes shape
+
+## D9 — Callers ask for `leftover_regions`; the JSON keeps `retired_regions`; `StaleProjection` stays
+
+- status:   pending
+- task:     4.1
+- commit:   9f964f21
+- trigger:  the task said to fold `StaleProjection` into `RetiredRegionsPlan` and have readers consume the plan only; both are serialized in `uze status --json` and `uze install --json`
+- decided:  the knowledge of which regions are retired lives in `project/earlier.rs` and `application/earlier/regions.rs`; every reader outside them uses neutral names (`leftover_regions`, `leftover_region_files`, `spawn_leftover_region_check`), the three read-model fields keep the JSON key with `#[serde(rename = "retired_regions")]`, and `StaleProjection` stays the status read model, now computed from `earlier::regions`
+- rejected: folding `StaleProjection` into the plan — it changes the JSON a script may read, a behaviour change this refactor's non-goals exclude
+- blast:    revert the commit; the rename touches about 25 files, tests included
+
+## D10 — `slot_owner` and occupancy's release of ended holders stay general rules
+
+- status:   pending
+- task:     4.2
+- commit:   4e42273c
+- trigger:  the task listed `slot_owner`'s `rfind` and occupancy's tolerance with the checkout entries
+- decided:  both stay where they are, unchanged; the three behaviours only an earlier build's state needs (`agent-<n>` slots, a dropped `parent`, several agents on one slot) move into `checkout/earlier.rs` as entries
+- rejected: moving them too — picking the last-recorded holder and releasing an ended task still naming a checkout are what the store does for any state, today's included; an earlier build is one source of it, not the reason for it
+- blast:    revert the commit
+
+## D11 — Cross-build protocol and the hidden CLI spellings are not entries
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:   6f472dbd
+- trigger:  the tasks moved `endpoint.rs`'s older-protocol paths and `--resumed`/`uze terminal` into `earlier` modules
+- decided:  `Replaced::AnotherProtocol`, `Replaced::Unreachable`, `make_way` and the older socket candidates stay in `endpoint.rs`; `--resumed` and `uze terminal` stay in the grammar. Declared: the server older than the claimant record (`runtime/earlier.rs`) and the refused `--instructions` (`src/earlier.rs`, in the library half so the suite can gather it)
+- rejected: moving them — each is how a build meets *any* other build (an older client that self-updated, a server another release started), which `persisted-state` requires of every release; none becomes deletable at any floor
+- blast:    revert the commit
+
+## D12 — Two entries are bounded; every other stays `Unbounded`
+
+- status:   pending
+- task:     6.1
+- commit:   336598f0
+- trigger:  6.1 asked for each entry's `lasts` from history
+- decided:  `Until(1.0.0-beta.20)` for `retired_profiles_path` (#324, swept on every bootstrap) and the official marketplace's earlier name (#328, moved off on every bootstrap that finds it); both first shipped in beta.21. Every ladder rung, the sources and project-records moves, the runtime attachments tree, the integrations' and the checkouts' entries, the AGENTS.md regions, the old-server and `--instructions` entries are `Unbounded`: what carries each out runs only when its record, package, project or server is next touched, so a machine at the floor can still hold what they handle
+- rejected: deriving `Until` from the release that stopped writing each — true of the writer, false of the machine: a beta.5 `marketplaces.json` survives every later release that never rewrote it
+- blast:    none until the floor rises; then a wrong `Until` deletes live support, which is why only runners that run on every run are bounded
+
+## D13 — Raising the floor deletes the profiles path and the official name with their tests
+
+- status:   pending
+- task:     6.3
+- commit:   8906da58
+- trigger:  `retired_profiles_path` is the only retired disposable path, and the retired collector's, the schema report's and `doctor --repair`'s tests use it as their example
+- decided:  delete both bounded entries, their code and the tests that prove them; the retired collector and `SchemaFinding::Retired` stay with no subject until `refactor-home-file-shape` retires its renamed locks (swept retired entries, with tests of their own)
+- rejected: keeping `profiles.json` past the floor as a fixture — an entry below the floor that the build tolerates is exactly what the floor exists to refuse
+- blast:    restoring the entries is a revert; the mechanism is untested only between this commit and the home reshape's group 2

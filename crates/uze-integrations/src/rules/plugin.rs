@@ -4,11 +4,6 @@
 
 use std::path::Path;
 
-/// The file an earlier release wrote the rules plugin to, by itself, and the
-/// first line that proves the file there is still that plugin.
-pub(crate) const RETIRED_FILE: &str = "uze-rules.ts";
-pub(crate) const HEADER: &str = "// Generated rules plugin — do not edit; it is written again.";
-
 /// The engine is asked for at most this long; past it the section answers
 /// nothing and the request or the tool result goes on unchanged.
 const ENGINE_SECONDS: u16 = super::ENGINE_TIMEOUT_SECONDS;

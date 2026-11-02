@@ -1434,8 +1434,8 @@ pub(crate) fn render_context_status(status: &ProjectContextStatus) -> String {
     text.push_str(&progress::aligned_rows(rows));
     text.push('\n');
     let mut notes = String::new();
-    if let Some(regions) = &status.retired_regions {
-        for row in retired_plan_rows(regions) {
+    if let Some(regions) = &status.leftover_regions {
+        for row in leftover_plan_rows(regions) {
             notes.push_str(&format!(
                 "{} {}   {}\n",
                 progress::warning_icon(),
@@ -1478,7 +1478,7 @@ fn file_name_of(path: &std::path::Path) -> String {
 
 /// One row per region an earlier release wrote: the file, the region,
 /// and what the cleanup will do with it.
-fn retired_plan_rows(regions: &RetiredRegionsPlan) -> Vec<Vec<String>> {
+fn leftover_plan_rows(regions: &RetiredRegionsPlan) -> Vec<Vec<String>> {
     let file = file_name_of(&regions.file);
     let mut rows = Vec::new();
     for identity in &regions.remove {
@@ -1514,9 +1514,9 @@ fn retired_plan_rows(regions: &RetiredRegionsPlan) -> Vec<Vec<String>> {
 
 pub(crate) fn render_context_plan(plan: &ContextPlan) -> String {
     let rows = plan
-        .retired_regions
+        .leftover_regions
         .as_ref()
-        .map(retired_plan_rows)
+        .map(leftover_plan_rows)
         .unwrap_or_default();
     let checked = rows.len();
     if !plan.has_changes() {
@@ -1538,7 +1538,7 @@ pub(crate) fn render_context_plan(plan: &ContextPlan) -> String {
 
 pub(crate) fn render_context_reconciliation(report: &ContextReconciliationReport) -> String {
     let mut rows = Vec::new();
-    if let Some(regions) = &report.retired_regions {
+    if let Some(regions) = &report.leftover_regions {
         let file = file_name_of(&regions.file);
         for identity in &regions.removed {
             rows.push(vec![

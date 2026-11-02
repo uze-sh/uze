@@ -333,7 +333,7 @@ impl Attach<'_> {
             spawn_support_refresh(self.home, key, self.channels.support.sender.clone());
         }
         self.absorb_surface_answers();
-        self.absorb_retired_regions();
+        self.absorb_leftover_regions();
         self.absorb_target_syncs();
         self.absorb_unspelled_gates();
         self.absorb_command_approvals();

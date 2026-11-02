@@ -644,6 +644,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 3,
                 to: 4,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
@@ -670,6 +671,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 4,
                 to: 5,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
@@ -920,6 +922,12 @@ impl Drop for MutationGuard {
             // Dropping the lock releases the `flock`.
         }
     }
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<AgentStore>(file!())
 }
 
 #[cfg(test)]

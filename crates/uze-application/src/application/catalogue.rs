@@ -212,12 +212,7 @@ const RECORD: &str = "a record is the only copy of what it says; uze never write
 pub const CATALOGUE: &[HealthCheck] = &[
     HealthCheck {
         subject: Subject::Receipts,
-        paths: &[
-            "runtime_attachments_dir",
-            "generated_attachments_dir",
-            "delivered_packages_dir",
-            "delivered_package_dir",
-        ],
+        paths: &["delivered_packages_dir", "delivered_package_dir"],
         artifacts: &ManagedArtifact::KINDS,
         registrations: &[],
         lanes: &[
@@ -390,6 +385,8 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "extension_pictures_root",
             "extension_pictures_dir",
             "extension_costs_path",
+            "runtime_agents_dir",
+            "agent_runtime_dir",
             "agent_reports_path",
             "cache_dir",
             "harnesses_cache_path",
@@ -415,11 +412,9 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::Retired,
-        paths: &[
-            "pre_sources_layout",
-            "retired_profiles_path",
-            "scattered_project_records",
-        ],
+        // Every retired path the owned map lists, read from the map rather
+        // than spelled again here (the `earlier-releases` rule).
+        paths: &[],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -778,6 +773,15 @@ mod tests {
             for path in check.paths {
                 checked.entry(path).or_default().push(check.subject);
             }
+        }
+        for retired in UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
+        {
+            checked
+                .entry(retired.name)
+                .or_default()
+                .push(Subject::Retired);
         }
         let unchecked: Vec<&str> = UzeHome::owned_paths()
             .iter()

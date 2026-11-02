@@ -248,13 +248,6 @@ impl UzeHome {
         self.state_dir().join("launch-overrides.lock")
     }
 
-    /// Where the removed Profiles screen kept its record. Nothing reads it:
-    /// it is named only so the application can remove what earlier
-    /// releases left there.
-    pub fn retired_profiles_path(&self) -> PathBuf {
-        self.state_dir().join("profiles.json")
-    }
-
     /// The operator's consent to each declared extension, by identity:
     /// the grants accepted, the digest of the code they were accepted for
     /// and the projects it is enabled in. A record: only a person's answer
@@ -334,23 +327,33 @@ impl UzeHome {
             .join(plugin)
     }
 
+    /// Every agent's corner of the runtime tree: a tenant, so the runtime
+    /// sweep leaves it to its own collector, which keeps an agent's corner
+    /// while a project still records the agent.
+    pub fn runtime_agents_dir(&self) -> PathBuf {
+        self.runtime_dir().join("agents")
+    }
+
+    /// What the runtime keeps for agent `agent`.
+    pub fn agent_runtime_dir(&self, agent: &str) -> PathBuf {
+        self.runtime_agents_dir().join(agent)
+    }
+
     /// What the agent `agent` reported about itself through `uze agent
     /// report`, newest last, bounded: generated, since a report is a claim
     /// about now and losing it costs nothing.
     pub fn agent_reports_path(&self, agent: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("agents")
-            .join(agent)
-            .join("reports.jsonl")
+        self.agent_runtime_dir(agent).join("reports.jsonl")
     }
 
-    /// The lock every append to agent `agent`'s journal holds, so a cut
-    /// down to its newest half never drops a report appended meanwhile.
-    pub fn agent_reports_lock_path(&self, agent: &str) -> PathBuf {
-        self.runtime_dir()
-            .join("agents")
-            .join(agent)
-            .join("reports.lock")
+    /// The lock every append to an agent's journal holds, so a cut down to
+    /// its newest half never drops a report appended meanwhile. One for
+    /// every agent: an append is short, and one per agent would outlive
+    /// each. In `state/` rather than beside the journals, because the
+    /// runtime tree is swept, and unlinking a lock another process holds
+    /// hands the next caller a fresh file and the exclusion is gone.
+    pub fn agent_reports_lock_path(&self) -> PathBuf {
+        self.state_dir().join("reports.lock")
     }
 
     /// The scratch directory one program run of an extension may write,
@@ -603,17 +606,16 @@ impl UzeHome {
         self.logs_dir().join(format!("gate-{agent}.log"))
     }
 
-    /// Where an integration stages what it writes before it moves into place,
-    /// and where earlier releases kept what harnesses read: a generated
-    /// marketplace, a hook wrapper, the rules engine. No harness reads from
-    /// here any more ([`Self::vendor_store_dir`] is what they read), so
-    /// deleting it costs nothing; what an earlier release left here is
-    /// removed once no receipt names it.
+    /// Where earlier releases kept what harnesses read: a generated
+    /// marketplace, a hook wrapper, the rules engine. Retired: no harness
+    /// reads from here any more ([`Self::vendor_store_dir`] is what they
+    /// read), and what an earlier release left is removed once no receipt
+    /// names it.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
         self.runtime_attachments_dir().join(vendor)
     }
 
-    /// The parent of every [`Self::generated_attachments_dir`]: staging only.
+    /// The parent of every [`Self::generated_attachments_dir`]: retired.
     pub fn runtime_attachments_dir(&self) -> PathBuf {
         self.runtime_dir().join("attachments")
     }
@@ -796,10 +798,13 @@ impl UzeHome {
     /// each running session was already given: sweeping it would deliver
     /// them all again on the session's next tool call. `extensions` holds
     /// compiled extension views: sweeping it costs a compile on the next
-    /// open, so it is kept rather than swept by every `doctor`.
-    pub fn runtime_tenants(&self) -> [PathBuf; 6] {
+    /// open, so it is kept rather than swept by every `doctor`. `agents`
+    /// holds what each agent reported while it runs: its own collector
+    /// keeps it while a project records the agent.
+    pub fn runtime_tenants(&self) -> [PathBuf; 7] {
         [
             self.runtime_projects_dir(),
+            self.runtime_agents_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
             self.runtime_sessions_dir(),

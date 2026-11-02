@@ -26,6 +26,7 @@
 
 mod accounting;
 mod anchor;
+pub(crate) mod earlier;
 mod git_facts;
 mod integration;
 mod lifecycle;

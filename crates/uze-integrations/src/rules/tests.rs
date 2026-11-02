@@ -358,7 +358,11 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
     let plugins = machine.opencode_plugin().parent().unwrap().to_path_buf();
     fs::create_dir_all(&plugins).unwrap();
     fs::write(machine.opencode_plugin(), "// mine\n").unwrap();
-    fs::write(plugins.join(plugin::RETIRED_FILE), "// also mine\n").unwrap();
+    fs::write(
+        plugins.join(crate::opencode::earlier::RETIRED_RULES_FILE),
+        "// also mine\n",
+    )
+    .unwrap();
     assert!(
         matches!(
             machine.opencode.attach_rules_engine(),
@@ -376,7 +380,7 @@ fn an_operators_plugin_of_the_same_name_is_never_written_over() {
         "// mine\n"
     );
     assert_eq!(
-        fs::read_to_string(plugins.join(plugin::RETIRED_FILE)).unwrap(),
+        fs::read_to_string(plugins.join(crate::opencode::earlier::RETIRED_RULES_FILE)).unwrap(),
         "// also mine\n",
         "a file of the earlier name that UZE did not write stays"
     );
@@ -392,8 +396,11 @@ fn removing_the_rules_an_earlier_release_delivered_takes_its_plugin_out() {
     let receipts = machine.attach(&machine.opencode);
     let earlier = machine
         .opencode_plugin()
-        .with_file_name(plugin::RETIRED_FILE);
-    let content = format!("{}\nexport default {{}};\n", plugin::HEADER);
+        .with_file_name(crate::opencode::earlier::RETIRED_RULES_FILE);
+    let content = format!(
+        "{}\nexport default {{}};\n",
+        crate::opencode::earlier::RETIRED_PLUGIN_FILES[1].1
+    );
     fs::create_dir_all(earlier.parent().unwrap()).unwrap();
     fs::write(&earlier, &content).unwrap();
     let ManagedArtifact::IntegrationOwned {

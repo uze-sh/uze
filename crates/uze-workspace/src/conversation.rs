@@ -287,6 +287,7 @@ impl uze_document::Shaped for ConversationRecord {
         &[uze_document::Step {
             from: 2,
             to: 3,
+            lasts: uze_document::earlier::Lasts::Unbounded,
             // Shape 2's briefing named a generated file under `runtime/`,
             // which is not carried across; the conversations are.
             climb: |mut document| {
@@ -557,6 +558,12 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
             isolated: record.is_isolated(),
         })
     })
+}
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ConversationRecord>(file!())
 }
 
 #[cfg(test)]
