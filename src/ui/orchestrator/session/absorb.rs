@@ -54,13 +54,9 @@ impl Attach<'_> {
                     );
                 }
             }
-            (_, Some(reason)) if automatic => {
-                self.model.raise_toast(
-                    ToastKind::Told,
-                    "held back",
-                    format!("{}: {reason}", task.label),
-                    None,
-                );
+            (_, Some(refusal)) if automatic => {
+                let (title, detail) = refusal.toast("held back", &task.label);
+                self.model.raise_toast(ToastKind::Told, title, detail, None);
             }
             (Some((title, detail)), _) => {
                 self.model.raise_toast(ToastKind::Told, title, detail, None);

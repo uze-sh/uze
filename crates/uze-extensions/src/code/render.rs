@@ -191,7 +191,8 @@ fn modes(code: &CodeView) -> Vec<Mode> {
 }
 
 /// The halves of this surface, named as the places they are: the
-/// checkout's files, and a picture of where its lines are.
+/// checkout's files, what a search found in them, and a picture of where
+/// its lines are.
 ///
 /// Never named after the *rendering* the map happens to be in — that is
 /// what the control below is for, and a chip that said "ASCII" here
@@ -304,6 +305,9 @@ fn footer(code: &CodeView) -> Vec<Command> {
     }
     if code.editing() {
         return vec![Command::Save, Command::Find, Command::Close];
+    }
+    if code.typing_a_search() && !code.search.has_lines() {
+        return vec![Command::Close];
     }
     if code.typing_a_search() {
         return vec![Command::SelectNext, Command::Close];

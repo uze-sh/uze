@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use super::Half;
 use super::{
     CATALOG, CodeHeld, CodeOutcome, CodePlace, CodeView, ContentMode, FileAnswer, FileRequest,
     Measure, Timeline, fulfill, handle_command, handle_hover, handle_mouse, handle_scroll, measure,
@@ -399,13 +400,13 @@ fn door_mode(door: &str) -> Option<ContentMode> {
     }
 }
 
-/// Which half a mode belongs to. A document read as its preview is still
+/// Which half a door's mode opens. A document read as its preview is still
 /// the files half: its door is the one already open, and shuts rather than
 /// turning the preview back into source first.
-fn half(mode: ContentMode) -> ContentMode {
+fn door_half(mode: ContentMode) -> Half {
     match mode {
-        ContentMode::Preview => ContentMode::Contents,
-        other => other,
+        ContentMode::Map => Half::Map,
+        ContentMode::Contents | ContentMode::Preview => Half::Files,
     }
 }
 
@@ -505,7 +506,7 @@ impl Extension for CodeExtension {
                 };
                 if let Some(view) = self.open.as_mut() {
                     // The door that shuts it asks first, as Esc does.
-                    if half(view.showing()) == half(wanted) {
+                    if view.half() == door_half(wanted) {
                         if view.has_unsaved() && !view.confirming_discard() {
                             view.ask_to_discard();
                             return Outcome::Stay;
@@ -513,7 +514,7 @@ impl Extension for CodeExtension {
                         view.discard_unsaved();
                         return Outcome::Close;
                     }
-                    view.show(wanted);
+                    view.go_through_door(wanted);
                     return Outcome::Stay;
                 }
                 Arrival::Door(wanted)
@@ -566,13 +567,17 @@ impl Extension for CodeExtension {
             // Everything it held stands as it was left; a door still says
             // which half, and a path sent still goes to that file.
             match sent {
-                Some(place) => view = view.resuming(place),
-                None if awaiting == Awaiting::Place => view.show(mode),
+                Some(place) => {
+                    view = view.resuming(place);
+                    view.show_half(Half::Files);
+                }
+                None if awaiting == Awaiting::Place => view.go_through_door(mode),
                 None => {}
             }
             if let Some(line) = sent_line {
                 view.go_to_line(line as usize);
             }
+            view.ask_search_again();
             self.awaiting = Awaiting::Nothing;
             self.measure_asked = None;
             self.open = Some(view);

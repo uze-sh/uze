@@ -230,6 +230,9 @@ pub struct CodeView {
     search: search::Search,
     /// The list beside a file: what the map stands over, and comes back to.
     list: NavigatorMode,
+    /// Where the source was being read, while its preview stands in. Its
+    /// lines are not the document's rows, so one scroll cannot serve both.
+    source_scroll: Option<usize>,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -316,6 +319,8 @@ pub struct CodeHeld {
     focus: Focus,
     list: NavigatorMode,
     search: search::Search,
+    scroll: usize,
+    source_scroll: Option<usize>,
 }
 
 impl CodeView {
@@ -348,6 +353,7 @@ impl CodeView {
             closing_tab: None,
             search: search::Search::default(),
             list: NavigatorMode::Files,
+            source_scroll: None,
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -384,7 +390,9 @@ impl CodeView {
         let Some(path) = selected else {
             return self;
         };
-        self.selected = Some(path);
+        // Through `select`, whatever was open: a surface kept for its unsaved
+        // work is resumed too, and that work is parked rather than replaced.
+        self.select(path);
         self.read_selection_as_what_it_is();
         match self.navigator() {
             // A directory is where the cursor was, and nothing to read.
@@ -412,22 +420,26 @@ impl CodeView {
             focus,
             list,
             search,
+            scroll,
+            source_scroll,
         } = held;
         let was_files = self.navigator() == NavigatorMode::Files;
         self.content = content;
         self.list = list;
         self.search = search;
-        // The answer it was waiting for went with the surface it left.
-        if self.search.pending() {
-            self.ask_search();
-        }
         if !was_files && self.navigator() == NavigatorMode::Files {
             self.expand(self.root.clone());
         }
         self.before_map = before_map;
         self.map_showing = map_showing;
         self.focus = focus;
-        self.resuming(place)
+        let mut back = self.resuming(place);
+        // What stood, whatever a door would decide about the selection.
+        back.content = content;
+        back.scroll = scroll;
+        back.source_scroll = source_scroll;
+        back.ask_search_again();
+        back
     }
 
     /// What this surface keeps for its tab, for [`Self::returning`].
@@ -440,16 +452,27 @@ impl CodeView {
             focus: self.focus,
             list: self.list,
             search: self.search.clone(),
+            scroll: self.scroll,
+            source_scroll: self.source_scroll,
         }
     }
 
     /// Where the viewer is, for the host to hand back to [`Self::resuming`].
     pub fn place(&self) -> CodePlace {
+        let reading = match self.content {
+            ContentMode::Map => self.before_map,
+            reading => reading,
+        };
         CodePlace {
             selected_is_a_file: self.selected_is_a_file(),
             selected: self.selected.clone(),
             expanded: self.files.expanded.clone(),
-            scroll: self.scroll,
+            // A door opens a document as a preview, where a place in its
+            // source is no place at all.
+            scroll: match reading == ContentMode::Contents && self.selected_is_markdown() {
+                true => 0,
+                false => self.scroll,
+            },
         }
     }
 
@@ -571,7 +594,7 @@ impl CodeView {
         self.editing() || self.renaming.is_some() || self.typing_a_search()
     }
 
-    /// Whether keys land in the search's field, over the files' list.
+    /// Whether keys land in the search's field.
     fn typing_a_search(&self) -> bool {
         self.search.typing && self.navigator() == NavigatorMode::Search
     }
@@ -863,6 +886,7 @@ impl CodeView {
         }
         self.selected = Some(path);
         self.scroll = 0;
+        self.source_scroll = None;
         self.read_selection_as_what_it_is();
     }
 
@@ -893,10 +917,18 @@ impl CodeView {
         // The menu was opened on the list this leaves.
         self.menu = None;
         let line = self.line_in_view();
-        // A document's rows are not its source's lines, so a scroll into the
-        // source may lie past the end of what the preview draws.
-        if mode == ContentMode::Preview {
-            self.scroll = 0;
+        let from = match self.content {
+            ContentMode::Map => self.before_map,
+            reading => reading,
+        };
+        match (from, mode) {
+            (ContentMode::Contents, ContentMode::Preview) => {
+                self.source_scroll = Some(std::mem::take(&mut self.scroll));
+            }
+            (ContentMode::Preview, ContentMode::Contents) => {
+                self.scroll = self.source_scroll.take().unwrap_or(self.scroll);
+            }
+            _ => {}
         }
         self.content = mode;
         match mode {
@@ -1012,9 +1044,9 @@ impl CodeView {
     /// is reachable from every other.
     pub(super) fn show_half(&mut self, half: Half) {
         match half {
-            // As whatever the selection is: a document opens as the
-            // document it is, which is the same rule arriving at a file
-            // any other way follows.
+            // Leaving the map, as whatever the selection is: a document
+            // opens as the document it is, which is the same rule arriving
+            // at a file any other way follows.
             Half::Files => {
                 // From the search only the list changes: the file beside it
                 // stays as it was being read.
@@ -1414,7 +1446,11 @@ impl CodeView {
             open.editing = false;
         }
         self.menu = None;
+        let coming_back = self.navigator() != NavigatorMode::Search;
         self.list = NavigatorMode::Search;
+        if coming_back {
+            self.ask_search_again();
+        }
         if self.content == ContentMode::Map {
             self.show(self.before_map);
         }
@@ -1430,12 +1466,31 @@ impl CodeView {
         self.reveal_selection();
     }
 
+    /// Shows what a door opens: the tree, in `mode` when leaving the map,
+    /// and otherwise with the file beside it as it was being read.
+    fn go_through_door(&mut self, mode: ContentMode) {
+        if self.content == ContentMode::Map {
+            self.show(mode);
+        }
+        self.leave_search();
+    }
+
     /// Empties the field and stays in it, for the next thing to look for.
     fn clear_search(&mut self) {
+        self.stand_on_search();
         self.search.query.clear();
         self.search.typing = true;
-        self.focus = Focus::Navigator;
         self.ask_search();
+    }
+
+    /// Asks about what the files hold now, for a search come back to and on
+    /// show: they may have changed under an agent's hands, and an answer on
+    /// its way when the surface was put away went with it. One not on show
+    /// is asked when it is, rather than holding up the file beside it.
+    fn ask_search_again(&mut self) {
+        if !self.search.query.is_empty() && self.navigator() == NavigatorMode::Search {
+            self.ask_search();
+        }
     }
 
     /// Asks again for what the field holds now, in place of any search
@@ -1490,6 +1545,11 @@ impl CodeView {
     /// surface sent the viewer, as a search result sends them.
     pub fn go_to_line(&mut self, line: usize) {
         let line = line.max(1);
+        // A line is a line of the source: on a preview's rows it may lie past
+        // the end of what is drawn.
+        if self.content == ContentMode::Preview {
+            self.show(ContentMode::Contents);
+        }
         self.load_selection(Some(line));
         if let Some(open) = self.open.as_mut() {
             open.caret = Caret {
@@ -1824,11 +1884,11 @@ fn search_field_command(view: &mut CodeView, command: Command) {
                 view.search.step(true);
             }
         }
-        Command::SelectNext => {
+        Command::SelectNext if view.search.has_lines() => {
             view.search.typing = false;
             view.search.step(true);
         }
-        Command::Newline | Command::Activate => {
+        Command::Newline | Command::Activate if view.search.has_lines() => {
             view.search.typing = false;
             view.search.step(true);
             view.open_hit(true);

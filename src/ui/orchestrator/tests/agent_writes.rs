@@ -575,7 +575,8 @@ fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
     assert!(typed(&driven.sent()).is_empty());
     let said = format!("{:?}", driven.attach.model.toast_stack());
     assert!(
-        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
+        said.contains("not sent: can't tell what's typed")
+            && said.contains("ctrl-c if it holds text, else enter"),
         "{said}"
     );
 }
@@ -590,6 +591,94 @@ fn erasing_text_a_key_made_unknown_does_not_make_it_answerable() {
     driven.press_key(key("tab"));
     driven.press_key(key("backspace"));
     let pane = driven.attach.model.focused_pane();
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::UnknownOverText
+    );
+}
+
+/// What clears the line is what the refusal is for, so it must be on screen,
+/// not only in what the toast was told.
+#[test]
+fn a_refusal_over_an_unknown_line_draws_what_clears_it() {
+    let mut model = launched_agent();
+    let pane = model.focused_pane();
+    model.remembered.prompt_buffers.insert(
+        pane,
+        super::PromptBuffer {
+            trusted: false,
+            ..Default::default()
+        },
+    );
+    let plugin_like = AgentRequest {
+        label: "a label long enough to take the toast's whole width".to_owned(),
+        ..on_its_own("review", "Review PLAN.md")
+    };
+    model.remembered.declared.bridge.writes.allowed.clear();
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-drawn-refusal",
+    ));
+    let mut driven = driven(model, &home);
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), plugin_like);
+    driven.press_key(key("right"));
+    driven.frame();
+    driven.press_key(key("enter"));
+    driven.pump();
+    let drawn = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(drawn.contains("can't tell what's typed"), "{drawn}");
+    assert!(
+        drawn.contains("ctrl-c if it holds text, else enter"),
+        "{drawn}"
+    );
+}
+
+/// A refusal's shape is what lays out its toast, never the punctuation of its
+/// words, and an extension is told the whole of it either way.
+#[test]
+fn a_refusal_lays_out_its_toast_by_what_it_holds() {
+    let plain = super::Refusal::because("a limit: three a minute");
+    assert_eq!(
+        plain.toast("not sent", "Review"),
+        (
+            "not sent".to_owned(),
+            "Review: a limit: three a minute".to_owned()
+        )
+    );
+    assert_eq!(plain.to_string(), "a limit: three a minute");
+
+    let remedied = super::Submission::Unknown.reason().expect("a refusal");
+    assert_eq!(
+        remedied.toast("not sent", "Review"),
+        (
+            "not sent: can't tell what's typed".to_owned(),
+            "ctrl-c if it holds text, else enter · Review".to_owned()
+        )
+    );
+    assert_eq!(
+        remedied.to_string(),
+        "can't tell what's typed: ctrl-c if it holds text, else enter"
+    );
+}
+
+/// Text pasted while the line is unknown is known to be there, as text typed
+/// is, even if erased afterwards.
+#[test]
+fn pasting_over_an_unknown_line_leaves_text_no_answer_sends_along() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-pasted"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("up"));
+    let pane = driven.attach.model.focused_pane();
+    driven
+        .attach
+        .model
+        .remembered
+        .prompt_buffers
+        .get_mut(&pane)
+        .expect("the key made a buffer")
+        .paste("half a thought");
     assert_eq!(
         driven.attach.model.may_submit(pane),
         super::Submission::UnknownOverText
@@ -671,7 +760,8 @@ fn an_unattended_prompt_over_an_unknown_line_says_how_to_clear_it() {
     assert!(typed(&driven.sent()).is_empty());
     let said = format!("{:?}", driven.attach.model.toast_stack());
     assert!(
-        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
+        said.contains("not sent: can't tell what's typed")
+            && said.contains("ctrl-c if it holds text, else enter"),
         "{said}"
     );
 }

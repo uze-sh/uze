@@ -2655,6 +2655,143 @@ mod hosted {
         );
     }
 
+    fn on_show(extension: &CodeExtension) -> String {
+        super::tab_on_show(extension.code_view().unwrap())
+    }
+
+    /// Their door shows the tree from the search and from a map over it,
+    /// rather than shutting the surface or standing on the search.
+    #[test]
+    fn the_files_door_goes_to_the_tree_from_the_search() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Find);
+        assert_eq!(on_show(&extension), "Search");
+
+        assert!(matches!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Stay
+        ));
+        assert_eq!(on_show(&extension), "Files");
+        assert!(!extension.code_view().unwrap().typing());
+
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Find);
+        view.absorb_measure(measured());
+        press(view, Command::ToggleMap);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        assert_eq!(on_show(&extension), "Files");
+    }
+
+    /// A surface kept for its unsaved work and left on its search: a path
+    /// sent opens in the files with the keys out of the field, its door shows
+    /// the tree, and a search left unanswered is asked again.
+    #[test]
+    fn a_kept_surface_left_on_its_search_answers_a_path_a_door_and_the_search() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+        let keep_on_search = |extension: &mut CodeExtension| {
+            let view = extension.code_view_mut().unwrap();
+            press(view, Command::Find);
+            view.search.query.clear();
+            type_text(view, "fog");
+            extension.close(SURFACE);
+        };
+
+        let mut sent = opened(FILES, "/w");
+        typed_then_put_away(&mut sent, &machine);
+        sent.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        sent.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut sent, &machine);
+        keep_on_search(&mut sent);
+        sent.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/a.txt"),
+                directory: false,
+                line: Some(1),
+            },
+        );
+        sent.open(SURFACE, &checkout("/w"));
+        assert_eq!(on_show(&sent), "Files");
+        assert!(!sent.code_view().unwrap().typing());
+        settle_hosted(&mut sent, &machine);
+
+        keep_on_search(&mut sent);
+        sent.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        sent.open(SURFACE, &checkout("/w"));
+        assert_eq!(on_show(&sent), "Files", "a door decides afresh");
+        settle_hosted(&mut sent, &machine);
+        press(sent.code_view_mut().unwrap(), Command::Find);
+        settle_hosted(&mut sent, &machine);
+        let view = sent.code_view().unwrap();
+        assert!(!view.search.pending(), "the search was asked again");
+        assert_eq!(view.search.files().len(), 1);
+    }
+
+    /// A path sent to a surface kept for its unsaved work takes the viewer to
+    /// that file in the files, from the map too, and the work stays.
+    #[test]
+    fn a_path_sent_to_a_kept_surface_keeps_its_work_and_opens_in_the_files() {
+        let machine = FakeMachine::default()
+            .with_file("/w/a.txt", "one\n")
+            .with_file("/w/b.txt", "two\n");
+        let mut extension = opened(FILES, "/w");
+        typed_then_put_away(&mut extension, &machine);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view_mut().unwrap();
+        assert!(view.has_unsaved());
+        view.absorb_measure(measured());
+        press(view, Command::Close);
+        press(view, Command::ToggleMap);
+        assert_eq!(view.showing(), ContentMode::Map);
+        extension.close(SURFACE);
+
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/b.txt"),
+                directory: false,
+                line: None,
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.selected(), Some(Path::new("/w/b.txt")));
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert!(view.has_unsaved(), "the work on a.txt stays");
+    }
+
+    /// A line is a line of the source, so a document sent with one opens as
+    /// its source at that line rather than as a blank preview.
+    #[test]
+    fn a_document_sent_with_a_line_opens_in_its_source_at_it() {
+        let long = format!("{}fog\n", "line\n".repeat(300));
+        let machine = FakeMachine::default().with_file("/w/long.md", &long);
+        let mut extension = CodeExtension::default();
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/long.md"),
+                directory: false,
+                line: Some(290),
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert!(view.scroll > 0);
+        let drawn = render::view(view, space());
+        let crate::view::Content::Lines { lines, .. } = drawn.content else {
+            panic!("the file's lines");
+        };
+        assert!(!lines.is_empty());
+    }
+
     /// Typing in `extension`'s open file, then put away the way the host
     /// puts it away when another agent comes to the front.
     fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
@@ -3427,6 +3564,269 @@ fn a_document_shown_as_a_preview_from_far_down_its_source_is_not_blank() {
         panic!("the document's lines");
     };
     assert!(!lines.is_empty(), "the preview draws something");
+}
+
+fn search_opened_far_down(view: &mut CodeView, machine: &FakeMachine) {
+    settle(view, machine);
+    press(view, Command::Find);
+    type_text(view, "fog");
+    settle(view, machine);
+    press(view, Command::Newline);
+    settle(view, machine);
+    assert!(view.scroll > 0, "opened down at the match");
+}
+
+fn long_document() -> FakeMachine {
+    // One paragraph: hundreds of lines of source, a few rows of document.
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    FakeMachine::default().with_file("/w/long.md", &long)
+}
+
+/// The field's mark puts the keys in the field, whatever had them: what is
+/// typed next is a search, never a change to the file beside it.
+#[test]
+fn clearing_the_field_while_editing_puts_the_keys_in_the_field() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    assert!(view.editing());
+
+    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    type_text(&mut view, "x");
+    assert_eq!(view.search.query, "x");
+    assert!(!view.editing());
+    assert!(!view.has_unsaved(), "the file was not typed into");
+}
+
+/// The source's place survives its preview, and a preview's its map.
+#[test]
+fn leaving_a_preview_or_the_map_lands_where_it_was_read() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let read = view.scroll;
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    assert_eq!(view.scroll, 0);
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    assert_eq!(view.scroll, read, "back where the source was read");
+
+    press(&mut view, Command::TogglePreview);
+    view.scroll = 2;
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    assert_eq!(view.scroll, 2, "back where the document was read");
+}
+
+/// A document left in its source is handed back in its source, at its place.
+#[test]
+fn a_document_held_in_its_source_comes_back_in_its_source() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let read = view.scroll;
+    let held = view.held();
+
+    let mut back = files_at("/w").returning(held);
+    settle(&mut back, &machine);
+    assert_eq!(back.showing(), ContentMode::Contents);
+    assert_eq!(back.scroll, read);
+    assert_eq!(tab_on_show(&back), "Search");
+}
+
+/// Opened by a door from the place left in a source, a document stands as a
+/// preview at its top: that place is not one of its rows.
+#[test]
+fn a_door_opening_a_document_left_in_its_source_is_not_blank() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let place = view.place();
+
+    let mut back = files_at("/w").resuming(place);
+    settle(&mut back, &machine);
+    assert_eq!(back.showing(), ContentMode::Preview);
+    assert_eq!(back.scroll, 0);
+}
+
+/// A search come back to is asked again, for what the files hold now, and
+/// keeps its cursor on the line it was on while that line is still found.
+#[test]
+fn a_search_come_back_to_is_asked_again_and_keeps_its_cursor() {
+    let before = FakeMachine::default()
+        .with_file("/w/a.txt", "fog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let after = FakeMachine::default()
+        .with_file("/w/a.txt", "gone\n")
+        .with_file("/w/b.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &before);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &before);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    assert_eq!(view.search.files().len(), 2);
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &after);
+    press_tab(&mut view, "Search");
+    settle(&mut view, &after);
+    assert_eq!(view.search.files().len(), 1, "what the files hold now");
+    let (path, line) = view
+        .search
+        .at(view.search.cursor.expect("a cursor"))
+        .unwrap();
+    assert_eq!((path, line), (Path::new("/w/b.txt"), 1));
+
+    let mut back = files_at("/w").returning(view.held());
+    settle(&mut back, &before);
+    assert_eq!(back.search.files().len(), 2, "asked again on the way back");
+}
+
+/// A document left in its source under the map hands a door no place in that
+/// source, which a preview would draw nothing at.
+#[test]
+fn a_door_opening_a_document_left_in_its_source_under_the_map_is_not_blank() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    let mut back = files_at("/w").resuming(view.place());
+    settle(&mut back, &machine);
+    assert_eq!(back.scroll, 0);
+}
+
+/// An agent's edit moves a line; the cursor follows to the nearest hit in the
+/// same file rather than being lost. Folds survive the same question asked
+/// again, and a new question starts with none.
+#[test]
+fn a_search_asked_again_keeps_the_cursor_near_and_the_folds_until_the_text_changes() {
+    let before = FakeMachine::default()
+        .with_file("/w/a.txt", "fog\nx\nfog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let after = FakeMachine::default()
+        .with_file("/w/a.txt", "new\nfog\nx\nfog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &before);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &before);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    view.search.toggle(1);
+    assert_eq!(view.search.at(view.search.cursor.unwrap()).unwrap().1, 3);
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &after);
+    press_tab(&mut view, "Search");
+    settle(&mut view, &after);
+    let (path, line) = view
+        .search
+        .at(view.search.cursor.expect("a cursor"))
+        .unwrap();
+    assert_eq!((path, line), (Path::new("/w/a.txt"), 4), "the nearest hit");
+    let folded = |view: &CodeView| {
+        view.search.rows().iter().any(|row| {
+            matches!(
+                row,
+                NavigatorRow::Found {
+                    collapsed: true,
+                    ..
+                }
+            )
+        })
+    };
+    assert!(folded(&view), "the fold stays");
+
+    press(&mut view, Command::Find);
+    type_text(&mut view, "x");
+    settle(&mut view, &after);
+    press(&mut view, Command::EraseBack);
+    settle(&mut view, &after);
+    assert!(!folded(&view), "another question starts unfolded");
+}
+
+/// A held search goes unasked until it is on show: the file beside it reads
+/// first, and a click in the field of a search on show asks nothing.
+#[test]
+fn a_search_not_on_show_asks_nothing() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    let asked = |view: &mut CodeView| {
+        std::iter::from_fn(|| view.take_request())
+            .filter(|request| matches!(request, FileRequest::Search { .. }))
+            .count()
+    };
+    press(&mut view, Command::Find);
+    assert_eq!(asked(&mut view), 0, "already on show");
+
+    press_tab(&mut view, "Files");
+    let mut back = files_at("/w").returning(view.held());
+    assert_eq!(asked(&mut back), 0, "the tree is on show");
+}
+
+/// A search that found nothing leaves Enter in the field too.
+#[test]
+fn enter_in_a_field_with_nothing_found_stays_in_it() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "absent");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    assert!(view.typing(), "the keys stay in the field");
+}
+
+/// A search still unanswered when the surface was put away gets its answer.
+#[test]
+fn a_search_put_away_unanswered_is_answered_when_it_comes_back() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    let held = view.held();
+
+    let mut back = files_at("/w").returning(held);
+    settle(&mut back, &machine);
+    assert!(!back.search.pending());
+    assert_eq!(back.search.files().len(), 1);
+}
+
+/// With nothing found there is nowhere to go from the field: the footer does
+/// not offer it and the key leaves the keys where they are.
+#[test]
+fn the_field_offers_no_way_down_to_nothing() {
+    let mut view = files_at("/w");
+    press(&mut view, Command::Find);
+    assert!(
+        !render::view(&view, space())
+            .footer
+            .contains(&Command::SelectNext)
+    );
+    press(&mut view, Command::SelectNext);
+    assert!(view.typing(), "the keys stay in the field");
 }
 
 /// Going back to the tree from a search opens it down to the file the

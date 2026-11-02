@@ -170,18 +170,18 @@ impl WorkspaceModel {
     ) {
         let by = attribution(&owner);
         let asker = owner.clone();
-        let refuse = |model: &mut Self, reason: &str| {
-            model.raise_toast(
-                ToastKind::Told,
-                "not sent",
-                format!("{by}: {}: {reason}", request.label),
-                None,
-            );
+        let refuse_for = |model: &mut Self, refusal: &Refusal| {
+            let who = format!("{by}: {}", request.label);
+            let (title, detail) = refusal.toast("not sent", &who);
+            model.raise_toast(ToastKind::Told, title, detail, None);
             model.tell_written(
                 &asker,
                 &request.action,
-                AgentWritten::Refused(reason.to_owned()),
+                AgentWritten::Refused(refusal.to_string()),
             );
+        };
+        let refuse = |model: &mut Self, reason: &str| {
+            refuse_for(model, &Refusal::because(reason));
         };
         if self.remembered.declared.bridge.writes.paused && !matches!(request.what, AgentAsk::Focus)
         {
@@ -258,9 +258,9 @@ impl WorkspaceModel {
         if unknown
             && !answerable
             && !write.unattended
-            && let Some(reason) = line.reason()
+            && let Some(refusal) = line.reason()
         {
-            return refuse(self, &reason);
+            return refuse_for(self, &refusal);
         }
         let writes = &mut self.remembered.declared.bridge.writes;
         if request.unattended
@@ -384,22 +384,27 @@ impl WorkspaceModel {
     /// for holds back only a write the operator was not warned about; one
     /// nobody pressed anything for still needs them to clear it, and is
     /// told how.
-    fn write_refusal(&self, write: &Write, pane: PaneId, harness_in_front: bool) -> Option<String> {
+    fn write_refusal(
+        &self,
+        write: &Write,
+        pane: PaneId,
+        harness_in_front: bool,
+    ) -> Option<Refusal> {
         let bridge = &self.remembered.declared.bridge;
         if bridge.writes.paused {
-            return Some("extensions are paused (F8)".to_owned());
+            return Some(Refusal::because("extensions are paused (F8)"));
         }
         if !harness_in_front {
-            return Some("its harness is not what runs in its pane".to_owned());
+            return Some(Refusal::because("its harness is not what runs in its pane"));
         }
         if bridge.awaiting_approval.contains(&write.agent) {
-            return Some("it is waiting on an approval".to_owned());
+            return Some(Refusal::because("it is waiting on an approval"));
         }
         let submission = self.may_submit(pane);
         if !(submission == Submission::Unknown && write.warned_of_unknown_line)
-            && let Some(reason) = submission.reason()
+            && let Some(refusal) = submission.reason()
         {
-            return Some(reason);
+            return Some(refusal);
         }
         let turn = bridge.turns.get(&write.agent).copied().unwrap_or(0);
         bridge
@@ -412,7 +417,7 @@ impl WorkspaceModel {
                 write.unattended,
                 Instant::now(),
             )
-            .map(str::to_owned)
+            .map(Refusal::because)
     }
 }
 
@@ -443,15 +448,15 @@ impl Attach<'_> {
                 );
                 continue;
             };
-            if let Some(reason) = self.model.write_refusal(&write, pane, harness_in_front) {
-                self.model.raise_toast(
-                    ToastKind::Told,
-                    "not sent",
-                    format!("{by}: {}: {reason}", write.label),
-                    None,
+            if let Some(refusal) = self.model.write_refusal(&write, pane, harness_in_front) {
+                let who = format!("{by}: {}", write.label);
+                let (title, detail) = refusal.toast("not sent", &who);
+                self.model.raise_toast(ToastKind::Told, title, detail, None);
+                self.model.tell_written(
+                    &write.owner,
+                    &write.action,
+                    AgentWritten::Refused(refusal.to_string()),
                 );
-                self.model
-                    .tell_written(&write.owner, &write.action, AgentWritten::Refused(reason));
                 continue;
             }
             self.submit_notice(pane, &write.text);

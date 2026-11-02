@@ -333,28 +333,40 @@ once, and asking again SHALL discard them without writing.
 - **WHEN** the viewer closes the tab of a file with unsaved changes, then closes it again
 - **THEN** the first close only says so, and the second removes the tab and leaves the file on disk unchanged
 
-### Requirement: The files list searches every file
-The files list SHALL keep a search field over its tree and search every file of
-the checkout that Git does not ignore as the text is typed, ignoring case,
+### Requirement: The search tab searches every file
+The search SHALL be a tab with a field over its results, and search every file
+of the checkout that Git does not ignore as the text is typed, ignoring case,
 off the drawing thread. An answer to text the field no longer holds SHALL
 be dropped. Results SHALL be grouped by file with a count, and each match
-SHALL be set apart, in the tree's place while the field holds text. Opening a
-result SHALL show its file with the caret on the match. Letting go of the
-search SHALL bring the tree back.
+SHALL be set apart. Opening a result SHALL show its file with the caret on the
+match. The file tree SHALL carry no field.
 
 #### Scenario: Searching and opening a result
 - **WHEN** the viewer types `fog` into the field and presses Enter
 - **THEN** the files with `fog` are listed with their lines, and the first line opens with the caret on the match
 
+### Requirement: A search is kept until it is cleared
+Changing tab or agent SHALL keep the search's text and cursor, and coming back
+to it SHALL ask again what the files hold now. Esc SHALL go from the field to
+the results and from the results to the tree, emptying nothing; only the
+field's clear mark SHALL empty it, leaving the keys in the field.
+
+#### Scenario: Going to the tree and back
+- **WHEN** the viewer searches for `fog`, moves to a result, goes to the files tab and returns to the search tab
+- **THEN** the field still holds `fog`, the results say what the files hold now, and the cursor is on the same result while it is found
+
+#### Scenario: Esc a level at a time
+- **WHEN** the viewer presses Esc in a field holding `fog`, then again on the results
+- **THEN** the keys go to the results and then to the tree, opened down to the selection, and the field still holds `fog`
+
 ### Requirement: The code surface navigates and edits, and does not review
-The code surface SHALL offer files and map, with its search as the field
-over the file tree. It SHALL NOT offer a changes mode or a diff. A path
-another surface hands it SHALL open in files, at the line given when one
-is.
+The code surface SHALL offer files, search and map. It SHALL NOT offer a
+changes mode or a diff. A path another surface hands it SHALL open in files,
+at the line given when one is.
 
 #### Scenario: The modes on offer
 - **WHEN** the operator opens the code surface
-- **THEN** its modes are `files` and `map`, and no `changes`
+- **THEN** its modes are `files`, `search` and `map`, and no `changes`
 
 #### Scenario: Opened from the review
 - **WHEN** the review hands it `naming.rs` at line 53

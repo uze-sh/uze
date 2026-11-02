@@ -2456,14 +2456,53 @@ impl Submission {
         Some((title, self.remedy().unwrap_or(label).to_owned()))
     }
 
-    /// The refusal as one phrase, for where it is said beside a label of
-    /// its own.
-    fn reason(self) -> Option<String> {
-        let title = self.title()?;
-        Some(match self.remedy() {
-            Some(remedy) => format!("{title}: {remedy}"),
-            None => title.to_owned(),
+    /// Why it refuses, for where that is said beside a label of its own.
+    fn reason(self) -> Option<Refusal> {
+        Some(Refusal {
+            what: self.title()?.to_owned(),
+            remedy: self.remedy(),
         })
+    }
+}
+
+/// Why something was not typed into an agent: what stopped it, and what the
+/// operator can do about it where there is something to say.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct Refusal {
+    what: String,
+    remedy: Option<&'static str>,
+}
+
+impl Refusal {
+    /// A refusal with nothing for the operator to do.
+    fn because(what: impl Into<String>) -> Self {
+        Self {
+            what: what.into(),
+            remedy: None,
+        }
+    }
+
+    /// The title and detail of a toast saying `outcome` of what `who` asked.
+    /// With a remedy the whole is wider than a toast, so what happened takes
+    /// the title and the remedy leads the detail, where only `who` can be
+    /// the part cut.
+    fn toast(&self, outcome: &str, who: &str) -> (String, String) {
+        match self.remedy {
+            Some(remedy) => (
+                format!("{outcome}: {}", self.what),
+                format!("{remedy} · {who}"),
+            ),
+            None => (outcome.to_owned(), format!("{who}: {}", self.what)),
+        }
+    }
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.remedy {
+            Some(remedy) => write!(formatter, "{}: {remedy}", self.what),
+            None => formatter.write_str(&self.what),
+        }
     }
 }
 
