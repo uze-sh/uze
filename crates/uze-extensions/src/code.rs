@@ -427,7 +427,6 @@ impl CodeView {
         self.content = content;
         self.list = list;
         self.search = search;
-        self.ask_search_again();
         if !was_files && self.navigator() == NavigatorMode::Files {
             self.expand(self.root.clone());
         }
@@ -439,6 +438,7 @@ impl CodeView {
         back.content = content;
         back.scroll = scroll;
         back.source_scroll = source_scroll;
+        back.ask_search_again();
         back
     }
 
@@ -1446,8 +1446,11 @@ impl CodeView {
             open.editing = false;
         }
         self.menu = None;
+        let coming_back = self.navigator() != NavigatorMode::Search;
         self.list = NavigatorMode::Search;
-        self.ask_search_again();
+        if coming_back {
+            self.ask_search_again();
+        }
         if self.content == ContentMode::Map {
             self.show(self.before_map);
         }
@@ -1480,11 +1483,12 @@ impl CodeView {
         self.ask_search();
     }
 
-    /// Asks about what the files hold now, for a search come back to: they
-    /// may have changed under an agent's hands, and an answer on its way
-    /// when the surface was put away went with it.
+    /// Asks about what the files hold now, for a search come back to and on
+    /// show: they may have changed under an agent's hands, and an answer on
+    /// its way when the surface was put away went with it. One not on show
+    /// is asked when it is, rather than holding up the file beside it.
     fn ask_search_again(&mut self) {
-        if !self.search.query.is_empty() {
+        if !self.search.query.is_empty() && self.navigator() == NavigatorMode::Search {
             self.ask_search();
         }
     }

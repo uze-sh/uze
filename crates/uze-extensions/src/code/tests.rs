@@ -3711,6 +3711,80 @@ fn a_door_opening_a_document_left_in_its_source_under_the_map_is_not_blank() {
     assert_eq!(back.scroll, 0);
 }
 
+/// An agent's edit moves a line; the cursor follows to the nearest hit in the
+/// same file rather than being lost. Folds survive the same question asked
+/// again, and a new question starts with none.
+#[test]
+fn a_search_asked_again_keeps_the_cursor_near_and_the_folds_until_the_text_changes() {
+    let before = FakeMachine::default()
+        .with_file("/w/a.txt", "fog\nx\nfog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let after = FakeMachine::default()
+        .with_file("/w/a.txt", "new\nfog\nx\nfog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &before);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &before);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    view.search.toggle(1);
+    assert_eq!(view.search.at(view.search.cursor.unwrap()).unwrap().1, 3);
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &after);
+    press_tab(&mut view, "Search");
+    settle(&mut view, &after);
+    let (path, line) = view
+        .search
+        .at(view.search.cursor.expect("a cursor"))
+        .unwrap();
+    assert_eq!((path, line), (Path::new("/w/a.txt"), 4), "the nearest hit");
+    let folded = |view: &CodeView| {
+        view.search.rows().iter().any(|row| {
+            matches!(
+                row,
+                NavigatorRow::Found {
+                    collapsed: true,
+                    ..
+                }
+            )
+        })
+    };
+    assert!(folded(&view), "the fold stays");
+
+    press(&mut view, Command::Find);
+    type_text(&mut view, "x");
+    settle(&mut view, &after);
+    press(&mut view, Command::EraseBack);
+    settle(&mut view, &after);
+    assert!(!folded(&view), "another question starts unfolded");
+}
+
+/// A held search goes unasked until it is on show: the file beside it reads
+/// first, and a click in the field of a search on show asks nothing.
+#[test]
+fn a_search_not_on_show_asks_nothing() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    let asked = |view: &mut CodeView| {
+        std::iter::from_fn(|| view.take_request())
+            .filter(|request| matches!(request, FileRequest::Search { .. }))
+            .count()
+    };
+    press(&mut view, Command::Find);
+    assert_eq!(asked(&mut view), 0, "already on show");
+
+    press_tab(&mut view, "Files");
+    let mut back = files_at("/w").returning(view.held());
+    assert_eq!(asked(&mut back), 0, "the tree is on show");
+}
+
 /// A search still unanswered when the surface was put away gets its answer.
 #[test]
 fn a_search_put_away_unanswered_is_answered_when_it_comes_back() {

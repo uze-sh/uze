@@ -164,17 +164,19 @@ impl Search {
         &self.findings.files
     }
 
-    /// Where the list has `line` of `path`, as (file, line) indices.
+    /// Where the list has `line` of `path`, or the hit of that file nearest
+    /// it (the later of two, since an edit above pushes lines down), as
+    /// (file, line) indices.
     fn position_of(&self, path: &Path, line: usize) -> Option<(usize, usize)> {
         let file = self
             .findings
             .files
             .iter()
             .position(|file| file.path == path)?;
-        let hit = self.findings.files[file]
-            .hits
-            .iter()
-            .position(|hit| hit.line == line)?;
+        let hits = &self.findings.files[file].hits;
+        let hit = (0..hits.len())
+            .rev()
+            .min_by_key(|index| hits[*index].line.abs_diff(line))?;
         Some((file, hit))
     }
 
