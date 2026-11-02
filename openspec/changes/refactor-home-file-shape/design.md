@@ -37,7 +37,7 @@ What the change starts from, observed on a working machine and in code:
   sharing the stem of what it guards.
 - The root holds only the operator's text: `config.toml`, `keys.json`,
   `themes/`.
-- No code that exists only to read or clean an earlier layout.
+- Every rename carried across from the floor release, through its registry.
 
 **Non-Goals:**
 - The top-level tiers, `sources/`, `store/` and `state/terminal/`.
@@ -104,21 +104,23 @@ Moving the lock is not enough: the sweep also deletes live
 workspace registers one `Collectable` for it that removes the directory of
 an agent no project records any more.
 
-### D4. Beta: replace, never carry
+### D4. Every rename is carried across through the floor's registry
 
-A renamed or reshaped document is written at its new path or shape, and no
-step reads the old one. Every `Shaped` ladder starts again with its current
-shape as its only rung; the `newer-build` refusal stays, since two builds
-on one machine is an ordinary day. `retired` entries, `pre_sources_layout`,
-`carry_into_sources`, `scattered_project_records`,
-`carry_across_the_move`, `retired_profiles_path`, the `Retired` collector,
-`RETIRED_MARKETPLACE` and the `runtime/attachments` cleanup go.
-`Standing::Retired` stays in the type, unused, so a stable release has
-somewhere to put the first retired path. An existing home's old files are
-unknown entries in a record tier: reported by `doctor`, never deleted.
+Each old path becomes a `retired(..)` entry of the owned map with
+`.carried_by(step)` and `.last_written_by(Release::beta(22))`, run by the one
+bootstrap carry `earlier-release-support` introduces, under the mutation
+lock. A record step moves the file (and nothing else: the shape is
+unchanged, so no ladder rung is added); a lock is not carried, its old name
+is retired and swept. The two authored moves are carried the same way:
+`theme-overrides.json` is written once into `[appearance.*]` with
+`toml_edit` and then removed, and `[memory] harness` is renamed in place to
+`[memory] native`; a `config.toml` that does not parse stops the carry and
+is reported, never written over. Moving every record a project holds goes
+through one step per project directory, so a project is never half moved.
 
-`retired_regions` stays: it cleans the operator's repositories, which a
-home reset does not reach.
+`runtime/attachments` is not written since #345, but `1.0.0-beta.22` still
+writes it: its cleanup stays, as an entry of the integrations' `earlier`
+modules.
 
 ### D5. `config.toml` shape
 
@@ -159,23 +161,13 @@ a directory of one stem. Opaque subtrees and placeholders are skipped.
 
 ## Risks / Trade-offs
 
-- [An existing home stops showing its agents, prompts and approvals] →
-  Accepted under the beta policy; `doctor` names the old files as unknown
-  entries, and release notes say to reset the home.
-- [The installed and dev binary disagree on every renamed path until both
-  are rebuilt] → `mutation.lock` and `config.lock` keep their place, so the
-  store and settings stay excluded; `make install` after the change ends
-  the window.
-- [`07-upgrade/01` cannot pass: the previous release's work is in the old
-  names] → suspended until the first stable release, as the modified
-  requirement says; `07-upgrade/02` (an older binary leaves a newer record
-  alone) stays.
+- [The installed `uze` (beta.22) keeps writing the old names after the dev
+  build carried them] → two builds on one machine diverge for renamed
+  records until `make install`; the carry runs once per old path, so a
+  file the old build wrote again afterwards is reported by `doctor` as a
+  leftover rather than carried a second time over newer state.
+- [A carry interrupted midway] → each step writes the new path atomically
+  and removes the old one only after; a rerun finds the new path and skips.
 - [Journeys and conformance seeds spell old names] → each rename updates
   them in the same commit; `journey validate` and the Lab run before it
   lands.
-
-## Candidate ADRs
-
-- Beta replaces, stable carries: the persistence contract is suspended
-  until the first stable release, and the point where it resumes is a
-  decision every later shape change depends on.
