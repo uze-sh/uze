@@ -609,3 +609,50 @@ fn resuming_observation_reads_an_agents_journal_from_its_end() {
         "what it did unobserved is not replayed: the next read only sets the offset"
     );
 }
+
+/// What a plugin types is held to one line leading with no command, which
+/// whatever is on an unknown line would undo: it is refused without asking,
+/// and said what clears the line. Through the real engine, so the plugin is
+/// enabled and the line is what refuses it.
+#[test]
+fn a_plugins_prompt_over_an_unknown_line_is_refused_without_asking() {
+    let root = uze_testkit::temp::scratch("orchestrator-plugin-unknown-line");
+    let mut model = hosting(&root, compiled(None, Vec::new()));
+    let mut agent = the_agent(&mut model);
+    agent.checkout = root.clone();
+    let pane = agent.pane;
+    model.see_agents(vec![agent]);
+    let ask = || uze_extensions::contract::AgentRequest {
+        what: uze_extensions::contract::AgentAsk::Prompt {
+            text: "Review PLAN.md".to_owned(),
+        },
+        agent: Some("a1".to_owned()),
+        action: "review".to_owned(),
+        label: "Review".to_owned(),
+        unattended: false,
+        summary: None,
+    };
+
+    model.ask_of_agent(super::Owner::Declared(identity()), ask());
+    assert!(
+        model.agent_write.is_some(),
+        "asked while the line is known: {:?}",
+        model.toast_stack()
+    );
+    model.answer_agent_write(false);
+
+    model.remembered.prompt_buffers.insert(
+        pane,
+        super::PromptBuffer {
+            trusted: false,
+            ..Default::default()
+        },
+    );
+    model.ask_of_agent(super::Owner::Declared(identity()), ask());
+    assert!(model.agent_write.is_none(), "no answer could send it");
+    let said = format!("{:?}", model.toast_stack());
+    assert!(
+        said.contains("ctrl-c if it holds text, else enter"),
+        "{said}"
+    );
+}

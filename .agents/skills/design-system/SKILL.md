@@ -491,9 +491,10 @@ on "cancel" must not save first.
   never blocks a send with no word of what to do. When UZE cannot tell what
   is on an agent's line, a bundled extension's send says so in the question
   it already asks, what it could do included, and goes on the answer. Text
-  known to be there stays the operator's, and a plugin's prompt or one
-  allowed for a day is refused with what clears the line, whatever was
-  answered.
+  known to be there stays the operator's, and a plugin's prompt is refused
+  with what clears the line without asking a question no answer could
+  satisfy. A prompt allowed for a day is refused the same way, the question
+  about the day still asked since its answer outlasts the line.
 - Never ask for Y/N.
 - Enter is the primary action.
 - Several things waiting on the same answer are asked in one dialog, a

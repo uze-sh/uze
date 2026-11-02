@@ -250,6 +250,18 @@ impl WorkspaceModel {
             summary: summary_shown(&owner, &request),
             warned_of_unknown_line: false,
         };
+        // Not asked when no answer could send it. A question about allowing
+        // for a day is still worth its answer, which outlasts this line.
+        let line = self.may_submit(seen.pane);
+        let unknown = matches!(line, Submission::Unknown | Submission::UnknownOverText);
+        let answerable = line == Submission::Unknown && write.may_go_over_unknown_line();
+        if unknown
+            && !answerable
+            && !write.unattended
+            && let Some(reason) = line.reason()
+        {
+            return refuse(self, &reason);
+        }
         let writes = &mut self.remembered.declared.bridge.writes;
         if request.unattended
             && writes
