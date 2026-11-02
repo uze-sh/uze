@@ -2443,7 +2443,7 @@ impl Submission {
             Self::Typed => Some(("you have text typed", label.to_owned())),
             Self::Unknown | Self::UnknownOverText => Some((
                 "can't tell what's typed",
-                "press enter or ctrl-c".to_owned(),
+                "ctrl-c if it holds text, else enter".to_owned(),
             )),
         }
     }

@@ -686,18 +686,30 @@ fn delivered_with(
     action: Option<&str>,
     busy: bool,
 ) -> (Vec<String>, String) {
+    delivered_over(label, outcome, state, action, |model, pane| {
+        if busy {
+            model
+                .remembered
+                .agent_activity
+                .entry(pane)
+                .or_default()
+                .working_until = Some(Instant::now() + std::time::Duration::from_secs(60));
+        }
+    })
+}
+
+fn delivered_over(
+    label: &str,
+    outcome: uze_application::DeliveryOutcome,
+    state: WorkStateView,
+    action: Option<&str>,
+    prepare: impl FnOnce(&mut super::WorkspaceModel, uze_terminal::PaneId),
+) -> (Vec<String>, String) {
     let home = UzeHome::at(uze_testkit::temp::scratch(label));
     let mut model = agent_with_task(WorkStateView::Ready, 3);
     let tab = model.selected_tab().expect("a selected tab");
     let pane = model.tab(tab).expect("the tab").pane.id;
-    if busy {
-        model
-            .remembered
-            .agent_activity
-            .entry(pane)
-            .or_default()
-            .working_until = Some(Instant::now() + std::time::Duration::from_secs(60));
-    }
+    prepare(&mut model, pane);
     let mut task = task_in("/repo/.worktrees/ai", "Agent", state, 3);
     task.action = action.map(str::to_owned);
     let mut driven = driven(model, &home);
@@ -789,6 +801,36 @@ fn a_delivery_sends_the_instruction_of_the_state_it_left() {
     assert!(
         typed.is_empty(),
         "a refusal left the work where it was, so nothing is sent: {typed:?}"
+    );
+}
+
+/// Nobody pressed anything for an automatic send, so when the line is what
+/// holds it back the toast says what clears it.
+#[test]
+fn an_automatic_send_held_back_by_an_unknown_line_says_what_clears_it() {
+    let (typed, said) = delivered_over(
+        "orchestrator-left-unknown",
+        uze_application::DeliveryOutcome::Failed {
+            command: "cargo test".into(),
+            log: None,
+        },
+        WorkStateView::GateFailed,
+        Some("Fix the checks."),
+        |model, pane| {
+            model.remembered.prompt_buffers.insert(
+                pane,
+                super::PromptBuffer {
+                    trusted: false,
+                    ..Default::default()
+                },
+            );
+        },
+    );
+    assert!(typed.is_empty(), "{typed:?}");
+    assert!(said.contains("held back"), "{said}");
+    assert!(
+        said.contains("ctrl-c if it holds text, else enter"),
+        "{said}"
     );
 }
 

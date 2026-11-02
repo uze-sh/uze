@@ -566,7 +566,7 @@ fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
     assert!(allowed_by_keyboard(&mut driven, "Review PLAN.md").is_empty());
     let said = format!("{:?}", driven.attach.model.toast_stack());
     assert!(
-        said.contains("can't tell what's typed: press enter or ctrl-c"),
+        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
         "{said}"
     );
 }
@@ -662,7 +662,7 @@ fn an_unattended_prompt_over_an_unknown_line_says_how_to_clear_it() {
     assert!(typed(&driven.sent()).is_empty());
     let said = format!("{:?}", driven.attach.model.toast_stack());
     assert!(
-        said.contains("can't tell what's typed: press enter or ctrl-c"),
+        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
         "{said}"
     );
 }
