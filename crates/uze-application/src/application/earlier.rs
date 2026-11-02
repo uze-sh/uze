@@ -25,6 +25,15 @@ pub fn earlier() -> Vec<Earlier> {
             spelled: &[],
             site: file!(),
         },
+        Earlier {
+            name: "package copies in runtime/packages kept for beta.22's MCP servers",
+            // beta.22 starts an installed package's server from its copy
+            // there; once it is below the floor, `collect_package_copies`
+            // keeps only what a receipt names.
+            lasts: Lasts::Until(Release::beta(1, 0, 0, 22)),
+            spelled: &[],
+            site: file!(),
+        },
     ]
 }
 

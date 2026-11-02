@@ -15,10 +15,17 @@ const PROJECTION_MARKER: &str = "project.json";
 pub(crate) fn earlier() -> Vec<Earlier> {
     vec![
         Earlier {
-            name: "runtime projection markers named project.json",
-            // Read until the projection is next prepared, and written beside
-            // root.json for as long as the floor release may run beside this
-            // one.
+            name: "runtime projection markers named project.json, read",
+            // Read until the projection is next prepared, which an agent
+            // launched before the upgrade may never do: unbounded.
+            lasts: Lasts::Unbounded,
+            spelled: &[],
+            site: file!(),
+        },
+        Earlier {
+            name: "runtime projection markers named project.json, written for beta.22",
+            // Written beside root.json only while beta.22, which reads no
+            // other name, may run on the same machine.
             lasts: Lasts::Until(uze_document::earlier::Release::beta(1, 0, 0, 22)),
             spelled: &[],
             site: file!(),
