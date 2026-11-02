@@ -214,16 +214,7 @@ pub(super) fn admitted_preferences(
     identity: &Identity,
     manifest: &Manifest,
 ) -> serde_json::Value {
-    let set =
-        uze_workspace::extensions::preferences::read(home, &plugin_key(identity), &identity.id);
-    serde_json::Value::Object(
-        manifest
-            .preferences
-            .iter()
-            .filter(|decl| !decl.is_secret())
-            .map(|decl| (decl.name.clone(), decl.admit(set.get(&decl.name))))
-            .collect(),
-    )
+    super::preferences::admitted(home, &consent_key(identity), &manifest.preferences)
 }
 
 /// Keeps what the operator typed as the secret `name` of `identity`, or
@@ -341,7 +332,7 @@ fn spelled(grants: &BTreeSet<Grant>) -> BTreeSet<String> {
         .collect()
 }
 
-fn refusal(reason: impl Into<String>) -> UzeError {
+pub(super) fn refusal(reason: impl Into<String>) -> UzeError {
     UzeError::ExtensionConsent(reason.into())
 }
 
@@ -491,19 +482,13 @@ impl Extensions<'_> {
             set_secret(&self.0.home, identity, name, &value)?;
             return Ok(admitted_preferences(&self.0.home, identity, manifest));
         }
-        if !decl.holds(&value) {
-            return Err(refusal(format!(
-                "`{value}` is not a value the preference `{name}` may hold"
-            )));
-        }
-        uze_workspace::extensions::preferences::set(
+        super::preferences::set(
             &self.0.home,
-            &plugin_key(identity),
-            &identity.id,
+            &consent_key(identity),
+            &manifest.preferences,
             name,
-            value,
-        )?;
-        Ok(admitted_preferences(&self.0.home, identity, manifest))
+            &value,
+        )
     }
 
     /// The programs `identity` wants, each with the path its consent
@@ -634,16 +619,14 @@ impl Extensions<'_> {
 
     /// Forgets what was accepted for every extension of the plugin
     /// `plugin@marketplace`, and what they kept, as it leaves the machine.
+    /// Their preferences stay: the operator's text in `config.toml`, found
+    /// again when the plugin is.
     pub(crate) fn forget_plugin(&self, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
         uze_workspace::extensions::store::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
         )?;
         uze_workspace::extensions::secrets::forget_plugin(
-            &self.0.home,
-            &format!("{plugin}@{marketplace}"),
-        )?;
-        uze_workspace::extensions::preferences::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
         )?;

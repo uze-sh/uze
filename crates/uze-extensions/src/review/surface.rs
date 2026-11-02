@@ -2,8 +2,9 @@
 //! the one being read, what is marked in it, the comment being written,
 //! and the review kept for the agent.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use super::change::Change;
 use super::compose::{self, Composer, Rich};
@@ -47,6 +48,19 @@ pub(crate) enum Line {
     /// puts the caret at the end of what is written.
     ComposerPad,
     Blank,
+}
+
+/// How long a diff stays on screen before leaving it marks it viewed: a
+/// short diff fits the screen, so reaching its end alone says nothing of
+/// whether it was read.
+pub(crate) const READ_FOR: Duration = Duration::from_secs(2);
+
+/// How far the diff on show was read: when it was first shown, and
+/// whether its last line has been on screen since.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Reading {
+    pub(crate) shown_at: Option<Instant>,
+    pub(crate) end_seen: bool,
 }
 
 /// A send the bridge has not yet said came of.
@@ -126,6 +140,14 @@ pub struct ReviewView {
     pub(crate) restore: Option<Vec<PathBuf>>,
     /// The list is to be read again now, not on its cadence.
     pub(crate) relist: bool,
+    /// Whether a file is marked viewed only by hand: the operator turned
+    /// off marking it as it is left, read to the end.
+    pub(crate) marks_by_hand_only: bool,
+    /// How far the diff on show was read.
+    pub(crate) reading: Reading,
+    /// Files unmarked by hand, at the content they were unmarked for:
+    /// leaving one never marks it again until it changes.
+    pub(crate) unmarked: BTreeMap<PathBuf, u64>,
 }
 
 impl ReviewView {
@@ -168,6 +190,9 @@ impl ReviewView {
             unwritten: Vec::new(),
             restore: None,
             relist: true,
+            marks_by_hand_only: false,
+            reading: Reading::default(),
+            unmarked: BTreeMap::new(),
         }
     }
 
@@ -290,6 +315,10 @@ impl ReviewView {
                 self.diff_error = None;
                 self.diff = Some(diff);
                 if moved {
+                    self.reading = Reading {
+                        shown_at: Some(Instant::now()),
+                        end_seen: false,
+                    };
                     let last = self.cells().len().saturating_sub(1);
                     self.cursor = self.cursor.min(last);
                     if self.mark.is_some_and(|(a, b)| a.max(b) > last) {
@@ -302,8 +331,54 @@ impl ReviewView {
             Err(message) => {
                 self.diff = None;
                 self.diff_error = Some(message);
+                self.reading = Reading::default();
             }
         }
+    }
+
+    // --- Reading ----------------------------------------------------------
+
+    /// Notes whether the diff's last line is on screen, `space` being the
+    /// content's: known only when a key, a click or the wheel reaches the
+    /// review, which is when it is asked.
+    pub(crate) fn note_seen(&mut self, space: Size) {
+        if self.diff.is_none() || self.diff_pending || space.height == 0 {
+            return;
+        }
+        let total = super::render::lines(self).len();
+        if self.scroll + usize::from(space.height) >= total {
+            self.reading.end_seen = true;
+        }
+    }
+
+    /// The file on show is being left, for another or as the review
+    /// closes: marked viewed when it was read to its end and stayed on
+    /// screen long enough to have been, unless the operator marks by hand
+    /// only or unmarked it for this content.
+    pub(crate) fn leave(&mut self, now: Instant) {
+        let reading = std::mem::take(&mut self.reading);
+        if self.marks_by_hand_only || !reading.end_seen {
+            return;
+        }
+        if reading
+            .shown_at
+            .is_none_or(|shown| now.saturating_duration_since(shown) < READ_FOR)
+        {
+            return;
+        }
+        let Some(path) = self.selected.clone() else {
+            return;
+        };
+        let Some(fingerprint) = self.stamps.get(&path).copied() else {
+            return;
+        };
+        if self.viewed(&path) == Viewed::Yes || self.unmarked.get(&path) == Some(&fingerprint) {
+            return;
+        }
+        self.change(Change::Viewed {
+            path: self.relative(&path),
+            fingerprint: Some(fingerprint),
+        });
     }
 
     // --- Threads ----------------------------------------------------------
@@ -508,7 +583,9 @@ impl ReviewView {
         if self.selected.as_ref() == Some(&file.path) {
             return;
         }
-        self.selected = Some(file.path.clone());
+        let path = file.path.clone();
+        self.leave(Instant::now());
+        self.selected = Some(path);
         self.diff = None;
         self.diff_error = None;
         self.diff_pending = true;
@@ -716,6 +793,11 @@ impl ReviewView {
             return;
         };
         let viewed = self.viewed(&path) == Viewed::Yes;
+        if viewed {
+            self.unmarked.insert(path.clone(), fingerprint);
+        } else {
+            self.unmarked.remove(&path);
+        }
         self.change(Change::Viewed {
             path: self.relative(&path),
             fingerprint: (!viewed).then_some(fingerprint),

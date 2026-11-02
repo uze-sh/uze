@@ -329,11 +329,28 @@ pub(crate) enum Overlay {
     AddMarketplace(String),
 }
 
-/// The preferences of one declared extension, being set in its drawer:
-/// while there is one, the keys are on its rows rather than the cards.
+/// Whose preferences are being set: a built-in by its id, a declared
+/// extension by its identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreferenceOwner {
+    Builtin(&'static str),
+    Declared(uze_application::ExtensionIdentity),
+}
+
+impl PreferenceOwner {
+    pub(crate) fn of(extension: ExtensionEntry<'_>) -> Self {
+        match extension {
+            ExtensionEntry::Builtin(builtin) => Self::Builtin(builtin.id),
+            ExtensionEntry::Declared(summary) => Self::Declared(summary.identity.clone()),
+        }
+    }
+}
+
+/// The preferences of one extension, being set in its drawer: while there
+/// is one, the keys are on its rows rather than the cards.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PreferencesEditor {
-    pub(crate) identity: uze_application::ExtensionIdentity,
+    pub(crate) owner: PreferenceOwner,
     pub(crate) name: String,
     pub(crate) rows: Vec<uze_application::PreferenceRow>,
     pub(crate) selected: usize,
@@ -508,6 +525,8 @@ pub(crate) struct RefreshData {
     /// for (`None` outside every project).
     pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
     pub(crate) extension_project: Option<PathBuf>,
+    /// Each built-in's preferences as its drawer lists them, by id.
+    pub(crate) builtin_preferences: BTreeMap<String, Vec<uze_application::PreferenceRow>>,
     pub(crate) context_status: Option<ProjectContextStatus>,
     /// The Overview's workspace-aware read model — present from the very
     /// first refresh onward (there is always a kind, even `NoWorkspace`).
@@ -656,6 +675,8 @@ pub(crate) struct TuiModel {
     pub(crate) extension_standings: Vec<uze_application::ExtensionReport>,
     /// The project those were judged for, `None` outside every project.
     pub(crate) extension_project: Option<PathBuf>,
+    /// Each built-in's preferences, by id, as the last refresh read them.
+    pub(crate) builtin_preferences: BTreeMap<String, Vec<uze_application::PreferenceRow>>,
     /// The ids of those the operator switched off, as last written: a
     /// built-in by its id, a declared one by
     /// [`extension_switch::declared_id`](super::extension_switch::declared_id).
@@ -887,6 +908,7 @@ impl TuiModel {
             revealing: None,
             extension_standings,
             extension_project,
+            builtin_preferences: BTreeMap::new(),
             disabled_extensions: super::extension_switch::disabled(),
             context_root: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             source_link_hovered: false,
@@ -1194,8 +1216,17 @@ impl TuiModel {
     ) -> Vec<uze_application::application::offers::ActionOffer> {
         let switched_on = self.extension_enabled(&extension.id());
         match extension {
-            ExtensionEntry::Builtin(_) => {
-                uze_application::application::offers::extension_offers(switched_on)
+            ExtensionEntry::Builtin(builtin) => {
+                // With the keys already on its preferences, there is
+                // nowhere further for the button to take them.
+                let editing = self
+                    .preferences
+                    .as_ref()
+                    .is_some_and(|editor| editor.owner == PreferenceOwner::Builtin(builtin.id));
+                uze_application::application::offers::builtin_extension_offers(
+                    switched_on,
+                    !editing && !self.preference_rows(extension).is_empty(),
+                )
             }
             ExtensionEntry::Declared(summary) => {
                 let mut offers = uze_application::application::offers::declared_extension_offers(
@@ -1205,11 +1236,9 @@ impl TuiModel {
                 );
                 // With the keys already on its preferences, there is nowhere
                 // further for the button to take them.
-                if self
-                    .preferences
-                    .as_ref()
-                    .is_some_and(|editor| editor.identity == summary.identity)
-                {
+                if self.preferences.as_ref().is_some_and(|editor| {
+                    editor.owner == PreferenceOwner::Declared(summary.identity.clone())
+                }) {
                     offers.retain(|offer| offer.action != uze_keys::Action::EditPreferences);
                 }
                 if !summary.statuses.is_empty() {
@@ -1387,27 +1416,34 @@ impl TuiModel {
         };
         // Preferences are the machine's, so whichever condition it stands
         // in, as the drawer's Preferences offer has it.
-        let ExtensionEntry::Declared(summary) = extension else {
-            return Intent::None;
-        };
-        let Some(standing) = self
-            .extension_standing(&summary.identity)
-            .filter(|standing| !standing.preferences.is_empty())
-            .cloned()
-        else {
-            return Intent::None;
-        };
-        if self.preferences.is_some() {
+        let rows = self.preference_rows(extension).to_vec();
+        if rows.is_empty() || self.preferences.is_some() {
             return Intent::None;
         }
         self.preferences = Some(PreferencesEditor {
-            identity: standing.identity(),
+            owner: PreferenceOwner::of(extension),
             name: extension.name().to_owned(),
-            rows: standing.preferences,
+            rows,
             selected: 0,
             typing: None,
         });
         Intent::None
+    }
+
+    /// `extension`'s preferences as the last refresh read them.
+    pub(crate) fn preference_rows(
+        &self,
+        extension: ExtensionEntry<'_>,
+    ) -> &[uze_application::PreferenceRow] {
+        match extension {
+            ExtensionEntry::Builtin(builtin) => self
+                .builtin_preferences
+                .get(builtin.id)
+                .map_or(&[], Vec::as_slice),
+            ExtensionEntry::Declared(summary) => self
+                .extension_standing(&summary.identity)
+                .map_or(&[], |standing| standing.preferences.as_slice()),
+        }
     }
 
     /// Finding the selected extension's programs again, when that is
@@ -2334,14 +2370,13 @@ impl TuiModel {
         self.declared_extensions = data.declared_extensions;
         self.extension_standings = data.extension_standings;
         self.extension_project = data.extension_project;
+        self.builtin_preferences = data.builtin_preferences;
         self.clamp_list_selection(Route::Extensions);
         // The keys stay on preferences only while the drawer still shows
         // the extension they belong to.
         let still_shown = |editor: &PreferencesEditor| {
-            matches!(
-                self.selected_extension(),
-                Some(ExtensionEntry::Declared(summary)) if summary.identity == editor.identity
-            )
+            self.selected_extension()
+                .is_some_and(|extension| PreferenceOwner::of(extension) == editor.owner)
         };
         if self
             .preferences

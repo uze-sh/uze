@@ -704,7 +704,7 @@ fn focus_preferences() -> TuiModel {
 
 fn set(name: &str, label: &str, value: serde_json::Value) -> Intent {
     Intent::SetPreference {
-        identity: declared(&[]).identity,
+        owner: crate::ui::model::PreferenceOwner::Declared(declared(&[]).identity),
         name: name.to_owned(),
         label: label.to_owned(),
         value,
@@ -1685,4 +1685,106 @@ fn a_built_in_extension_links_to_no_plugin() {
             .any(|(_, hit)| *hit == Hit::OfferedAction(uze_keys::Action::ShowPlugin))
     );
     assert_eq!(model.selected_link(), None);
+}
+
+/// The Extensions screen on the review, its preference read as on.
+fn on_the_reviews_preferences() -> TuiModel {
+    let review = uze_extensions::review::CATALOG;
+    let mut model = TuiModel {
+        route: Route::Extensions,
+        focus: Focus::Content,
+        extensions: uze_extensions::registry::ExtensionRegistry::builtin()
+            .all()
+            .to_vec(),
+        ..TuiModel::default()
+    };
+    let declared = review.preferences();
+    model.builtin_preferences.insert(
+        review.id.to_owned(),
+        vec![uze_application::PreferenceRow {
+            name: declared[0].name.clone(),
+            label: declared[0].label.clone(),
+            kind: "toggle",
+            value: serde_json::json!(true),
+            values: Vec::new(),
+            default: serde_json::json!(true),
+            min: None,
+            max: None,
+        }],
+    );
+    model
+}
+
+/// A click on a built-in's toggle is what Enter on it is.
+#[test]
+fn clicking_a_builtins_toggle_is_pressing_enter_on_it() {
+    let mut clicked = on_the_reviews_preferences();
+    let mut keyed = on_the_reviews_preferences();
+    keyed.edit_selected_preferences();
+    let off = Hit::ExtensionPreferenceChoice {
+        index: 0,
+        option: 0,
+    };
+    assert_eq!(
+        click(&mut clicked, &off),
+        keyed.apply_key(key(KeyCode::Enter))
+    );
+    assert_eq!(clicked.preferences, keyed.preferences);
+}
+
+/// A built-in's preferences are listed and set in its drawer the way a
+/// declared extension's are, and saved under its own id.
+#[test]
+fn a_builtins_preferences_are_set_in_its_drawer() {
+    let review = uze_extensions::review::CATALOG;
+    let mut model = TuiModel {
+        route: Route::Extensions,
+        focus: Focus::Content,
+        extensions: uze_extensions::registry::ExtensionRegistry::builtin()
+            .all()
+            .to_vec(),
+        ..TuiModel::default()
+    };
+    assert_eq!(
+        model.selected_extension().map(|entry| entry.id()),
+        Some(review.id.to_owned())
+    );
+    let declared = review.preferences();
+    model.builtin_preferences.insert(
+        review.id.to_owned(),
+        vec![uze_application::PreferenceRow {
+            name: declared[0].name.clone(),
+            label: declared[0].label.clone(),
+            kind: "toggle",
+            value: serde_json::json!(true),
+            values: Vec::new(),
+            default: serde_json::json!(true),
+            min: None,
+            max: None,
+        }],
+    );
+    let label = declared[0].label.clone();
+    let screen = screen_of(&model);
+    assert!(
+        screen
+            .lines()
+            .any(|row| row.contains(&label) && row.contains("on")),
+        "{screen}"
+    );
+    assert!(
+        model
+            .selected_offers()
+            .iter()
+            .any(|offer| offer.action == uze_keys::Action::EditPreferences)
+    );
+    model.edit_selected_preferences();
+    assert_eq!(
+        model.apply_key(key(KeyCode::Enter)),
+        Intent::SetPreference {
+            owner: crate::ui::model::PreferenceOwner::Builtin(review.id),
+            name: declared[0].name.clone(),
+            label,
+            value: serde_json::json!(false),
+        }
+    );
 }

@@ -101,6 +101,8 @@ pub struct ReviewExtension {
     held: Option<Held>,
     /// Places kept per checkout.
     places: std::collections::BTreeMap<PathBuf, Place>,
+    /// The operator turned off marking a file viewed as it is left.
+    marks_by_hand_only: bool,
 }
 
 /// Where the viewer was on a checkout's review.
@@ -741,7 +743,9 @@ impl Extension for ReviewExtension {
         let Some(view) = self.view_mut(surface) else {
             return Outcome::Stay;
         };
+        view.note_seen(space);
         let asked = handle_command(view, command, space);
+        view.note_seen(space);
         self.act(asked)
     }
 
@@ -752,7 +756,9 @@ impl Extension for ReviewExtension {
         let Some(view) = self.view_mut(surface) else {
             return Outcome::Stay;
         };
+        view.note_seen(space);
         let asked = handle_hit(view, hit, space);
+        view.note_seen(space);
         self.act(asked)
     }
 
@@ -766,13 +772,15 @@ impl Extension for ReviewExtension {
         surface: &str,
         target: ScrollTarget,
         direction: ScrollDirection,
-        _space: Size,
+        space: Size,
     ) {
         if let Some(view) = self.view_mut(surface) {
             // The list is the host's to scroll: the wheel never moves
             // the selection.
             if target == ScrollTarget::Content {
+                view.note_seen(space);
                 handle_scroll(view, direction, false);
+                view.note_seen(space);
             }
         }
     }
@@ -813,15 +821,27 @@ impl Extension for ReviewExtension {
             view.absorb_record(Ok(record.clone()), &in_flight);
         }
         view.open_on = self.open_on.take();
+        view.marks_by_hand_only = self.marks_by_hand_only;
         self.listed_at = None;
         self.open = Some(view);
+    }
+
+    fn configure(&mut self, preferences: &serde_json::Value) {
+        self.marks_by_hand_only = preferences
+            .get(super::MARK_VIEWED_AUTOMATICALLY)
+            .and_then(serde_json::Value::as_bool)
+            .is_some_and(|automatic| !automatic);
+        if let Some(view) = &mut self.open {
+            view.marks_by_hand_only = self.marks_by_hand_only;
+        }
     }
 
     fn close(&mut self, surface: &str) {
         if surface != SURFACE {
             return;
         }
-        if let Some(view) = self.open.take() {
+        if let Some(mut view) = self.open.take() {
+            view.leave(Instant::now());
             self.places.insert(
                 view.root.clone(),
                 Place {
@@ -1207,6 +1227,29 @@ mod tests {
             display: root.to_owned(),
             target: None,
         }
+    }
+
+    #[test]
+    fn the_preference_reaches_the_review_open_now_and_every_one_opened_after() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        assert!(
+            !extension.review_view().unwrap().marks_by_hand_only,
+            "on by default"
+        );
+
+        extension
+            .configure(&serde_json::json!({ crate::review::MARK_VIEWED_AUTOMATICALLY: false }));
+        assert!(extension.review_view().unwrap().marks_by_hand_only);
+        extension.close(super::SURFACE);
+        extension.open(super::SURFACE, &checkout("/w"));
+        assert!(extension.review_view().unwrap().marks_by_hand_only);
+
+        extension.configure(&serde_json::json!({}));
+        assert!(
+            !extension.review_view().unwrap().marks_by_hand_only,
+            "unset is the default"
+        );
     }
 
     /// What the door's read of `root` answers, asked at `generation`.

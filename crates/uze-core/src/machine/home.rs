@@ -299,36 +299,26 @@ impl UzeHome {
             .with_extension("lock")
     }
 
-    /// The operator's preferences for extension `id` of
-    /// `plugin@marketplace`: a record, since only their answer says it.
-    /// Removed with its plugin.
-    pub fn extension_preferences_path(&self, plugin: &str, id: &str) -> PathBuf {
-        self.state_dir()
-            .join("extensions")
-            .join("preferences")
-            .join(plugin)
+    /// Which secrets of extension `id` of `plugin@marketplace` are set,
+    /// never their values: a record, so the Extensions screen says "set"
+    /// without asking the keychain. Beside the secrets' own files, and
+    /// removed with them as the plugin leaves.
+    pub fn extension_secrets_set_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.extension_plugin_secrets_dir(plugin)
             .join(format!("{id}.json"))
     }
 
-    /// The lock a change of those preferences holds, beside them.
-    pub fn extension_preferences_lock_path(&self, plugin: &str, id: &str) -> PathBuf {
-        self.extension_preferences_path(plugin, id)
+    /// The lock a change of that record holds, beside it.
+    pub fn extension_secrets_set_lock_path(&self, plugin: &str, id: &str) -> PathBuf {
+        self.extension_secrets_set_path(plugin, id)
             .with_extension("lock")
-    }
-
-    /// Every preference record of the plugin `plugin@marketplace`'s
-    /// extensions.
-    pub fn extension_plugin_preferences_dir(&self, plugin: &str) -> PathBuf {
-        self.state_dir()
-            .join("extensions")
-            .join("preferences")
-            .join(plugin)
     }
 
     /// Where a secret preference of extension `id` of `plugin@marketplace`
     /// is kept on a machine with no keychain: a `0600` file holding the
     /// value alone. A record, since only the operator's typing says it, and
-    /// apart from the preferences so nothing that reads those reads it.
+    /// apart from the preferences in `config.toml`, so nothing that reads
+    /// those reads it.
     /// Removed with its plugin.
     pub fn extension_secret_path(&self, plugin: &str, id: &str, name: &str) -> PathBuf {
         self.extension_plugin_secrets_dir(plugin)
@@ -1111,7 +1101,7 @@ mod tests {
             home.launch_overrides_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
-            home.extension_preferences_path("gsd@market", "gsd-band"),
+            home.extension_secrets_set_path("gsd@market", "gsd-band"),
         ];
         for record in records {
             assert!(

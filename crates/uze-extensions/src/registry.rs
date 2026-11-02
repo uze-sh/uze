@@ -24,6 +24,18 @@ pub struct BuiltinExtension {
     pub usage: &'static str,
 }
 
+/// What a built-in lets the operator set, in the order its drawer lists
+/// them: declared as a manifest declares them, kept and edited the same
+/// way. Never a `secret`: a built-in reaches nothing a secret opens.
+impl BuiltinExtension {
+    pub fn preferences(&self) -> Vec<uze_contract::PreferenceDecl> {
+        match self.id {
+            id if id == review::CATALOG.id => review::preferences(),
+            _ => Vec::new(),
+        }
+    }
+}
+
 /// The built-in extension set, in registration order.
 pub struct ExtensionRegistry {
     extensions: Vec<BuiltinExtension>,
@@ -75,6 +87,20 @@ mod tests {
         assert!(ids.iter().all(|id| !id.is_empty()));
         assert_eq!(registry.get(ids[0]).map(|e| e.id), Some(ids[0]));
         assert!(registry.get("nope").is_none());
+    }
+
+    #[test]
+    fn no_builtin_declares_a_secret() {
+        for extension in ExtensionRegistry::builtin().all() {
+            assert!(
+                extension
+                    .preferences()
+                    .iter()
+                    .all(|decl| !decl.is_secret() && decl.holds(&decl.default)),
+                "{}",
+                extension.id
+            );
+        }
     }
 
     #[test]

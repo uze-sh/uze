@@ -252,7 +252,7 @@ fn set_preference(
         value.clone()
     };
     Intent::SetPreference {
-        identity: editor.identity.clone(),
+        owner: editor.owner.clone(),
         name: row.name.clone(),
         label: row.label.clone(),
         value,

@@ -1535,3 +1535,95 @@ fn a_comment_pressed_before_the_list_is_read_waits_for_it() {
         "nothing said of a list that was not read"
     );
 }
+
+/// `reviewing()` with its diff shown long enough ago to have been read.
+fn read_for_a_while() -> ReviewView {
+    let mut view = reviewing();
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view
+}
+
+#[test]
+fn a_diff_read_to_its_end_is_marked_viewed_as_it_is_left() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/tests.rs")));
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+    assert_eq!(view.viewed_count(), 1);
+    assert!(
+        view.unwritten
+            .iter()
+            .any(|change| matches!(change, super::change::Change::Viewed { .. })),
+        "kept to be written"
+    );
+}
+
+#[test]
+fn a_diff_only_glanced_at_or_not_read_to_its_end_stays_not_viewed() {
+    let naming = PathBuf::from("/w/naming.rs");
+    let mut glanced = reviewing();
+    glanced.note_seen(SPACE);
+    glanced.step_file(ScrollDirection::Down);
+    assert_eq!(
+        glanced.viewed(&naming),
+        surface::Viewed::No,
+        "shown too briefly"
+    );
+
+    let mut short_of_the_end = read_for_a_while();
+    short_of_the_end.note_seen(Size {
+        width: 100,
+        height: 2,
+    });
+    short_of_the_end.step_file(ScrollDirection::Down);
+    assert_eq!(
+        short_of_the_end.viewed(&naming),
+        surface::Viewed::No,
+        "its last line was never on screen"
+    );
+}
+
+#[test]
+fn turned_off_a_file_is_marked_only_by_hand() {
+    let mut view = read_for_a_while();
+    view.marks_by_hand_only = true;
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(Path::new("/w/naming.rs")), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_unmarked_by_hand_is_not_marked_again_until_it_changes() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.toggle_viewed(false);
+    view.toggle_viewed(false);
+    assert_eq!(
+        view.viewed(&naming),
+        surface::Viewed::No,
+        "unmarked by hand"
+    );
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(
+        view.viewed(&naming),
+        surface::Viewed::No,
+        "the unmark holds"
+    );
+
+    // The agent changes it, and it is read again to its end.
+    relisted(&mut view, 2);
+    view.step_file(ScrollDirection::Up);
+    view.asking = view.diff_key(&naming).map(|key| (naming.clone(), key));
+    view.absorb_diff(
+        naming.clone(),
+        Ok(diff_of(&naming, &NAMING.replace("rename", "renamed"))),
+        "x".to_owned(),
+    );
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+}

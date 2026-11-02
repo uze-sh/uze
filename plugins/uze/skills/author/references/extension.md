@@ -186,10 +186,12 @@ preferences {
 }
 ```
 
-The operator sets them on the Extensions screen. A view reads
-`{pref.warn-at}`; a source that writes `preferences` inside its block is
-asked with `input.preferences`. A value the declaration may not hold reads
-as its default.
+The operator sets them on the Extensions screen, or by hand in
+`~/.uze/config.toml` under `[preferences."<plugin>@<marketplace>/<id>"]`;
+they stay there when the plugin is removed. A view reads `{pref.warn-at}`;
+a source that writes `preferences` inside its block is asked with
+`input.preferences`. A value the declaration may not hold reads as its
+default. A `secret` is never written to `config.toml`.
 
 ### Events and composed answers
 

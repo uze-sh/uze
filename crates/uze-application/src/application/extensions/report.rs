@@ -441,54 +441,16 @@ impl Extensions<'_> {
                         ExtensionCondition::Broken
                     }
                 };
-                let set = super::consent::admitted_preferences(&self.0.home, &identity, manifest);
-                report.preferences = manifest
-                    .preferences
-                    .iter()
-                    .map(|decl| PreferenceRow {
-                        name: decl.name.clone(),
-                        label: decl.label.clone(),
-                        kind: match decl.kind {
-                            uze_contract::PreferenceKind::Text => "text",
-                            uze_contract::PreferenceKind::Number { .. } => "number",
-                            uze_contract::PreferenceKind::Toggle => "toggle",
-                            uze_contract::PreferenceKind::Choice { .. } => "choice",
-                            uze_contract::PreferenceKind::Secret => "secret",
-                        },
-                        // A secret is said set or not, from the record that
-                        // says so; its value is never read for a report.
-                        value: if decl.is_secret() {
-                            serde_json::Value::Bool(
-                                uze_workspace::extensions::preferences::read(
-                                    &self.0.home,
-                                    &super::consent::plugin_key(&identity),
-                                    &identity.id,
-                                )
-                                .get(&decl.name)
-                                    == Some(&serde_json::Value::Bool(true)),
-                            )
-                        } else {
-                            set.get(&decl.name).cloned().unwrap_or_default()
-                        },
-                        values: match &decl.kind {
-                            uze_contract::PreferenceKind::Choice { values } => values.clone(),
-                            _ => Vec::new(),
-                        },
-                        default: if decl.is_secret() {
-                            serde_json::Value::Null
-                        } else {
-                            decl.default.clone()
-                        },
-                        min: match decl.kind {
-                            uze_contract::PreferenceKind::Number { min, .. } => min,
-                            _ => None,
-                        },
-                        max: match decl.kind {
-                            uze_contract::PreferenceKind::Number { max, .. } => max,
-                            _ => None,
-                        },
-                    })
-                    .collect();
+                report.preferences = super::preferences::rows(
+                    &self.0.home,
+                    &key,
+                    &manifest.preferences,
+                    &uze_workspace::extensions::secrets::set_names(
+                        &self.0.home,
+                        &super::consent::plugin_key(&identity),
+                        &identity.id,
+                    ),
+                );
                 report.reaches_agents = super::consent::reaches_agents(manifest);
                 let recorded = consent::consent(&self.0.home, &key);
                 if super::consent::runs_programs(manifest) {

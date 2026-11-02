@@ -62,7 +62,7 @@ pub(crate) enum Intent {
     ExtensionHere(super::model::ExtensionHere),
     /// Set one preference of a declared extension.
     SetPreference {
-        identity: uze_application::ExtensionIdentity,
+        owner: crate::ui::model::PreferenceOwner,
         name: String,
         label: String,
         value: serde_json::Value,
@@ -276,7 +276,7 @@ pub(crate) fn dispatch(
             });
         }
         Intent::SetPreference {
-            identity,
+            owner,
             name,
             label,
             value,
@@ -284,7 +284,16 @@ pub(crate) fn dispatch(
             spawn_mutation(
                 Mutation::asked(model, format!("Setting {label}…"), home, sender),
                 move |app| {
-                    app.extensions().set_preference(&identity, &name, value)?;
+                    match &owner {
+                        crate::ui::model::PreferenceOwner::Declared(identity) => {
+                            app.extensions().set_preference(identity, &name, value)?;
+                        }
+                        crate::ui::model::PreferenceOwner::Builtin(id) => {
+                            let declared = builtin_declarations(id);
+                            app.extensions()
+                                .set_builtin_preference(id, &declared, &name, value)?;
+                        }
+                    }
                     // The workspace reads the preferences again once it
                     // looks again, and draws what reads them.
                     crate::ui::extension_switch::plugins_changed();
@@ -836,6 +845,14 @@ fn answered_refresh(
     )
 }
 
+/// What the built-in `id` declares it lets the operator set.
+fn builtin_declarations(id: &str) -> Vec<uze_contract::PreferenceDecl> {
+    uze_extensions::registry::ExtensionRegistry::builtin()
+        .get(id)
+        .map(|builtin| builtin.preferences())
+        .unwrap_or_default()
+}
+
 fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<RefreshData> {
     let app = tui_application(home)?;
     let snapshot = app.machine_snapshot(context_root)?;
@@ -854,6 +871,17 @@ fn load_refresh_data(home: UzeHome, context_root: &std::path::Path) -> Result<Re
         declared_extensions: app.extensions().summaries(),
         extension_standings: app.extensions().reports(extension_project.as_deref()),
         extension_project,
+        builtin_preferences: uze_extensions::registry::ExtensionRegistry::builtin()
+            .all()
+            .iter()
+            .map(|builtin| {
+                let rows = app
+                    .extensions()
+                    .builtin_preference_rows(builtin.id, &builtin.preferences());
+                (builtin.id.to_owned(), rows)
+            })
+            .filter(|(_, rows)| !rows.is_empty())
+            .collect(),
         context_status: snapshot.context_status,
         workspace: snapshot.workspace,
         // Only `spawn_startup` ever fills this in; an ordinary refresh
