@@ -126,7 +126,9 @@ modules.
 ### D5. `config.toml` shape
 
 One section per concept (`appearance`, `notifications`, `memory`,
-`projects`, `extensions`); at most two header levels (`[section]`,
+`projects`, `extensions`, `preferences` — the last two as #346 wrote them:
+`[extensions]` the switches, `[preferences."<id>"]` each extension's
+settings); at most two header levels (`[section]`,
 `[section.<id>]`), deeper structure as dotted keys inside the table; one
 table per identified thing (a built-in extension by its bare id, a plugin
 by `"plugin@marketplace"`, a project by its path), the `@` telling the two

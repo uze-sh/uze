@@ -44,4 +44,4 @@
 - [x] 7.1 `no_name_uze_owns_stands_for_two_things` over `owned_paths()`: no file name in two tiers, no file beside a directory of its stem (a lock guarding the directory excepted); proven against the old `usage.json` pair
 - [x] 7.2 `persistence-tiers.md`: one-word names, no name in two tiers, a lock beside what it guards or named for its activity in its scope, no `locks/`, and the `config.toml` shape; `theme-overrides.json` leaves the authored row
 - [x] 7.3 `invariants.md` and `versioning.md` name the new paths; `versioning.md` says how the release floor is raised
-- [ ] 7.4 `make check` and `openspec validate --all --strict` green
+- [x] 7.4 `make check`'s parts (fmt, clippy on linux and both windows-msvc targets and with telemetry, doc tests, deny, attributions, artifacts), `openspec validate --all --strict`, rules check, `journey validate`, ruff: green; `cargo test --workspace` green but for the five agent-sandbox tests
