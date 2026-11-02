@@ -242,16 +242,19 @@ impl crate::application::Collectable for DeliveredPackages {
             );
         };
         let named = serde_json::to_string(&receipts).unwrap_or_default();
-        let mut removed = crate::application::earlier::collect_package_copies(home, &named);
+        let servers: std::collections::BTreeSet<&str> = packages
+            .iter()
+            .filter(|package| package.root.join("mcp.json").is_file())
+            .map(|package| package.id.as_str())
+            .collect();
+        let serves = |id: &str| servers.contains(id);
+        let mut removed =
+            crate::application::earlier::collect_package_copies(home, &named, &serves);
         for entry in entries {
-            let path = entry.path();
-            let serves = packages.iter().any(|package| {
-                home.delivered_package_dir(&package.id) == path
-                    && package.root.join("mcp.json").is_file()
-            });
-            if serves {
+            if serves(&entry.file_name().to_string_lossy()) {
                 continue;
             }
+            let path = entry.path();
             let gone = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                 std::fs::remove_dir_all(&path)
             } else {

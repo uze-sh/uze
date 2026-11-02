@@ -44,17 +44,22 @@ pub(crate) fn holds_package_copies(home: &uze_core::UzeHome) -> bool {
 }
 
 /// Removes the package copies an earlier release made that no receipt
-/// names any more (`named` is the ledger, serialized), then their directory
-/// once it is empty. Called under the mutation lock.
+/// names any more (`named` is the ledger, serialized) and no installed
+/// package serves MCP from (`serves`, by package id: the floor release,
+/// running beside this one, starts its servers from here), then their
+/// directory once it is empty. Called under the mutation lock.
 pub(crate) fn collect_package_copies(
     home: &uze_core::UzeHome,
     named: &str,
+    serves: &dyn Fn(&str) -> bool,
 ) -> Vec<std::path::PathBuf> {
     let root = package_copies_dir(home);
     let mut removed = Vec::new();
     for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
         let path = entry.path();
-        if named.contains(path.to_string_lossy().as_ref()) {
+        if named.contains(path.to_string_lossy().as_ref())
+            || serves(&entry.file_name().to_string_lossy())
+        {
             continue;
         }
         let gone = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
@@ -124,16 +129,31 @@ mod tests {
         let ledger = format!("{{\"target\":\"{}/skills/x\"}}", named.display());
 
         assert_eq!(
-            collect_package_copies(&home, &ledger),
+            collect_package_copies(&home, &ledger, &|_| false),
             vec![unnamed.clone()]
         );
         assert!(named.is_dir() && !unnamed.exists());
 
         std::fs::remove_dir_all(&named).unwrap();
-        assert!(collect_package_copies(&home, "").is_empty());
+        assert!(collect_package_copies(&home, "", &|_| false).is_empty());
         assert!(
             !holds_package_copies(&home),
             "the emptied directory goes too"
+        );
+    }
+
+    #[test]
+    fn an_earlier_copy_an_installed_server_may_run_from_is_kept() {
+        let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("earlier-server-copies"));
+        let serving = package_copies_dir(&home).join("tracker@ai");
+        std::fs::create_dir_all(&serving).unwrap();
+
+        let removed = collect_package_copies(&home, "", &|id| id == "tracker@ai");
+
+        assert!(removed.is_empty(), "{removed:?}");
+        assert!(
+            serving.is_dir(),
+            "the floor release, running beside this one, starts its servers from here"
         );
     }
 }
