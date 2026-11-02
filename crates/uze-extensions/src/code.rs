@@ -1869,11 +1869,11 @@ fn search_field_command(view: &mut CodeView, command: Command) {
                 view.search.step(true);
             }
         }
-        Command::SelectNext => {
+        Command::SelectNext if view.search.has_lines() => {
             view.search.typing = false;
             view.search.step(true);
         }
-        Command::Newline | Command::Activate => {
+        Command::Newline | Command::Activate if view.search.has_lines() => {
             view.search.typing = false;
             view.search.step(true);
             view.open_hit(true);

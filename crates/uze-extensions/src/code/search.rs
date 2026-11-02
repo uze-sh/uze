@@ -197,6 +197,11 @@ impl Search {
             .collect()
     }
 
+    /// Whether the list has a line for the keys to go to.
+    pub(super) fn has_lines(&self) -> bool {
+        !self.walk().is_empty()
+    }
+
     /// Moves the cursor one line along the list, from the first line when
     /// it is nowhere yet.
     pub(super) fn step(&mut self, down: bool) {

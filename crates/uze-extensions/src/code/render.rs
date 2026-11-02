@@ -305,6 +305,9 @@ fn footer(code: &CodeView) -> Vec<Command> {
     if code.editing() {
         return vec![Command::Save, Command::Find, Command::Close];
     }
+    if code.typing_a_search() && !code.search.has_lines() {
+        return vec![Command::Close];
+    }
     if code.typing_a_search() {
         return vec![Command::SelectNext, Command::Close];
     }

@@ -3649,6 +3649,21 @@ fn a_search_put_away_unanswered_is_answered_when_it_comes_back() {
     assert_eq!(back.search.files().len(), 1);
 }
 
+/// With nothing found there is nowhere to go from the field: the footer does
+/// not offer it and the key leaves the keys where they are.
+#[test]
+fn the_field_offers_no_way_down_to_nothing() {
+    let mut view = files_at("/w");
+    press(&mut view, Command::Find);
+    assert!(
+        !render::view(&view, space())
+            .footer
+            .contains(&Command::SelectNext)
+    );
+    press(&mut view, Command::SelectNext);
+    assert!(view.typing(), "the keys stay in the field");
+}
+
 /// Going back to the tree from a search opens it down to the file the
 /// search opened, wherever that is.
 #[test]
