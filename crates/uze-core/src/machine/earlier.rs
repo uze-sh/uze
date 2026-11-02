@@ -219,22 +219,14 @@ mod tests {
     fn a_home_with_the_floor_releases_names_comes_out_renamed_and_unchanged() {
         let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-renamed").join("uze"));
         let seeded = [
-            (home.retired_release_path(), home.binary_path(), "release"),
+            (home.retired_release_path(), home.release_path(), "release"),
             (
                 home.retired_launches_path(),
-                home.launch_overrides_path(),
+                home.launches_path(),
                 "launches",
             ),
-            (
-                home.retired_usage_path(),
-                home.machine_usage_path(),
-                "usage",
-            ),
-            (
-                home.retired_consent_path(),
-                home.extensions_record_path(),
-                "consent",
-            ),
+            (home.retired_usage_path(), home.usage_path(), "usage"),
+            (home.retired_consent_path(), home.consent_path(), "consent"),
             (
                 home.retired_tasks_path("p1"),
                 home.tasks_path("p1"),
@@ -242,12 +234,12 @@ mod tests {
             ),
             (
                 home.retired_approvals_path("p1"),
-                home.approved_commands_path("p1"),
+                home.approvals_path("p1"),
                 "approvals",
             ),
             (
                 home.retired_prompts_path("p1"),
-                home.prompt_history_path("p1"),
+                home.prompts_path("p1"),
                 "prompts",
             ),
         ];
@@ -311,12 +303,12 @@ mod tests {
         let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-no-overwrite").join("uze"));
         std::fs::create_dir_all(home.state_dir()).unwrap();
         std::fs::write(home.retired_release_path(), "older").unwrap();
-        std::fs::write(home.binary_path(), "newer").unwrap();
+        std::fs::write(home.release_path(), "newer").unwrap();
 
         carry_renamed(&home, None);
 
         assert_eq!(
-            std::fs::read_to_string(home.binary_path()).unwrap(),
+            std::fs::read_to_string(home.release_path()).unwrap(),
             "newer"
         );
         assert_eq!(

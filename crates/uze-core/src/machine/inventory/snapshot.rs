@@ -21,7 +21,7 @@ struct Snapshot {
 
 /// The last Overview collected and when, if one can be read.
 pub fn load_snapshot(home: &UzeHome) -> Option<(MachineOverview, SystemTime)> {
-    let bytes = std::fs::read(home.machine_overview_cache_path()).ok()?;
+    let bytes = std::fs::read(home.overview_cache_path()).ok()?;
     let snapshot: Snapshot = serde_json::from_slice(&bytes).ok()?;
     Some((snapshot.overview, snapshot.collected_at))
 }
@@ -35,7 +35,7 @@ pub fn save_snapshot(
         collected_at,
         overview: overview.clone(),
     };
-    let path = home.machine_overview_cache_path();
+    let path = home.overview_cache_path();
     let payload = serde_json::to_vec(&snapshot).map_err(|source| crate::UzeError::Json {
         path: path.clone(),
         source,
@@ -53,7 +53,7 @@ mod tests {
         let home = UzeHome::at(root.path());
         assert!(load_snapshot(&home).is_none());
         std::fs::create_dir_all(home.cache_dir()).unwrap();
-        std::fs::write(home.machine_overview_cache_path(), b"{not json").unwrap();
+        std::fs::write(home.overview_cache_path(), b"{not json").unwrap();
         assert!(load_snapshot(&home).is_none());
     }
 

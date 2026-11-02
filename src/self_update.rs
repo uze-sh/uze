@@ -273,7 +273,7 @@ pub fn restart(home: &UzeHome) -> String {
 /// now: what `uze uninstall` waits out rather than removes the binary from
 /// under.
 pub fn underway(home: &UzeHome) -> bool {
-    home.binary_check_lock_path().exists() && claim_check(home).is_none()
+    home.release_lock_path().exists() && claim_check(home).is_none()
 }
 
 /// The site's changelog, where a command points after an update.
@@ -617,7 +617,7 @@ pub(crate) fn release_notes(home: &UzeHome, version: &str) -> Option<ReleaseNote
 }
 
 fn notes_with(home: &UzeHome, version: &str, releases: &dyn Releases) -> Option<ReleaseNotes> {
-    let path = home.release_notes_cache_path();
+    let path = home.changelog_cache_path();
     let section = |text: &str| {
         sections(text)
             .into_iter()
@@ -1248,7 +1248,7 @@ fn receipt_path(home: &UzeHome) -> PathBuf {
 }
 
 fn ledger_path(home: &UzeHome) -> PathBuf {
-    home.binary_path()
+    home.release_path()
 }
 
 /// The right to ask for the latest release, held by one process at a
@@ -1261,7 +1261,7 @@ fn ledger_path(home: &UzeHome) -> PathBuf {
 /// waited for, and its answer is read instead.
 fn claim_check(home: &UzeHome) -> Option<uze_application::FileLock> {
     uze_application::FileLock::acquire(
-        &home.binary_check_lock_path(),
+        &home.release_lock_path(),
         Duration::from_millis(25),
         Duration::from_millis(1),
     )
@@ -2286,7 +2286,7 @@ mod tests {
         upgrade_with(&home, Some(&binary), &releases, 10_000).unwrap();
 
         assert_eq!(releases.changelogs.borrow().as_slice(), ["999.0.0"]);
-        assert!(home.release_notes_cache_path().is_file());
+        assert!(home.changelog_cache_path().is_file());
     }
 
     #[test]

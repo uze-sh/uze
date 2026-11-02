@@ -13,13 +13,13 @@
 //! # Storage
 //!
 //! One newline-delimited JSON file per project, at
-//! `UzeHome::prompt_history_path`, oldest line first. Per-project rather
+//! `UzeHome::prompts_path`, oldest line first. Per-project rather
 //! than one shared file so a busy project cannot evict another's entries,
 //! and append-only so recording a prompt costs one small `O_APPEND` write
 //! on the caller's thread instead of a read-modify-write of every entry.
 //! The file is compacted back to `MAX_ENTRIES` once it grows past
 //! `COMPACT_ABOVE_BYTES`; appends and compactions take
-//! `UzeHome::prompt_history_lock_path`, since a compaction rewrites the
+//! `UzeHome::prompts_lock_path`, since a compaction rewrites the
 //! file from what it read and would drop a line another client appended
 //! in between.
 //!
@@ -202,7 +202,7 @@ pub fn record(
     let mut line = serde_json::to_vec(&entry).expect("prompt entry serialization is infallible");
     line.push(b'\n');
     let _held = crate::file_lock::Held::acquire(
-        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
     append_line(&file, &line)?;
@@ -239,7 +239,7 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
         return Ok(());
     }
     let _held = crate::file_lock::Held::acquire(
-        &home.prompt_history_lock_path(&project_id_for(workspace_root)),
+        &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
     let kept: Vec<PromptEntry> = load(&file)
@@ -252,7 +252,7 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
 fn path(home: &UzeHome, workspace_root: &Path) -> PathBuf {
     let id = project_id_for(workspace_root);
     uze_core::earlier::carry_renamed(home, Some(&id));
-    home.prompt_history_path(&id)
+    home.prompts_path(&id)
 }
 
 /// Oldest first — the order the file is written in.
@@ -353,7 +353,7 @@ mod tests {
         record(&temp.home, root, &origin(1, "agent"), "kept").unwrap();
         let id = project_id_for(root);
         fs::rename(
-            temp.home.prompt_history_path(&id),
+            temp.home.prompts_path(&id),
             temp.home.retired_prompts_path(&id),
         )
         .unwrap();

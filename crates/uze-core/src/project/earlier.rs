@@ -50,7 +50,7 @@ pub(crate) fn carry_across_the_move(home: &UzeHome, id: &str) {
     let carried = [
         (scattered.agents, home.tasks_path(id)),
         (scattered.conversations, home.conversations_dir(id)),
-        (scattered.prompt_history, home.prompt_history_path(id)),
+        (scattered.prompt_history, home.prompts_path(id)),
     ];
     for (was, now) in carried {
         if was.exists() && !now.exists() {

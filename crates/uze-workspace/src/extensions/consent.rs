@@ -219,7 +219,7 @@ fn reads_beyond(
 /// Every consent on this machine, by identity key. Fails closed: a record
 /// that cannot be read, or that a newer build wrote, consents to nothing.
 pub fn consents(home: &UzeHome) -> BTreeMap<String, Consent> {
-    uze_document::read::<ExtensionsRecord>(&home.extensions_record_path())
+    uze_document::read::<ExtensionsRecord>(&home.consent_path())
         .ok()
         .and_then(uze_document::Carried::record)
         .map(|record| record.extensions)
@@ -379,7 +379,7 @@ pub fn disable(home: &UzeHome, key: &str, project: &Path) -> Result<bool> {
 /// leaves the machine, and names the keys forgotten.
 pub fn forget_plugin(home: &UzeHome, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
     let prefix = identity_key(plugin, marketplace, "");
-    let declined_any = uze_document::read::<ExtensionsRecord>(&home.extensions_record_path())
+    let declined_any = uze_document::read::<ExtensionsRecord>(&home.consent_path())
         .ok()
         .and_then(uze_document::Carried::record)
         .is_some_and(|record| {
@@ -427,7 +427,7 @@ pub fn decline_offer(home: &UzeHome, key: &str, project: &Path) -> Result<bool> 
 /// Whether the operator put away the offer to enable `key` in `project`.
 /// Fails open to "no": an unreadable record only makes the offer again.
 pub fn offer_declined(home: &UzeHome, key: &str, project: &Path) -> bool {
-    uze_document::read::<ExtensionsRecord>(&home.extensions_record_path())
+    uze_document::read::<ExtensionsRecord>(&home.consent_path())
         .ok()
         .and_then(uze_document::Carried::record)
         .and_then(|mut record| record.offers_declined.remove(key))
@@ -478,9 +478,8 @@ fn rewrite_record<T>(
     home: &UzeHome,
     change: impl FnOnce(&mut ExtensionsRecord) -> Result<T>,
 ) -> Result<T> {
-    let _held =
-        crate::file_lock::Held::acquire(&home.extensions_record_lock_path(), LOCK_PATIENCE)?;
-    let path = home.extensions_record_path();
+    let _held = crate::file_lock::Held::acquire(&home.consent_lock_path(), LOCK_PATIENCE)?;
+    let path = home.consent_path();
     let mut record = match uze_document::read::<ExtensionsRecord>(&path) {
         Ok(carried) => carried.or_default(),
         Err(reason) if uze_document::may_be_set_aside(&reason) => {
@@ -620,7 +619,7 @@ mod tests {
         assert_eq!(recorded.exec_paths, None);
 
         let written: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(home.extensions_record_path()).unwrap()).unwrap();
+            serde_json::from_slice(&std::fs::read(home.consent_path()).unwrap()).unwrap();
         assert_eq!(written["schema_version"], 1);
         assert!(
             written["extensions"][BAND].get("exec_paths").is_none(),
@@ -976,13 +975,13 @@ mod tests {
     #[test]
     fn a_record_this_build_cannot_read_consents_to_nothing_and_is_set_aside_on_write() {
         let (home, _) = home("consent-unreadable");
-        std::fs::create_dir_all(home.extensions_record_path().parent().unwrap()).unwrap();
-        std::fs::write(home.extensions_record_path(), b"{ not json").unwrap();
+        std::fs::create_dir_all(home.consent_path().parent().unwrap()).unwrap();
+        std::fs::write(home.consent_path(), b"{ not json").unwrap();
         assert!(consents(&home).is_empty());
 
         accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
         assert!(consent(&home, BAND).is_some());
-        let kept = std::fs::read_dir(home.extensions_record_path().parent().unwrap())
+        let kept = std::fs::read_dir(home.consent_path().parent().unwrap())
             .unwrap()
             .filter_map(|entry| entry.ok())
             .any(|entry| {
@@ -1000,15 +999,12 @@ mod tests {
     #[test]
     fn a_newer_builds_record_is_left_alone() {
         let (home, _) = home("consent-newer");
-        std::fs::create_dir_all(home.extensions_record_path().parent().unwrap()).unwrap();
+        std::fs::create_dir_all(home.consent_path().parent().unwrap()).unwrap();
         let newer = br#"{"schema_version": 2, "extensions": {}}"#;
-        std::fs::write(home.extensions_record_path(), newer).unwrap();
+        std::fs::write(home.consent_path(), newer).unwrap();
 
         assert!(accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).is_err());
-        assert_eq!(
-            std::fs::read(home.extensions_record_path()).unwrap(),
-            newer.to_vec()
-        );
+        assert_eq!(std::fs::read(home.consent_path()).unwrap(), newer.to_vec());
     }
 
     #[test]

@@ -238,7 +238,7 @@ fn recorded(home: &UzeHome, primary: &Path) -> Option<String> {
 fn path(home: &UzeHome, canonical_root: &Path) -> PathBuf {
     let id = project_id_for(canonical_root);
     uze_core::earlier::carry_renamed(home, Some(&id));
-    home.approved_commands_path(&id)
+    home.approvals_path(&id)
 }
 
 fn canonical(root: &Path) -> PathBuf {
@@ -288,11 +288,7 @@ mod tests {
         let declared = policy(&["pnpm install"], &["pnpm test"]);
         approve(&home, &project, &ProjectCommands::of(&declared)).unwrap();
         let id = project_id_for(&project);
-        std::fs::rename(
-            home.approved_commands_path(&id),
-            home.retired_approvals_path(&id),
-        )
-        .unwrap();
+        std::fs::rename(home.approvals_path(&id), home.retired_approvals_path(&id)).unwrap();
 
         assert!(consent(&home, &project, &declared).setup().is_some());
     }

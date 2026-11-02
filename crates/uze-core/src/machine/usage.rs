@@ -207,13 +207,13 @@ impl Archive {
     /// `None` when it is there and cannot be taken (a newer build's, or
     /// unreadable): it is then neither added to nor written over.
     pub fn load(home: &UzeHome) -> Option<Self> {
-        uze_document::read::<Self>(&home.machine_usage_path())
+        uze_document::read::<Self>(&home.usage_path())
             .ok()
             .map(uze_document::Carried::or_default)
     }
 
     pub fn save(&self, home: &UzeHome) -> Result<()> {
-        let path = home.machine_usage_path();
+        let path = home.usage_path();
         let payload = serde_json::to_vec(self).map_err(|source| crate::UzeError::Json {
             path: path.clone(),
             source,
@@ -249,14 +249,14 @@ struct Kept {
 
 impl Ledger {
     pub fn load(home: &UzeHome) -> Self {
-        std::fs::read(home.machine_usage_cache_path())
+        std::fs::read(home.transcripts_cache_path())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default()
     }
 
     pub fn save(&self, home: &UzeHome) -> Result<()> {
-        let path = home.machine_usage_cache_path();
+        let path = home.transcripts_cache_path();
         let payload = serde_json::to_vec(self).map_err(|source| crate::UzeError::Json {
             path: path.clone(),
             source,

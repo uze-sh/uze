@@ -163,7 +163,7 @@ pub struct DetectionCache {
 impl DetectionCache {
     pub fn new(home: &UzeHome) -> Self {
         Self {
-            path: home.harness_detection_cache_path(),
+            path: home.detection_cache_path(),
             shims_dir: home.shims_dir(),
             memo: std::sync::Mutex::new(HashMap::new()),
             on_disk: std::sync::OnceLock::new(),

@@ -152,7 +152,7 @@ impl UzeHome {
     /// to run. A record, because nothing else on the machine knows a
     /// person said yes, and kept beside the project's other records so
     /// forgetting the project forgets the approval with it.
-    pub fn approved_commands_path(&self, project_id: &str) -> PathBuf {
+    pub fn approvals_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("approvals.json")
     }
 
@@ -338,14 +338,14 @@ impl UzeHome {
     /// The overrides each agent was launched with, per harness, and the
     /// sets of them the operator used lately. A record: only what the
     /// operator typed says it. Owner-only, since a value may be a secret.
-    pub fn launch_overrides_path(&self) -> PathBuf {
+    pub fn launches_path(&self) -> PathBuf {
         self.state_dir().join("launches.json")
     }
 
     /// The guard every read-modify-write of the launch overrides takes: the
     /// workspace records them and a relaunching shim may be reading. A
     /// lock, not a record.
-    pub fn launch_overrides_lock_path(&self) -> PathBuf {
+    pub fn launches_lock_path(&self) -> PathBuf {
         self.state_dir().join("launches.lock")
     }
 
@@ -353,7 +353,7 @@ impl UzeHome {
     /// the grants accepted, the digest of the code they were accepted for
     /// and the projects it is enabled in. A record: only a person's answer
     /// says it, and nothing on the machine derives it again.
-    pub fn extensions_record_path(&self) -> PathBuf {
+    pub fn consent_path(&self) -> PathBuf {
         self.state_dir().join("extensions").join("consent.json")
     }
 
@@ -495,7 +495,7 @@ impl UzeHome {
     /// The guard every read-modify-write of the extensions record takes:
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.
-    pub fn extensions_record_lock_path(&self) -> PathBuf {
+    pub fn consent_lock_path(&self) -> PathBuf {
         self.state_dir().join("extensions").join("consent.lock")
     }
 
@@ -581,7 +581,7 @@ impl UzeHome {
     /// ever touched. It stays in `state/`, never under the runtime tree,
     /// because that tree is swept, and unlinking a lock another process
     /// holds hands the next caller a fresh file and the exclusion is gone.
-    pub fn agents_lock_path(&self, project_id: &str) -> PathBuf {
+    pub fn tasks_lock_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("tasks.lock")
     }
 
@@ -620,19 +620,19 @@ impl UzeHome {
     /// The guard a project's prompt history is appended and compacted
     /// under, so a compaction never drops a line another client appended
     /// while it read. A lock, not a record.
-    pub fn prompt_history_lock_path(&self, project_id: &str) -> PathBuf {
+    pub fn prompts_lock_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("prompts.lock")
     }
 
     /// What UZE remembers about its own binary between runs: when it last
     /// asked for the latest release, and what the operator was told.
-    pub fn binary_path(&self) -> PathBuf {
+    pub fn release_path(&self) -> PathBuf {
         self.state_dir().join("release.json")
     }
 
     /// Held by the one process asking for the latest release, so clients
     /// that wake together ask once. A lock, not a record.
-    pub fn binary_check_lock_path(&self) -> PathBuf {
+    pub fn release_lock_path(&self) -> PathBuf {
         self.state_dir().join("release.lock")
     }
 
@@ -640,7 +640,7 @@ impl UzeHome {
     /// so clients that wake together fetch once. In `state/` rather than
     /// beside the mirrors, because the cache tier may be deleted under its
     /// holder. A lock, not a record.
-    pub fn marketplace_fetch_lock_path(&self) -> PathBuf {
+    pub fn fetch_lock_path(&self) -> PathBuf {
         self.state_dir().join("fetch.lock")
     }
 
@@ -649,9 +649,9 @@ impl UzeHome {
     /// [`Self::marketplace_cache_dir`]): a fetch, a clone, its removal. Two
     /// processes fetching one bare repository at once fight over its ref
     /// locks and its `origin`. In `state/`, beside the other locks, for the
-    /// reason [`Self::marketplace_fetch_lock_path`] gives. A lock, not a
+    /// reason [`Self::fetch_lock_path`] gives. A lock, not a
     /// record.
-    pub fn marketplace_mirror_lock_path(&self, entry: &str) -> PathBuf {
+    pub fn mirror_lock_path(&self, entry: &str) -> PathBuf {
         self.state_dir()
             .join("mirrors")
             .join(format!("{entry}.lock"))
@@ -659,7 +659,7 @@ impl UzeHome {
 
     /// The receipt `install.sh` leaves: the file it placed and the release
     /// it was. Inbound — UZE reads it and never writes it — which is why it
-    /// is a document of its own rather than part of [`Self::binary_path`].
+    /// is a document of its own rather than part of [`Self::release_path`].
     pub fn install_receipt_path(&self) -> PathBuf {
         self.state_dir().join("install.json")
     }
@@ -685,7 +685,7 @@ impl UzeHome {
     }
 
     /// One project's prompt history, beside its other records.
-    pub fn prompt_history_path(&self, project_id: &str) -> PathBuf {
+    pub fn prompts_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("prompts.json")
     }
 
@@ -814,7 +814,7 @@ impl UzeHome {
     /// Cross-invocation cache of `IntegrationPort::detect()` results (see
     /// `detection_cache`). Reconstructable at any time from a live probe —
     /// never authoritative, hence `cache_dir()` rather than `state_dir()`.
-    pub fn harness_detection_cache_path(&self) -> PathBuf {
+    pub fn detection_cache_path(&self) -> PathBuf {
         self.cache_dir().join("detection.json")
     }
 
@@ -833,28 +833,28 @@ impl UzeHome {
 
     /// The last machine Overview collected (see `machine::inventory`):
     /// observed again whenever it is missing or cannot be read.
-    pub fn machine_overview_cache_path(&self) -> PathBuf {
+    pub fn overview_cache_path(&self) -> PathBuf {
         self.cache_dir().join("overview.json")
     }
 
     /// The uses the machine Overview read from records a harness has since
     /// deleted (see `machine::usage::Archive`): a record, the only place
     /// they are left.
-    pub fn machine_usage_path(&self) -> PathBuf {
+    pub fn usage_path(&self) -> PathBuf {
         self.state_dir().join("usage.json")
     }
 
     /// The guard one reading of the harnesses' records takes, so two
     /// workspaces never read and move the same records at once. A lock, not
     /// a record.
-    pub fn machine_usage_lock_path(&self) -> PathBuf {
+    pub fn usage_lock_path(&self) -> PathBuf {
         self.state_dir().join("usage.lock")
     }
 
     /// What the machine Overview kept of each harness's session records
     /// between readings (see `machine::usage`): read again from the start
     /// whenever it is missing or cannot be read.
-    pub fn machine_usage_cache_path(&self) -> PathBuf {
+    pub fn transcripts_cache_path(&self) -> PathBuf {
         self.cache_dir().join("transcripts.json")
     }
 
@@ -878,7 +878,7 @@ impl UzeHome {
     /// The changelog of the release the updater last installed, as published
     /// at that release's tag. Observed again whenever it is missing, so it is
     /// a cache and never a record.
-    pub fn release_notes_cache_path(&self) -> PathBuf {
+    pub fn changelog_cache_path(&self) -> PathBuf {
         self.cache_dir().join("changelog.md")
     }
 
@@ -1237,12 +1237,12 @@ mod tests {
             home.undelivered_path(),
             home.client_layout_path(),
             home.provisioning_state_path(),
-            home.binary_path(),
+            home.release_path(),
             home.tasks_path("abc"),
             home.conversation_path("abc", "def"),
-            home.prompt_history_path("abc"),
-            home.extensions_record_path(),
-            home.launch_overrides_path(),
+            home.prompts_path("abc"),
+            home.consent_path(),
+            home.launches_path(),
             home.extension_stores_dir(),
             home.extension_store_path("gsd@market", "gsd-band", Some("abc")),
             home.extension_secrets_set_path("gsd@market", "gsd-band"),
@@ -1265,10 +1265,10 @@ mod tests {
         // And the things that *are* rebuildable say so by where they are.
         for rebuilt in [
             home.harnesses_cache_path(),
-            home.harness_detection_cache_path(),
+            home.detection_cache_path(),
             home.inspection_cache_path(),
             home.marketplace_cache_dir(),
-            home.release_notes_cache_path(),
+            home.changelog_cache_path(),
             home.appearance_cache_path(),
             home.logs_dir(),
             home.generated_attachments_dir("claude"),

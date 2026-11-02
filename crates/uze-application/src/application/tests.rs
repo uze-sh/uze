@@ -2939,6 +2939,6 @@ fn the_application_opens_on_the_machine_records_the_floor_release_named() {
 
     let _app = UzeApplication::new(home.clone(), Vec::new());
 
-    assert!(home.launch_overrides_path().is_file());
+    assert!(home.launches_path().is_file());
     assert!(!home.retired_launches_path().exists());
 }

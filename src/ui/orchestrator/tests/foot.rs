@@ -253,7 +253,7 @@ fn the_notice_opens_the_notes_of_its_own_release() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-release-notes"));
     std::fs::create_dir_all(home.cache_dir()).unwrap();
     std::fs::write(
-        home.release_notes_cache_path(),
+        home.changelog_cache_path(),
         "# Changelog\n\n## [9.0.1](https://x) - 2026-09-23\n\n- **ui:** newer thing\n\n\
          ## [9.0.0](https://x) - 2026-09-22\n\n- **terminal:** older thing\n",
     )

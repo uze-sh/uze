@@ -3850,7 +3850,7 @@ mod overrides_tests {
 
         placed(&app, &root, "one", "");
 
-        assert!(!app.home.launch_overrides_path().exists());
+        assert!(!app.home.launches_path().exists());
     }
 
     #[test]

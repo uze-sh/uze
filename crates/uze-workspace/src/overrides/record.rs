@@ -360,7 +360,7 @@ fn carries_credentials(value: &str) -> bool {
 /// The record, or none when it is absent or does not read: what a read
 /// may not do is fail a launch or a listing.
 fn read(home: &UzeHome) -> LaunchOverridesRecord {
-    uze_document::read::<LaunchOverridesRecord>(&home.launch_overrides_path())
+    uze_document::read::<LaunchOverridesRecord>(&home.launches_path())
         .ok()
         .and_then(uze_document::Carried::record)
         .unwrap_or_default()
@@ -370,8 +370,8 @@ fn read(home: &UzeHome) -> LaunchOverridesRecord {
 /// cannot read is set aside rather than written over, and one a newer
 /// build wrote is left alone and refused.
 fn rewrite(home: &UzeHome, change: impl FnOnce(&mut LaunchOverridesRecord)) -> Result<()> {
-    let _held = crate::file_lock::Held::acquire(&home.launch_overrides_lock_path(), LOCK_PATIENCE)?;
-    let path = home.launch_overrides_path();
+    let _held = crate::file_lock::Held::acquire(&home.launches_lock_path(), LOCK_PATIENCE)?;
+    let path = home.launches_path();
     let mut record = match uze_document::read::<LaunchOverridesRecord>(&path) {
         Ok(carried) => carried.or_default(),
         Err(reason) if uze_document::may_be_set_aside(&reason) => {
@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn a_record_that_does_not_read_records_nothing_and_is_set_aside_on_write() {
         let fixture = Fixture::new("overrides-unreadable");
-        let path = fixture.home.launch_overrides_path();
+        let path = fixture.home.launches_path();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, b"not json").unwrap();
 
@@ -747,7 +747,7 @@ mod tests {
         let fixture = Fixture::new("overrides-mode");
         fixture.launch(&fixture.here, "a1", "first", "API_TOKEN=x", 1);
 
-        let mode = std::fs::metadata(fixture.home.launch_overrides_path())
+        let mode = std::fs::metadata(fixture.home.launches_path())
             .unwrap()
             .permissions()
             .mode();

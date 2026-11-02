@@ -280,7 +280,7 @@ mod tests {
     fn an_earlier_name_beside_its_current_record_is_reported_and_kept() {
         let (home, root) = home("schema-stranded");
         std::fs::write(home.retired_launches_path(), "older").unwrap();
-        std::fs::write(home.launch_overrides_path(), "newer").unwrap();
+        std::fs::write(home.launches_path(), "newer").unwrap();
         std::fs::create_dir_all(home.retired_tasks_path("p1").parent().unwrap()).unwrap();
         std::fs::write(home.retired_tasks_path("p1"), "not carried yet").unwrap();
 

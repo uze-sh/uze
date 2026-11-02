@@ -246,7 +246,7 @@ pub fn overrides_left_behind(
     integration: &dyn IntegrationPort,
     why: &str,
 ) -> Option<String> {
-    if claim.id.is_empty() || !home.launch_overrides_path().exists() {
+    if claim.id.is_empty() || !home.launches_path().exists() {
         return None;
     }
     let root = conversation::project_of(home, claim.cwd)?;

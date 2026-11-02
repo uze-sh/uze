@@ -47,7 +47,7 @@ impl UzeApplication {
         // A collection in another workspace takes longer, and this one
         // then skips its turn.
         let _collecting = FileLock::acquire(
-            &self.home.machine_usage_lock_path(),
+            &self.home.usage_lock_path(),
             Duration::from_secs(2),
             Duration::from_millis(50),
         )

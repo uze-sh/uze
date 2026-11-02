@@ -522,7 +522,7 @@ mod tests {
 
         let _held = MutationLock::acquire(&home).unwrap();
 
-        assert!(home.binary_path().is_file());
+        assert!(home.release_path().is_file());
     }
 
     fn siblings(dir: &Path) -> Vec<String> {

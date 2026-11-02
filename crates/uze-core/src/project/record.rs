@@ -152,7 +152,7 @@ mod tests {
 
         ensure(&home, &project).unwrap();
 
-        assert!(home.approved_commands_path(&id).is_file());
+        assert!(home.approvals_path(&id).is_file());
     }
 
     fn home(name: &str) -> (UzeHome, PathBuf) {
@@ -185,11 +185,11 @@ mod tests {
         ensure(&home, &project).unwrap();
         let id = project_id_for(&project.canonical().unwrap());
         let locks = [
-            home.agents_lock_path(&id),
+            home.tasks_lock_path(&id),
             home.delivery_lock_path(&id),
             home.agents_md_lock_path(&id),
             home.conversations_lock_path(&id),
-            home.prompt_history_lock_path(&id),
+            home.prompts_lock_path(&id),
         ];
         for lock in &locks {
             fs::write(lock, b"").unwrap();
@@ -321,7 +321,7 @@ mod tests {
             "and so does what each of them was talking to"
         );
         assert!(
-            home.prompt_history_path(&id).exists(),
+            home.prompts_path(&id).exists(),
             "and the prompts they were given"
         );
         assert!(

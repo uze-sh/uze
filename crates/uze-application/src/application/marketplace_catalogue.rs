@@ -203,9 +203,7 @@ impl MarketplaceCatalogues {
 
     fn hold_within(&self, name: &str, patience: Duration) -> Result<MirrorHold> {
         uze_core::persistence::FileLock::acquire(
-            &self
-                .home
-                .marketplace_mirror_lock_path(&directory_name(name)),
+            &self.home.mirror_lock_path(&directory_name(name)),
             patience,
             Duration::from_millis(1).max(patience / 100),
         )
@@ -318,7 +316,7 @@ impl MarketplaceCatalogues {
     /// What an open workspace runs on its tick: nothing else fetches a
     /// mirror until something reads a catalogue, and keeping plugins
     /// current reads none. One process at a time, under
-    /// [`UzeHome::marketplace_fetch_lock_path`]; one that finds it held
+    /// [`UzeHome::fetch_lock_path`]; one that finds it held
     /// fetches nothing and reads what the holder writes. The attempt is
     /// stamped before the fetch, so a remote that does not answer is not
     /// asked again every tick. A marketplace with no entry yet is left to
@@ -839,7 +837,7 @@ impl super::Collectable for MarketplaceMirrors {
             };
             let name = entry.file_name().to_string_lossy().into_owned();
             let Ok(_held) = uze_core::persistence::FileLock::acquire(
-                &home.marketplace_mirror_lock_path(&directory_name(&name)),
+                &home.mirror_lock_path(&directory_name(&name)),
                 BACKGROUND_PATIENCE,
                 Duration::from_millis(1),
             ) else {
@@ -861,7 +859,7 @@ impl super::Collectable for MarketplaceMirrors {
 /// `MutationLock`), never another process.
 fn claim_fetch(home: &UzeHome) -> Option<uze_core::persistence::FileLock> {
     uze_core::persistence::FileLock::acquire(
-        &home.marketplace_fetch_lock_path(),
+        &home.fetch_lock_path(),
         Duration::from_millis(25),
         Duration::from_millis(1),
     )

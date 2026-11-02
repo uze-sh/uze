@@ -380,18 +380,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::marketplaces_path,
     ),
     owned("hosts_path", Record, Document, UzeHome::hosts_path),
-    owned(
-        "launch_overrides_path",
-        Record,
-        Document,
-        UzeHome::launch_overrides_path,
-    ),
-    owned(
-        "extensions_record_path",
-        Record,
-        Document,
-        UzeHome::extensions_record_path,
-    ),
+    owned("launches_path", Record, Document, UzeHome::launches_path),
+    owned("consent_path", Record, Document, UzeHome::consent_path),
     owned(
         "extension_stores_dir",
         Record,
@@ -419,19 +409,14 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::client_layout_path,
     ),
-    owned("binary_path", Record, Document, UzeHome::binary_path),
+    owned("release_path", Record, Document, UzeHome::release_path),
     owned(
         "install_receipt_path",
         Record,
         Document,
         UzeHome::install_receipt_path,
     ),
-    owned(
-        "machine_usage_path",
-        Record,
-        Document,
-        UzeHome::machine_usage_path,
-    ),
+    owned("usage_path", Record, Document, UzeHome::usage_path),
     owned(
         "machine_memory_dir",
         Record,
@@ -454,8 +439,8 @@ const OWNED: &[OwnedPath] = &[
     owned("tasks_path", Record, Document, |home| {
         home.tasks_path(PROJECT)
     }),
-    owned("approved_commands_path", Record, Document, |home| {
-        home.approved_commands_path(PROJECT)
+    owned("approvals_path", Record, Document, |home| {
+        home.approvals_path(PROJECT)
     }),
     owned("conversations_dir", Record, Directory, |home| {
         home.conversations_dir(PROJECT)
@@ -466,8 +451,8 @@ const OWNED: &[OwnedPath] = &[
     owned("review_path", Record, Document, |home| {
         home.review_path(PROJECT, AGENT)
     }),
-    owned("prompt_history_path", Record, Document, |home| {
-        home.prompt_history_path(PROJECT)
+    owned("prompts_path", Record, Document, |home| {
+        home.prompts_path(PROJECT)
     }),
     owned("project_memory_dir", Record, Directory, |home| {
         home.project_memory_dir(PROJECT)
@@ -529,39 +514,39 @@ const OWNED: &[OwnedPath] = &[
     retired("retired_approvals_path", Record, Document, |home| {
         home.retired_approvals_path(PROJECT)
     })
-    .renamed_to("approved_commands_path"),
+    .renamed_to("approvals_path"),
     retired("retired_prompts_path", Record, Document, |home| {
         home.retired_prompts_path(PROJECT)
     })
-    .renamed_to("prompt_history_path"),
+    .renamed_to("prompts_path"),
     retired(
         "retired_release_path",
         Record,
         Document,
         UzeHome::retired_release_path,
     )
-    .renamed_to("binary_path"),
+    .renamed_to("release_path"),
     retired(
         "retired_launches_path",
         Record,
         Document,
         UzeHome::retired_launches_path,
     )
-    .renamed_to("launch_overrides_path"),
+    .renamed_to("launches_path"),
     retired(
         "retired_usage_path",
         Record,
         Document,
         UzeHome::retired_usage_path,
     )
-    .renamed_to("machine_usage_path"),
+    .renamed_to("usage_path"),
     retired(
         "retired_consent_path",
         Record,
         Document,
         UzeHome::retired_consent_path,
     )
-    .renamed_to("extensions_record_path"),
+    .renamed_to("consent_path"),
     retired("retired_tasks_lock_path", Record, Lock, |home| {
         home.retired_tasks_lock_path(PROJECT)
     }),
@@ -610,16 +595,16 @@ const OWNED: &[OwnedPath] = &[
     ),
     owned("config_lock_path", Record, Lock, UzeHome::config_lock_path),
     owned(
-        "launch_overrides_lock_path",
+        "launches_lock_path",
         Record,
         Lock,
-        UzeHome::launch_overrides_lock_path,
+        UzeHome::launches_lock_path,
     ),
     owned(
-        "extensions_record_lock_path",
+        "consent_lock_path",
         Record,
         Lock,
-        UzeHome::extensions_record_lock_path,
+        UzeHome::consent_lock_path,
     ),
     owned("extension_store_lock_path", Record, Lock, |home| {
         home.extension_store_lock_path(PLUGIN, EXTENSION, Some(PROJECT))
@@ -628,28 +613,18 @@ const OWNED: &[OwnedPath] = &[
         home.extension_secrets_set_lock_path(PLUGIN, EXTENSION)
     }),
     owned(
-        "binary_check_lock_path",
+        "release_lock_path",
         Record,
         Lock,
-        UzeHome::binary_check_lock_path,
+        UzeHome::release_lock_path,
     ),
-    owned(
-        "marketplace_fetch_lock_path",
-        Record,
-        Lock,
-        UzeHome::marketplace_fetch_lock_path,
-    ),
-    owned("marketplace_mirror_lock_path", Record, Lock, |home| {
-        home.marketplace_mirror_lock_path("{entry}")
+    owned("fetch_lock_path", Record, Lock, UzeHome::fetch_lock_path),
+    owned("mirror_lock_path", Record, Lock, |home| {
+        home.mirror_lock_path("{entry}")
     }),
-    owned(
-        "machine_usage_lock_path",
-        Record,
-        Lock,
-        UzeHome::machine_usage_lock_path,
-    ),
-    owned("agents_lock_path", Record, Lock, |home| {
-        home.agents_lock_path(PROJECT)
+    owned("usage_lock_path", Record, Lock, UzeHome::usage_lock_path),
+    owned("tasks_lock_path", Record, Lock, |home| {
+        home.tasks_lock_path(PROJECT)
     }),
     owned("delivery_lock_path", Record, Lock, |home| {
         home.delivery_lock_path(PROJECT)
@@ -663,8 +638,8 @@ const OWNED: &[OwnedPath] = &[
     owned("review_lock_path", Record, Lock, |home| {
         home.review_lock_path(PROJECT)
     }),
-    owned("prompt_history_lock_path", Record, Lock, |home| {
-        home.prompt_history_lock_path(PROJECT)
+    owned("prompts_lock_path", Record, Lock, |home| {
+        home.prompts_lock_path(PROJECT)
     }),
     owned("memory_lock_path", Record, Lock, |home| {
         home.memory_lock_path(&home.machine_memory_dir())
@@ -842,10 +817,10 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::harnesses_cache_path,
     ),
     owned(
-        "harness_detection_cache_path",
+        "detection_cache_path",
         Remembered,
         Document,
-        UzeHome::harness_detection_cache_path,
+        UzeHome::detection_cache_path,
     ),
     owned(
         "requirement_probe_cache_path",
@@ -860,16 +835,16 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::shell_observation_cache_path,
     ),
     owned(
-        "machine_overview_cache_path",
+        "overview_cache_path",
         Remembered,
         Document,
-        UzeHome::machine_overview_cache_path,
+        UzeHome::overview_cache_path,
     ),
     owned(
-        "machine_usage_cache_path",
+        "transcripts_cache_path",
         Remembered,
         Document,
-        UzeHome::machine_usage_cache_path,
+        UzeHome::transcripts_cache_path,
     ),
     owned(
         "inspection_cache_path",
@@ -884,10 +859,10 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::appearance_cache_path,
     ),
     owned(
-        "release_notes_cache_path",
+        "changelog_cache_path",
         Remembered,
         Document,
-        UzeHome::release_notes_cache_path,
+        UzeHome::changelog_cache_path,
     ),
     owned(
         "marketplace_cache_dir",

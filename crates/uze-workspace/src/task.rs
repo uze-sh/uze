@@ -801,7 +801,7 @@ pub fn locked_reporting<T>(
     // its own beside nothing.
     crate::record::ensure(home, project_root)?;
     let path = store_path(home, project_root);
-    let _held = MutationGuard::acquire(&home.agents_lock_path(&project_id(project_root)))?;
+    let _held = MutationGuard::acquire(&home.tasks_lock_path(&project_id(project_root)))?;
     // Read in the document crate's own vocabulary rather than through
     // `read_document`, so the direction rule — which shape may be set
     // aside and which may never be — is asked of the one place that holds
