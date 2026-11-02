@@ -248,8 +248,11 @@ impl crate::application::Collectable for DeliveredPackages {
             .map(|package| package.id.as_str())
             .collect();
         let serves = |id: &str| servers.contains(id);
+        let floor_release_may_run = uze_core::earlier::holds_uncarried_records(home);
         let mut removed =
-            crate::application::earlier::collect_package_copies(home, &named, &serves);
+            crate::application::earlier::collect_package_copies(home, &named, &|id| {
+                floor_release_may_run && serves(id)
+            });
         for entry in entries {
             if serves(&entry.file_name().to_string_lossy()) {
                 continue;

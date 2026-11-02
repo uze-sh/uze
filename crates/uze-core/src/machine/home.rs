@@ -21,6 +21,9 @@ pub use owned::{Form, OwnedPath, Standing, Tier};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UzeHome {
     root: PathBuf,
+    /// Set on the copy the owned map composes with: it reads what each
+    /// builder is named, never where a record happens to be on this disk.
+    names_only: bool,
 }
 
 /// The previous layout of one project's records: see
@@ -44,7 +47,47 @@ impl UzeHome {
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            names_only: false,
+        }
+    }
+
+    /// This home, its builders answering only with today's names.
+    pub(crate) fn names_only(&self) -> Self {
+        Self {
+            root: self.root.clone(),
+            names_only: true,
+        }
+    }
+
+    /// `current`, unless the record is still under the name the floor
+    /// release gave it. A client of that release may be open until the
+    /// restart, and it reads no other name, so the record stays there until
+    /// `earlier::carry_all` moves it, and every build reads and writes it
+    /// where it is.
+    fn where_it_is(&self, current: PathBuf, earlier: PathBuf) -> PathBuf {
+        if !self.names_only && !current.exists() && earlier.is_file() {
+            earlier
+        } else {
+            current
+        }
+    }
+
+    /// `current`, unless `record` is at `earlier_record`: a record's writers
+    /// exclude each other only under one lock, so a build beside the floor
+    /// release takes the lock that release takes.
+    fn its_lock(
+        record: &Path,
+        earlier_record: &Path,
+        current: PathBuf,
+        earlier: PathBuf,
+    ) -> PathBuf {
+        if record == earlier_record {
+            earlier
+        } else {
+            current
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -144,7 +187,10 @@ impl UzeHome {
     /// not — keyed on the project id so removing a checkout can never
     /// remove history.
     pub fn tasks_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("tasks.json")
+        self.where_it_is(
+            self.project_dir(project_id).join("tasks.json"),
+            self.retired_tasks_path(project_id),
+        )
     }
 
     /// The project commands the operator approved for one project: the
@@ -153,7 +199,10 @@ impl UzeHome {
     /// person said yes, and kept beside the project's other records so
     /// forgetting the project forgets the approval with it.
     pub fn approvals_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("approvals.json")
+        self.where_it_is(
+            self.project_dir(project_id).join("approvals.json"),
+            self.retired_approvals_path(project_id),
+        )
     }
 
     /// One agent's recorded conversations, beside the agents that name it.
@@ -339,14 +388,22 @@ impl UzeHome {
     /// sets of them the operator used lately. A record: only what the
     /// operator typed says it. Owner-only, since a value may be a secret.
     pub fn launches_path(&self) -> PathBuf {
-        self.state_dir().join("launches.json")
+        self.where_it_is(
+            self.state_dir().join("launches.json"),
+            self.retired_launches_path(),
+        )
     }
 
     /// The guard every read-modify-write of the launch overrides takes: the
     /// workspace records them and a relaunching shim may be reading. A
     /// lock, not a record.
     pub fn launches_lock_path(&self) -> PathBuf {
-        self.state_dir().join("launches.lock")
+        Self::its_lock(
+            &self.launches_path(),
+            &self.retired_launches_path(),
+            self.state_dir().join("launches.lock"),
+            self.retired_launches_lock_path(),
+        )
     }
 
     /// The operator's consent to each declared extension, by identity:
@@ -354,7 +411,10 @@ impl UzeHome {
     /// and the projects it is enabled in. A record: only a person's answer
     /// says it, and nothing on the machine derives it again.
     pub fn consent_path(&self) -> PathBuf {
-        self.state_dir().join("extensions").join("consent.json")
+        self.where_it_is(
+            self.state_dir().join("extensions").join("consent.json"),
+            self.retired_consent_path(),
+        )
     }
 
     /// What each declared extension keeps between answers, one document
@@ -496,7 +556,12 @@ impl UzeHome {
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.
     pub fn consent_lock_path(&self) -> PathBuf {
-        self.state_dir().join("extensions").join("consent.lock")
+        Self::its_lock(
+            &self.consent_path(),
+            &self.retired_consent_path(),
+            self.state_dir().join("extensions").join("consent.lock"),
+            self.retired_consent_lock_path(),
+        )
     }
 
     /// What the TUI was left looking like, in both of its modes (see
@@ -582,7 +647,12 @@ impl UzeHome {
     /// because that tree is swept, and unlinking a lock another process
     /// holds hands the next caller a fresh file and the exclusion is gone.
     pub fn tasks_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("tasks.lock")
+        Self::its_lock(
+            &self.tasks_path(project_id),
+            &self.retired_tasks_path(project_id),
+            self.project_dir(project_id).join("tasks.lock"),
+            self.retired_tasks_lock_path(project_id),
+        )
     }
 
     /// Held by a delivery from the moment it claims a task until it has
@@ -621,19 +691,32 @@ impl UzeHome {
     /// under, so a compaction never drops a line another client appended
     /// while it read. A lock, not a record.
     pub fn prompts_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompts.lock")
+        Self::its_lock(
+            &self.prompts_path(project_id),
+            &self.retired_prompts_path(project_id),
+            self.project_dir(project_id).join("prompts.lock"),
+            self.retired_prompts_lock_path(project_id),
+        )
     }
 
     /// What UZE remembers about its own binary between runs: when it last
     /// asked for the latest release, and what the operator was told.
     pub fn release_path(&self) -> PathBuf {
-        self.state_dir().join("release.json")
+        self.where_it_is(
+            self.state_dir().join("release.json"),
+            self.retired_release_path(),
+        )
     }
 
     /// Held by the one process asking for the latest release, so clients
     /// that wake together ask once. A lock, not a record.
     pub fn release_lock_path(&self) -> PathBuf {
-        self.state_dir().join("release.lock")
+        Self::its_lock(
+            &self.release_path(),
+            &self.retired_release_path(),
+            self.state_dir().join("release.lock"),
+            self.retired_release_lock_path(),
+        )
     }
 
     /// Held by the one process fetching marketplaces in the background,
@@ -686,7 +769,10 @@ impl UzeHome {
 
     /// One project's prompt history, beside its other records.
     pub fn prompts_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompts.json")
+        self.where_it_is(
+            self.project_dir(project_id).join("prompts.json"),
+            self.retired_prompts_path(project_id),
+        )
     }
 
     /// Where UZE writes its own log when asked to. Disposable, which is
@@ -841,14 +927,22 @@ impl UzeHome {
     /// deleted (see `machine::usage::Archive`): a record, the only place
     /// they are left.
     pub fn usage_path(&self) -> PathBuf {
-        self.state_dir().join("usage.json")
+        self.where_it_is(
+            self.state_dir().join("usage.json"),
+            self.retired_usage_path(),
+        )
     }
 
     /// The guard one reading of the harnesses' records takes, so two
     /// workspaces never read and move the same records at once. A lock, not
     /// a record.
     pub fn usage_lock_path(&self) -> PathBuf {
-        self.state_dir().join("usage.lock")
+        Self::its_lock(
+            &self.usage_path(),
+            &self.retired_usage_path(),
+            self.state_dir().join("usage.lock"),
+            self.retired_usage_lock_path(),
+        )
     }
 
     /// What the machine Overview kept of each harness's session records

@@ -236,9 +236,7 @@ fn recorded(home: &UzeHome, primary: &Path) -> Option<String> {
 }
 
 fn path(home: &UzeHome, canonical_root: &Path) -> PathBuf {
-    let id = project_id_for(canonical_root);
-    uze_core::earlier::carry_renamed(home, Some(&id));
-    home.approvals_path(&id)
+    home.approvals_path(&project_id_for(canonical_root))
 }
 
 fn canonical(root: &Path) -> PathBuf {

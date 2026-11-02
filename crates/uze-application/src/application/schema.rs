@@ -36,8 +36,9 @@ pub enum SchemaFinding {
     /// The revision a failed restore left, its only copy.
     Superseded,
     /// A record under the name an earlier release gave it, beside the one
-    /// it was carried to: written again by that release after the carry,
-    /// so it may hold what nothing else does. Reported, never removed.
+    /// it was carried to: written again by that release after the carry.
+    /// Nothing reads it, and it may hold what nothing else does, so it is
+    /// kept until the person says.
     Stranded,
     /// Nothing this build declares: possibly a newer build's.
     Unknown,
@@ -61,7 +62,7 @@ impl SchemaEntry {
     pub fn is_leftover(&self) -> bool {
         matches!(
             self.finding,
-            SchemaFinding::SetAside | SchemaFinding::Superseded
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
         )
     }
 }
@@ -87,7 +88,9 @@ pub(crate) fn compare(home: &UzeHome, discard_leftovers: bool) -> Vec<SchemaEntr
         entry.removed = match entry.finding {
             SchemaFinding::Retired => super::collection::remove(&entry.path),
             SchemaFinding::EmptyDirectory => std::fs::remove_dir(&entry.path).is_ok(),
-            SchemaFinding::SetAside | SchemaFinding::Superseded if discard_leftovers => {
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+                if discard_leftovers =>
+            {
                 super::collection::remove(&entry.path)
             }
             _ => false,
@@ -279,8 +282,9 @@ mod tests {
     #[test]
     fn an_earlier_name_beside_its_current_record_is_reported_and_kept() {
         let (home, root) = home("schema-stranded");
+        let current = home.launches_path();
         std::fs::write(home.retired_launches_path(), "older").unwrap();
-        std::fs::write(home.launches_path(), "newer").unwrap();
+        std::fs::write(&current, "newer").unwrap();
         std::fs::create_dir_all(home.retired_tasks_path("p1").parent().unwrap()).unwrap();
         std::fs::write(home.retired_tasks_path("p1"), "not carried yet").unwrap();
 
@@ -294,12 +298,10 @@ mod tests {
                 false
             )]
         );
-        assert!(!entries[0].is_leftover());
+        assert!(entries[0].is_leftover());
+        assert!(home.retired_launches_path().exists());
         compare(&home, true);
-        assert!(
-            home.retired_launches_path().exists(),
-            "what the earlier release wrote after the carry is nowhere else"
-        );
+        assert!(!home.retired_launches_path().exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

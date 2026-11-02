@@ -48,6 +48,7 @@ pub use endpoint::*;
 pub use framing::*;
 pub use key::server_key;
 use key::*;
+pub use lock::workspace_is_claimed;
 use lock::*;
 use operator::*;
 use outbox::*;

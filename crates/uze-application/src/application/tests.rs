@@ -2931,14 +2931,13 @@ fn a_delivery_refused_below_the_floor_names_the_version_needed() {
 }
 
 #[test]
-fn the_application_opens_on_the_machine_records_the_floor_release_named() {
-    let root = uze_testkit::temp::scratch("app-carries-machine-records");
+fn building_the_application_leaves_a_record_where_the_floor_release_reads_it() {
+    let root = uze_testkit::temp::scratch("app-no-carry");
     let home = UzeHome::at(root.join("uze"));
     fs::create_dir_all(home.state_dir()).unwrap();
     fs::write(home.retired_launches_path(), "{}").unwrap();
 
     let _app = UzeApplication::new(home.clone(), Vec::new());
 
-    assert!(home.launches_path().is_file());
-    assert!(!home.retired_launches_path().exists());
+    assert!(home.retired_launches_path().is_file());
 }

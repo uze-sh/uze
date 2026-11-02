@@ -142,7 +142,7 @@ pub struct OwnedPath {
     /// outside this map writes them.
     pub spelled: &'static [&'static str],
     /// For a retired record, the builder of the name it now has: the one
-    /// carry (`earlier::carry_renamed`) moves it there.
+    /// carry (`earlier::carry_all`) moves it there.
     pub renamed_to: Option<&'static str>,
     compose: fn(&UzeHome) -> PathBuf,
 }
@@ -165,7 +165,7 @@ impl OwnedPath {
     /// Where it is in `home`, parameterised segments spelled as
     /// placeholders (`{project}`).
     pub fn path(&self, home: &UzeHome) -> PathBuf {
-        (self.compose)(home)
+        (self.compose)(&home.names_only())
     }
 
     /// Its place relative to the home, one segment per component, every
@@ -508,9 +508,9 @@ const OWNED: &[OwnedPath] = &[
     .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
     .spelled(&["release-notes.md"]),
     // Records this build renamed, each carried to the name it now has by
-    // `earlier::carry_renamed`, run where their readers and writers start;
-    // only as often as those run, so unbounded. Their locks are not
-    // carried: an older build on the machine still takes them by name.
+    // `earlier::carry_all` once no client of an earlier release can be open;
+    // only as often as a client starts, so unbounded. Until then the builders
+    // answer with the earlier name and lock. Their locks are removed then.
     retired("retired_tasks_path", Record, Document, |home| {
         home.retired_tasks_path(PROJECT)
     })
@@ -669,8 +669,8 @@ const OWNED: &[OwnedPath] = &[
     // Authored.
     owned("config_path", Authored, Document, UzeHome::config_path),
     owned("keymap_path", Authored, Document, UzeHome::keymap_path),
-    // Carried into `config.toml` by `earlier::carry_renamed`; only as often
-    // as that runs, so unbounded.
+    // Carried into `config.toml` by `earlier::carry_all`; only as often as
+    // that runs, so unbounded.
     retired(
         "retired_theme_overrides_path",
         Authored,

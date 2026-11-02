@@ -1,0 +1,132 @@
+journey: an update moves the records at the restart, and leaves none of their earlier names
+tags: [upgrade, tui, recovery]
+proves: web/content/docs/workspace/agents.mdx
+unsupported:
+  windows: |
+    No Windows release exists yet to upgrade from: the previous release is
+    built from its tag, and every tag so far predates native Windows.
+about: |
+  The updater renames the new binary over the old one and restarts nothing.
+  The client the operator has open goes on running the release it started
+  from, for as long as they leave it, while every `uze` a pane starts is
+  already the new one. A new binary that moved a record there would take it
+  from under the client, which reads no other name: the client would record
+  its next agent in a new file, and after the restart that agent would be
+  in a record nothing reads.
+
+  So nothing moves until the client that replaces the old one starts. Until
+  then the new binary reads and writes each record where it is. What the
+  machine must show: every agent the old client recorded, including one it
+  recorded after a new binary ran, is under today's name after the restart,
+  with the same id, and no earlier name is left behind.
+
+world:
+  project: demo-app
+  # The release a user has installed: the newest tag, which is also the
+  # release floor (`uze_document::earlier::FLOOR`).
+  released: v1.0.0-beta.22
+  manifest: |
+    workspace:
+      worktree: always
+      target: main
+      slots: 3
+
+scenes:
+  - scene: a new binary runs beside the client the update left open
+    when:
+      - open: ["{released_uze}", "workspace"]
+        say: the release a user has installed opens on the project
+        expect: demo-app
+        expect_timeout: 30
+        pause: 1.5
+      # Aimed at the released binary's screen: see 07-upgrade/01.
+      - click: "new"
+        say: open the new-agent picker from the space's row
+        in: sidebar
+        expect: new agent
+      - type: "{project}"
+        say: name the project in the picker's filter
+        submit: false
+        clear: all
+        expect: demo-app
+      - key: Enter
+        say: the first agent
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - shell: |
+          cd {project}
+          {uze} status
+          {uze} doctor
+        say: the new binary answers two commands, as an agent's would
+        check: false
+      - click: "new"
+        say: the client that is still open places another agent
+        in: sidebar
+        expect: new agent
+      - type: "{project}"
+        say: name the project again
+        submit: false
+        clear: all
+        expect: demo-app
+      - key: Enter
+        say: the second agent
+        pause: 6.0
+    then:
+      - file: "{uze_home}/state/projects/*/agents.json"
+        count: 1
+        about: the record stayed under the name the open client reads
+      - file: "{uze_home}/state/projects/*/tasks.json"
+        exists: false
+        about: and no second record was started beside it
+      - cmd:
+          run: |
+            {python} -c "
+            import glob, json
+            [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
+            print(len(json.load(open(store))['agents']))
+            " > {world}/agents-recorded; cat {world}/agents-recorded
+          stdout_contains: "2"
+        about: holding both agents the client placed
+
+  - scene: the client that replaces it moves everything, once
+    when:
+      - shell: |
+          {python} -c "
+          import glob, json
+          [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
+          print(sorted(a['id'] for a in json.load(open(store))['agents']))
+          " > {world}/ids-before
+        say: remember which agents the record holds
+      - key: "C-q"
+        say: the client leaves, and the terminal server stays
+        pause: 1.0
+      - open: ["{uze}", "workspace"]
+        say: the restart runs this build, with the workspace still running
+        expect: demo-app
+        expect_timeout: 30
+        pause: 2.0
+    then:
+      - cmd:
+          run: |
+            {python} -c "
+            import glob, json
+            [store] = glob.glob('{uze_home}/state/projects/*/tasks.json')
+            ids = sorted(a['id'] for a in json.load(open(store))['agents'])
+            before = open('{world}/ids-before').read().strip()
+            print('kept' if str(ids) == before else 'lost: %s, was %s' % (ids, before))
+            "
+          stdout_contains: kept
+        about: every agent is under today's name, with the id it had
+      - file: "{uze_home}/state/projects/*/agents.json"
+        exists: false
+        about: the earlier name of the record is gone
+      - file: "{uze_home}/state/projects/*/agents.lock"
+        exists: false
+        about: and so is its lock
+      - file: "{uze_home}/state/launch-overrides.*"
+        exists: false
+        about: a machine's records and locks went the same way
+      - file: "{uze_home}/state/marketplace-fetch.lock"
+        exists: false
+        about: nothing keeps a lock for a record no build takes it for

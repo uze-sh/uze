@@ -250,9 +250,7 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
 }
 
 fn path(home: &UzeHome, workspace_root: &Path) -> PathBuf {
-    let id = project_id_for(workspace_root);
-    uze_core::earlier::carry_renamed(home, Some(&id));
-    home.prompts_path(&id)
+    home.prompts_path(&project_id_for(workspace_root))
 }
 
 /// Oldest first — the order the file is written in.

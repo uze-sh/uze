@@ -109,11 +109,9 @@ fn sweeping_a_dead_projection_never_touches_the_project_it_pointed_at() {
 
     project_into(&home, &claude_home, &project);
     // The marker is what identifies a project directory; without one the
-    // sweep collects it, symlinks into a live project and all. Both names
-    // go: the one the floor release reads is written beside it.
+    // sweep collects it, symlinks into a live project and all.
     let project_dir = home.runtime_project_dir(&harness_runtime::project_id_for(&project));
     fs::remove_file(project_dir.join(harness_runtime::PROJECTION_MARKER)).unwrap();
-    fs::remove_file(project_dir.join("project.json")).unwrap();
 
     assert_eq!(harness_runtime::prune_projections(&home).len(), 1);
     assert!(!project_dir.exists());

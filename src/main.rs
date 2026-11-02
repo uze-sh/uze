@@ -387,7 +387,20 @@ fn answers_for_the_active_theme(command: &Option<Command>) -> bool {
     )
 }
 
+/// Whether this command may bring the home to today's names: nothing of an
+/// earlier release can be running beside it. A client starting is the
+/// restart into this release (a client inside a pane is only asking the
+/// running one for a space); any other command has to see no workspace.
+fn may_carry_the_home(command: &Option<Command>) -> bool {
+    let opens_a_client = matches!(command, Some(Command::Workspace { action: None, .. }))
+        && std::env::var_os("UZE_PANE").is_none();
+    opens_a_client || !uze_terminal::workspace_is_running()
+}
+
 fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
+    if may_carry_the_home(&cli.command) {
+        uze_application::earlier::carry_all(&home);
+    }
     // Before anything is drawn or printed, so the CLI's first line and the
     // TUI's first frame are already in the operator's theme. A theme that
     // will not load reports itself here and is otherwise ignored — see

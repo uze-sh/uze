@@ -21,6 +21,12 @@ that it can be found and retired by changing one value.
 
   The code that carries it out runs where it always ran; it reads the
   names it handles from its entry (`spelled`), and nothing else spells them.
+- **A path that moves moves once**, in `earlier::carry_all`, when a client
+  starts or no workspace is running, and never where it is read: an update
+  replaces the binary and restarts nothing, so a client of the earlier
+  release can stay open beside every new `uze`, reading the name it knows.
+  Until then the path's builder answers with where the record is, and with
+  its lock.
 - **`Lasts::Until(r)`** only when every run since `r` carries it out (a
   disposable path swept on every bootstrap). Anything carried out only
   when something next happens — a record rewritten when next changed, a

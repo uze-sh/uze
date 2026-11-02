@@ -4,7 +4,9 @@
 
 use uze_document::earlier::Earlier;
 
-pub use crate::machine::earlier::{carry_renamed, is_recorded, remove_retired_files};
+pub use crate::machine::earlier::{
+    carry_all, holds_uncarried_records, memory_native_setting, remove_retired_files,
+};
 
 /// This crate's entries: its records' ladder rungs, then its own.
 pub fn earlier() -> Vec<Earlier> {

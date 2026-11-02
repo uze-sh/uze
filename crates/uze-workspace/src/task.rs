@@ -591,11 +591,9 @@ pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
     home.tasks_path(&project_id(project_root))
 }
 
-/// Whether `project_root` has tasks recorded, under any name a release at
-/// the floor gave the record: asked of every ancestor of a directory, so
-/// it carries nothing.
+/// Whether `project_root` has tasks recorded.
 pub fn is_recorded(home: &UzeHome, project_root: &Path) -> bool {
-    uze_core::earlier::is_recorded(home, &project_id(project_root), "tasks_path")
+    store_path(home, project_root).exists()
 }
 
 fn project_id(project_root: &Path) -> String {
@@ -607,7 +605,6 @@ fn project_id(project_root: &Path) -> String {
 
 /// The project's tasks; empty when nothing was ever recorded.
 pub fn load(home: &UzeHome, project_root: &Path) -> Result<AgentStore> {
-    uze_core::earlier::carry_renamed(home, Some(&project_id(project_root)));
     Ok(read_document(&store_path(home, project_root))?.unwrap_or_default())
 }
 

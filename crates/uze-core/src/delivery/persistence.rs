@@ -391,7 +391,6 @@ pub struct MutationLock {
 impl MutationLock {
     pub fn acquire(home: &UzeHome) -> Result<Self> {
         home.ensure_layout()?;
-        crate::earlier::carry_renamed(home, None);
         let path = home.mutation_lock_path();
         let mut file = OpenOptions::new()
             .create(true)
@@ -515,14 +514,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_mutation_carries_the_machine_records_the_floor_release_named() {
-        let home = UzeHome::at(uze_testkit::temp::scratch("mutation-carries").join("uze"));
+    fn a_mutation_leaves_a_record_where_the_floor_release_reads_it() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("mutation-no-carry").join("uze"));
         fs::create_dir_all(home.state_dir()).unwrap();
         fs::write(home.retired_release_path(), "{}").unwrap();
 
         let _held = MutationLock::acquire(&home).unwrap();
 
-        assert!(home.release_path().is_file());
+        assert!(home.retired_release_path().is_file());
     }
 
     fn siblings(dir: &Path) -> Vec<String> {

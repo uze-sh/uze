@@ -4,7 +4,7 @@
 //! ([`regions`]).
 
 pub use uze_core::document::earlier::{Earlier, FLOOR, Lasts, Release};
-pub use uze_core::earlier::remove_retired_files;
+pub use uze_core::earlier::{carry_all, remove_retired_files};
 
 pub(crate) mod regions;
 

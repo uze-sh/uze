@@ -247,9 +247,7 @@ fn recorded_agents(home: &UzeHome) -> Option<std::collections::BTreeSet<String>>
         .flatten()
         .flatten()
     {
-        let id = project.file_name().to_string_lossy().into_owned();
-        uze_core::earlier::carry_renamed(home, Some(&id));
-        let tasks = home.tasks_path(&id);
+        let tasks = home.tasks_path(&project.file_name().to_string_lossy());
         let carried = uze_document::read::<crate::task::AgentStore>(&tasks).ok()?;
         recorded.extend(
             carried

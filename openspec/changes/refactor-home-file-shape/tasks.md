@@ -45,3 +45,9 @@
 - [x] 7.2 `persistence-tiers.md`: one-word names, no name in two tiers, a lock beside what it guards or named for its activity in its scope, no `locks/`, and the `config.toml` shape; `theme-overrides.json` leaves the authored row
 - [x] 7.3 `invariants.md` and `versioning.md` name the new paths; `versioning.md` says how the release floor is raised
 - [x] 7.4 `make check`'s parts (fmt, clippy on linux and both windows-msvc targets and with telemetry, doc tests, deny, attributions, artifacts), `openspec validate --all --strict`, rules check, `journey validate`, ruff: green; `cargo test --workspace` green but for the five agent-sandbox tests
+
+## 8. Carrying the home at the restart
+
+- [x] 8.1 `earlier::carry_all`, run when a client starts or no workspace is running; no reader or writer carries; the builders follow an uncarried record and its lock
+- [x] 8.2 A carried home keeps no earlier name: locks, projection markers and the release answer are removed; a record left under both names is a leftover
+- [x] 8.3 Journey `07-upgrade/03`: a new binary beside an open floor-release client moves nothing, and the restart keeps every agent under its id

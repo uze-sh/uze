@@ -51,7 +51,6 @@ pub fn ensure(home: &UzeHome, project_root: &Path) -> Result<PathBuf> {
     if fresh {
         crate::project::earlier::carry_across_the_move(home, &id);
     }
-    crate::earlier::carry_renamed(home, Some(&id));
     let marker = home.project_marker_path(&id);
     let recorded = match uze_document::read::<ProjectMarker>(&marker) {
         Err(error) if error.written_by_a_newer_build() => return Ok(directory),
@@ -142,7 +141,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_project_opens_on_the_records_the_floor_release_named() {
+    fn opening_a_project_leaves_a_record_where_the_floor_release_reads_it() {
         let (home, root) = home("project-record-carries");
         let project = root.join("demo");
         fs::create_dir_all(&project).unwrap();
@@ -152,7 +151,7 @@ mod tests {
 
         ensure(&home, &project).unwrap();
 
-        assert!(home.approvals_path(&id).is_file());
+        assert!(home.retired_approvals_path(&id).is_file());
     }
 
     fn home(name: &str) -> (UzeHome, PathBuf) {

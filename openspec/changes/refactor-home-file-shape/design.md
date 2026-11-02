@@ -164,11 +164,12 @@ a directory of one stem. Opaque subtrees and placeholders are skipped.
 
 ## Risks / Trade-offs
 
-- [The installed `uze` (beta.22) keeps writing the old names after the dev
-  build carried them] → two builds on one machine diverge for renamed
-  records until `make install`; the carry runs once per old path, so a
-  file the old build wrote again afterwards is reported by `doctor` as a
-  leftover rather than carried a second time over newer state.
+- [The updater replaces the binary and restarts nothing, so a client of the
+  floor release stays open beside every new `uze` a pane starts] → nothing
+  moves until a client starts or no workspace is running; until then each
+  builder answers with the record's earlier name and lock (D6). A record that
+  still ends up under both names (a second client opened beside an old one, or
+  a downgrade) is reported by `doctor` and removed by `--discard-leftovers`.
 - [A carry interrupted midway] → each step writes the new path atomically
   and removes the old one only after; a rerun finds the new path and skips.
 - [Journeys and conformance seeds spell old names] → each rename updates
