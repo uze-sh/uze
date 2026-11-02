@@ -635,6 +635,34 @@ fn a_refusal_over_an_unknown_line_draws_what_clears_it() {
     );
 }
 
+/// A refusal's shape is what lays out its toast, never the punctuation of its
+/// words, and an extension is told the whole of it either way.
+#[test]
+fn a_refusal_lays_out_its_toast_by_what_it_holds() {
+    let plain = super::Refusal::because("a limit: three a minute");
+    assert_eq!(
+        plain.toast("not sent", "Review"),
+        (
+            "not sent".to_owned(),
+            "Review: a limit: three a minute".to_owned()
+        )
+    );
+    assert_eq!(plain.to_string(), "a limit: three a minute");
+
+    let remedied = super::Submission::Unknown.reason().expect("a refusal");
+    assert_eq!(
+        remedied.toast("not sent", "Review"),
+        (
+            "not sent: can't tell what's typed".to_owned(),
+            "ctrl-c if it holds text, else enter · Review".to_owned()
+        )
+    );
+    assert_eq!(
+        remedied.to_string(),
+        "can't tell what's typed: ctrl-c if it holds text, else enter"
+    );
+}
+
 /// Text pasted while the line is unknown is known to be there, as text typed
 /// is, even if erased afterwards.
 #[test]
