@@ -1,9 +1,10 @@
 //! TUI view — the Overview route: what every harness on this machine
 //! carries, whoever installed it.
 //!
-//! The screen's name and the field that narrows it (a harness), then three
-//! columns: a menu of sections (uze's own findings while there are any, then
-//! each kind of resource with its count and what in it needs looking at) over
+//! The screen's name, what it is for and the field that narrows it (a
+//! harness), then three columns: a menu of sections (uze's own findings while
+//! there are any, then each kind of resource with its count and what in it
+//! needs looking at) over
 //! a card of what the machine holds, the table of the section chosen with its
 //! own search, and a panel describing the row the keyboard is on.
 
@@ -26,7 +27,7 @@ use crate::ui::machine::{
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::view::health::{Alert, Severity};
-use crate::ui::widget::{Surface, TRAILING_PAD, definitions, message, row, screen_header, text};
+use crate::ui::widget::{Surface, TRAILING_PAD, definitions, message, row, text};
 
 use super::FIELD_KEY_WIDTH;
 
@@ -449,7 +450,8 @@ fn render_headings(
     }
 }
 
-/// The screen's name, and the field that narrows it against the right edge.
+/// The screen's name and what it is for, as every screen's, and the field
+/// that narrows it against the right edge.
 fn render_header(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -470,13 +472,7 @@ fn render_header(
         width: rect.width.saturating_sub(fields_width + 1),
         ..rect
     };
-    screen_header::inline(
-        frame,
-        title_area,
-        Route::Overview.label(),
-        Span::raw(""),
-        None,
-    );
+    crate::ui::render_screen_header(frame, title_area, Route::Overview, None);
 
     let mut x = rect.right().saturating_sub(fields_width);
     for (field, label) in fields {

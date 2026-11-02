@@ -808,7 +808,8 @@ operator rather than assume.
   sessions, since when, last sync) are a card at the foot of its menu's
   column, a name and a figure per row, the names under the menu's labels
   and the figures under its counts: never a sentence beside the title,
-  which narrower screens cut. With too little height the card's rows give
+  which narrower screens cut. The title keeps the short description every
+  screen has (`Route::subtitle`), so no screen's heading stands bare. With too little height the card's rows give
   way from its head, the sections and the freshness staying.
 
 ## CLI output

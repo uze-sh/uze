@@ -297,11 +297,25 @@ fn the_card_counts_every_session_and_says_since_when() {
 }
 
 #[test]
+fn the_title_says_what_the_screen_is_for_as_every_screen_does() {
+    let model = model();
+    let drawn = rows(&model);
+    let title = drawn
+        .iter()
+        .find(|row| row.contains("every harness"))
+        .unwrap();
+    assert!(title.contains("Overview  resources & usage"), "{title}");
+}
+
+#[test]
 fn the_figures_stand_on_the_card_and_never_beside_the_title() {
     let mut model = model();
     model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
     let drawn = rows(&model);
-    let title = drawn.iter().find(|row| row.contains("Overview")).unwrap();
+    let title = drawn
+        .iter()
+        .find(|row| row.contains("every harness"))
+        .unwrap();
     for word in ["session", "since", "synced"] {
         assert!(!title.contains(word), "{title}");
     }
