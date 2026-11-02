@@ -273,7 +273,7 @@ only waiting for it. `uze upgrade` does not wait on either channel.
 
 An open workspace wakes about every 15 minutes and asks for the latest
 release only when the machine's last answer is over an hour old; one
-process asks, under `~/.uze/state/update.lock`, and the others read its
+process asks, under `~/.uze/state/release.lock`, and the others read its
 answer. The same wake fetches the marketplaces whose answer is over an hour
 old, under `~/.uze/state/fetch.lock`, and applies the plugin
 updates that need no new consent; an update that asks to run something new

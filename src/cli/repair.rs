@@ -290,11 +290,17 @@ mod tests {
         };
         let report = RepairReport {
             home: vec![
-                entry("state/profiles.json", SchemaFinding::Retired, None, true),
+                entry("cache/release-notes.md", SchemaFinding::Retired, None, true),
                 entry(
                     "state/hosts.json.unreadable-1",
                     SchemaFinding::SetAside,
                     Some(2048),
+                    false,
+                ),
+                entry(
+                    "state/launch-overrides.json",
+                    SchemaFinding::Stranded,
+                    Some(1024),
                     false,
                 ),
                 entry("state/newer.json", SchemaFinding::Unknown, None, false),
@@ -303,11 +309,17 @@ mod tests {
         };
         let text = plain(&render_repair(home, &report));
         assert!(
-            text.contains("state/profiles.json   left by an earlier version"),
+            text.contains("cache/release-notes.md   left by an earlier version"),
             "{text}"
         );
         assert!(
             text.contains("state/hosts.json.unreadable-1   2.0 KB, a record set aside"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "state/launch-overrides.json   1.0 KB, an earlier version's copy beside the current record"
+            ),
             "{text}"
         );
         assert!(
