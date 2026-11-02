@@ -55,10 +55,12 @@ pub(crate) enum Line {
 /// whether it was read.
 pub(crate) const READ_FOR: Duration = Duration::from_secs(2);
 
-/// How far the diff on show was read: when it was first shown, and
-/// whether its last line has been on screen since.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// How far the diff on show was read: which file at which content it
+/// is, when it was first shown, and whether its last line has been on
+/// screen since.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Reading {
+    pub(crate) of: Option<(PathBuf, u64)>,
     pub(crate) shown_at: Option<Instant>,
     pub(crate) end_seen: bool,
 }
@@ -316,6 +318,7 @@ impl ReviewView {
                 self.diff = Some(diff);
                 if moved {
                     self.reading = Reading {
+                        of: self.stamps.get(&path).map(|stamp| (path.clone(), *stamp)),
                         shown_at: Some(Instant::now()),
                         end_seen: false,
                     };
@@ -354,10 +357,12 @@ impl ReviewView {
     /// The file on show is being left, for another or as the review
     /// closes: marked viewed when it was read to its end and stayed on
     /// screen long enough to have been, unless the operator marks by hand
-    /// only or unmarked it for this content.
+    /// only or unmarked it for this content. What is marked is the content
+    /// that was read: a file that moved since, or was put on show by the
+    /// list before its diff arrived, is not.
     pub(crate) fn leave(&mut self, now: Instant) {
         let reading = std::mem::take(&mut self.reading);
-        if self.marks_by_hand_only || !reading.end_seen {
+        if self.marks_by_hand_only || !reading.end_seen || self.diff_pending {
             return;
         }
         if reading
@@ -366,12 +371,12 @@ impl ReviewView {
         {
             return;
         }
-        let Some(path) = self.selected.clone() else {
+        let Some((path, fingerprint)) = reading.of else {
             return;
         };
-        let Some(fingerprint) = self.stamps.get(&path).copied() else {
+        if self.selected.as_ref() != Some(&path) || self.stamps.get(&path) != Some(&fingerprint) {
             return;
-        };
+        }
         if self.viewed(&path) == Viewed::Yes || self.unmarked.get(&path) == Some(&fingerprint) {
             return;
         }

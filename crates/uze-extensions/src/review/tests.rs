@@ -1627,3 +1627,50 @@ fn a_file_unmarked_by_hand_is_not_marked_again_until_it_changes() {
     view.step_file(ScrollDirection::Down);
     assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
 }
+
+#[test]
+fn a_file_that_moved_since_its_diff_was_read_is_not_marked_on_the_way_out() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    // The agent changes it; its new diff is still being read.
+    relisted(&mut view, 2);
+    assert!(view.diff_pending);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_put_on_show_by_the_list_is_not_marked_before_it_was_read() {
+    let mut view = read_for_a_while();
+    view.note_seen(SPACE);
+    // The list drops naming.rs: tests.rs is put on show, its diff unread.
+    let root = PathBuf::from("/w");
+    let tests = root.join("tests.rs");
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files: vec![
+                ChangedFile {
+                    status: FileStatus::Added,
+                    path: tests.clone(),
+                    renamed_from: None,
+                },
+                ChangedFile {
+                    status: FileStatus::Added,
+                    path: root.join("other.rs"),
+                    renamed_from: None,
+                },
+            ],
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps: [(tests.clone(), 1), (root.join("other.rs"), 1)].into(),
+            head: None,
+        }),
+    );
+    assert_eq!(view.selected.as_deref(), Some(tests.as_path()));
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&tests), surface::Viewed::No);
+}
