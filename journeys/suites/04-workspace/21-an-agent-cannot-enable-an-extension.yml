@@ -83,7 +83,7 @@ scenes:
     then:
       - agents: { count: 1, live: 1 }
         about: one agent runs, whose launch carries its stamp
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nothing has been consented to yet
 
@@ -104,6 +104,6 @@ scenes:
       - file: "{world}/install.log"
         contains: "notes@studio installed disabled; an agent cannot enable an extension, so the operator does, from the workspace"
         about: the install says the extension waits, why an agent cannot answer, and who does
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nothing was consented to, and it is enabled nowhere

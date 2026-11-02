@@ -78,7 +78,7 @@ fn the_package_manager_alone_never_meets_the_workspace() {
         .into_iter()
         .flatten()
         .flatten()
-        .any(|entry| entry.path().join("agents.json").exists());
+        .any(|entry| entry.path().join("tasks.json").exists());
     assert!(!recorded_agents, "no agent record exists");
 
     // Status and update find nothing owed, and removal takes the plugin out.

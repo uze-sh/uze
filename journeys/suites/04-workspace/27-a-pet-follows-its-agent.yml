@@ -144,7 +144,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/media/extensions/pets/pet.png"
         contains: "PNG"
         about: the extension's sheet was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -185,7 +185,7 @@ scenes:
         timeout: 10
         say: whose name the script keeps
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/pets.accepted_grants.*
         count: 2
         includes: ["agent:observe", "store"]

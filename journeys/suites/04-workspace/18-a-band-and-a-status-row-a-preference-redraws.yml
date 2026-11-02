@@ -11,7 +11,7 @@ about: |
   Extensions screen redraws them without the names.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json`, the preference in the operator's
+  `state/extensions/consent.json`, the preference in the operator's
   `config.toml` under `[preferences."deck@studio/deck"]`, and the
   checkout the script read and never wrote. The screen only gates each gesture.
 
@@ -193,7 +193,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/deck/extensions/deck/phases.uze"
         contains: "input.preferences.detail"
         about: the extension's script was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
       - cmd:
@@ -233,12 +233,12 @@ scenes:
         timeout: 20
         say: and the row in the sidebar's header draws the same answer
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.deck@studio/deck.accepted_grants.*
         count: 3
         includes: ["read:checkout", "clipboard", "notify"]
         about: the consent holds exactly the grants it wants
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.deck@studio/deck.enabled_in.*
         equals: "{project}"
         count: 1

@@ -114,7 +114,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/bridge/extensions/chimes/chime.uze"
         contains: "turn finished"
         about: the extension's script was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
       - file: "{uze_home}/config.toml"
@@ -154,12 +154,12 @@ scenes:
         timeout: 20
         say: its row in the sidebar's header is quiet
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/chimes.accepted_grants.*
         count: 2
         includes: ["agent:observe", "notify"]
         about: the consent holds exactly the grants its question showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/chimes.enabled_in.*
         equals: "{project}"
         count: 1

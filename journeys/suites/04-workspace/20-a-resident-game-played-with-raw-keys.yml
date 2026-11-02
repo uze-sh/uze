@@ -12,7 +12,7 @@ about: |
   game, and the next Esc puts the view away.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json` and the store under
+  `state/extensions/consent.json` and the store under
   `state/extensions/store/media@studio/snake/`. The screen only gates each
   gesture.
 
@@ -260,7 +260,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/media/extensions/snake/game.uze"
         contains: "fn render(size)"
         about: the game's script was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -287,12 +287,12 @@ scenes:
         expect: "extension enabled"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/snake.accepted_grants.*
         count: 2
         includes: ["resident", "store"]
         about: the consent holds exactly the grants it wants, the resident tier among them
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/snake.enabled_in.*
         equals: "{project}"
         count: 1

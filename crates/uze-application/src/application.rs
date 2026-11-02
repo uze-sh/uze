@@ -174,6 +174,9 @@ impl UzeApplication {
         integrations: Vec<Box<dyn IntegrationPort>>,
         runner: Box<dyn ProcessRunner>,
     ) -> Self {
+        // Every process that reads a record builds one of these first, so a
+        // record this build renamed is carried before anything looks for it.
+        uze_core::earlier::carry_renamed(&home, None);
         Self {
             store: UzeStore::new(home.clone()),
             detection_cache: DetectionCache::new(&home),

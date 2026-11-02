@@ -51,6 +51,7 @@ pub fn ensure(home: &UzeHome, project_root: &Path) -> Result<PathBuf> {
     if fresh {
         crate::project::earlier::carry_across_the_move(home, &id);
     }
+    crate::earlier::carry_renamed(home, Some(&id));
     let marker = home.project_marker_path(&id);
     let recorded = match uze_document::read::<ProjectMarker>(&marker) {
         Err(error) if error.written_by_a_newer_build() => return Ok(directory),

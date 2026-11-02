@@ -144,7 +144,7 @@ impl UzeHome {
     /// not — keyed on the project id so removing a checkout can never
     /// remove history.
     pub fn tasks_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("agents.json")
+        self.project_dir(project_id).join("tasks.json")
     }
 
     /// The project commands the operator approved for one project: the
@@ -153,7 +153,7 @@ impl UzeHome {
     /// person said yes, and kept beside the project's other records so
     /// forgetting the project forgets the approval with it.
     pub fn approved_commands_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("approved-commands.json")
+        self.project_dir(project_id).join("approvals.json")
     }
 
     /// One agent's recorded conversations, beside the agents that name it.
@@ -177,6 +177,85 @@ impl UzeHome {
     /// Every agent's recorded conversations in one project.
     pub fn conversations_dir(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("conversations")
+    }
+
+    /// What a record was named before this build renamed it (see the
+    /// owned map's retired entries, each naming the builder it became):
+    /// read only by the step that carries it to its current name.
+    pub fn retired_tasks_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("agents.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_tasks_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("agents.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_approvals_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("approved-commands.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_prompts_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("prompt-history.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_prompts_lock_path(&self, project_id: &str) -> PathBuf {
+        self.project_dir(project_id).join("prompt-history.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_release_path(&self) -> PathBuf {
+        self.state_dir().join("update.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_release_lock_path(&self) -> PathBuf {
+        self.state_dir().join("update.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_launches_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_launches_lock_path(&self) -> PathBuf {
+        self.state_dir().join("launch-overrides.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_usage_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_usage_lock_path(&self) -> PathBuf {
+        self.state_dir().join("machine-usage.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_consent_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.json")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_consent_lock_path(&self) -> PathBuf {
+        self.state_dir().join("extensions.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_fetch_lock_path(&self) -> PathBuf {
+        self.state_dir().join("marketplace-fetch.lock")
+    }
+
+    /// See [`Self::retired_tasks_path`].
+    pub fn retired_mirror_lock_path(&self, entry: &str) -> PathBuf {
+        self.state_dir()
+            .join("marketplace-mirrors")
+            .join(format!("{entry}.lock"))
     }
 
     /// Where one project's records lived before [`Self::project_dir`]
@@ -238,14 +317,14 @@ impl UzeHome {
     /// sets of them the operator used lately. A record: only what the
     /// operator typed says it. Owner-only, since a value may be a secret.
     pub fn launch_overrides_path(&self) -> PathBuf {
-        self.state_dir().join("launch-overrides.json")
+        self.state_dir().join("launches.json")
     }
 
     /// The guard every read-modify-write of the launch overrides takes: the
     /// workspace records them and a relaunching shim may be reading. A
     /// lock, not a record.
     pub fn launch_overrides_lock_path(&self) -> PathBuf {
-        self.state_dir().join("launch-overrides.lock")
+        self.state_dir().join("launches.lock")
     }
 
     /// The operator's consent to each declared extension, by identity:
@@ -253,7 +332,7 @@ impl UzeHome {
     /// and the projects it is enabled in. A record: only a person's answer
     /// says it, and nothing on the machine derives it again.
     pub fn extensions_record_path(&self) -> PathBuf {
-        self.state_dir().join("extensions.json")
+        self.state_dir().join("extensions").join("consent.json")
     }
 
     /// What each declared extension keeps between answers, one document
@@ -395,7 +474,7 @@ impl UzeHome {
     /// the workspace and a terminal both answer for it. A lock, not a
     /// record.
     pub fn extensions_record_lock_path(&self) -> PathBuf {
-        self.state_dir().join("extensions.lock")
+        self.state_dir().join("extensions").join("consent.lock")
     }
 
     /// What the TUI was left looking like, in both of its modes (see
@@ -486,7 +565,7 @@ impl UzeHome {
     /// because that tree is swept, and unlinking a lock another process
     /// holds hands the next caller a fresh file and the exclusion is gone.
     pub fn agents_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("agents.lock")
+        self.project_dir(project_id).join("tasks.lock")
     }
 
     /// Held by a delivery from the moment it claims a task until it has
@@ -525,19 +604,19 @@ impl UzeHome {
     /// under, so a compaction never drops a line another client appended
     /// while it read. A lock, not a record.
     pub fn prompt_history_lock_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompt-history.lock")
+        self.project_dir(project_id).join("prompts.lock")
     }
 
     /// What UZE remembers about its own binary between runs: when it last
     /// asked for the latest release, and what the operator was told.
     pub fn binary_path(&self) -> PathBuf {
-        self.state_dir().join("update.json")
+        self.state_dir().join("release.json")
     }
 
     /// Held by the one process asking for the latest release, so clients
     /// that wake together ask once. A lock, not a record.
     pub fn binary_check_lock_path(&self) -> PathBuf {
-        self.state_dir().join("update.lock")
+        self.state_dir().join("release.lock")
     }
 
     /// Held by the one process fetching marketplaces in the background,
@@ -545,7 +624,7 @@ impl UzeHome {
     /// beside the mirrors, because the cache tier may be deleted under its
     /// holder. A lock, not a record.
     pub fn marketplace_fetch_lock_path(&self) -> PathBuf {
-        self.state_dir().join("marketplace-fetch.lock")
+        self.state_dir().join("fetch.lock")
     }
 
     /// Held by whatever writes the mirror of the marketplace whose cache
@@ -557,7 +636,7 @@ impl UzeHome {
     /// record.
     pub fn marketplace_mirror_lock_path(&self, entry: &str) -> PathBuf {
         self.state_dir()
-            .join("marketplace-mirrors")
+            .join("mirrors")
             .join(format!("{entry}.lock"))
     }
 
@@ -590,7 +669,7 @@ impl UzeHome {
 
     /// One project's prompt history, beside its other records.
     pub fn prompt_history_path(&self, project_id: &str) -> PathBuf {
-        self.project_dir(project_id).join("prompt-history.json")
+        self.project_dir(project_id).join("prompts.json")
     }
 
     /// Where UZE writes its own log when asked to. Disposable, which is
@@ -745,14 +824,14 @@ impl UzeHome {
     /// deleted (see `machine::usage::Archive`): a record, the only place
     /// they are left.
     pub fn machine_usage_path(&self) -> PathBuf {
-        self.state_dir().join("machine-usage.json")
+        self.state_dir().join("usage.json")
     }
 
     /// The guard one reading of the harnesses' records takes, so two
     /// workspaces never read and move the same records at once. A lock, not
     /// a record.
     pub fn machine_usage_lock_path(&self) -> PathBuf {
-        self.state_dir().join("machine-usage.lock")
+        self.state_dir().join("usage.lock")
     }
 
     /// What the machine Overview kept of each harness's session records

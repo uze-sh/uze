@@ -588,7 +588,9 @@ impl AgentStore {
 
 /// The document for `project_root`, keyed on the canonical root.
 pub fn store_path(home: &UzeHome, project_root: &Path) -> PathBuf {
-    home.tasks_path(&project_id(project_root))
+    let id = project_id(project_root);
+    uze_core::earlier::carry_renamed(home, Some(&id));
+    home.tasks_path(&id)
 }
 
 fn project_id(project_root: &Path) -> String {

@@ -12,7 +12,7 @@ about: |
 
   What reached the agent is read from the conversation the stand-in
   records, one `user` record per line typed into it, as Claude Code
-  records a turn; the consent is read from `state/extensions.json`. The
+  records a turn; the consent is read from `state/extensions/consent.json`. The
   screen only gates each gesture.
 
 world:
@@ -79,7 +79,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/bridge/extensions/gsd-next/extension.kdl"
         contains: "gsd:execute-phase"
         about: the extension was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -115,12 +115,12 @@ scenes:
         timeout: 20
         say: the band under the agent names the next phase and offers to run it
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/gsd-next.accepted_grants.*
         count: 1
         includes: ["agent:prompt"]
         about: the consent holds the one grant its question showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/gsd-next.enabled_in.*
         equals: "{project}"
         count: 1

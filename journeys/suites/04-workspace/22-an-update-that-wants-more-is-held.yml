@@ -11,7 +11,7 @@ about: |
   the new grant alone. Allowed, the new code runs, and its record appears.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json` (its grants and the digest it accepted), the
+  `state/extensions/consent.json` (its grants and the digest it accepted), the
   Store the update wrote, and the extension's store under
   `state/extensions/store/`, which only the new script writes. The screen
   only gates each gesture.
@@ -75,7 +75,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/release/extensions/release/said.uze"
         contains: "release one"
         about: the first release's script was installed into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -106,15 +106,15 @@ scenes:
         in: sidebar
         timeout: 20
         say: the row in the sidebar's header draws the first release's answer
-      - shell: "cp {uze_home}/state/extensions.json {world}/consent-before-the-update.json"
+      - shell: "cp {uze_home}/state/extensions/consent.json {world}/consent-before-the-update.json"
         say: keep the consent as it stands, to compare with after the update
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.release@studio/release.accepted_grants.*
         count: 1
         includes: ["read:checkout"]
         about: the consent holds the one grant the first release wants
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.release@studio/release.enabled_in.*
         equals: "{project}"
         count: 1
@@ -147,7 +147,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/release/extensions/release/said.uze"
         contains: "release two"
         about: the second release is in UZE's sources
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.release@studio/release.accepted_grants.*
         count: 1
         includes: ["read:checkout"]
@@ -158,7 +158,7 @@ scenes:
             import json, sys
             key = 'release@studio/release'
             before = json.load(open('{world}/consent-before-the-update.json'))['extensions'][key]
-            after = json.load(open('{uze_home}/state/extensions.json'))['extensions'][key]
+            after = json.load(open('{uze_home}/state/extensions/consent.json'))['extensions'][key]
             print(before['accepted_digest'], after['accepted_digest'])
             sys.exit(0 if before['accepted_digest'] == after['accepted_digest'] else 1)
             "
@@ -208,12 +208,12 @@ scenes:
         timeout: 10
         say: and its record is kept
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.release@studio/release.accepted_grants.*
         count: 2
         includes: ["read:checkout", "store"]
         about: the consent now holds the grant the update wanted
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.release@studio/release.enabled_in.*
         equals: "{project}"
         count: 1

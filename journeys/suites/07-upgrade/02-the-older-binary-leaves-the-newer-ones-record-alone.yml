@@ -50,7 +50,7 @@ scenes:
         pause: 1.5
       - shell: |
           set -e
-          cat {uze_home}/state/projects/*/agents.json > {world}/recorded-before
+          cat {uze_home}/state/projects/*/tasks.json > {world}/recorded-before
         say: keep the record exactly as this build wrote it
       - shell: "{uze} workspace stop"
         say: this build lets go of the workspace
@@ -70,7 +70,7 @@ scenes:
           run: |
             {python} -c "
             import glob
-            [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
+            [store] = glob.glob('{uze_home}/state/projects/*/tasks.json')
             before = open('{world}/recorded-before').read()
             print('unchanged' if open(store).read() == before else 'REWRITTEN')
             "

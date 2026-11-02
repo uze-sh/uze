@@ -6,10 +6,10 @@
 
 ## 2. Carry steps (after `earlier-release-support` lands)
 
-- [ ] 2.1 For every rename in groups 3–6, add the old path as a `retired(..)` entry; records get `.carried_by(step)` (`Unbounded`), run from `MutationLock::acquire` or `record::ensure`; locks are swept (`Until(Beta(22))`)
-- [ ] 2.2 One carry step per project directory moves `agents.*`, `approved-commands.json` and `prompt-history.*` together
+- [x] 2.1 Every renamed record is a `retired(..)` entry naming the builder it became (`.renamed_to`); its old lock is a retired, unswept entry (an older build still takes it); all `Unbounded`
+- [x] 2.2 One carry, `uze_core::earlier::carry_renamed(home, project)`, moves a project's or the machine's renamed records where the new name is free; run by `UzeApplication`'s constructor, `MutationLock::acquire`, `record::ensure` and the three project readers
 - [ ] 2.3 Carry `theme-overrides.json` into `[appearance.*]` and `[memory] harness` to `[memory] native`, stopping and reporting on a `config.toml` that does not parse
-- [ ] 2.4 Test: a home seeded with the beta.22 names comes out with the new names and the same content; a rerun changes nothing
+- [x] 2.4 A home seeded with the beta.22 names comes out renamed with the same content, twice; a record already at its new name is never overwritten
 
 ## 3. New tenants and builders
 
@@ -21,12 +21,12 @@
 
 ## 4. Rename records and their guards
 
-- [ ] 4.1 `projects/<p>/agents.{json,lock}` → `tasks.{json,lock}`; `approved-commands.json` → `approvals.json`; `prompt-history.{json,lock}` → `prompts.{json,lock}`
-- [ ] 4.2 `update.{json,lock}` → `release.{json,lock}`; `launch-overrides.{json,lock}` → `launches.{json,lock}`; `machine-usage.{json,lock}` → `usage.{json,lock}`
-- [ ] 4.3 `extensions.{json,lock}` → `extensions/consent.{json,lock}`
-- [ ] 4.4 `marketplace-fetch.lock` → `fetch.lock`; `marketplace-mirrors/<entry>.lock` → `mirrors/<entry>.lock`
-- [ ] 4.5 Update journeys (globs and seeds) and conformance seeds (`conformance/contract/{continuity,instructions}.py`) that spell the old names; `07-upgrade/01` proves the beta.22 home is carried across
-- [ ] 4.6 `journey validate` and `cargo test --workspace` green
+- [x] 4.1 `agents.*` → `tasks.*`, `approved-commands.json` → `approvals.json`, `prompt-history.*` → `prompts.*`
+- [x] 4.2 `update.*` → `release.*`, `launch-overrides.*` → `launches.*`, `machine-usage.*` → `usage.*`
+- [x] 4.3 `extensions.*` → `extensions/consent.*`
+- [x] 4.4 `marketplace-fetch.lock` → `fetch.lock`, `marketplace-mirrors/` → `mirrors/`
+- [x] 4.5 Journeys, `journey.py`'s task globs and the conformance seeds spell the new names; `07-upgrade/01` proves beta.22's home carried across (every scene held), reading the release's own `agents.json` only where the release wrote it
+- [x] 4.6 `journey validate` green; `cargo test --workspace` green but for the five agent-sandbox tests (and journey 16's same "installed disabled" line) that fail identically on main here
 
 ## 5. Rename the remembered tier
 

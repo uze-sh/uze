@@ -108,7 +108,7 @@ scenes:
           resolve the conflict preserving the intent of both sides and
           continue the rebase — the procedure the message named
       - wait: shell
-        until: 'grep -q ''"state": "ready"'' {uze_home}/state/projects/*/agents.json'
+        until: 'grep -q ''"state": "ready"'' {uze_home}/state/projects/*/tasks.json'
         timeout: 60
         say: |
           the next evaluation reads the settled branch as deliverable again,

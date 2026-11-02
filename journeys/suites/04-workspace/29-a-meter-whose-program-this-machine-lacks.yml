@@ -166,7 +166,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/gpu/extensions/gpu-meter/gpu.uze"
         contains: "run_program"
         about: the extension's script was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
       - cmd:
@@ -208,16 +208,16 @@ scenes:
         expect: "extension enabled"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.gpu@studio/gpu-meter.accepted_grants.*
         count: 2
         includes: ["exec:nvidia-smi", "store"]
         about: the consent holds exactly the grants the two questions showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.gpu@studio/gpu-meter.exec_paths.nvidia-smi
         exists: false
         about: and pins no path for a program that was not found
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.gpu@studio/gpu-meter.enabled_in.*
         equals: "{project}"
         count: 1

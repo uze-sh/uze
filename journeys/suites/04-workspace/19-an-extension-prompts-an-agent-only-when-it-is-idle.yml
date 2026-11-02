@@ -179,7 +179,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/bridge/extensions/flightdeck/extension.kdl"
         contains: "agent-prompt"
         about: the extensions were installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -212,17 +212,17 @@ scenes:
         expect: "2 extensions enabled"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/agents-hud.accepted_grants.*
         count: 1
         includes: ["agent:observe"]
         about: the status row's consent holds the one grant its question showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.bridge@studio/flightdeck.accepted_grants.*
         count: 2
         includes: ["agent:observe", "agent:prompt"]
         about: and the flight deck's, the two of its own
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.*.enabled_in.*
         equals: "{project}"
         count: 2

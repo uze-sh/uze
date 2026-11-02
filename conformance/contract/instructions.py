@@ -96,7 +96,7 @@ def primary_prelude(bindings):
     return (
         continuity.prelude(bindings.launcher_name())
         + f"""
-cat > {_records()}/agents.json <<'UZE_EOF'
+cat > {_records()}/tasks.json <<'UZE_EOF'
 {json.dumps(record, indent=1)}
 UZE_EOF
 """

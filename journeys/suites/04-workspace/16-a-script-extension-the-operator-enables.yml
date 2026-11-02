@@ -10,7 +10,7 @@ about: |
   actions copy, one by its key behind a confirmation and one by a pointer.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json` with the grants allowed and the project enabled,
+  `state/extensions/consent.json` with the grants allowed and the project enabled,
   the checkout the script read and never wrote, and the bytes the app asked
   its terminal to put on the clipboard. The screen only gates each gesture.
 
@@ -112,7 +112,7 @@ scenes:
       - file: "{project}/agents.yaml"
         contains: notes
         about: the project declares the plugin
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
       - file: "{world}/install.log"
@@ -149,12 +149,12 @@ scenes:
         expect: "extension enabled"
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.notes@studio/notes.accepted_grants.*
         count: 2
         includes: ["read:checkout", "clipboard"]
         about: the consent holds exactly the grants the question showed
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.notes@studio/notes.enabled_in.*
         equals: "{project}"
         count: 1

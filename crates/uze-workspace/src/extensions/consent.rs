@@ -976,13 +976,13 @@ mod tests {
     #[test]
     fn a_record_this_build_cannot_read_consents_to_nothing_and_is_set_aside_on_write() {
         let (home, _) = home("consent-unreadable");
-        std::fs::create_dir_all(home.state_dir()).unwrap();
+        std::fs::create_dir_all(home.extensions_record_path().parent().unwrap()).unwrap();
         std::fs::write(home.extensions_record_path(), b"{ not json").unwrap();
         assert!(consents(&home).is_empty());
 
         accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
         assert!(consent(&home, BAND).is_some());
-        let kept = std::fs::read_dir(home.state_dir())
+        let kept = std::fs::read_dir(home.extensions_record_path().parent().unwrap())
             .unwrap()
             .filter_map(|entry| entry.ok())
             .any(|entry| {
@@ -1000,7 +1000,7 @@ mod tests {
     #[test]
     fn a_newer_builds_record_is_left_alone() {
         let (home, _) = home("consent-newer");
-        std::fs::create_dir_all(home.state_dir()).unwrap();
+        std::fs::create_dir_all(home.extensions_record_path().parent().unwrap()).unwrap();
         let newer = br#"{"schema_version": 2, "extensions": {}}"#;
         std::fs::write(home.extensions_record_path(), newer).unwrap();
 

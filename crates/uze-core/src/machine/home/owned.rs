@@ -141,6 +141,9 @@ pub struct OwnedPath {
     /// For a retired path, the names only it spells: no production code
     /// outside this map writes them.
     pub spelled: &'static [&'static str],
+    /// For a retired record, the builder of the name it now has: the one
+    /// carry (`earlier::carry_renamed`) moves it there.
+    pub renamed_to: Option<&'static str>,
     compose: fn(&UzeHome) -> PathBuf,
 }
 
@@ -219,6 +222,14 @@ impl OwnedPath {
     const fn spelled(self, spelled: &'static [&'static str]) -> Self {
         OwnedPath { spelled, ..self }
     }
+
+    /// The builder this retired record was renamed to.
+    const fn renamed_to(self, current: &'static str) -> Self {
+        OwnedPath {
+            renamed_to: Some(current),
+            ..self
+        }
+    }
 }
 
 /// How [`package`]'s placeholder id is spelled in a path, and the
@@ -273,6 +284,7 @@ const fn owned(
         disposable: false,
         lasts: Lasts::Unbounded,
         spelled: &[],
+        renamed_to: None,
         compose,
     }
 }
@@ -291,6 +303,7 @@ const fn retired(
         disposable: false,
         lasts: Lasts::Unbounded,
         spelled: &[],
+        renamed_to: None,
         compose,
     }
 }
@@ -466,6 +479,89 @@ const OWNED: &[OwnedPath] = &[
         home.scattered_project_records(PROJECT).agents
     })
     .spelled(&["prompt-history"]),
+    // Records this build renamed, each carried to the name it now has by
+    // `earlier::carry_renamed`, run where their readers and writers start;
+    // only as often as those run, so unbounded. Their locks are not
+    // carried: an older build on the machine still takes them by name.
+    retired("retired_tasks_path", Record, Document, |home| {
+        home.retired_tasks_path(PROJECT)
+    })
+    .renamed_to("tasks_path"),
+    retired("retired_approvals_path", Record, Document, |home| {
+        home.retired_approvals_path(PROJECT)
+    })
+    .renamed_to("approved_commands_path"),
+    retired("retired_prompts_path", Record, Document, |home| {
+        home.retired_prompts_path(PROJECT)
+    })
+    .renamed_to("prompt_history_path"),
+    retired(
+        "retired_release_path",
+        Record,
+        Document,
+        UzeHome::retired_release_path,
+    )
+    .renamed_to("binary_path"),
+    retired(
+        "retired_launches_path",
+        Record,
+        Document,
+        UzeHome::retired_launches_path,
+    )
+    .renamed_to("launch_overrides_path"),
+    retired(
+        "retired_usage_path",
+        Record,
+        Document,
+        UzeHome::retired_usage_path,
+    )
+    .renamed_to("machine_usage_path"),
+    retired(
+        "retired_consent_path",
+        Record,
+        Document,
+        UzeHome::retired_consent_path,
+    )
+    .renamed_to("extensions_record_path"),
+    retired("retired_tasks_lock_path", Record, Lock, |home| {
+        home.retired_tasks_lock_path(PROJECT)
+    }),
+    retired("retired_prompts_lock_path", Record, Lock, |home| {
+        home.retired_prompts_lock_path(PROJECT)
+    }),
+    retired(
+        "retired_release_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_release_lock_path,
+    ),
+    retired(
+        "retired_launches_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_launches_lock_path,
+    ),
+    retired(
+        "retired_usage_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_usage_lock_path,
+    ),
+    retired(
+        "retired_consent_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_consent_lock_path,
+    ),
+    retired(
+        "retired_fetch_lock_path",
+        Record,
+        Lock,
+        UzeHome::retired_fetch_lock_path,
+    ),
+    retired("retired_mirror_lock_path", Record, Lock, |home| {
+        home.retired_mirror_lock_path("{entry}")
+    }),
     // Locks, beside the records they guard and never under a swept tree.
     owned(
         "mutation_lock_path",

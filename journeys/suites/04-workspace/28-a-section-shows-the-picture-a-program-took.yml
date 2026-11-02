@@ -113,7 +113,7 @@ scenes:
       - file: "{uze_home}/sources/plugins/studio/media/extensions/screen/bin/shot"
         contains: "TMPDIR/shot.png"
         about: the extension's program was installed from the clone, into UZE's sources
-      - file: "{uze_home}/state/extensions.json"
+      - file: "{uze_home}/state/extensions/consent.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
 
@@ -161,7 +161,7 @@ scenes:
         timeout: 10
         say: and draws the picture it wrote, in half blocks
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/screen.accepted_grants.*
         count: 1
         includes: ["exec:sh"]
@@ -170,13 +170,13 @@ scenes:
           run: |
             {python} -I -c "
             import json, os, sys
-            record = json.load(open('{uze_home}/state/extensions.json'))
+            record = json.load(open('{uze_home}/state/extensions/consent.json'))
             pinned = record['extensions']['media@studio/screen']['exec_paths']['sh']
             print(pinned)
             sys.exit(0 if os.path.isabs(pinned) and os.access(pinned, os.X_OK) else 1)
             "
         about: sh is pinned to an absolute path of a program that is there
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/screen.enabled_in.*
         equals: "{project}"
         count: 1
@@ -207,7 +207,7 @@ scenes:
         expect: '(?s)\A(?!.*emulator-5554 · home)'
         expect_timeout: 10
     then:
-      - json: "{uze_home}/state/extensions.json"
+      - json: "{uze_home}/state/extensions/consent.json"
         at: extensions.media@studio/screen.enabled_in.*
         equals: "{project}"
         count: 1

@@ -450,7 +450,7 @@ impl World {
     }
 
     fn store_file(&self) -> PathBuf {
-        find(&self.home, "agents.json").expect("the project's task store exists")
+        find(&self.home, "tasks.json").expect("the project's task store exists")
     }
 
     fn age_slot(&self, checkout: &Path, by: Duration) {

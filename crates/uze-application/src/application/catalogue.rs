@@ -970,6 +970,7 @@ mod tests {
         ];
         for (name, path) in records {
             let (app, home, base) = damaged(&format!("catalogue-corrupt-{name}"));
+            std::fs::create_dir_all(path(&home).parent().unwrap()).unwrap();
             std::fs::write(path(&home), "{ not a record").unwrap();
             let report = app.health().report();
             assert!(

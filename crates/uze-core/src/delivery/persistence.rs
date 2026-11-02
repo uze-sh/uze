@@ -391,6 +391,7 @@ pub struct MutationLock {
 impl MutationLock {
     pub fn acquire(home: &UzeHome) -> Result<Self> {
         home.ensure_layout()?;
+        crate::earlier::carry_renamed(home, None);
         let path = home.mutation_lock_path();
         let mut file = OpenOptions::new()
             .create(true)

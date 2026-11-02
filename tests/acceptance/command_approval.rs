@@ -29,7 +29,7 @@ fn approvals_on_disk(uze_home: &Path) -> Vec<PathBuf> {
     };
     projects
         .filter_map(Result::ok)
-        .map(|project| project.path().join("approved-commands.json"))
+        .map(|project| project.path().join("approvals.json"))
         .filter(|record| record.is_file())
         .collect()
 }

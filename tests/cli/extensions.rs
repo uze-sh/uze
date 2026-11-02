@@ -127,7 +127,10 @@ fn an_install_off_a_terminal_leaves_a_script_extension_disabled_and_says_where_t
         "a fixtures-only extension waits for nothing: {said}"
     );
     assert!(
-        !world.root.join("uze/state/extensions.json").exists(),
+        !world
+            .root
+            .join("uze/state/extensions/consent.json")
+            .exists(),
         "nothing was consented to"
     );
 }
@@ -167,7 +170,10 @@ fn an_install_from_an_agents_pane_says_an_agent_cannot_enable_it() {
         "{said}"
     );
     assert!(
-        !world.root.join("uze/state/extensions.json").exists(),
+        !world
+            .root
+            .join("uze/state/extensions/consent.json")
+            .exists(),
         "nothing was consented to"
     );
 }
@@ -235,8 +241,9 @@ fn a_held_extension_is_listed_as_held_naming_the_new_grant() {
             }
         }
     });
+    std::fs::create_dir_all(world.root.join("uze/state/extensions")).unwrap();
     std::fs::write(
-        world.root.join("uze/state/extensions.json"),
+        world.root.join("uze/state/extensions/consent.json"),
         record.to_string(),
     )
     .unwrap();
