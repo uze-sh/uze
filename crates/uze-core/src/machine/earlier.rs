@@ -71,7 +71,8 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
 
 /// Carries what an earlier release kept outside `config.toml` into it: the
 /// overrides of the active theme (`theme-overrides.json`) into
-/// `[appearance.colors|symbols|syntax]`, and `[memory] harness` to
+/// `[appearance.colors|symbols|syntax]` and its glyph set into
+/// `[appearance] glyphs`, and `[memory] harness` to
 /// `[memory] native`. A key the operator already has is never replaced; a `config.toml` that does not parse stops the carry, and the
 /// earlier file stays where it is to be carried once it is fixed.
 fn carry_settings(home: &crate::UzeHome) {
@@ -79,11 +80,23 @@ fn carry_settings(home: &crate::UzeHome) {
     if let Ok(text) = std::fs::read_to_string(&overrides) {
         match serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text) {
             Ok(layer) => {
+                let glyphs = layer
+                    .get("glyphs")
+                    .and_then(|set| set.as_str())
+                    .map(str::to_owned);
                 let tables = layer
                     .into_iter()
                     .filter(|(field, _)| ["colors", "symbols", "syntax"].contains(&field.as_str()))
                     .collect();
-                match crate::config::add_tables(home, "appearance", &tables) {
+                let carried = crate::config::add_tables(home, "appearance", &tables).and_then(
+                    |_| match glyphs {
+                        Some(set) if crate::appearance::glyphs(home)?.is_none() => {
+                            crate::appearance::set_glyphs(home, &set)
+                        }
+                        _ => Ok(()),
+                    },
+                );
+                match carried {
                     Ok(_) => {
                         let _ = std::fs::remove_file(&overrides);
                     }
@@ -265,6 +278,30 @@ mod tests {
         assert_eq!(
             layer["colors"]["accent"], "#000000",
             "the operator's own table is kept"
+        );
+    }
+
+    #[test]
+    fn the_glyph_set_an_override_chose_is_carried_unless_one_is_chosen() {
+        let carried = |label: &str, config: &str| {
+            let home = crate::UzeHome::at(uze_testkit::temp::scratch(label).join("uze"));
+            std::fs::create_dir_all(home.root()).unwrap();
+            std::fs::write(
+                home.retired_theme_overrides_path(),
+                r#"{ "glyphs": "ascii", "symbols": { "status.idle": "@" } }"#,
+            )
+            .unwrap();
+            std::fs::write(home.config_path(), config).unwrap();
+            carry_renamed(&home, None);
+            assert!(!home.retired_theme_overrides_path().exists());
+            crate::appearance::glyphs(&home).unwrap()
+        };
+
+        assert_eq!(carried("carry-glyphs", "").as_deref(), Some("ascii"));
+        assert_eq!(
+            carried("carry-glyphs-chosen", "[appearance]\nglyphs = \"nerd\"\n").as_deref(),
+            Some("nerd"),
+            "the operator's own choice is kept"
         );
     }
 
