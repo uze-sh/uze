@@ -101,6 +101,11 @@ pub enum LoadError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("{source}")]
+    Shape {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("`{token}` is `{value}`, which is not a colour: {reason}")]
     Color {
         token: String,
@@ -310,14 +315,11 @@ pub fn parse_file(path: &Path) -> Result<ThemeFile, LoadError> {
 }
 
 /// An override layer already read by its owner — the operator's
-/// `[appearance]` colours, symbols, syntax and glyph set — named `id` in a
-/// problem. The same shape a theme file has, so the same resolver checks
-/// it; reading it is the owner's, and nothing here resolves a path.
-pub fn parse_value(id: &str, value: serde_json::Value) -> Result<ThemeFile, LoadError> {
-    serde_json::from_value(value).map_err(|source| LoadError::Parse {
-        path: PathBuf::from(id),
-        source,
-    })
+/// `[appearance]` colours, symbols, syntax and glyph set. The same shape a
+/// theme file has, so the same resolver checks it; reading it, and naming
+/// where it was read from in a problem, is the owner's.
+pub fn parse_value(value: serde_json::Value) -> Result<ThemeFile, LoadError> {
+    serde_json::from_value(value).map_err(|source| LoadError::Shape { source })
 }
 
 pub(crate) fn parse_str(id: &str, contents: &str) -> Result<ThemeFile, LoadError> {
@@ -1575,11 +1577,9 @@ mod value_tests {
 
     #[test]
     fn an_override_layer_read_from_settings_is_a_theme_file() {
-        let layer = parse_value(
-            "config.toml [appearance]",
-            serde_json::json!({ "colors": { "accent": "#bd93f9" }, "glyphs": "nerd" }),
-        )
-        .unwrap();
+        let layer =
+            parse_value(serde_json::json!({ "colors": { "accent": "#bd93f9" }, "glyphs": "nerd" }))
+                .unwrap();
         let reparsed = parse_str(
             "x",
             r##"{ "colors": { "accent": "#bd93f9" }, "glyphs": "nerd" }"##,
@@ -1589,15 +1589,24 @@ mod value_tests {
     }
 
     #[test]
-    fn a_field_no_theme_has_is_refused_naming_where_it_came_from() {
-        let error = parse_value(
-            "config.toml [appearance]",
-            serde_json::json!({ "colours": {} }),
-        )
-        .unwrap_err();
+    fn a_field_no_theme_has_is_refused_by_name() {
+        let error = parse_value(serde_json::json!({ "colours": {} })).unwrap_err();
+        assert!(error.to_string().contains("colours"), "{error}");
+    }
+
+    #[test]
+    fn an_override_layer_of_the_wrong_shape_is_said_without_calling_it_a_json_file() {
+        let error = parse_value(serde_json::json!({ "symbols": { "status.idle": 5 } }))
+            .expect_err("a number is not a symbol");
+
+        let said = error.to_string();
         assert!(
-            error.to_string().contains("config.toml [appearance]"),
-            "{error}"
+            !said.contains("JSON") && !said.contains("theme file"),
+            "{said}"
+        );
+        assert!(
+            !said.contains("config.toml"),
+            "the caller names the source: {said}"
         );
     }
 }

@@ -351,7 +351,7 @@ fn overrides(app: &UzeApplication) -> Result<Option<(ThemeFile, &'static str)>> 
     let Some((layer, source)) = app.themes().overrides()? else {
         return Ok(None);
     };
-    uze_theme::parse_value(source, layer)
+    uze_theme::parse_value(layer)
         .map(|file| Some((file, source)))
         .map_err(|error| unusable(format!("{source}: {error}")))
 }
