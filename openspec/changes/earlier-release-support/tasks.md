@@ -2,8 +2,8 @@
 
 - [x] 1.1 `uze-document`: `Release` (alpha, beta, stable; ordered), `Lasts { Until, Unbounded }`, `FLOOR = Release::Alpha(1)`, `Earlier { name, lasts, spelled, site }` and the `earlier!` macro; `Step` gains `lasts`; widen the crate doc and `document-ladder.md`
 - [x] 1.2 Re-export the vocabulary: `uze_core::document::earlier` already reaches `uze-integrations`; `uze_application::earlier` is the door from `src/`
-- [ ] 1.3 Every `Step` literal (state.rs, store.rs, task.rs, conversation.rs, terminal persist.rs) declares `lasts: Unbounded`; each crate exposes `pub fn earlier()` including its ladders
-- [ ] 1.4 `tests/architecture/earlier.rs`: floor; `FLOOR <= CARGO_PKG_VERSION`; `lasts` non-decreasing up a ladder; ladders contiguous; every `impl … Shaped for` covered by its crate's `earlier()`
+- [x] 1.3 Every `Step` literal (state.rs, store.rs, task.rs, conversation.rs, terminal persist.rs) declares `lasts: Unbounded`; each crate exposes `pub fn earlier()` including its ladders
+- [x] 1.4 `tests/architecture/earlier.rs`: floor; `FLOOR <= CARGO_PKG_VERSION`; `lasts` non-decreasing up a ladder; ladders contiguous; every `impl … Shaped for` covered by its crate's `earlier()`
 - [ ] 1.5 Layering rules: `spelled` literals only in their entry's file; `legacy_`/`retired_`/`pre_`/`earlier_` identifiers outside the homes with today's sites as exact budgets; `serde(alias` anywhere; `serde(default` on a `Shaped` record field without an `Additive` doc line; `Standing::Retired` outside `owned.rs` and its readers. Every message names the rule file and the remedy
 - [ ] 1.6 `.agents/rules/earlier-releases.md`; point `document-ladder.md` and `persistence-tiers.md` at it (the floor replaces "no supported build reads it"); `uze agent rules check` green
 

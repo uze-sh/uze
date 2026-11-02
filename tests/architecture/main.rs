@@ -25,6 +25,7 @@
 
 mod affordances;
 mod collection;
+mod earlier;
 mod generated_docs;
 mod instrumentation;
 mod invariants_citations;

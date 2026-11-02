@@ -270,6 +270,12 @@ fn is_hidden_effect(character: char) -> bool {
         )
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ApprovedCommands>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

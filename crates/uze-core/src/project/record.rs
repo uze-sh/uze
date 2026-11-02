@@ -170,6 +170,12 @@ fn canonical(project_root: &Path) -> PathBuf {
         .unwrap_or_else(|_| project_root.to_path_buf())
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<ProjectMarker>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

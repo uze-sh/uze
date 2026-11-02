@@ -22,6 +22,7 @@ pub mod client_layout;
 pub mod continuity;
 pub mod conversation;
 pub mod declaration;
+pub mod earlier;
 pub mod extensions;
 mod file_lock;
 mod git;

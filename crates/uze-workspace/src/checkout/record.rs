@@ -174,3 +174,9 @@ fn same_place(recorded: &Path, checkout: &Path) -> bool {
     let canonical = |path: &Path| path.canonical().unwrap_or_else(|_| path.to_path_buf());
     canonical(recorded) == canonical(checkout)
 }
+
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<CheckoutRecord>(file!())
+}

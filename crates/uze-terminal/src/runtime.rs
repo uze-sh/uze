@@ -100,3 +100,9 @@ fn identity_of(root: &Path) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The rungs of the runtime's persisted workspace, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn earlier() -> Vec<uze_document::earlier::Earlier> {
+    persist::rungs()
+}

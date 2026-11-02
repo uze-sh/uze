@@ -455,5 +455,11 @@ fn add(tallies: &mut Vec<Tally>, found: &Use) {
     tally.estimate |= !found.exact;
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<Archive>(file!())
+}
+
 #[cfg(test)]
 mod tests;

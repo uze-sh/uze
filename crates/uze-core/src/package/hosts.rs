@@ -209,6 +209,12 @@ fn write(home: &UzeHome, record: &HostRecord) -> Result<()> {
     crate::persistence::write_atomic(&home.hosts_path(), &payload)
 }
 
+/// The rungs of this module's record's ladder, for the crate's
+/// [`earlier`](crate::earlier) registry.
+pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
+    uze_document::earlier::rungs::<HostRecord>(file!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
