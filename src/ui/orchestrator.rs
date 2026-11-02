@@ -2435,26 +2435,34 @@ pub(super) enum Submission {
 }
 
 impl Submission {
-    /// The toast a refusal says, as its title and detail.
-    fn refusal(self, label: &str) -> Option<(&'static str, String)> {
+    fn title(self) -> Option<&'static str> {
         match self {
             Self::Ok => None,
-            Self::Busy => Some(("agent is busy", label.to_owned())),
-            Self::Typed => Some(("you have text typed", label.to_owned())),
-            Self::Unknown | Self::UnknownOverText => Some((
-                "can't tell what's typed",
-                "ctrl-c if it holds text, else enter".to_owned(),
-            )),
+            Self::Busy => Some("agent is busy"),
+            Self::Typed => Some("you have text typed"),
+            Self::Unknown | Self::UnknownOverText => Some("can't tell what's typed"),
         }
     }
 
+    /// What the operator can do about it, where there is something to say.
+    fn remedy(self) -> Option<&'static str> {
+        matches!(self, Self::Unknown | Self::UnknownOverText)
+            .then_some("ctrl-c if it holds text, else enter")
+    }
+
+    /// The toast a refusal says, as its title and detail.
+    fn refusal(self, label: &str) -> Option<(&'static str, String)> {
+        let title = self.title()?;
+        Some((title, self.remedy().unwrap_or(label).to_owned()))
+    }
+
     /// The refusal as one phrase, for where it is said beside a label of
-    /// its own: what clears an unknown line is the part worth keeping.
+    /// its own.
     fn reason(self) -> Option<String> {
-        let (title, detail) = self.refusal("")?;
-        Some(match self {
-            Self::Unknown | Self::UnknownOverText => format!("{title}: {detail}"),
-            _ => title.to_owned(),
+        let title = self.title()?;
+        Some(match self.remedy() {
+            Some(remedy) => format!("{title}: {remedy}"),
+            None => title.to_owned(),
         })
     }
 }
