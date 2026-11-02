@@ -19,10 +19,23 @@ here="$(cd "$(dirname "$0")" && pwd)"
 checkout="$(git -C "$here" rev-parse --show-toplevel)"
 sandbox="$checkout/.agents/skills/security-audit/scripts/sandbox"
 
-# The versions `.github/workflows/mutants.yml` installs.
-for tool in cargo-mutants@27.1.0 cargo-nextest@0.9.146; do
-  if [[ ! -x "$AUDIT/bin/${tool%@*}" ]]; then
-    cargo install --locked --root "$AUDIT" "$tool"
+if [[ ! -x "$sandbox" ]]; then
+  echo "lab: needs the security-audit skill's sandbox at $sandbox" >&2
+  exit 1
+fi
+
+# CI's versions, so a lab result and a run name mutants the same way.
+workflow="$checkout/.github/workflows/mutants.yml"
+tools="$(sed -n 's/^ *tool: \(cargo-mutants@.*,.*\)$/\1/p' "$workflow")"
+if [[ -z "$tools" ]]; then
+  echo "lab: no cargo-mutants and cargo-nextest versions found in $workflow" >&2
+  exit 1
+fi
+IFS=, read -ra pinned <<<"$tools"
+for tool in "${pinned[@]}"; do
+  name="${tool%@*}"
+  if [[ "$("$AUDIT/bin/$name" "${name#cargo-}" --version 2>/dev/null)" != "$name ${tool#*@}"* ]]; then
+    cargo install --locked --force --root "$AUDIT" "$tool"
   fi
 done
 
