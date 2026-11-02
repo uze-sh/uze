@@ -2,21 +2,6 @@
 
 use super::*;
 
-/// Where an earlier release delivered a package's hooks, as a plugin of its
-/// own: `<config root>/plugins/hooks-<package>.ts`. Read only to inspect,
-/// detach and replace what such a release left.
-/// `<config root>/plugins/` is OpenCode's documented global plugin directory
-/// (`~/.config/opencode/plugins/`), auto-discovered at startup — the file is
-/// therefore the single, self-contained load source: no `plugin` entry in
-/// `opencode.json` exists to duplicate it. (Verified against the real
-/// harness: the legacy `.opencode/plugins/` path is project-scoped and NOT
-/// auto-discovered under the global config directory.)
-pub(crate) fn opencode_bridge_path(config_root: &Path, package_id: &str) -> PathBuf {
-    config_root
-        .join("plugins")
-        .join(format!("hooks-{package_id}.ts"))
-}
-
 /// The version of the per-package hook document the runtime plugin reads;
 /// a document of another version is unreadable to it, and refuses calls.
 pub(crate) const OPENCODE_DOCUMENT_VERSION: u32 = 1;

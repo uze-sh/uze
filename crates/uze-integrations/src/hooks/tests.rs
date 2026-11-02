@@ -916,7 +916,7 @@ fn the_opencode_hooks_are_one_runtime_over_each_packages_document() {
 #[test]
 fn an_earlier_releases_bridge_lived_in_the_global_plugin_directory() {
     let root = uze_testkit::temp::scratch("hooks-path");
-    let bridge = opencode_bridge_path(&root, "demo");
+    let bridge = crate::opencode::earlier::hook_bridge_path(&root, "demo");
     assert_eq!(
         bridge,
         root.join("plugins/hooks-demo.ts"),
