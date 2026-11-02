@@ -6,7 +6,7 @@
 
 ## 2. Carry steps (after `earlier-release-support` lands)
 
-- [ ] 2.1 For every rename in groups 3–6, add the old path as a `retired(..)` entry with `.last_written_by(Release::beta(22))`; records get `.carried_by(step)`, locks are swept
+- [ ] 2.1 For every rename in groups 3–6, add the old path as a `retired(..)` entry; records get `.carried_by(step)` (`Unbounded`), run from `MutationLock::acquire` or `record::ensure`; locks are swept (`Until(Beta(22))`)
 - [ ] 2.2 One carry step per project directory moves `agents.*`, `approved-commands.json` and `prompt-history.*` together
 - [ ] 2.3 Carry `theme-overrides.json` into `[appearance.*]` and `[memory] harness` to `[memory] native`, stopping and reporting on a `config.toml` that does not parse
 - [ ] 2.4 Test: a home seeded with the beta.22 names comes out with the new names and the same content; a rerun changes nothing

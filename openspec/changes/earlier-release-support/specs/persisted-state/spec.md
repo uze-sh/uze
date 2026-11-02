@@ -5,8 +5,9 @@
 What a version change means SHALL be written in one place, as a step from
 one shape to the next, so that the knowledge lives where the next document
 can reach it rather than in one file's own prose. Each step SHALL name the
-last release that wrote the shape it reads, and SHALL be removed once the
-supported floor is above that release.
+last release whose run could leave the shape it reads, or be unbounded
+while a record in it is rewritten only when next changed, and SHALL be
+removed once the supported floor is above that release.
 
 #### Scenario: A document changes shape
 
