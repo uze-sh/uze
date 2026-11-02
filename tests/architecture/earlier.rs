@@ -59,11 +59,7 @@ fn every_record_lists_its_rungs() {
         if file.starts_with("crates/uze-document/") {
             continue;
         }
-        let code: String = source
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let code = without_comments(source);
         for record in shaped_records(&code) {
             if !code.contains(&format!("rungs::<{record}>")) {
                 missing.push(format!("  {file} ({record}): no rungs listed"));
@@ -95,7 +91,16 @@ fn gathered(sources: &[(String, String)], file: &str) -> bool {
     let call = format!("crate::{module}::rungs()");
     sources
         .iter()
-        .any(|(other, source)| other.starts_with(&root) && source.contains(&call))
+        .any(|(other, source)| other.starts_with(&root) && without_comments(source).contains(&call))
+}
+
+/// `source` without its comment lines, so a call commented out is no call.
+fn without_comments(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The records `source` implements `Shaped` for, by name; a record named
