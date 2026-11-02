@@ -191,7 +191,8 @@ fn modes(code: &CodeView) -> Vec<Mode> {
 }
 
 /// The halves of this surface, named as the places they are: the
-/// checkout's files, and a picture of where its lines are.
+/// checkout's files, what a search found in them, and a picture of where
+/// its lines are.
 ///
 /// Never named after the *rendering* the map happens to be in — that is
 /// what the control below is for, and a chip that said "ASCII" here

@@ -588,7 +588,7 @@ impl CodeView {
         self.editing() || self.renaming.is_some() || self.typing_a_search()
     }
 
-    /// Whether keys land in the search's field, over the files' list.
+    /// Whether keys land in the search's field.
     fn typing_a_search(&self) -> bool {
         self.search.typing && self.navigator() == NavigatorMode::Search
     }
@@ -1038,9 +1038,9 @@ impl CodeView {
     /// is reachable from every other.
     pub(super) fn show_half(&mut self, half: Half) {
         match half {
-            // As whatever the selection is: a document opens as the
-            // document it is, which is the same rule arriving at a file
-            // any other way follows.
+            // Leaving the map, as whatever the selection is: a document
+            // opens as the document it is, which is the same rule arriving
+            // at a file any other way follows.
             Half::Files => {
                 // From the search only the list changes: the file beside it
                 // stays as it was being read.

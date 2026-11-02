@@ -51,8 +51,10 @@ would be.
 
 ## Search
 
-Search has a tab of its own, beside the files and the map. Click it, or press
-`Ctrl+F` from anywhere, and type. Results update as you type: case is ignored,
+Search has a tab of its own, beside the files and the map. Press `Ctrl+F` from
+anywhere and type, or click the tab: on a search that already holds text, a
+click lands on its results, and the field takes a click of its own. Results
+update as you type: case is ignored,
 and files Git ignores are skipped. Results are grouped by file, with a count for
 each file. `↓` moves from the field to the results, `Enter` opens a result with
 the caret on the match, and a click shows it while keeping the list in focus.
@@ -61,7 +63,16 @@ Matches are also highlighted in the open file.
 Going to another tab keeps the search as it is, so you can check the tree and
 come back to your results. `Esc` moves from the field to the results, then from
 the results to the tree, opened down to the file you are on. The `×` at the end
-of the field clears the search. A search stops at 2000 results.
+of the field clears the search. Coming back to a search asks again, so it says
+what the files hold now. A search stops at 2000 results.
+
+Right-click a file or a directory, or press `Alt+.`, to copy its path (absolute
+or relative), rename it, or delete it (`d`), asking first. There is no stage or
+commit here: the checkout belongs to the agent working in it, and the agent
+commits its own work.
+
+The files hide what the project told its editor to hide: the `files.exclude`
+patterns in `.vscode/settings.json`, read the way VS Code reads them.
 
 ## Timeline in the sidebar
 

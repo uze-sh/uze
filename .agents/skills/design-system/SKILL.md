@@ -102,7 +102,7 @@ on "cancel" must not save first.
 **Hover:**
 - Everything clickable has a hover, and nothing that isn't clickable does.
   A surface's chips (the content's modes, the bar's subjects: `viewed`,
-  `files · map`, `all · uncommitted`) are lifted by the host under the
+  `files · search · map`, `all · uncommitted`) are lifted by the host under the
   pointer (`lines::lift_pointed_chip`), whatever surface draws them.
 - Hover is a change of colour only (a "realce"): never underline, an arrow
   or a background overlay.
@@ -140,7 +140,8 @@ on "cancel" must not save first.
   level at a time, from the field to the results and from the results to
   the tree opened down to the selection, and empties nothing; only the
   field's own `×` (`mark::close_tone`) empties it, keeping the keys there.
-  Changing tab or agent keeps the text, the results and the cursor. What it found is said under the
+  Changing tab or agent keeps the text and the cursor, and coming back asks
+  again, so the results say what the files hold now. What it found is said under the
   field, its results grouped by file with a count, each file's lines
   hanging from a `tree.vertical` guide under its fold mark. A match is set
   apart in its own hue, bold, on its ground — a ground alone is a tint the
