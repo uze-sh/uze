@@ -11,7 +11,7 @@ use uze_document::earlier::{Earlier, Lasts};
 
 /// This module's entries.
 pub(crate) fn earlier() -> Vec<Earlier> {
-    let mut entries = super::persist::rungs();
+    let mut entries = crate::runtime::persist::rungs();
     entries.push(Earlier {
         name: "a server older than the claimant record, which the claim does not name",
         // Met only while such a server is still running: unbounded.

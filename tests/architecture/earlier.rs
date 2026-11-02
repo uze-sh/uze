@@ -53,13 +53,24 @@ fn the_floor_is_a_release_at_or_below_this_one() {
 /// left out is one the floor never sees.
 #[test]
 fn every_record_lists_its_rungs() {
+    let sources = workspace_sources();
     let mut missing = Vec::new();
-    for (path, source) in production_sources(&repository_root().join("crates")) {
-        for record in shaped_records(&source) {
-            if !source.contains(&format!("rungs::<{record}>")) {
-                let relative = path.strip_prefix(repository_root()).unwrap_or(&path);
-                missing.push(format!("  {} ({record})", relative.display()));
+    for (file, source) in &sources {
+        if file.starts_with("crates/uze-document/") {
+            continue;
+        }
+        let code: String = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for record in shaped_records(&code) {
+            if !code.contains(&format!("rungs::<{record}>")) {
+                missing.push(format!("  {file} ({record}): no rungs listed"));
             }
+        }
+        if code.contains("fn rungs()") && !gathered(&sources, file) {
+            missing.push(format!("  {file}: its rungs() is not gathered"));
         }
     }
     assert!(
@@ -69,6 +80,22 @@ fn every_record_lists_its_rungs() {
          `rungs()`, gathered by its crate's `earlier()` (see {RULE}):\n\n{}\n",
         missing.join("\n")
     );
+}
+
+/// Whether the crate `file` belongs to calls its module's `rungs()`.
+fn gathered(sources: &[(String, String)], file: &str) -> bool {
+    let (root, module) = match file.split_once("/src/") {
+        Some((root, module)) => (format!("{root}/src/"), module),
+        None => ("src/".to_owned(), file.strip_prefix("src/").unwrap_or(file)),
+    };
+    let module = module
+        .trim_end_matches(".rs")
+        .trim_end_matches("/mod")
+        .replace('/', "::");
+    let call = format!("crate::{module}::rungs()");
+    sources
+        .iter()
+        .any(|(other, source)| other.starts_with(&root) && source.contains(&call))
 }
 
 /// The records `source` implements `Shaped` for, by name; a record named
