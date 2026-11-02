@@ -18,6 +18,7 @@ fn every_entry() -> Vec<Earlier> {
     entries.extend(uze_terminal::earlier::earlier());
     entries.extend(uze_application::earlier::earlier());
     entries.extend(uze_integrations::earlier::earlier());
+    entries.extend(uze::earlier::earlier());
     entries
 }
 
@@ -133,10 +134,6 @@ const MARKS_SANCTIONED: &[(&str, &str)] = &[
     ),
 ];
 
-/// Today's inline support, frozen: exact, so moving a site home fails
-/// until its number is lowered, and a new one fails at once.
-const MARKS_BUDGET: &[(&str, usize)] = &[];
-
 fn marks_in(source: &str) -> usize {
     source
         .lines()
@@ -171,12 +168,8 @@ fn support_for_an_earlier_release_is_written_in_its_home() {
             continue;
         }
         let found = marks_in(&source);
-        let allowed = MARKS_BUDGET
-            .iter()
-            .find(|(budgeted, _)| *budgeted == file)
-            .map_or(0, |(_, count)| *count);
-        if found != allowed {
-            failures.push(format!("  {file}: {found} (budget {allowed})"));
+        if found > 0 {
+            failures.push(format!("  {file}: {found}"));
         }
     }
     assert!(
@@ -184,9 +177,7 @@ fn support_for_an_earlier_release_is_written_in_its_home() {
         "\n\nCode that copes with what an earlier release left is written in the \
          `earlier` module of the crate that owns it, or as an entry of its registry \
          (a ladder rung, a retired owned path), never inline: an inline fallback is \
-         one nobody can find when the floor passes it. Move it home and lower its \
-         budget; a budget is exact, so a file that went down must say so \
-         (see {RULE}):\n\n{}\n",
+         one nobody can find when the floor passes it. Move it home (see {RULE}):\n\n{}\n",
         failures.join("\n")
     );
 }

@@ -99,3 +99,13 @@
 - decided:  both stay where they are, unchanged; the three behaviours only an earlier build's state needs (`agent-<n>` slots, a dropped `parent`, several agents on one slot) move into `checkout/earlier.rs` as entries
 - rejected: moving them too — picking the last-recorded holder and releasing an ended task still naming a checkout are what the store does for any state, today's included; an earlier build is one source of it, not the reason for it
 - blast:    revert the commit
+
+## D11 — Cross-build protocol and the hidden CLI spellings are not entries
+
+- status:   pending
+- task:     5.1, 5.2
+- commit:
+- trigger:  the tasks moved `endpoint.rs`'s older-protocol paths and `--resumed`/`uze terminal` into `earlier` modules
+- decided:  `Replaced::AnotherProtocol`, `Replaced::Unreachable`, `make_way` and the older socket candidates stay in `endpoint.rs`; `--resumed` and `uze terminal` stay in the grammar. Declared: the server older than the claimant record (`runtime/earlier.rs`) and the refused `--instructions` (`src/earlier.rs`, in the library half so the suite can gather it)
+- rejected: moving them — each is how a build meets *any* other build (an older client that self-updated, a server another release started), which `persisted-state` requires of every release; none becomes deletable at any floor
+- blast:    revert the commit
