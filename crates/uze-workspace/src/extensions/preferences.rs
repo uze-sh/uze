@@ -27,12 +27,6 @@ pub fn set(home: &UzeHome, id: &str, name: &str, value: &Value) -> Result<()> {
     config::set_scalar_in_table(home, SECTION, id, name, value)
 }
 
-/// The rungs of this module's record's ladder, for the crate's
-/// [`earlier`](crate::earlier) registry.
-pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
-    uze_document::earlier::rungs::<PreferencesRecord>(file!())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
