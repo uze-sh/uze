@@ -1,5 +1,18 @@
 # What `cargo mutants` may change. `.github/workflows/mutants.yml` says how a
-# run is started and `tests/README.md` how to read one.
+# run is started and the `mutation-audit` skill how to read one.
 
 # A developer's tool, not the product: nothing in the suite calls it.
 exclude_globs = ["src/bin/**"]
+
+# Mutants read and found equivalent to the code they replace, so no test can
+# catch them. Each needs its reason, and goes when the code it names changes.
+exclude_re = [
+  # FIRST_SHAPE is 1.
+  'uze-document/src/lib\.rs.*replace first_shape -> u32 with 1$',
+  # The default of an empty slice is that same empty slice.
+  'uze-document/src/lib\.rs.*replace Shaped::ladder -> Ladder with Default::default\(\)$',
+  # `read` has already returned when the shape equals SHAPE.
+  'uze-document/src/lib\.rs.*replace > with >= in read$',
+  # UnsupportedShape never carries found == expected: `read` returns first.
+  'uze-document/src/lib\.rs.*replace < with <= in may_be_set_aside$',
+]
