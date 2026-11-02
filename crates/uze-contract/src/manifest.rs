@@ -1217,6 +1217,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_host_name_may_hold_digits_and_inner_hyphens() {
+        assert!(is_host_name("api-2.example.com"));
+        assert!(is_host_name("1.example.com"));
+        assert!(!is_host_name("-api.example.com"));
+        assert!(!is_host_name("API.example.com"));
+    }
+
+    #[test]
     fn a_grant_is_one_this_build_enforces() {
         for grant in Grant::FIXED {
             assert_eq!(Grant::parse(&grant.name()), Some(grant.clone()));
