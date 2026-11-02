@@ -345,11 +345,12 @@ impl ReviewView {
     /// content's: known only when a key, a click or the wheel reaches the
     /// review, which is when it is asked.
     pub(crate) fn note_seen(&mut self, space: Size) {
-        if self.diff.is_none() || self.diff_pending || space.height == 0 {
+        let visible = usize::from(crate::view::text_height(space));
+        if self.reading.end_seen || self.diff.is_none() || self.diff_pending || visible == 0 {
             return;
         }
         let total = super::render::lines(self).len();
-        if self.scroll + usize::from(space.height) >= total {
+        if self.scroll + visible >= total {
             self.reading.end_seen = true;
         }
     }

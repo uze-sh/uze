@@ -1674,3 +1674,19 @@ fn a_file_put_on_show_by_the_list_is_not_marked_before_it_was_read() {
     view.step_file(ScrollDirection::Down);
     assert_eq!(view.viewed(&tests), surface::Viewed::No);
 }
+
+#[test]
+fn the_end_is_seen_only_once_the_last_line_is_inside_the_text_rows() {
+    let mut view = reviewing();
+    let total = render::lines(&view).len();
+    let as_tall = |height: usize| Size {
+        width: 100,
+        height: u16::try_from(height).unwrap(),
+    };
+    // As many rows as lines, but the heading and its padding take three.
+    view.note_seen(as_tall(total));
+    assert!(!view.reading.end_seen, "the last lines were below the fold");
+    let chrome = total - usize::from(crate::view::text_height(as_tall(total)));
+    view.note_seen(as_tall(total + chrome));
+    assert!(view.reading.end_seen);
+}
