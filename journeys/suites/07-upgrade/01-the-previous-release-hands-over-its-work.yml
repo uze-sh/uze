@@ -24,12 +24,13 @@ about: |
 
 world:
   project: demo-app
-  # The release a user has installed: the newest tag. A tag older than the
+  # The release a user has installed: the newest tag, which is also the
+  # release floor (`uze_document::earlier::FLOOR`). A tag older than the
   # series a user can still be on proves a step nobody takes — the alpha
   # series wrote a shape of the agents record this build deliberately has
   # no rung for, and that release is what this journey pinned until it
   # stopped proving anything.
-  released: v1.0.0-beta.15
+  released: v1.0.0-beta.22
   manifest: |
     workspace:
       worktree: always
@@ -47,14 +48,20 @@ scenes:
       # Aimed at the released binary's screen, which is not necessarily
       # this build's: when the two part, this is the gesture to follow the
       # release, never this repository.
+      # The release's picker opens on Claude Code and a directory filter
+      # rooted at the home; the project is named there, and `enter` places
+      # the agent in it.
       - click: "new"
         say: open the new-agent picker from the space's row
         in: sidebar
         expect: new agent
-      - click: " new agent "
+      - type: "{project}"
+        say: name the project in the picker's filter
+        submit: false
+        clear: all
+        expect: demo-app
+      - key: Enter
         say: pick Claude Code
-        row_offset: 1
-        offset: 3
         # The tab, not the header's `agent 1: preparing`: the tab opens
         # once the checkout exists, and the checks below read it.
         expect: 'agent 1(?!: preparing)'
