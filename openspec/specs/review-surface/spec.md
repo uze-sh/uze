@@ -193,6 +193,14 @@ numbered send only once the line is typed.
 - **WHEN** the operator sends while the agent's turn is running
 - **THEN** nothing is typed, the drafts stay drafts, and the notice says the agent is busy
 
+#### Scenario: An agent whose line cannot be known
+- **WHEN** the operator sends after a key that may have put something on the agent's input line, and no text is known to be there
+- **THEN** the question says the input may hold text that would go with the line and could run as a command, and once allowed the line is typed
+
+#### Scenario: Text the operator typed
+- **WHEN** the operator sends while text they typed sits unsent in the agent's input, whatever key followed it
+- **THEN** nothing is typed, the text stays, the drafts stay drafts, and the notice says why
+
 #### Scenario: The operator declines
 - **WHEN** the operator declines the bridge's confirmation
 - **THEN** the drafts stay drafts

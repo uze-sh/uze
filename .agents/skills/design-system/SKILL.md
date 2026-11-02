@@ -487,11 +487,13 @@ on "cancel" must not save first.
 - In the space overview the dialog is its one question
   (`overview_question.rs`): add a case to `Asked` rather than a dialog of
   your own.
-- A refusal the operator can get past says how, and never stands over a
-  guess: when UZE cannot tell what is on an agent's line, a prompt they are
-  already being asked about says so in that question and goes on their
-  answer, rather than being refused after they allowed it. A key pressed
-  long ago never blocks a send with no word of what to do.
+- A refusal the operator can get past says how: a key pressed long ago
+  never blocks a send with no word of what to do. When UZE cannot tell what
+  is on an agent's line, a bundled extension's send says so in the question
+  it already asks, what it could do included, and goes on the answer. Text
+  known to be there stays the operator's, and a plugin's prompt or one
+  allowed for a day is refused with what clears the line, whatever was
+  answered.
 - Never ask for Y/N.
 - Enter is the primary action.
 - Several things waiting on the same answer are asked in one dialog, a
