@@ -531,7 +531,8 @@ fn a_prompt_allowed_over_a_line_nobody_can_vouch_for_is_typed_after_a_warning() 
             .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
         driven.frame();
         let shown = frame_rows(&mut driven.attach.model).join("\n");
-        assert!(shown.contains("may have text typed"), "{shown}");
+        assert!(shown.contains("may hold text"), "{shown}");
+        assert!(shown.contains("run as a command"), "{shown}");
         driven.press_key(key("right"));
         driven.press_key(key("enter"));
         driven.pump();
@@ -568,6 +569,31 @@ fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
         said.contains("can't tell what's typed: press enter or ctrl-c"),
         "{said}"
     );
+}
+
+/// Only a bundled extension's send, asked about each time, may go over a
+/// line nobody can vouch for: whatever is there would undo what a plugin's
+/// text is held to.
+#[test]
+fn only_a_bundled_extensions_attended_prompt_may_go_over_an_unknown_line() {
+    let write = |owner, unattended| super::Write {
+        owner,
+        agent: "a1".to_owned(),
+        action: "review".to_owned(),
+        text: "Review PLAN.md".to_owned(),
+        label: "Review".to_owned(),
+        unattended,
+        summary: None,
+        warned_of_unknown_line: false,
+    };
+    let plugin = Owner::Declared(uze_application::ExtensionIdentity {
+        marketplace: "market".to_owned(),
+        plugin: "gsd".to_owned(),
+        id: "gsd-band".to_owned(),
+    });
+    assert!(write(Owner::Builtin("review"), false).may_go_over_unknown_line());
+    assert!(!write(Owner::Builtin("review"), true).may_go_over_unknown_line());
+    assert!(!write(plugin, false).may_go_over_unknown_line());
 }
 
 /// Esc may clear a line with text on it, so it can no longer be known.
@@ -613,7 +639,7 @@ fn an_unattended_prompt_over_an_unknown_line_says_how_to_clear_it() {
         .ask_of_agent(Owner::Builtin("probe"), ask.clone());
     driven.frame();
     let shown = frame_rows(&mut driven.attach.model).join("\n");
-    assert!(!shown.contains("may have text typed"), "{shown}");
+    assert!(!shown.contains("may hold text"), "{shown}");
     driven.press_key(key("right"));
     driven.press_key(key("enter"));
     driven.pump();

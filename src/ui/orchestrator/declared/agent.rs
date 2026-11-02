@@ -57,6 +57,17 @@ pub(in crate::ui::orchestrator) struct Write {
     pub(in crate::ui::orchestrator) warned_of_unknown_line: bool,
 }
 
+impl Write {
+    /// Whether the operator may answer for what is on an unknown line. A
+    /// bundled extension's send is the operator's own gesture. A plugin's
+    /// text is held to being one line that leads with no command, which
+    /// whatever is on the line would undo, and allowing a prompt for a day
+    /// says nothing about the line at each one it lets through.
+    pub(in crate::ui::orchestrator) fn may_go_over_unknown_line(&self) -> bool {
+        matches!(self.owner, Owner::Builtin(_)) && !self.unattended
+    }
+}
+
 /// What extensions may still write.
 #[derive(Default)]
 pub(in crate::ui::orchestrator) struct Writes {
@@ -539,9 +550,7 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
     // UZE's own words for a bundled extension's ask; anything else is
     // shown as it will be typed, every character of it (D182).
     let quotes_code = open.write.summary.is_some() && !open.write.unattended;
-    // Allowing for a day says nothing about what is on the line at each of
-    // the writes it lets through, so only an answer about this one warns.
-    let warns = line_unknown && !open.write.unattended;
+    let warns = line_unknown && open.write.may_go_over_unknown_line();
     open.warned_of_unknown_line.set(warns);
     let (title, mut body, confirm) = if open.write.unattended {
         (
@@ -570,7 +579,10 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
         )
     };
     if warns {
-        body.push("It may have text typed, which would go with this.".to_owned());
+        body.push(
+            "Its input may hold text. It would go with this, and could run as a command."
+                .to_owned(),
+        );
     }
     let question = Dialog {
         tone: Tone::Caution,
