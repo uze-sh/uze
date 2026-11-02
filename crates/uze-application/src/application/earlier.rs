@@ -51,7 +51,7 @@ pub(crate) fn collect_package_copies(
     let mut removed = Vec::new();
     for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
         let path = entry.path();
-        if named.contains(path.to_string_lossy().as_ref())
+        if named.contains(as_the_ledger_spells(&path).as_str())
             || serves(&entry.file_name().to_string_lossy())
         {
             continue;
@@ -67,6 +67,13 @@ pub(crate) fn collect_package_copies(
     }
     let _ = std::fs::remove_dir(&root);
     removed
+}
+
+/// `path` as the serialized ledger spells it, without its quotes: JSON
+/// escapes a backslash, which every Windows path holds.
+fn as_the_ledger_spells(path: &std::path::Path) -> String {
+    let quoted = serde_json::to_string(path).unwrap_or_default();
+    quoted.trim_matches('"').to_owned()
 }
 
 /// Removes the compiled views an earlier release kept loose in the
@@ -116,7 +123,9 @@ mod tests {
         let unnamed = package_copies_dir(&home).join("gone@ai");
         std::fs::create_dir_all(&named).unwrap();
         std::fs::create_dir_all(&unnamed).unwrap();
-        let ledger = format!("{{\"target\":\"{}/skills/x\"}}", named.display());
+        let ledger =
+            serde_json::to_string(&serde_json::json!({ "target": named.join("skills/x") }))
+                .unwrap();
 
         assert_eq!(
             collect_package_copies(&home, &ledger, &|_| false),
@@ -130,6 +139,21 @@ mod tests {
             !holds_package_copies(&home),
             "the emptied directory goes too"
         );
+    }
+
+    #[test]
+    fn a_copy_is_found_in_the_ledger_as_the_ledger_spells_its_path() {
+        let home = uze_core::UzeHome::at(
+            uze_testkit::temp::scratch("earlier-package-copies-spelled").join("back\\slash"),
+        );
+        let named = package_copies_dir(&home).join("flow@ai");
+        std::fs::create_dir_all(&named).unwrap();
+        let ledger =
+            serde_json::to_string(&serde_json::json!({ "target": named.join("skills/x") }))
+                .unwrap();
+
+        assert!(collect_package_copies(&home, &ledger, &|_| false).is_empty());
+        assert!(named.is_dir());
     }
 
     #[test]
