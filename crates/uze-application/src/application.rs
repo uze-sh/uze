@@ -40,6 +40,7 @@ pub mod catalogue;
 mod collection;
 mod context;
 mod doctor;
+pub mod earlier;
 mod extensions;
 mod freshness;
 mod harness_floor;

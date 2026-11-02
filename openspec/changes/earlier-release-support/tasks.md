@@ -11,7 +11,7 @@
 
 - [x] 2.1 `OwnedPath` gains `.carried_by(fn)`, `.lasts(..)` and `.spelled(..)`; `pre_sources_layout`, `scattered_project_records` and `retired_profiles_path` declare theirs
 - [x] 2.2 `carry_into_sources` (still run from `MutationLock::acquire`) and `carry_across_the_move` (still run from `record::ensure`) read their paths from the map; the registry and ledger fences move into `package/earlier.rs` with them
-- [ ] 2.3 `setup.rs` `RETIRED`, `catalogue.rs` `Subject::Retired`, `schema.rs` and `uze-official` derive from the map
+- [x] 2.3 `setup.rs` `RETIRED`, `catalogue.rs` `Subject::Retired`, `schema.rs` and `uze-official` derive from the map
 - [ ] 2.4 `runtime/attachments`, `rules/engine` and the runtime-tree detach removals become retired entries; the integrations' cleanups read them
 - [ ] 2.5 Lower the budgets; `tests/performance.rs` budgets still hold
 

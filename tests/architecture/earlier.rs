@@ -16,6 +16,7 @@ fn every_entry() -> Vec<Earlier> {
     let mut entries = uze_core::earlier::earlier();
     entries.extend(uze_workspace::earlier::earlier());
     entries.extend(uze_terminal::earlier::earlier());
+    entries.extend(uze_application::earlier::earlier());
     entries
 }
 
@@ -123,7 +124,6 @@ const MARKS_SANCTIONED: &[(&str, &str)] = &[(
 /// until its number is lowered, and a new one fails at once.
 const MARKS_BUDGET: &[(&str, usize)] = &[
     ("crates/uze-application/src/application.rs", 1),
-    ("crates/uze-application/src/application/catalogue.rs", 1),
     ("crates/uze-application/src/application/context.rs", 15),
     (
         "crates/uze-application/src/application/project_environment.rs",
@@ -140,7 +140,6 @@ const MARKS_BUDGET: &[(&str, usize)] = &[
         "crates/uze-application/src/application/services/retired_regions.rs",
         5,
     ),
-    ("crates/uze-application/src/application/setup.rs", 1),
     ("crates/uze-core/src/lib.rs", 1),
     ("crates/uze-core/src/machine/home.rs", 1),
     ("crates/uze-core/src/project.rs", 1),
@@ -287,7 +286,12 @@ fn a_record_field_defaults_only_when_it_is_additive() {
 
 #[test]
 fn a_retired_standing_is_read_only_from_the_map() {
-    const READERS: &[&str] = &["crates/uze-application/src/application/schema.rs"];
+    /// The map's readers: the schema report, the retired collector and the
+    /// health catalogue each ask the map which paths are retired.
+    const READERS: &[&str] = &[
+        "crates/uze-application/src/application/schema.rs",
+        "crates/uze-application/src/application/setup.rs",
+    ];
     let elsewhere: Vec<String> = workspace_sources()
         .into_iter()
         .filter(|(file, source)| {

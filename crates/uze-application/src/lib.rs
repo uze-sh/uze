@@ -64,10 +64,9 @@ pub use uze_core::portable_shell;
 /// spelling per platform.
 pub use uze_core::shell::ShellCommand;
 
-/// The vocabulary for declaring support for what an earlier release left
-/// (`Release`, `Lasts`, `Earlier`, `earlier!`), for the binary's own
-/// entries: the one door to it from `src/`.
-pub use uze_core::document::earlier;
+/// The vocabulary for declaring support for what an earlier release left,
+/// and this crate's entries: the one door to it from `src/`.
+pub use application::earlier;
 
 /// An adaptive theme selection, and the observation it is decided by.
 pub use uze_core::appearance::{ADAPTIVE, Background};

@@ -417,11 +417,9 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::Retired,
-        paths: &[
-            "pre_sources_layout",
-            "retired_profiles_path",
-            "scattered_project_records",
-        ],
+        // Every retired path the owned map lists, read from the map rather
+        // than spelled again here (the `earlier-releases` rule).
+        paths: &[],
         artifacts: &[],
         registrations: &[],
         lanes: &[(
@@ -780,6 +778,15 @@ mod tests {
             for path in check.paths {
                 checked.entry(path).or_default().push(check.subject);
             }
+        }
+        for retired in UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
+        {
+            checked
+                .entry(retired.name)
+                .or_default()
+                .push(Subject::Retired);
         }
         let unchecked: Vec<&str> = UzeHome::owned_paths()
             .iter()
