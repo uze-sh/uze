@@ -893,6 +893,11 @@ impl CodeView {
         // The menu was opened on the list this leaves.
         self.menu = None;
         let line = self.line_in_view();
+        // A document's rows are not its source's lines, so a scroll into the
+        // source may lie past the end of what the preview draws.
+        if mode == ContentMode::Preview {
+            self.scroll = 0;
+        }
         self.content = mode;
         match mode {
             ContentMode::Contents | ContentMode::Preview => {
@@ -1011,11 +1016,15 @@ impl CodeView {
             // document it is, which is the same rule arriving at a file
             // any other way follows.
             Half::Files => {
-                let mode = match self.selected_is_markdown() {
-                    true => ContentMode::Preview,
-                    false => ContentMode::Contents,
-                };
-                self.show(mode);
+                // From the search only the list changes: the file beside it
+                // stays as it was being read.
+                if self.content == ContentMode::Map {
+                    let mode = match self.selected_is_markdown() {
+                        true => ContentMode::Preview,
+                        false => ContentMode::Contents,
+                    };
+                    self.show(mode);
+                }
                 self.leave_search();
             }
             // Back where it was left, or into the field with nothing yet

@@ -3374,6 +3374,61 @@ fn a_surface_handed_back_keeps_its_search() {
     assert!(!back.search.files().is_empty());
 }
 
+/// Changing list changes the list: a document opened from a search at a line
+/// far down stays as it was read, rather than turning into a preview at a
+/// scroll its source had, past the end of what the preview draws.
+#[test]
+fn changing_list_leaves_what_a_search_opened_as_it_was_read() {
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    let machine = FakeMachine::default().with_file("/w/long.md", &long);
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    let scroll = view.scroll;
+    assert!(scroll > 0, "opened down at the match");
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents, "still its source");
+    assert_eq!(view.scroll, scroll);
+
+    press_tab(&mut view, "Search");
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    assert_eq!(view.scroll, scroll);
+}
+
+/// A preview opens at the top of the document: its rows are not the source's
+/// lines, and a scroll into the source would draw nothing.
+#[test]
+fn a_document_shown_as_a_preview_from_far_down_its_source_is_not_blank() {
+    // One paragraph: hundreds of lines of source, a few rows of document.
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    let machine = FakeMachine::default().with_file("/w/long.md", &long);
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert!(view.scroll > 0);
+
+    press(&mut view, Command::TogglePreview);
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    let drawn = render::view(&view, space());
+    let crate::view::Content::Lines { lines, .. } = drawn.content else {
+        panic!("the document's lines");
+    };
+    assert!(!lines.is_empty(), "the preview draws something");
+}
+
 /// Going back to the tree from a search opens it down to the file the
 /// search opened, wherever that is.
 #[test]
