@@ -77,6 +77,7 @@ use uze_core::{
 };
 
 mod agent_context;
+pub(crate) mod earlier;
 mod flags;
 mod generate;
 mod hooks;
@@ -642,7 +643,8 @@ impl IntegrationPort for AntigravityIntegration {
     }
 
     /// Only a generated plugin serves the plan: a package an earlier build
-    /// installed straight from the Store is replaced rather than kept.
+    /// installed straight from the Store is replaced rather than kept
+    /// (declared in [`earlier`]).
     fn package_receipt_serves(&self, receipt: &AttachmentReceipt) -> bool {
         !matches!(
             &receipt.artifact,
