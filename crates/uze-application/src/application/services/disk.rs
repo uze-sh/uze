@@ -65,12 +65,7 @@ impl Workspace<'_> {
             (HomeTier::Cache, vec![home.cache_dir()]),
             (
                 HomeTier::Settings,
-                vec![
-                    home.config_path(),
-                    home.keymap_path(),
-                    home.theme_overrides_path(),
-                    home.themes_dir(),
-                ],
+                vec![home.config_path(), home.keymap_path(), home.themes_dir()],
             ),
         ];
         std::thread::scope(|scope| {

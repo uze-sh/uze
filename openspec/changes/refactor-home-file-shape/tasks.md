@@ -8,7 +8,7 @@
 
 - [x] 2.1 Every renamed record is a `retired(..)` entry naming the builder it became (`.renamed_to`); its old lock is a retired, unswept entry (an older build still takes it); all `Unbounded`
 - [x] 2.2 One carry, `uze_core::earlier::carry_renamed(home, project)`, moves a project's or the machine's renamed records where the new name is free; run by `UzeApplication`'s constructor, `MutationLock::acquire`, `record::ensure` and the three project readers
-- [ ] 2.3 Carry `theme-overrides.json` into `[appearance.*]` and `[memory] harness` to `[memory] native`, stopping and reporting on a `config.toml` that does not parse
+- [x] 2.3 `theme-overrides.json` is carried into `[appearance.colors|symbols|syntax]` key by key, never over a key the operator has, and removed; `[memory] harness` becomes `native` keeping its comment; a `config.toml` that does not parse stops the carry and leaves the file
 - [x] 2.4 A home seeded with the beta.22 names comes out renamed with the same content, twice; a record already at its new name is never overwritten
 
 ## 3. New tenants and builders
@@ -34,10 +34,10 @@
 
 ## 6. Settings file
 
-- [ ] 6.1 `uze-theme`: resolve an override layer from an already-read value (colors, symbols, syntax, glyphs), resolving no path
-- [ ] 6.2 `src/theme.rs` builds the override layer from `config.toml` `[appearance.*]` and names `config.toml [appearance.<field>]` in a problem; remove `theme_overrides_path` from the map, catalogue, `uninstall` and `disk`
-- [ ] 6.3 Tests for the two new `agent-finished-chime` scenarios: overrides survive a theme change; an unresolvable override is reported and skipped
-- [ ] 6.4 `[memory] harness` → `[memory] native` in `src/shim.rs` and its docs
+- [x] 6.1 `uze_theme::parse_value` reads an override layer already read by its owner, the theme file's shape and checks, naming where it came from; no path
+- [x] 6.2 `src/theme.rs` takes the layer from `Themes::overrides` (`config.toml [appearance]`) and names it in a problem; `theme_overrides_path` is a retired authored entry, gone from the catalogue, `uninstall`, `disk` and the docs
+- [x] 6.3 Overrides written in `config.toml` survive a theme change; one that does not resolve is reported naming `config.toml [appearance]` and the theme draws without it
+- [x] 6.4 `[memory] native` in `src/shim.rs` and `docs/architecture/agent-memory.mmd`
 
 ## 7. The name rule and its docs
 

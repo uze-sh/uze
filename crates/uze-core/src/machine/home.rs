@@ -523,21 +523,16 @@ impl UzeHome {
         self.root.join("config.toml")
     }
 
-    /// The operator's own last word on appearance, applied over whichever
-    /// theme is active.
-    ///
-    /// Beside `themes/` rather than inside it, because it is not a theme:
-    /// it never becomes selectable, and it does not stop applying when the
-    /// theme changes. That is exactly what it is for — a Nerd Font's glyphs
-    /// belong to the machine, not to whichever palette is on today, and
-    /// forking every theme to carry them is how they get out of step.
-    pub fn theme_overrides_path(&self) -> PathBuf {
+    /// Where earlier releases kept the operator's overrides of the active
+    /// theme, now `[appearance.colors|symbols|syntax]` in `config.toml`:
+    /// read once by the step that writes them there.
+    pub fn retired_theme_overrides_path(&self) -> PathBuf {
         self.root.join("theme-overrides.json")
     }
 
     /// The operator's own keyboard, applied over the built-in keymap.
     ///
-    /// Beside `theme-overrides.json` rather than under `state/` for the
+    /// Beside `config.toml` rather than under `state/` for the
     /// same reason: it is something someone wrote, never something UZE can
     /// rebuild. It holds only what differs from the default, so a chord
     /// nobody had an opinion about still moves when a later release moves

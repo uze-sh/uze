@@ -276,7 +276,6 @@ fn default_uninstall_keeps_the_packages_the_stores_the_records_and_the_settings(
                 "state",
                 "config.toml",
                 "keys.json",
-                "theme-overrides.json",
                 "themes"
             ]
             .contains(&name.as_str()),

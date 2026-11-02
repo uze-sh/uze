@@ -63,6 +63,23 @@ pub fn glyphs(home: &UzeHome) -> Result<Option<String>> {
     config::get(home, SECTION, GLYPHS)
 }
 
+/// The operator's overrides of whichever theme is active, as the theme
+/// file's fields they set: `[appearance.colors]`, `[appearance.symbols]`
+/// and `[appearance.syntax]`. `None` while none is written.
+pub fn overrides(home: &UzeHome) -> Result<Option<serde_json::Value>> {
+    let layer: serde_json::Map<_, _> = config::tables_in(home, SECTION)?
+        .into_iter()
+        .filter(|(field, _)| OVERRIDE_FIELDS.contains(&field.as_str()))
+        .collect();
+    Ok((!layer.is_empty()).then_some(serde_json::Value::Object(layer)))
+}
+
+/// The theme file's fields an override layer may set.
+const OVERRIDE_FIELDS: [&str; 3] = ["colors", "symbols", "syntax"];
+
+/// Where [`overrides`] reads from, for a message that names it.
+pub const OVERRIDES_SOURCE: &str = "config.toml [appearance]";
+
 pub fn set_active(home: &UzeHome, id: &str) -> Result<()> {
     config::set(home, SECTION, THEME, id)
 }

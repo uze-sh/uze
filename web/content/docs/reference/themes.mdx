@@ -75,8 +75,17 @@ lighter on a dark background and a little darker on a light one.
 
 Every mark uze draws is a named symbol a theme can replace, with a string, a
 list of animation frames, or an object with an explicit `width`. To change a
-single glyph without writing a theme, use `~/.uze/theme-overrides.json`: same
-format, applied last, over whatever theme and icon set you use.
+single glyph without writing a theme, write it in `~/.uze/config.toml`, under
+`[appearance.symbols]`, `[appearance.colors]` or `[appearance.syntax]`: the same
+fields as a theme file, applied last, over whatever theme and icon set you use.
+
+```toml
+[appearance.symbols]
+"status.idle" = ""
+
+[appearance.colors]
+accent = "#bd93f9"
+```
 
 ## What a theme reaches
 

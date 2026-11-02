@@ -678,11 +678,13 @@ const OWNED: &[OwnedPath] = &[
     // Authored.
     owned("config_path", Authored, Document, UzeHome::config_path),
     owned("keymap_path", Authored, Document, UzeHome::keymap_path),
-    owned(
-        "theme_overrides_path",
+    // Carried into `config.toml` by `earlier::carry_renamed`; only as often
+    // as that runs, so unbounded.
+    retired(
+        "retired_theme_overrides_path",
         Authored,
         Document,
-        UzeHome::theme_overrides_path,
+        UzeHome::retired_theme_overrides_path,
     ),
     owned("themes_dir", Authored, Directory, UzeHome::themes_dir),
     // Generated.

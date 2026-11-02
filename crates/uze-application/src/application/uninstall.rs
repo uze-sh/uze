@@ -677,7 +677,6 @@ impl UzeApplication {
             (home.state_dir(), "records", false),
             (home.config_path(), "settings", false),
             (home.keymap_path(), "settings", false),
-            (home.theme_overrides_path(), "settings", false),
             (home.themes_dir(), "settings", false),
         ];
         let Ok(listing) = fs::read_dir(home.root()) else {

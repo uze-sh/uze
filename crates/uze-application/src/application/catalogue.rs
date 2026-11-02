@@ -353,12 +353,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
     },
     HealthCheck {
         subject: Subject::Authored,
-        paths: &[
-            "config_path",
-            "keymap_path",
-            "theme_overrides_path",
-            "themes_dir",
-        ],
+        paths: &["config_path", "keymap_path", "themes_dir"],
         artifacts: &[],
         registrations: &[],
         lanes: &[(

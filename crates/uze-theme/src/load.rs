@@ -309,6 +309,17 @@ pub fn parse_file(path: &Path) -> Result<ThemeFile, LoadError> {
     parse_str(&path.to_string_lossy(), &contents)
 }
 
+/// An override layer already read by its owner — the operator's
+/// `[appearance]` colours, symbols, syntax and glyph set — named `id` in a
+/// problem. The same shape a theme file has, so the same resolver checks
+/// it; reading it is the owner's, and nothing here resolves a path.
+pub fn parse_value(id: &str, value: serde_json::Value) -> Result<ThemeFile, LoadError> {
+    serde_json::from_value(value).map_err(|source| LoadError::Parse {
+        path: PathBuf::from(id),
+        source,
+    })
+}
+
 pub(crate) fn parse_str(id: &str, contents: &str) -> Result<ThemeFile, LoadError> {
     serde_json::from_str(contents).map_err(|source| LoadError::Parse {
         path: PathBuf::from(id),
@@ -1555,5 +1566,38 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod value_tests {
+    use super::*;
+
+    #[test]
+    fn an_override_layer_read_from_settings_is_a_theme_file() {
+        let layer = parse_value(
+            "config.toml [appearance]",
+            serde_json::json!({ "colors": { "accent": "#bd93f9" }, "glyphs": "nerd" }),
+        )
+        .unwrap();
+        let reparsed = parse_str(
+            "x",
+            r##"{ "colors": { "accent": "#bd93f9" }, "glyphs": "nerd" }"##,
+        )
+        .unwrap();
+        assert_eq!(format!("{layer:?}"), format!("{reparsed:?}"));
+    }
+
+    #[test]
+    fn a_field_no_theme_has_is_refused_naming_where_it_came_from() {
+        let error = parse_value(
+            "config.toml [appearance]",
+            serde_json::json!({ "colours": {} }),
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("config.toml [appearance]"),
+            "{error}"
+        );
     }
 }

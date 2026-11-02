@@ -89,6 +89,31 @@ pub fn resolve_with_layers(
     home: &UzeHome,
     id: &str,
 ) -> Result<(Loaded, Vec<String>)> {
+    match assemble(app, home, id, true) {
+        Ok(resolved) => Ok(resolved),
+        // When the theme resolves without them, the overrides are what is
+        // wrong: say so, naming where they were written.
+        Err(error)
+            if assemble(app, home, id, false).is_ok() && app.themes().overrides()?.is_some() =>
+        {
+            let detail = error.to_string();
+            let detail = detail
+                .split_once(": ")
+                .map_or(detail.as_str(), |(_, rest)| rest);
+            Err(unusable(format!("{OVERRIDES_SOURCE}: {detail}")))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The theme `id` resolves to, with the operator's overrides on top when
+/// `with_overrides`.
+fn assemble(
+    app: &UzeApplication,
+    home: &UzeHome,
+    id: &str,
+    with_overrides: bool,
+) -> Result<(Loaded, Vec<String>)> {
     let concrete = concrete(app, id)?;
     let id = concrete.as_str();
     let mut ancestry: Vec<ThemeFile> = Vec::new();
@@ -129,7 +154,11 @@ pub fn resolve_with_layers(
         None => uze_theme::Identity::from_file(id, uze_theme::default_file()),
     };
 
-    let overrides = overrides(home)?;
+    let overrides = if with_overrides {
+        overrides(app)?
+    } else {
+        None
+    };
     let glyphs = app.themes().glyphs()?;
     let glyph_set = glyphs.as_deref().and_then(uze_theme::glyph_set_file);
     let mut layers: Vec<&ThemeFile> = vec![uze_theme::default_file()];
@@ -156,7 +185,7 @@ pub fn resolve_with_layers(
             .map(|id| format!("`{id}`")),
     );
     if overrides.is_some() {
-        named.push(home.theme_overrides_path().display().to_string());
+        named.push(OVERRIDES_SOURCE.to_owned());
     }
 
     uze_theme::resolve_stack(&identity, &layers)
@@ -315,15 +344,17 @@ fn written(
     )))
 }
 
+/// Where the operator's overrides are read from, as a message names it.
+const OVERRIDES_SOURCE: &str = "config.toml [appearance]";
+
 /// The operator's own overrides, if they wrote any.
-fn overrides(home: &UzeHome) -> Result<Option<ThemeFile>> {
-    let path = home.theme_overrides_path();
-    if !path.exists() {
+fn overrides(app: &UzeApplication) -> Result<Option<ThemeFile>> {
+    let Some((layer, source)) = app.themes().overrides()? else {
         return Ok(None);
-    }
-    uze_theme::parse_file(&path)
+    };
+    uze_theme::parse_value(source, layer)
         .map(Some)
-        .map_err(|error| unusable(format!("{}: {error}", path.display())))
+        .map_err(|error| unusable(format!("{source}: {error}")))
 }
 
 fn unusable(message: String) -> UzeError {
@@ -342,11 +373,11 @@ fn unusable(message: String) -> UzeError {
 /// force, so it has to say so every time until it is fixed.
 pub fn install(home: &UzeHome) -> Vec<String> {
     match chosen(home) {
-        Ok(Some(loaded)) => {
+        Ok((Some(loaded), problems)) => {
             uze_theme::set_active(loaded.theme);
-            Vec::new()
+            problems
         }
-        Ok(None) => Vec::new(),
+        Ok((None, problems)) => problems,
         Err(problem) => vec![problem],
     }
 }
@@ -364,19 +395,22 @@ pub fn install(home: &UzeHome) -> Vec<String> {
 ///
 /// `Ok(None)` is "nothing to apply": the selection draws in the built-in
 /// default, with no glyph set and no overrides — already in force.
-fn chosen(home: &UzeHome) -> std::result::Result<Option<Loaded>, String> {
+/// Overrides that do not resolve are said and left out: the theme they
+/// sit on still draws.
+fn chosen(home: &UzeHome) -> std::result::Result<(Option<Loaded>, Vec<String>), String> {
     let Ok(app) = UzeApplication::from_env(home.clone()) else {
         // Appearance is not worth failing a command over. If the facade
         // cannot be built, whatever the operator actually asked for is
         // about to report the same problem far more usefully.
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
 
     // A glyph set, or overrides, on the default still apply: how this
     // terminal draws is the operator's, not a property of having chosen a
     // palette.
     let has_opinion = |app: &UzeApplication| {
-        matches!(app.themes().glyphs(), Ok(Some(_))) || home.theme_overrides_path().exists()
+        matches!(app.themes().glyphs(), Ok(Some(_)))
+            || matches!(app.themes().overrides(), Ok(Some(_)))
     };
     // A settings file that does not parse is reported, not read as empty:
     // the theme it names is silently not in force, which is exactly the
@@ -384,12 +418,18 @@ fn chosen(home: &UzeHome) -> std::result::Result<Option<Loaded>, String> {
     let id = app.themes().active().map_err(|error| error.to_string())?;
     let draws_in = concrete(&app, &id).map_err(|error| error.to_string())?;
     if draws_in == uze_theme::DEFAULT_THEME && !has_opinion(&app) {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     }
 
-    resolve(&app, home, &id)
-        .map(Some)
-        .map_err(|error| error.to_string())
+    match resolve(&app, home, &id) {
+        Ok(loaded) => Ok((Some(loaded), Vec::new())),
+        Err(problem) => match assemble(&app, home, &id, false) {
+            Ok((loaded, _)) if problem.to_string().starts_with(OVERRIDES_SOURCE) => {
+                Ok((Some(loaded), vec![problem.to_string()]))
+            }
+            _ => Err(problem.to_string()),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -422,7 +462,7 @@ mod tests {
     fn no_selection_says_nothing_and_leaves_the_default_in_force() {
         let home = scratch("theme-install-none");
         assert!(
-            matches!(chosen(&home), Ok(None)),
+            matches!(chosen(&home), Ok((None, _))),
             "nothing chosen is nothing to do"
         );
     }
@@ -445,13 +485,13 @@ mod tests {
         select(&home, ADAPTIVE);
 
         // Nothing has been observed yet: dark, the default already in force.
-        assert!(matches!(chosen(&home), Ok(None)));
+        assert!(matches!(chosen(&home), Ok((None, _))));
 
         app(&home)
             .themes()
             .observe_background(Background::Light)
             .expect("observed");
-        let loaded = chosen(&home).expect("resolves").expect("chosen");
+        let loaded = chosen(&home).expect("resolves").0.expect("chosen");
         assert_eq!(background_drawn(&loaded), Background::Light);
         assert_eq!(
             concrete(&app(&home), ADAPTIVE).expect("concrete"),
@@ -467,7 +507,7 @@ mod tests {
             .themes()
             .observe_background(Background::Light)
             .expect("observed");
-        let loaded = chosen(&home).expect("resolves").expect("chosen");
+        let loaded = chosen(&home).expect("resolves").0.expect("chosen");
         assert_eq!(background_drawn(&loaded), Background::Light);
     }
 
@@ -684,11 +724,7 @@ mod tests {
     #[test]
     fn the_operators_overrides_win_over_the_set_and_the_theme_both() {
         let home = scratch("theme-overrides-win");
-        fs::write(
-            home.theme_overrides_path(),
-            r##"{ "symbols": { "status.idle": "@" } }"##,
-        )
-        .expect("overrides");
+        write_config(&home, "[appearance.symbols]\n\"status.idle\" = \"@\"\n");
         write_theme(&home, "loud", r##"{ "symbols": { "status.idle": "!" } }"##);
         select(&home, "loud");
         set_glyphs(&home, "ascii");
@@ -706,6 +742,7 @@ mod tests {
         // set with no palette used to fall through and answer with nothing.
         let loaded = chosen(&home)
             .expect("a set alone resolves")
+            .0
             .expect("and is something to apply");
         assert_eq!(loaded.theme.glyph(uze_theme::Symbol::StatusIdle), ".");
     }
@@ -753,14 +790,37 @@ mod tests {
         assert!(message.contains("`mine` extends"), "{message}");
     }
 
+    /// Appends `text` to the operator's `config.toml`.
+    fn write_config(home: &UzeHome, text: &str) {
+        let path = home.config_path();
+        let mut current = fs::read_to_string(&path).unwrap_or_default();
+        current.push_str(text);
+        fs::write(&path, current).expect("config.toml");
+    }
+
+    #[test]
+    fn an_override_that_does_not_resolve_is_reported_naming_the_settings_file() {
+        let home = scratch("theme-overrides-unresolvable");
+        write_config(
+            &home,
+            "[appearance.colors]\n\"accent\" = \"not a colour\"\n",
+        );
+        write_theme(&home, "one", r##"{ "symbols": { "status.idle": "1" } }"##);
+
+        let error = resolve(&app(&home), &home, "one").expect_err("not a colour");
+        assert!(
+            error.to_string().contains("config.toml [appearance]"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn the_operators_overrides_outlast_the_theme_they_are_applied_over() {
         let home = scratch("theme-overrides");
-        fs::write(
-            home.theme_overrides_path(),
-            r##"{ "symbols": { "status.idle": "@" }, "colors": { "text.muted": "#010203" } }"##,
-        )
-        .expect("overrides");
+        write_config(
+            &home,
+            "[appearance.symbols]\n\"status.idle\" = \"@\"\n\n[appearance.colors]\n\"text.muted\" = \"#010203\"\n",
+        );
         write_theme(&home, "one", r##"{ "symbols": { "status.idle": "1" } }"##);
         write_theme(&home, "two", r##"{ "symbols": { "status.idle": "2" } }"##);
 

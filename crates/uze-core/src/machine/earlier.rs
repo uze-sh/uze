@@ -12,13 +12,22 @@ const PROJECTION_MARKER: &str = "project.json";
 
 /// This concern's entries.
 pub(crate) fn earlier() -> Vec<Earlier> {
-    vec![Earlier {
-        name: "runtime projection markers named project.json",
-        // Replaced when the projection is next prepared: unbounded.
-        lasts: Lasts::Unbounded,
-        spelled: &[],
-        site: file!(),
-    }]
+    vec![
+        Earlier {
+            name: "runtime projection markers named project.json",
+            // Replaced when the projection is next prepared: unbounded.
+            lasts: Lasts::Unbounded,
+            spelled: &[],
+            site: file!(),
+        },
+        Earlier {
+            name: "theme overrides and [memory] harness kept outside today's config.toml shape",
+            // Carried when the carry next runs: unbounded.
+            lasts: Lasts::Unbounded,
+            spelled: &[],
+            site: file!(),
+        },
+    ]
 }
 
 /// Carries every record this build renamed (a retired owned path naming
@@ -28,6 +37,9 @@ pub(crate) fn earlier() -> Vec<Earlier> {
 /// rename that fails leaves the bytes where they were. A few `stat`s once
 /// carried, so it runs wherever the records' readers and writers start.
 pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
+    if project.is_none() {
+        carry_settings(home);
+    }
     for retired in crate::UzeHome::owned_paths() {
         let Some(current) = retired.renamed_to.and_then(crate::UzeHome::owned_path) else {
             continue;
@@ -54,6 +66,43 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
             }
             let _ = std::fs::rename(&was, &now);
         }
+    }
+}
+
+/// Carries what an earlier release kept outside `config.toml` into it: the
+/// overrides of the active theme (`theme-overrides.json`) into
+/// `[appearance.colors|symbols|syntax]`, and `[memory] harness` to
+/// `[memory] native`. A key the operator already has is never replaced; a `config.toml` that does not parse stops the carry, and the
+/// earlier file stays where it is to be carried once it is fixed.
+fn carry_settings(home: &crate::UzeHome) {
+    let overrides = home.retired_theme_overrides_path();
+    if let Ok(text) = std::fs::read_to_string(&overrides) {
+        match serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text) {
+            Ok(layer) => {
+                let tables = layer
+                    .into_iter()
+                    .filter(|(field, _)| ["colors", "symbols", "syntax"].contains(&field.as_str()))
+                    .collect();
+                match crate::config::add_tables(home, "appearance", &tables) {
+                    Ok(_) => {
+                        let _ = std::fs::remove_file(&overrides);
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "the theme overrides were not carried into config.toml")
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(path = %overrides.display(), %error, "the theme overrides are not JSON; left where they are")
+            }
+        }
+    }
+    // Read before any lock is taken: every process passes here, and only
+    // a machine still holding the old key pays for the write.
+    if matches!(crate::config::get(home, "memory", "harness"), Ok(Some(_)))
+        && let Err(error) = crate::config::rename_key(home, "memory", "harness", "native")
+    {
+        tracing::warn!(%error, "`[memory] harness` was not carried to `native`");
     }
 }
 
@@ -172,6 +221,67 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(home.retired_release_path()).unwrap(),
             "older"
+        );
+    }
+
+    #[test]
+    fn the_theme_overrides_and_the_memory_key_are_carried_into_config_toml() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-settings").join("uze"));
+        std::fs::create_dir_all(home.root()).unwrap();
+        std::fs::write(
+            home.retired_theme_overrides_path(),
+            r##"{ "symbols": { "status.idle": "@", "mark.native": { "glyph": "N", "width": 2 } },
+                 "colors": { "accent": "#bd93f9", "state.success": "#50fa7b" } }"##,
+        )
+        .unwrap();
+        std::fs::write(
+            home.config_path(),
+            "# mine\n[memory]\nharness = \"off\" # keep it quiet\n\n[appearance.colors]\naccent = \"#000000\"\n",
+        )
+        .unwrap();
+
+        carry_renamed(&home, None);
+        carry_renamed(&home, None);
+
+        assert!(!home.retired_theme_overrides_path().exists());
+        let text = std::fs::read_to_string(home.config_path()).unwrap();
+        assert!(
+            text.contains("# mine") && text.contains("# keep it quiet"),
+            "{text}"
+        );
+        assert_eq!(
+            crate::config::get(&home, "memory", "native")
+                .unwrap()
+                .as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            crate::config::get(&home, "memory", "harness").unwrap(),
+            None
+        );
+        let layer = crate::appearance::overrides(&home).unwrap().unwrap();
+        assert_eq!(layer["symbols"]["status.idle"], "@");
+        assert_eq!(layer["symbols"]["mark.native"]["width"], 2);
+        assert_eq!(
+            layer["colors"]["accent"], "#000000",
+            "the operator's own table is kept"
+        );
+    }
+
+    #[test]
+    fn a_config_that_does_not_parse_keeps_the_overrides_where_they_are() {
+        let home =
+            crate::UzeHome::at(uze_testkit::temp::scratch("carry-settings-broken").join("uze"));
+        std::fs::create_dir_all(home.root()).unwrap();
+        std::fs::write(home.retired_theme_overrides_path(), r#"{ "colors": {} }"#).unwrap();
+        std::fs::write(home.config_path(), "[appearance\n").unwrap();
+
+        carry_renamed(&home, None);
+
+        assert!(home.retired_theme_overrides_path().exists());
+        assert_eq!(
+            std::fs::read_to_string(home.config_path()).unwrap(),
+            "[appearance\n"
         );
     }
 }
