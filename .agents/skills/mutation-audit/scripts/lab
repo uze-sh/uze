@@ -28,6 +28,9 @@ done
 
 copy="$AUDIT/boxes/mutants/work/uze"
 mkdir -p "$copy"
+# Only the build cache outlives a run. A test file the checkout no longer has
+# would still compile here and catch mutants, a proof of nothing.
+find "$copy" -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
 git -C "$checkout" ls-files --cached --others --exclude-standard -z |
   (cd "$checkout" && tar --null --ignore-failed-read -T - -c) |
   tar -x -C "$copy"
