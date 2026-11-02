@@ -805,11 +805,12 @@ operator rather than assume.
 - A surface's header shows only its capitalised name, muted; paths and
   branches go in the bottom decoration.
 - A screen's figures about all it holds (the Overview's tokens per session,
-  sessions, since when, last sync) are a card at the foot of its menu's
-  column, a name and a figure per row, the names under the menu's labels
+  sessions, since when, last sync) stand at the foot of its menu's column
+  on `SurfaceRecessed` with a `Rule` down its left and a row of air over
+  and under them, never a framed box: a name and a figure per row, the names under the menu's labels
   and the figures under its counts: never a sentence beside the title,
   which narrower screens cut. The title keeps the short description every
-  screen has (`Route::subtitle`), so no screen's heading stands bare. With too little height the card's rows give
+  screen has (`Route::subtitle`), so no screen's heading stands bare. With too little height its rows give
   way from its head, the sections and the freshness staying.
 
 ## CLI output

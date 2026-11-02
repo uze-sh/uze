@@ -4,9 +4,9 @@
 //! The screen's name, what it is for and the field that narrows it (a
 //! harness), then three columns: a menu of sections (uze's own findings while
 //! there are any, then each kind of resource with its count and what in it
-//! needs looking at) over
-//! a card of what the machine holds, the table of the section chosen with its
-//! own search, and a panel describing the row the keyboard is on.
+//! needs looking at) over a block of what the machine holds, the table of the
+//! section chosen with its own search, and a panel describing the row the
+//! keyboard is on.
 
 use ratatui::{
     layout::Rect,
@@ -27,7 +27,7 @@ use crate::ui::machine::{
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::view::health::{Alert, Severity};
-use crate::ui::widget::{Surface, TRAILING_PAD, definitions, message, row, text};
+use crate::ui::widget::{Edge, Rule, TRAILING_PAD, definitions, fill, message, row, text};
 
 use super::FIELD_KEY_WIDTH;
 
@@ -46,7 +46,7 @@ const STATUS_WIDTH: usize = 14;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
 /// The menu's width, and the air between it and the table. Wide enough for
-/// the card under it to say `tokens/session ~12.4k` on one row.
+/// the block under it to say `tokens/session ~12.4k` on one row.
 const MENU_WIDTH: u16 = 24;
 const MENU_GAP: u16 = 3;
 const ROW_INDENT: usize = 2;
@@ -223,28 +223,38 @@ fn render_menu(
     }
 }
 
-/// What the machine holds, on a card against the foot of the menu's column.
-/// With too little room under the sections, the rows at its head give way
-/// first, so the one saying how fresh it all is stays.
+/// What the machine holds, on a darker block with a rule down its left,
+/// against the foot of the menu's column. With too little room under the
+/// sections, the rows at its head give way first, so the one saying how fresh
+/// it all is stays.
 fn render_facts(frame: &mut ratatui::Frame<'_>, area: Rect, model: &TuiModel, findings: usize) {
-    const BORDERS: u16 = 2;
+    /// A row of the block's ground over its rows and another under them.
+    const AIR: u16 = 2;
     const AIR_OVER: u16 = 1;
     let facts = facts(model);
     let sections = model.remembered.machine.sections(findings).len() as u16;
     let room = area
         .height
-        .saturating_sub(sections + AIR_OVER + BORDERS)
+        .saturating_sub(sections + AIR_OVER + AIR)
         .min(facts.len() as u16);
     if room == 0 {
         return;
     }
-    let height = room + BORDERS;
-    let card = Rect::new(area.x, area.bottom() - height, area.width, height);
-    // One column on the left, so its names stand under the menu's labels; the
-    // trailing pad its figures keep ends them under the menu's counts.
-    let inner = Surface::card()
-        .padding(Padding::left(1))
-        .render(frame, card);
+    let height = room + AIR;
+    let block = Rect::new(area.x, area.bottom() - height, area.width, height);
+    fill(frame, block, Token::SurfaceRecessed);
+    // One column after the rule, so its names stand under the menu's labels;
+    // the trailing pad its figures keep ends them under the menu's counts.
+    let inner = Rule::new(Edge::Left)
+        .tone(Token::BorderDefault)
+        .ground(Token::SurfaceRecessed)
+        .padding(Padding {
+            left: 1,
+            right: 0,
+            top: 1,
+            bottom: 1,
+        })
+        .render(frame, block);
     let lines: Vec<Line<'static>> = facts[facts.len() - usize::from(room)..]
         .iter()
         .map(|fact| fact_line(fact, inner.width))
@@ -509,7 +519,7 @@ fn render_header(
     }
 }
 
-/// A row of the card: what it names and what it says about it.
+/// A row of the block: what it names and what it says about it.
 struct Fact {
     name: &'static str,
     said: String,
