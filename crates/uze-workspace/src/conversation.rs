@@ -382,12 +382,7 @@ pub fn collect_session_documents(home: &UzeHome) -> Vec<PathBuf> {
 /// are listed and before the records are read: where a launch landing
 /// mid-collection falls.
 fn collect_session_documents_with(home: &UzeHome, between: impl FnOnce()) -> Vec<PathBuf> {
-    if home
-        .scattered_project_records("")
-        .directories
-        .iter()
-        .any(|directory| directory.exists())
-    {
+    if uze_core::project_earlier::holds_records_before_the_move(home) {
         return Vec::new();
     }
     // Documents are listed before the records are read: a launch records

@@ -15,6 +15,6 @@ impl Workspace<'_> {
     #[tracing::instrument(name = "workspace.leftover_regions", skip_all, fields(cwd = %cwd.display()))]
     pub fn leftover_regions(&self, cwd: &Path) -> Option<RetiredRegionsPlan> {
         let primary = worktree::primary_checkout(cwd)?;
-        regions::plan(&self.0.leftover_region_files(&primary))
+        regions::plan(&self.0.region_files(&primary))
     }
 }

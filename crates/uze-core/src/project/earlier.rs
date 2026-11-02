@@ -69,6 +69,16 @@ pub(crate) fn carry_across_the_move(home: &UzeHome, id: &str) {
     }
 }
 
+/// Whether any project's records are still in the layout before they were
+/// gathered under one directory, which a collector reading every record
+/// has to wait on: one of them may be what names what it would remove.
+pub fn holds_records_before_the_move(home: &UzeHome) -> bool {
+    home.scattered_project_records("")
+        .directories
+        .iter()
+        .any(|directory| directory.exists())
+}
+
 /// The workspace's isolation policy, projected until the launch carried it.
 pub const WORKTREE_POLICY: &str = "project:worktree-policy";
 

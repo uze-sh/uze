@@ -49,7 +49,7 @@ impl UzeApplication {
     /// registered harness that declares a bridge file is named, detected
     /// or not: a leftover bridge is in the project whether or not the
     /// harness is still on this machine.
-    pub(crate) fn leftover_region_files(&self, project_root: &Path) -> Files {
+    pub(crate) fn region_files(&self, project_root: &Path) -> Files {
         let mut bridges: Vec<PathBuf> = self
             .integrations
             .iter()
@@ -149,6 +149,14 @@ fn bridge_fate(file: &Path) -> Option<BridgeFate> {
         AttachmentState::Matched => Some(BridgeFate::Region),
         _ => Some(BridgeFate::Kept(inspection.reason)),
     }
+}
+
+/// What the cleanup would take out at `canonical`, or `None` in a
+/// linked worktree or when nothing is left to take.
+pub(crate) fn pending(app: &UzeApplication, canonical: &Path) -> Option<RetiredRegionsPlan> {
+    applies_at(canonical)
+        .then(|| plan(&app.region_files(canonical)))
+        .flatten()
 }
 
 /// What [`remove`] would do, without writing. `None` when nothing retired

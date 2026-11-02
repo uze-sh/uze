@@ -257,10 +257,7 @@ impl Project<'_> {
     ///
     /// One read of each file, and no harness is asked anything.
     fn stale_projection(&self, canonical: &Path) -> Option<StaleProjection> {
-        if !super::earlier::regions::applies_at(canonical) {
-            return None;
-        }
-        let plan = super::earlier::regions::plan(&self.0.leftover_region_files(canonical))?;
+        let plan = super::earlier::regions::pending(self.0, canonical)?;
         let projected_identity = plan.remove.into_iter().next().or_else(|| {
             plan.bridges
                 .iter()

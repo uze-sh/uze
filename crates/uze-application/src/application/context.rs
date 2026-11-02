@@ -80,7 +80,7 @@ impl Context<'_> {
 
         let portability = derive_portability(agents_md_exists, &sources);
         let warnings = derive_warnings(agents_md_exists, &sources);
-        let leftover_regions = self.leftover_regions(&canonical);
+        let leftover_regions = regions::pending(self.0, &canonical);
 
         Ok(ProjectContextStatus {
             root: project_root.to_path_buf(),
@@ -98,7 +98,7 @@ impl Context<'_> {
         let canonical = self.scope(project_root)?;
         Ok(ContextPlan {
             agents_md: canonical.join(AGENTS_MD_FILE_NAME),
-            leftover_regions: self.leftover_regions(&canonical),
+            leftover_regions: regions::pending(self.0, &canonical),
         })
     }
 
@@ -107,7 +107,7 @@ impl Context<'_> {
     #[tracing::instrument(name = "context.reconcile", skip_all, fields(project_root = %project_root.display()), err)]
     pub fn reconcile(&self, project_root: &Path) -> Result<ContextReconciliationReport> {
         let canonical = self.scope(project_root)?;
-        let files = self.0.leftover_region_files(&canonical);
+        let files = self.0.region_files(&canonical);
         let leftover_regions = if regions::applies_at(&canonical) {
             // A whole-file read-modify-write, so one pass at a time per project.
             let _guard = AgentsMdGuard::acquire(&self.0.home, &canonical)?;
@@ -119,14 +119,6 @@ impl Context<'_> {
             agents_md: files.agents_md,
             leftover_regions,
         })
-    }
-
-    /// What the cleanup would take out at `canonical`, or `None` in a
-    /// linked worktree or when nothing is left to take.
-    fn leftover_regions(&self, canonical: &Path) -> Option<RetiredRegionsPlan> {
-        regions::applies_at(canonical)
-            .then(|| regions::plan(&self.0.leftover_region_files(canonical)))
-            .flatten()
     }
 
     /// The project `project_root` belongs to.

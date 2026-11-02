@@ -148,7 +148,15 @@ fn workspace_sources() -> Vec<(String, String)> {
 }
 
 /// The identifiers that mark support for an earlier release, in code.
-const MARKS: &[&str] = &["legacy_", "retired_", "earlier_"];
+const MARKS: &[&str] = &[
+    "legacy_",
+    "retired_",
+    "earlier_",
+    "leftover_",
+    "scattered_",
+    "RetiredRegion",
+    "RetiredBridge",
+];
 
 /// Files that spell a mark for a reason that is not UZE's own past.
 const MARKS_SANCTIONED: &[(&str, &str)] = &[
@@ -163,6 +171,38 @@ const MARKS_SANCTIONED: &[(&str, &str)] = &[
     (
         "crates/uze-application/src/application/read_models.rs",
         "`retired_regions` is the key the JSON output has always carried",
+    ),
+    (
+        "crates/uze-application/src/application/context.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "crates/uze-application/src/application/services/regions.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/cli/status.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/main.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/ui/orchestrator.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/ui/orchestrator/reads.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/ui/orchestrator/session/absorb.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
+    ),
+    (
+        "src/ui/worker.rs",
+        "carries the leftover-regions read model `earlier::regions` answers; goes with that entry",
     ),
 ];
 
