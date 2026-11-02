@@ -1,7 +1,8 @@
 //! What the machine concern does only because an earlier release left it
 //! (the `earlier-releases` rule): a runtime projection's marker under the
 //! name earlier releases wrote, read so a running agent's projection is not
-//! swept before its next launch writes the current one.
+//! swept before its next launch writes the current one, and written so the
+//! floor release, running beside this one, does not sweep it either.
 
 use std::path::{Path, PathBuf};
 
@@ -15,8 +16,10 @@ pub(crate) fn earlier() -> Vec<Earlier> {
     vec![
         Earlier {
             name: "runtime projection markers named project.json",
-            // Replaced when the projection is next prepared: unbounded.
-            lasts: Lasts::Unbounded,
+            // Read until the projection is next prepared, and written beside
+            // root.json for as long as the floor release may run beside this
+            // one.
+            lasts: Lasts::Until(uze_document::earlier::Release::beta(1, 0, 0, 22)),
             spelled: &[],
             site: file!(),
         },
@@ -134,9 +137,15 @@ pub(crate) fn projection_root(project_dir: &Path) -> Option<PathBuf> {
     super::harness_runtime::read_marker(&project_dir.join(PROJECTION_MARKER))
 }
 
-/// Removes that marker once the current one is written.
-pub(crate) fn remove_projection_marker(project_dir: &Path) {
-    let _ = std::fs::remove_file(project_dir.join(PROJECTION_MARKER));
+/// Writes that marker beside the current one: a release at the floor,
+/// running on the same machine, reads only this name, and sweeps a
+/// projection it cannot find a root for while its agents are still in it.
+pub(crate) fn write_projection_marker(project_dir: &Path, marker: &[u8]) -> crate::Result<()> {
+    let path = project_dir.join(PROJECTION_MARKER);
+    if std::fs::read(&path).is_ok_and(|current| current == marker) {
+        return Ok(());
+    }
+    crate::persistence::write_atomic_unsynced(&path, marker)
 }
 
 #[cfg(test)]
@@ -161,8 +170,25 @@ mod tests {
         );
 
         crate::harness_runtime::prepare_projection(&home, "fake-harness", &project).unwrap();
-        assert!(!dir.join(PROJECTION_MARKER).exists());
         assert_eq!(crate::harness_runtime::projection_root(&dir), Some(project));
+    }
+
+    #[test]
+    fn a_projection_this_build_prepares_still_names_its_root_to_the_floor_release() {
+        let scratch = uze_testkit::temp::scratch("earlier-projection-marker-written");
+        let project = scratch.join("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        let home = crate::UzeHome::at(scratch.join("uze"));
+
+        crate::harness_runtime::prepare_projection(&home, "fake-harness", &project).unwrap();
+
+        let dir = home.runtime_project_dir(&crate::harness_runtime::project_id_for(&project));
+        assert_eq!(
+            projection_root(&dir),
+            crate::harness_runtime::projection_root(&dir),
+            "a release at the floor running beside this one finds the projection live"
+        );
+        assert!(projection_root(&dir).is_some());
     }
 
     #[test]

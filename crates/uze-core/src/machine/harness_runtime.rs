@@ -367,12 +367,10 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
         root: canonical_project_root.to_path_buf(),
     })
     .expect("marker serialization is infallible");
-    if fs::read(&path).is_ok_and(|current| current == desired) {
-        return Ok(());
+    if !fs::read(&path).is_ok_and(|current| current == desired) {
+        write_atomic_unsynced(&path, &desired)?;
     }
-    write_atomic_unsynced(&path, &desired)?;
-    crate::machine::earlier::remove_projection_marker(project_dir);
-    Ok(())
+    crate::machine::earlier::write_projection_marker(project_dir, &desired)
 }
 
 #[cfg(test)]
@@ -606,7 +604,12 @@ mod tests {
         children.sort();
         assert_eq!(
             children,
-            ["first-harness", PROJECTION_MARKER, "second-harness"]
+            [
+                "first-harness",
+                "project.json",
+                PROJECTION_MARKER,
+                "second-harness"
+            ]
         );
 
         let _ = fs::remove_dir_all(project.parent().unwrap());
