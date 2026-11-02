@@ -203,10 +203,12 @@ fn subjects(code: &CodeView) -> Vec<Mode> {
         .map(|half| Mode {
             label: match half {
                 Half::Files => "Files".to_owned(),
+                Half::Search => "Search".to_owned(),
                 Half::Map => "Map".to_owned(),
             },
             icon: match half {
                 Half::Files => RowIcon::Directory,
+                Half::Search => RowIcon::Search,
                 Half::Map => RowIcon::Map,
             },
             active: half == here,
@@ -362,12 +364,12 @@ fn listing(_code: &CodeView) -> bool {
     true
 }
 
-/// The files' list while its search holds text: the field, then each file
-/// it found something in and the lines it found.
+/// The search's list: the field, then each file it found something in and
+/// the lines it found.
 fn search_navigator(code: &CodeView) -> Navigator {
     let focused = code.focus == super::Focus::Navigator;
     Navigator {
-        heading: "FILES".to_owned(),
+        heading: "SEARCH".to_owned(),
         badge: String::new(),
         focused,
         rows: code.search.rows(),
@@ -385,8 +387,7 @@ fn files_navigator(code: &CodeView) -> Navigator {
         .as_ref()
         .and_then(|path| rows.iter().position(|row| &row.path == path));
     Navigator {
-        // The search stands over the tree, ready to be typed into.
-        field: Some(code.search.field(code.focus == Focus::Navigator)),
+        field: None,
         heading: "FILES".to_owned(),
         badge: rows.iter().filter(|row| !row.directory).count().to_string(),
         focused: code.focus == Focus::Navigator,

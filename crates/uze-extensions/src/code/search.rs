@@ -96,7 +96,7 @@ pub(super) fn parse(root: &Path, output: &str) -> Findings {
 }
 
 /// The search half's state.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct Search {
     /// What is in the field.
     pub(super) query: String,

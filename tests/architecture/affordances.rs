@@ -226,7 +226,7 @@ fn affordances() -> BTreeMap<Action, Affordance> {
     );
     put(
         Action::FindInFiles,
-        Control("the search field over the code surface's files list"),
+        Control("the code surface's search tab and its field"),
     );
     put(
         Action::CloseFileTab,

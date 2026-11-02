@@ -130,14 +130,17 @@ on "cancel" must not save first.
   one keeps its tab with `mark.unsaved` where its close mark stands (the
   close mark again under the pointer). Moving away from unsaved work never
   refuses; the buffer is kept and the tree says `unsaved`.
-- The code surface's search is the files list's own, never a half of its
-  own: a fixed field over the tree (`Navigator::field`) drawn as the new
-  agent's directory filter is — `widget::Field::query`, one row, bold
-  text, the caret alone saying it has the keys, over a faint `Rule` —
-  never the accent-ruled form field; its results take the tree's place while it holds
-  text, and `Esc` or the field's own `×` (`mark::close_tone`) empties it,
-  takes the keys out of it and gives the tree back, opened down to the
-  selection. What it found is said under the
+- The code surface's search is a tab of its own beside the files and the
+  map (`files · search · map`), as an editor's is, never a field over the
+  tree: going to read the tree and back must not cost what it found. Its
+  field (`Navigator::field`) is drawn as the new agent's directory filter
+  is — `widget::Field::query`, one row, bold text, the caret alone saying
+  it has the keys, over a faint `Rule` — never the accent-ruled form field.
+  `ctrl+f` goes to it and into the field from anywhere. `Esc` goes down a
+  level at a time, from the field to the results and from the results to
+  the tree opened down to the selection, and empties nothing; only the
+  field's own `×` (`mark::close_tone`) empties it, keeping the keys there.
+  Changing tab or agent keeps the text, the results and the cursor. What it found is said under the
   field, its results grouped by file with a count, each file's lines
   hanging from a `tree.vertical` guide under its fold mark. A match is set
   apart in its own hue, bold, on its ground — a ground alone is a tint the

@@ -435,6 +435,7 @@ pub enum RowIcon {
     Legal,
     /// A checkout drawn as where its lines are.
     Map,
+    Search,
     /// What a checkout differs from the branch it started from.
     Changes,
     /// Work still being done.
