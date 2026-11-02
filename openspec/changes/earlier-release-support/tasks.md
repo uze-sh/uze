@@ -26,7 +26,7 @@
 ## 4. Project files and checkouts
 
 - [x] 4.1 `retired_region` becomes part of `project/earlier.rs` (`uze_core::project_earlier`), the plan and removal move to `application/earlier/regions.rs`, and the CLI, TUI and workspace readers ask for `leftover_regions`; `StaleProjection` stays as the status read model (D9)
-- [ ] 4.2 `checkout/earlier.rs`: `agent-<n>` slots, several agents naming one slot, `record_on_sight`, `restore_parents`, `slot_owner`, occupancy's tolerance
+- [x] 4.2 `checkout/earlier.rs`: `agent-<n>` slots (`made_before_slots`), `record_on_sight`, `restore_parents` and ending every agent but a shared slot's holder; `slot_owner` and occupancy's release of ended holders stay, as the general rule (D10)
 - [x] 4.3 Marks budgets at zero: the list is empty
 
 ## 5. Wire and command spelling

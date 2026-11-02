@@ -89,3 +89,13 @@
 - decided:  the knowledge of which regions are retired lives in `project/earlier.rs` and `application/earlier/regions.rs`; every reader outside them uses neutral names (`leftover_regions`, `leftover_region_files`, `spawn_leftover_region_check`), the three read-model fields keep the JSON key with `#[serde(rename = "retired_regions")]`, and `StaleProjection` stays the status read model, now computed from `earlier::regions`
 - rejected: folding `StaleProjection` into the plan — it changes the JSON a script may read, a behaviour change this refactor's non-goals exclude
 - blast:    revert the commit; the rename touches about 25 files, tests included
+
+## D10 — `slot_owner` and occupancy's release of ended holders stay general rules
+
+- status:   pending
+- task:     4.2
+- commit:
+- trigger:  the task listed `slot_owner`'s `rfind` and occupancy's tolerance with the checkout entries
+- decided:  both stay where they are, unchanged; the three behaviours only an earlier build's state needs (`agent-<n>` slots, a dropped `parent`, several agents on one slot) move into `checkout/earlier.rs` as entries
+- rejected: moving them too — picking the last-recorded holder and releasing an ended task still naming a checkout are what the store does for any state, today's included; an earlier build is one source of it, not the reason for it
+- blast:    revert the commit

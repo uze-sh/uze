@@ -17,5 +17,6 @@ pub fn earlier() -> Vec<Earlier> {
     entries.extend(crate::task::rungs());
     entries.extend(crate::conversation::rungs());
     entries.extend(crate::extensions::consent::rungs());
+    entries.extend(crate::checkout::earlier::earlier());
     entries
 }
