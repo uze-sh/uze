@@ -425,10 +425,7 @@ impl CodeView {
         self.content = content;
         self.list = list;
         self.search = search;
-        // The answer it was waiting for went with the surface it left.
-        if self.search.pending() {
-            self.ask_search();
-        }
+        self.ask_search_again();
         if !was_files && self.navigator() == NavigatorMode::Files {
             self.expand(self.root.clone());
         }
@@ -1444,6 +1441,7 @@ impl CodeView {
         }
         self.menu = None;
         self.list = NavigatorMode::Search;
+        self.ask_search_again();
         if self.content == ContentMode::Map {
             self.show(self.before_map);
         }
@@ -1459,12 +1457,30 @@ impl CodeView {
         self.reveal_selection();
     }
 
+    /// Shows what a door opens: the tree, in `mode` when leaving the map,
+    /// and otherwise with the file beside it as it was being read.
+    fn go_through_door(&mut self, mode: ContentMode) {
+        if self.content == ContentMode::Map {
+            self.show(mode);
+        }
+        self.leave_search();
+    }
+
     /// Empties the field and stays in it, for the next thing to look for.
     fn clear_search(&mut self) {
         self.stand_on_search();
         self.search.query.clear();
         self.search.typing = true;
         self.ask_search();
+    }
+
+    /// Asks about what the files hold now, for a search come back to: they
+    /// may have changed under an agent's hands, and an answer on its way
+    /// when the surface was put away went with it.
+    fn ask_search_again(&mut self) {
+        if !self.search.query.is_empty() {
+            self.ask_search();
+        }
     }
 
     /// Asks again for what the field holds now, in place of any search

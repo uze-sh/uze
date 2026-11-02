@@ -2655,6 +2655,81 @@ mod hosted {
         );
     }
 
+    /// Typing in `extension`'s open file, then put away the way the host
+    /// puts it away when another agent comes to the front.
+    fn on_show(extension: &CodeExtension) -> String {
+        super::tab_on_show(extension.code_view().unwrap())
+    }
+
+    /// Their door shows the tree from the search and from a map over it,
+    /// rather than shutting the surface or standing on the search.
+    #[test]
+    fn the_files_door_goes_to_the_tree_from_the_search() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Find);
+        assert_eq!(on_show(&extension), "Search");
+
+        assert!(matches!(
+            extension.enter(SURFACE, Entry::Door(FILES.to_owned())),
+            Outcome::Stay
+        ));
+        assert_eq!(on_show(&extension), "Files");
+        assert!(!extension.code_view().unwrap().typing());
+
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Find);
+        view.absorb_measure(measured());
+        press(view, Command::ToggleMap);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        assert_eq!(on_show(&extension), "Files");
+    }
+
+    /// A surface kept for its unsaved work and left on its search: a path
+    /// sent opens in the files with the keys out of the field, its door shows
+    /// the tree, and a search left unanswered is asked again.
+    #[test]
+    fn a_kept_surface_left_on_its_search_answers_a_path_a_door_and_the_search() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+        let keep_on_search = |extension: &mut CodeExtension| {
+            let view = extension.code_view_mut().unwrap();
+            press(view, Command::Find);
+            view.search.query.clear();
+            type_text(view, "fog");
+            extension.close(SURFACE);
+        };
+
+        let mut sent = opened(FILES, "/w");
+        typed_then_put_away(&mut sent, &machine);
+        sent.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        sent.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut sent, &machine);
+        keep_on_search(&mut sent);
+        sent.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/a.txt"),
+                directory: false,
+                line: Some(1),
+            },
+        );
+        sent.open(SURFACE, &checkout("/w"));
+        assert_eq!(on_show(&sent), "Files");
+        assert!(!sent.code_view().unwrap().typing());
+        settle_hosted(&mut sent, &machine);
+
+        keep_on_search(&mut sent);
+        sent.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        sent.open(SURFACE, &checkout("/w"));
+        assert_eq!(on_show(&sent), "Files", "a door decides afresh");
+        settle_hosted(&mut sent, &machine);
+        let view = sent.code_view().unwrap();
+        assert!(!view.search.pending(), "the search was asked again");
+        assert_eq!(view.search.files().len(), 1);
+    }
+
     fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
         settle_hosted(extension, machine);
         let view = extension.code_view_mut().unwrap();
@@ -3521,6 +3596,57 @@ fn a_door_opening_a_document_left_in_its_source_is_not_blank() {
     settle(&mut back, &machine);
     assert_eq!(back.showing(), ContentMode::Preview);
     assert_eq!(back.scroll, 0);
+}
+
+/// A search come back to is asked again, for what the files hold now, and
+/// keeps its cursor on the line it was on while that line is still found.
+#[test]
+fn a_search_come_back_to_is_asked_again_and_keeps_its_cursor() {
+    let before = FakeMachine::default()
+        .with_file("/w/a.txt", "fog\n")
+        .with_file("/w/b.txt", "fog\n");
+    let after = FakeMachine::default()
+        .with_file("/w/a.txt", "gone\n")
+        .with_file("/w/b.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &before);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &before);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    assert_eq!(view.search.files().len(), 2);
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &after);
+    press_tab(&mut view, "Search");
+    settle(&mut view, &after);
+    assert_eq!(view.search.files().len(), 1, "what the files hold now");
+    let (path, line) = view
+        .search
+        .at(view.search.cursor.expect("a cursor"))
+        .unwrap();
+    assert_eq!((path, line), (Path::new("/w/b.txt"), 1));
+
+    let mut back = files_at("/w").returning(view.held());
+    settle(&mut back, &before);
+    assert_eq!(back.search.files().len(), 2, "asked again on the way back");
+}
+
+/// A search still unanswered when the surface was put away gets its answer.
+#[test]
+fn a_search_put_away_unanswered_is_answered_when_it_comes_back() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    let held = view.held();
+
+    let mut back = files_at("/w").returning(held);
+    settle(&mut back, &machine);
+    assert!(!back.search.pending());
+    assert_eq!(back.search.files().len(), 1);
 }
 
 /// Going back to the tree from a search opens it down to the file the

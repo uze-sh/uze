@@ -123,8 +123,15 @@ impl Search {
         if query != self.query {
             return;
         }
+        // The same question asked again keeps the reader's place in it.
+        let kept = (self.answered.as_deref() == Some(query))
+            .then(|| self.cursor.and_then(|cursor| self.at(cursor)))
+            .flatten()
+            .map(|(path, line)| (path.to_path_buf(), line));
+        if self.answered.as_deref() != Some(query) {
+            self.folded.clear();
+        }
         self.answered = Some(query.to_owned());
-        self.folded.clear();
         self.cursor = None;
         match outcome {
             Ok(mut findings) => {
@@ -133,6 +140,7 @@ impl Search {
                 }
                 self.findings = findings;
                 self.error = None;
+                self.cursor = kept.and_then(|(path, line)| self.position_of(&path, line));
             }
             Err(message) => {
                 self.findings = Findings::default();
@@ -154,6 +162,20 @@ impl Search {
 
     pub(super) fn files(&self) -> &[FoundFile] {
         &self.findings.files
+    }
+
+    /// Where the list has `line` of `path`, as (file, line) indices.
+    fn position_of(&self, path: &Path, line: usize) -> Option<(usize, usize)> {
+        let file = self
+            .findings
+            .files
+            .iter()
+            .position(|file| file.path == path)?;
+        let hit = self.findings.files[file]
+            .hits
+            .iter()
+            .position(|hit| hit.line == line)?;
+        Some((file, hit))
     }
 
     /// The file and line `cursor` is on.
