@@ -113,7 +113,7 @@ interpret them.
 
 ### Requirement: Plugin install never provisions harness executables implicitly
 
-`uze install <name>@<marketplace>` SHALL prepare and attach to already
+`uze add <name>@<marketplace>` SHALL prepare and attach to already
 detected harnesses but SHALL NOT install, update, or remove a harness
 executable.
 

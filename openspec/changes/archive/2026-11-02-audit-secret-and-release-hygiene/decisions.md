@@ -1,6 +1,6 @@
 ## D1 — Keep the one redaction rule in `uze-platform`
 
-- status:   pending
+- status:   accepted
 - task:     1.2
 - commit:   squashed on delivery
 - trigger:  the rule had to be reachable from `uze-git`, `uze-core`, `uze-application` and the binary, and `uze-platform`'s charter is "what UZE asks the operating system"
@@ -10,7 +10,7 @@
 
 ## D2 — Redact every text-layer line as a net under the per-field rule
 
-- status:   pending
+- status:   accepted
 - task:     1.2
 - commit:   squashed on delivery
 - trigger:  `#[instrument(err)]` records an error's `Display`, which can echo user input that no field annotation reaches
@@ -20,7 +20,7 @@
 
 ## D3 — Redact the userinfo of any scheme, SSH included
 
-- status:   pending
+- status:   accepted
 - task:     1.2
 - commit:   squashed on delivery
 - trigger:  acquisition only refuses credentials over HTTP(S); `ssh://user:pass@host` passes and reaches spans
@@ -30,7 +30,7 @@
 
 ## D4 — Bind the version through the binary, not through a signed version line
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:   squashed on delivery
 - trigger:  the brief allowed binding the version inside the signed `SHASUMS256.txt` if cheap
@@ -40,7 +40,7 @@
 
 ## D5 — Stage the binary beside its destination and rename it into place
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:   squashed on delivery
 - trigger:  the version must be asked before anything is placed, and `$TMPDIR` may be mounted `noexec`
@@ -50,7 +50,7 @@
 
 ## D6 — Validate a pinned `UZE_VERSION`, and refuse to guess `latest` where nothing redirects
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:   squashed on delivery
 - trigger:  the version is now a path segment chosen before download, and `install.ps1` is tested against a `file:` release that has no redirect to read

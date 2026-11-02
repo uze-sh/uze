@@ -4,7 +4,9 @@
 Which platforms UZE claims to run on, what earns a platform that claim, how
 facts only the operating system holds are asked once per platform, and how
 the installer picks the release asset for the host it runs on.
+
 ## Requirements
+
 ### Requirement: A platform is supported only where it is proven
 
 UZE SHALL treat a platform as supported only when its automated checks build,
@@ -85,3 +87,24 @@ carry, resolving between equivalent spellings where they differ.
 - **WHEN** the host provides only one of the two conventional SHA-256 tools
 - **THEN** the installer uses whichever is present, and refuses up front when
   neither is
+
+### Requirement: The installer installs only the release it resolved
+The installers SHALL resolve `latest` to a concrete release before
+downloading and SHALL download from that release's own path. Before placing
+the binary they SHALL run it and confirm it reports that release, or the
+pinned one; otherwise they SHALL refuse, leave any installed binary as it
+was, and name both versions. The receipt SHALL record the verified release.
+
+#### Scenario: A signed older build served under a newer release
+- **WHEN** the latest release resolves to `v2` and its signed archive holds
+  a binary reporting `1`
+- **THEN** the installer refuses, names both versions, and installs nothing
+
+#### Scenario: A pinned release that is not what it says
+- **WHEN** `UZE_VERSION` names a release whose binary reports another
+  version
+- **THEN** the installer refuses and installs nothing
+
+#### Scenario: Latest cannot be resolved
+- **WHEN** the release host does not answer which release is the latest
+- **THEN** the installer refuses before downloading anything

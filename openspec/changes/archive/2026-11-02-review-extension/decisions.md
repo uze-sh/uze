@@ -1,6 +1,6 @@
 ## D1 — Hand the host a change to apply under the lock, not a record to write
 
-- status:   pending
+- status:   accepted
 - task:     1.6
 - commit:   a9c249d5
 - trigger:  the design named `write_review_record`; a whole record written back would overwrite an answer the agent wrote between the surface's read and its write
@@ -10,7 +10,7 @@
 
 ## D2 — Re-read the record on the list's cadence rather than by its modification time
 
-- status:   pending
+- status:   accepted
 - task:     8.3
 - commit:   be4d1359
 - trigger:  the host offers no stat of a file under `$UZE_HOME`, and the review already reads its list every 1.5 s
@@ -20,7 +20,7 @@
 
 ## D3 — Insert at the caret, since the composer has no selection of its own
 
-- status:   pending
+- status:   overturned (superseded by D11, which is what shipped)
 - task:     6.4
 - commit:   f3cd8e15
 - trigger:  the spec asked the controls to fence or wrap "the selected text", but a terminal composer's text is selected by the host for copying, never handed to the extension as a range
@@ -30,7 +30,7 @@
 
 ## D4 — Say viewed and the comment actions in words
 
-- status:   pending
+- status:   accepted
 - task:     6.5, 7.1
 - commit:   efd4319a
 - trigger:  `no_chrome_glyph_is_written_where_it_is_drawn` refuses ✓ ● ○ × │ in an extension: the host draws chrome
@@ -40,7 +40,7 @@
 
 ## D5 — Name the commands in the send line, not in the launch instructions
 
-- status:   pending
+- status:   accepted
 - task:     9.4
 - commit:   efd4319a
 - trigger:  a bullet on reading and answering a review pushed the longest launch instructions past their 2,000-byte share (`the_longest_policy_fits_its_share_uncut`)
@@ -50,7 +50,7 @@
 
 ## D6 — The review discards through its own job; the code surface no longer discards
 
-- status:   pending
+- status:   accepted
 - task:     2.3, 10.1
 - commit:   069b9728
 - trigger:  the design kept discard with the changed row and named two callers of `restore_to_head`; with the changes gone from `code`, its discard had no row to stand on
@@ -60,7 +60,7 @@
 
 ## D7 — Offer the filter beside the viewed chip, over the diff
 
-- status:   pending
+- status:   overturned (superseded by D10, which is what shipped)
 - task:     3.4
 - commit:   f3cd8e15
 - trigger:  the design put `all · uncommitted` on the surface's mode row, but a view's top row is the host's, and its `subjects` stand over the navigator
@@ -70,7 +70,7 @@
 
 ## D8 — Leave the agent's reply out of the journey
 
-- status:   pending
+- status:   accepted
 - task:     11.5
 - commit:   6efe958c
 - trigger:  a journey's shell holds no agent's launch key, which `uze agent review reply` requires, and the stand-in harness does not run commands
@@ -80,7 +80,7 @@
 
 ## D9 — The code tree no longer marks changed files
 
-- status:   pending
+- status:   accepted
 - task:     2.3
 - commit:   069b9728
 - trigger:  the tree's status markers were read from the changes half, which left
@@ -90,7 +90,7 @@
 
 ## D10 — Offer the filter on the bar's leading slot, superseding D7
 
-- status:   pending
+- status:   accepted
 - task:     3.4
 - commit:   
 - trigger:  the operator, in the workspace, switched to `uncommitted` on a branch with nothing uncommitted and was left with no way back: an empty list is a message, and a message carries none of the content's chips
@@ -100,7 +100,7 @@
 
 ## D11 — One code-block control, an empty fence in the file's language, superseding D3
 
-- status:   pending
+- status:   accepted
 - task:     6.4
 - commit:   
 - trigger:  the operator, writing a comment, read `{ } code block` and `` ` code `` as two names for one thing, and the block arrived holding the marked lines rather than room to write what they should say
@@ -110,7 +110,7 @@
 
 ## D12 — The door counts the branch alone
 
-- status:   pending
+- status:   accepted
 - task:     4.2
 - commit:   
 - trigger:  the operator, reading `+9,560 -3,112 ◆2` on the tab strip, asked for the gold count to go and the diff's count alone to stay
@@ -120,7 +120,7 @@
 
 ## D13 — The drafts are sent from a drawer the bar opens, not from a key
 
-- status:   pending
+- status:   accepted
 - task:     9.1
 - commit:   
 - trigger:  the operator saved two comments and found the agent had none: `s` sent from the review alone, nothing outside it said the drafts were unsent, and the gold count had left the door (D12)
@@ -130,7 +130,7 @@
 
 ## D14 — Bundled extensions may stand on the bar, plugins only there
 
-- status:   pending
+- status:   accepted
 - task:     9.1
 - commit:   
 - trigger:  the operator's hierarchy: a bundled extension may use the tab strip and the bar; one that is not bundled, the bar alone
@@ -140,7 +140,7 @@
 
 ## D15 — A bundled extension's ask is shown in the operator's words; a plugin's whole
 
-- status:   pending
+- status:   accepted
 - task:     9.1
 - commit:   
 - trigger:  the operator, reading the send's confirmation, found it told them to run `uze agent review show`, a command for the agent, not for them
@@ -150,7 +150,7 @@
 
 ## D16 — The comments' item stands only beside the agent's pane
 
-- status:   pending
+- status:   accepted
 - task:     9.1
 - commit:   
 - trigger:  the comments drawer pushed whatever stood in the pane aside; the operator first asked it to float over a view, then chose instead to show its bar item only on the agent's tab

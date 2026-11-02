@@ -36,14 +36,14 @@ the checkout has not been measured, the map SHALL NOT be offered.
 
 ### Requirement: The map is offered beside the file tree, never beside the changes
 The map SHALL be offered only where the file tree is what the surface is
-navigating. The changes half SHALL NOT offer it, by chip or by key: a
-map of the whole checkout answers a question nobody reviewing a change is
-asking.
+navigating. A checkout's changes are the review's, which SHALL NOT offer
+the map, by chip or by key: a map of the whole checkout answers a question
+nobody reviewing a change is asking.
 
 #### Scenario: Beside the tree, and not beside the diff
-- **WHEN** the surface is showing the changes of a measured checkout
+- **WHEN** the review is showing the changes of a measured checkout
 - **THEN** the map SHALL NOT be among the ways of showing it
-- **AND THEN** the key that toggles it SHALL leave the changes on show
+- **AND THEN** the key that toggles it in the code surface SHALL do nothing in the review
 
 ### Requirement: The map fits the view, and is entered rather than moved
 The map SHALL take the whole frame while it is on show — it is a picture
@@ -152,15 +152,14 @@ largest first, with its commits.
 
 ### Requirement: A file on the map is the surface's selection
 Activating a selected file's tile, or clicking it a second time, SHALL
-select that file and leave the map for whichever half the map was opened
-over. The map is a fourth way of asking about the same path, so the
-selection SHALL survive the switch the way it does between the other
-three.
+select that file and leave the map for the file tree. The map is another
+way of asking about the same path, so the selection SHALL survive the
+switch.
 
 #### Scenario: Down to the file
 - **WHEN** the tile of `src/main.rs` is selected and activated
 - **THEN** `src/main.rs` SHALL be the surface's selection
-- **AND THEN** the half the map was opened over SHALL be on show again
+- **AND THEN** the file tree SHALL be on show again
 
 ### Requirement: Measuring the checkout never blocks the workspace
 The measurement SHALL be made off the thread that draws, and asked for
@@ -209,23 +208,6 @@ not text SHALL keep saying it is not a text file.
 #### Scenario: A format the surface does not draw
 - **WHEN** the selected file is an `.svg` or an `.avif`
 - **THEN** the column SHALL say it is not a text file
-
-### Requirement: A changed image is drawn in the changes half
-When the selected change is a binary file that is one of the drawn image
-formats and exists in the working tree, the changes half SHALL draw it as
-it stands in the working tree instead of saying Git has no lines to
-compare. A deleted image, or one that cannot be decoded, SHALL keep that
-message.
-
-#### Scenario: An updated screenshot
-- **WHEN** `web/public/poster.png` is modified and selected in the changes
-  half
-- **THEN** the working tree's version of the image SHALL be drawn under
-  its path
-
-#### Scenario: A deleted image
-- **WHEN** a tracked `logo.png` is deleted and selected in the changes half
-- **THEN** the half SHALL say Git records that it changed, with no image
 
 ### Requirement: An image reaches every terminal, and a capable one at its own resolution
 An image SHALL be drawn on every terminal with true colour, at two pixels
@@ -301,10 +283,83 @@ SHALL be reported as too large to open rather than read.
 
 ### Requirement: Returning to an agent shows the code surface as it was left
 When an agent comes back to the front with the code surface kept for it, the
-surface SHALL show the half it was left on, the selection, the opened
-directories and the scroll. A door pressed afterwards SHALL still decide the
-half, and a fresh open through a door SHALL NOT be given the half last used.
+surface SHALL show the mode it was left on, the selection, the opened
+directories and the scroll. A fresh open through its door SHALL open on
+the file tree.
 
 #### Scenario: Files left open on an agent
 - **WHEN** the code surface shows a file in Files on agent A, and the operator selects agent B, then agent A
 - **THEN** the code surface stands on A in Files, on that file
+
+### Requirement: A click on a file's line starts typing there
+A click on a line of a text file in the files half SHALL place the caret
+where the click landed and start typing, with no key first. The line under
+the pointer SHALL be highlighted across its row while a click there would
+type, and the caret's line SHALL be highlighted while typing. A diff's
+lines SHALL NOT be highlighted under the pointer.
+
+#### Scenario: Clicking into a file
+- **WHEN** a file is shown and the viewer clicks its second line
+- **THEN** typing starts with the caret on that line, where the click landed
+
+### Requirement: Unsaved work is the text that differs from the file, and is kept
+A buffer SHALL count as unsaved only while its text differs from what the
+file last held. Moving to another file SHALL keep an unsaved buffer and
+SHALL NOT refuse the move. Returning to the file SHALL show the buffer.
+Closing the surface SHALL ask once while any buffer is unsaved. A surface
+put away without being asked, as when another agent comes to the front,
+SHALL keep its unsaved work and give it back when opened again on its
+checkout.
+
+#### Scenario: Typing undone
+- **WHEN** the viewer erases a character and types it back
+- **THEN** the file is not unsaved, and closing does not ask
+
+#### Scenario: Another agent comes to the front
+- **WHEN** a buffer is unsaved and the viewer switches to another agent and back
+- **THEN** the code surface opens with the buffer and its tab as they were
+
+#### Scenario: Moving away from unsaved work
+- **WHEN** a buffer is unsaved and the viewer selects another file
+- **THEN** the other file opens, the tree marks the first as unsaved, and selecting it again shows the typing
+
+### Requirement: Files open in tabs
+Each file opened SHALL have a tab over the content. A file only passed over
+SHALL take the place of the previous such tab. A changed file SHALL keep
+its tab and mark it unsaved. Closing a tab with unsaved changes SHALL ask
+once, and asking again SHALL discard them without writing.
+
+#### Scenario: Closing a changed file's tab
+- **WHEN** the viewer closes the tab of a file with unsaved changes, then closes it again
+- **THEN** the first close only says so, and the second removes the tab and leaves the file on disk unchanged
+
+### Requirement: The files list searches every file
+The files list SHALL keep a search field over its tree and search every file of
+the checkout that Git does not ignore as the text is typed, ignoring case,
+off the drawing thread. An answer to text the field no longer holds SHALL
+be dropped. Results SHALL be grouped by file with a count, and each match
+SHALL be set apart, in the tree's place while the field holds text. Opening a
+result SHALL show its file with the caret on the match. Letting go of the
+search SHALL bring the tree back.
+
+#### Scenario: Searching and opening a result
+- **WHEN** the viewer types `fog` into the field and presses Enter
+- **THEN** the files with `fog` are listed with their lines, and the first line opens with the caret on the match
+
+### Requirement: The code surface navigates and edits, and does not review
+The code surface SHALL offer files and map, with its search as the field
+over the file tree. It SHALL NOT offer a changes mode or a diff. A path
+another surface hands it SHALL open in files, at the line given when one
+is.
+
+#### Scenario: The modes on offer
+- **WHEN** the operator opens the code surface
+- **THEN** its modes are `files` and `map`, and no `changes`
+
+#### Scenario: Opened from the review
+- **WHEN** the review hands it `naming.rs` at line 53
+- **THEN** the code surface shows `naming.rs`'s contents with line 53 in view
+
+#### Scenario: A pane path with a line
+- **WHEN** the operator ctrl+clicks `src/main.rs:42` in an agent's pane
+- **THEN** the code surface shows `src/main.rs` with line 42 in view

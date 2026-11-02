@@ -4,9 +4,7 @@
 The surface SHALL open by a `toggle-architect` action bound in the
 workspace and in the code surface, and by a chip in the tab strip; the
 same action SHALL close it. While it is open its scope SHALL seal the
-keyboard from the pane underneath. From it, the review's door SHALL open
-the review and the files entry point SHALL open the code surface directly.
-Every key the surface answers to SHALL be a named, rebindable action listed
+keyboard from the pane underneath. Every key the surface answers to SHALL be a named, rebindable action listed
 in the action index, and the surface's footer SHALL advertise keys read
 from the keymap.
 
@@ -25,3 +23,7 @@ from the keymap.
 #### Scenario: From the architect to the review
 - **WHEN** the review's door is pressed while the architect is open
 - **THEN** the review SHALL open on the checkout in front
+
+#### Scenario: From the architect to the code surface
+- **WHEN** the files entry point is pressed while the architect is open
+- **THEN** the code surface SHALL open directly

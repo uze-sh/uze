@@ -5,7 +5,9 @@ Guarantees that UZE's CLI and TUI operations respond in milliseconds unless
 an operation is explicitly justified to be slow (e.g. a network install),
 by requiring expensive local probes to be cached, correctly invalidated,
 and covered by tests that assert the budget rather than assume it.
+
 ## Requirements
+
 ### Requirement: CLI operations complete within a low-millisecond budget
 Any UZE command whose work does not require an explicitly justified slow
 operation (network installation/provisioning) SHALL complete in under 50
@@ -199,12 +201,10 @@ the budget by a test that times that one call on a fresh application.
 #### Scenario: A refresh is one call
 - **WHEN** the TUI's management worker refreshes
 - **THEN** it obtains plugins, health, marketplaces, marketplace plugins,
-  profiles, workspace, context status and prompt history from a single
-  application call, and composes nothing of its own beyond presentation
-  ordering
+  workspace, context status and prompt history from a single application
+  call, and composes nothing of its own beyond presentation ordering
 
 #### Scenario: A warm refresh meets the budget without probing anything
 - **WHEN** the read model is produced again with nothing changed
 - **THEN** no harness is probed, no marketplace is cloned, and the call
   completes within the budget
-

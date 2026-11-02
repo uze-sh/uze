@@ -112,6 +112,10 @@ capability existed.
 - **WHEN** a harness is started in a directory that belongs to no managed task
 - **THEN** it starts exactly as it would without UZE, with no conversation carried over
 
+#### Scenario: Overrides never turn continuity off
+- **WHEN** an agent is launched from the workspace with overrides
+- **THEN** none of them is an argument the catalog marks as UZE's, session and resume arguments included, and the agent resumes or starts its task's conversation as it would with none
+
 ### Requirement: Continuity is declared by the harness, never assumed
 Each harness integration SHALL declare how a conversation may be carried
 over for it: named by UZE at launch, named by the harness and read back

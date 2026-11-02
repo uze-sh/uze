@@ -1,0 +1,185 @@
+journey: an agent's unfinished work moves to a shelf and its checkout goes to the next agent
+tags: [tui, workspace]
+proves: web/content/docs/workspace/agents.mdx
+about: |
+  A checkout is capacity, never the place work is kept. An agent that ends
+  with uncommitted changes has them recorded under `refs/uze/shelf/*`, and
+  its directory goes back clean to the next agent, so the number of
+  directories follows how many agents ran at once, not how many ever ran.
+
+  Every check reads Git and the filesystem: the shelf's own contents, the
+  branch it left where it was, the stash it did not use, and the directories
+  under `.worktrees`. Resuming the work with its old checkout taken proves
+  the work never needed that directory.
+
+world:
+  project: demo-app
+  manifest: |
+    workspace:
+      worktree: always
+      target: main
+      slots: 4
+
+scenes:
+  - scene: an agent holds changes nothing has committed
+    when:
+      - open: ["{uze}", "workspace"]
+        say: uze opens on the project
+        expect: demo-app
+        expect_timeout: 20
+        pause: 1.0
+      - click: "new"
+        say: open the new-agent popup
+        in: sidebar
+        expect: 'overrides .*Claude Code'
+      - type: "{project}"
+        say: choose the project, with Claude Code
+        expect: 'agent 1(?!: preparing)'
+        expect_timeout: 90
+        pause: 1.5
+      - shell: |
+          set -e
+          slot=$(ls -d {project}/.worktrees/*/ | head -1)
+          printf 'changed by the agent\n' >> "$slot/README.md"
+          printf 'pub fn unfinished() {}\n' > "$slot/src/unfinished.rs"
+          git -C "$slot" rev-parse HEAD > {world}/tip
+          git -C "$slot" branch --show-current > {world}/branch
+        say: the agent changes a tracked file and adds a new one, committing neither
+    then:
+      - tasks: { count: 1, states: [running], checkouts: 1 }
+        about: one running agent, holding one checkout
+      - capture: { name: slot, dirs: "{project}/.worktrees/*" }
+        about: remember the directory it works in
+
+  - scene: closing the agent moves its changes to a shelf and leaves the directory clean
+    when:
+      - key: "C-w"
+        say: close the agent's tab
+        expect: work kept
+        expect_timeout: 25
+        pause: 2.0
+    then:
+      - tasks: { count: 1, newest_state: shelved, checkouts: 0 }
+        about: the agent ended holding work, and no longer holds a checkout
+      - cmd:
+          run: |
+            shelf=$(git -C {project} for-each-ref --format='%(refname)' 'refs/uze/shelf/*')
+            test -n "$shelf"
+            git -C {project} show "$shelf:src/unfinished.rs"
+            git -C {project} show "$shelf:README.md"
+          stdout_contains: "pub fn unfinished"
+        about: the shelf holds the new file
+      - cmd:
+          run: |
+            shelf=$(git -C {project} for-each-ref --format='%(refname)' 'refs/uze/shelf/*')
+            git -C {project} show "$shelf:README.md"
+          stdout_contains: "changed by the agent"
+        about: and the changed one
+      - cmd:
+          run: test "$(git -C {project} rev-parse "$(cat {world}/branch)")" = "$(cat {world}/tip)"
+        about: the agent's branch did not move
+      - cmd:
+          run: test -z "$(git -C {project} stash list)"
+        about: the repository's stash was not used
+      - dir: "{project}/.worktrees/*"
+        same_as: slot
+        about: the directory stays, as capacity
+      - file: "{project}/.worktrees/*/src/unfinished.rs"
+        exists: false
+        about: without the work it held
+      - cmd:
+          run: test -z "$(git -C {project}/.worktrees/* status --porcelain)"
+        about: and it is clean
+
+  - scene: the next agent takes the same directory instead of a new one
+    when:
+      - click: "new"
+        say: open the new-agent popup
+        in: sidebar
+        expect: 'overrides .*Claude Code'
+      - type: "{project}"
+        say: choose the project, with Claude Code
+        expect: 'agent \d(?!: preparing)'
+        expect_timeout: 90
+        pause: 2.0
+    then:
+      - dir: "{project}/.worktrees/*"
+        count: 1
+        about: no second directory exists
+      - git: { worktrees: 2 }
+        about: Git registers no new worktree
+      - tasks: { count: 2, checkouts: 1, newest_checkout_is_its_own: true }
+        about: the new agent holds the directory the last one left
+      - file: "{project}/.worktrees/*/src/unfinished.rs"
+        exists: false
+        about: and starts without the other agent's changes
+      - cmd:
+          run: test -n "$(git -C {project} for-each-ref 'refs/uze/shelf/*')"
+        about: which stay on their shelf
+
+  - scene: resuming the shelved work brings it back in another checkout, unstaged
+    when:
+      - key: "M-p"
+        say: open recent
+        expect: "a all"
+        expect_timeout: 20
+        pause: 1.0
+      - key: "a"
+        say: list every agent, not only the named ones
+        expect: "needs you|others"
+        expect_timeout: 20
+        pause: 1.5
+      - key: "Enter"
+        say: resume the shelved agent
+      - wait: shell
+        until: ls {project}/.worktrees/*/src/unfinished.rs
+        timeout: 60
+        say: its changes are back on disk
+    then:
+      - dir: "{project}/.worktrees/*"
+        count: 2
+        about: it needed one more directory, because two agents now run at once
+      - file: "{project}/.worktrees/*/src/unfinished.rs"
+        count: 1
+        about: the new file is back, in one checkout
+      - file: "{project}/.worktrees/*/README.md"
+        count: 2
+        about: both checkouts have the tracked file
+      - cmd:
+          run: |
+            slot=$(dirname "$(dirname "$(ls {project}/.worktrees/*/src/unfinished.rs)")")
+            test "$(git -C "$slot" branch --show-current)" = "$(cat {world}/branch)"
+            git -C "$slot" diff --name-only
+            test -z "$(git -C "$slot" diff --cached --name-only)"
+          stdout_contains: README.md
+        about: on its own branch, with every change unstaged
+      - cmd:
+          run: test -z "$(git -C {project} for-each-ref 'refs/uze/shelf/*')"
+        about: and the shelf is gone, because its work is back in a checkout
+      - tasks: { count: 2, checkouts: 2 }
+        about: both agents are live, each in a checkout
+
+  - scene: the directories stay at the peak however many agents come after
+    when:
+      - key: "C-w"
+        say: close the agent in front, whose work is shelved again
+        expect: work kept
+        expect_timeout: 25
+        pause: 2.0
+      - click: "new"
+        say: open the new-agent popup
+        in: sidebar
+        expect: 'overrides .*Claude Code'
+      - type: "{project}"
+        say: choose the project, with Claude Code
+        expect: 'agent \d(?!: preparing)'
+        expect_timeout: 90
+        pause: 2.0
+    then:
+      - dir: "{project}/.worktrees/*"
+        count: 2
+        about: a third agent over time, and still two directories
+      - git: { worktrees: 3 }
+        about: Git agrees
+      - tasks: { count: 3, one_task_per_checkout: true }
+        about: three agents have passed through two checkouts

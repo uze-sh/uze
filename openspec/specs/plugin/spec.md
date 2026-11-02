@@ -6,15 +6,15 @@ Install, update, remove, and list plugins via `name@marketplace` through the exi
 ## Requirements
 
 ### Requirement: Plugin install resolves marketplace entry and converges into acquisition
-The system SHALL resolve `uze <name>@<marketplace>` by looking up the marketplace registry, reading its `marketplace.json` to find the plugin entry's `source`, and then running the existing `PackageSource` acquisition (Git/Local) → `Store` → `native projection` pipeline. The Store SHALL remain unaware of marketplace.
+The system SHALL resolve `uze add <name>@<marketplace>` (and its shorthand `uze <name>@<marketplace>`) by looking up the marketplace registry, reading its `marketplace.json` to find the plugin entry's `source`, and then running the existing `PackageSource` acquisition (Git/Local) → `Store` → `native projection` pipeline. The Store SHALL remain unaware of marketplace.
 
 #### Scenario: Install from local marketplace
-- **WHEN** user runs `uze flow@ai` and `ai` was added via local path
+- **WHEN** user runs `uze add flow@ai` and `ai` was added via local path
 - **THEN** system resolves `flow → ./plugins/flow`, materializes it, installs to Store, and attaches via native projection where applicable
 
 #### Scenario: Install from Git marketplace
-- **WHEN** user runs `uze flow@ai` and `ai` is a Git marketplace
-- **THEN** system clones/marketplace-resolves the plugin subdirectory and installs it identically to a direct `uze add` of that subdirectory
+- **WHEN** user runs `uze add flow@ai` and `ai` is a Git marketplace
+- **THEN** system clones/marketplace-resolves the plugin subdirectory and installs it identically to a local marketplace's
 
 ### Requirement: Plugin install is idempotent and shows marketplace provenance
 The system SHALL record installed plugins with their `{name, marketplace}` provenance and make installing idempotent.
@@ -47,13 +47,6 @@ The system SHALL update a marketplace-installed plugin by re-resolving its marke
 - **WHEN** user runs `uze plugin remove flow`
 - **THEN** system detaches via `Integration` (native or capability) per ADR-009 and removes Store bytes; `marketplace remove ai` remains blocked while plugins from `ai` are installed
 
-### Requirement: Direct add remains shortcut
-The system SHALL keep `uze add <path|git>` as a direct PackageSource install without requiring a marketplace entry, for single-plugin sources. It follows the same scope rule as every root verb: it declares in the project when there is one, and `-m` confines it to this machine.
-
-#### Scenario: Direct add
-- **WHEN** user runs `uze add ./plugins/flow --trust`
-- **THEN** system installs `flow` directly, with `marketplace` shown as `-` or `direct` in the plugin listing
-
 ### Requirement: A name has one spelling, the one every harness accepts
 The system SHALL hold every plugin name, marketplace name and install alias
 to lowercase kebab-case: one or more runs of `a-z` and `0-9` joined by
@@ -83,7 +76,7 @@ types to refer to one that exists or to choose an alias before resolving
 it. Resolution against the record SHALL stay exact.
 
 #### Scenario: Install and remove in another case
-- **WHEN** the operator runs `uze install -m Flow@AI` and then
+- **WHEN** the operator runs `uze add -m Flow@AI` and then
   `uze remove -m FLOW`
 - **THEN** `flow@ai` is installed and then removed
 
@@ -126,3 +119,37 @@ because the harness reading the same file does not forgive it.
 #### Scenario: Unmet requirement in the list
 - **WHEN** an installed package has an unmet requirement
 - **THEN** the list row for that package names the missing executable and the install command
+
+### Requirement: An open workspace keeps plugins current
+
+While the workspace client is open, on the same tick as the release check,
+UZE SHALL fetch each registered Git marketplace whose last answer is over
+an hour old, one process at a time, and SHALL then apply the pending
+updates that need no new trust. Each outcome SHALL be raised as a toast.
+
+#### Scenario: A plugin released while the workspace is open
+
+- **WHEN** a marketplace publishes a plugin's new revision that asks for no
+  new execution, and the workspace has been open for over an hour
+- **THEN** a later tick installs it and a toast names the plugin
+
+#### Scenario: An update that needs consent
+
+- **WHEN** the new revision asks to execute something new
+- **THEN** it is not installed, and a toast that stays names the plugin and
+  says it waits for confirmation
+
+#### Scenario: Two clients
+
+- **WHEN** two clients tick while a marketplace's answer is stale
+- **THEN** one fetches it and the other fetches nothing
+
+### Requirement: A marketplace mirror fetches branches and tags only
+
+Fetching a marketplace's mirror SHALL bring its branches and tags and no
+other refs.
+
+#### Scenario: A GitHub marketplace with open pull requests
+
+- **WHEN** the mirror of a GitHub marketplace is fetched
+- **THEN** no `refs/pull/*` ref is fetched into it
