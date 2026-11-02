@@ -806,6 +806,7 @@ impl UzeStore {
         for root in [
             self.home.plugin_dir(id),
             self.home.delivered_package_dir(id),
+            crate::package::earlier::package_copy(&self.home, id),
         ] {
             if let Err(source) = fs::remove_dir_all(&root)
                 && source.kind() != std::io::ErrorKind::NotFound

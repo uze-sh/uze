@@ -10,13 +10,64 @@ pub(crate) mod regions;
 /// This crate's entries. The AGENTS.md regions are declared where they are
 /// named, in `uze-core`.
 pub fn earlier() -> Vec<Earlier> {
-    vec![Earlier {
-        name: "compiled extension views earlier releases kept loose in runtime/extensions",
-        // Removed when the compiled-views collector next runs: unbounded.
-        lasts: Lasts::Unbounded,
-        spelled: &[],
-        site: file!(),
-    }]
+    vec![
+        Earlier {
+            name: "compiled extension views earlier releases kept loose in runtime/extensions",
+            // Removed when the compiled-views collector next runs: unbounded.
+            lasts: Lasts::Unbounded,
+            spelled: &[],
+            site: file!(),
+        },
+        Earlier {
+            name: "package copies earlier releases kept in runtime/packages for every harness",
+            // Kept while a receipt names one: unbounded.
+            lasts: Lasts::Unbounded,
+            spelled: &[],
+            site: file!(),
+        },
+    ]
+}
+
+/// The owned map's name for one of [`package_copies_dir`]'s copies, which
+/// the delivered-packages collector claims.
+pub(crate) const PACKAGE_COPIES: &str = "retired_package_dir";
+
+/// Where an earlier release kept a copy of every installed package and
+/// pointed every harness at it.
+pub(crate) fn package_copies_dir(home: &uze_core::UzeHome) -> std::path::PathBuf {
+    home.retired_packages_dir()
+}
+
+/// Whether an earlier release's package copies are still on this machine.
+pub(crate) fn holds_package_copies(home: &uze_core::UzeHome) -> bool {
+    package_copies_dir(home).is_dir()
+}
+
+/// Removes the package copies an earlier release made that no receipt
+/// names any more (`named` is the ledger, serialized), then their directory
+/// once it is empty. Called under the mutation lock.
+pub(crate) fn collect_package_copies(
+    home: &uze_core::UzeHome,
+    named: &str,
+) -> Vec<std::path::PathBuf> {
+    let root = package_copies_dir(home);
+    let mut removed = Vec::new();
+    for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if named.contains(path.to_string_lossy().as_ref()) {
+            continue;
+        }
+        let gone = if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if gone.is_ok() {
+            removed.push(path);
+        }
+    }
+    let _ = std::fs::remove_dir(&root);
+    removed
 }
 
 /// Removes the compiled views an earlier release kept loose in the
@@ -61,5 +112,22 @@ mod tests {
         assert!(home.extension_costs_path().exists());
         assert!(home.compiled_extension_path("fedcba9876543210").exists());
         assert!(corner.join("compiled").is_dir());
+    }
+
+    #[test]
+    fn an_earlier_package_copy_goes_once_no_receipt_names_it() {
+        let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("earlier-package-copies"));
+        let named = package_copies_dir(&home).join("flow@ai");
+        let unnamed = package_copies_dir(&home).join("gone@ai");
+        std::fs::create_dir_all(&named).unwrap();
+        std::fs::create_dir_all(&unnamed).unwrap();
+        let ledger = format!("{{\"target\":\"{}/skills/x\"}}", named.display());
+
+        assert_eq!(collect_package_copies(&home, &ledger), vec![unnamed.clone()]);
+        assert!(named.is_dir() && !unnamed.exists());
+
+        std::fs::remove_dir_all(&named).unwrap();
+        assert!(collect_package_copies(&home, "").is_empty());
+        assert!(!holds_package_copies(&home), "the emptied directory goes too");
     }
 }

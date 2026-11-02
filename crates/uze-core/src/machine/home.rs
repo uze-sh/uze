@@ -640,7 +640,19 @@ impl UzeHome {
 
     /// The parent of every [`Self::delivered_package_dir`]: UZE-internal.
     pub fn delivered_packages_dir(&self) -> PathBuf {
+        self.runtime_dir().join("servers")
+    }
+
+    /// Where earlier releases kept a copy of every installed package and
+    /// pointed every harness at it. Retired: kept while a receipt names a
+    /// copy, as one an earlier release made still does.
+    pub fn retired_packages_dir(&self) -> PathBuf {
         self.runtime_dir().join("packages")
+    }
+
+    /// One package's copy in [`Self::retired_packages_dir`].
+    pub fn retired_package_dir(&self, id: &PackageId) -> PathBuf {
+        self.retired_packages_dir().join(id.as_str())
     }
 
     /// The home and package whose bytes are `plugin_dir`, read back from the
@@ -802,12 +814,13 @@ impl UzeHome {
     /// compile on the next open. `agents`
     /// holds what each agent reported while it runs: its own collector
     /// keeps it while a project records the agent.
-    pub fn runtime_tenants(&self) -> [PathBuf; 7] {
+    pub fn runtime_tenants(&self) -> [PathBuf; 8] {
         [
             self.runtime_projects_dir(),
             self.runtime_agents_dir(),
             self.runtime_attachments_dir(),
             self.delivered_packages_dir(),
+            self.retired_packages_dir(),
             self.runtime_sessions_dir(),
             self.runtime_rules_dir(),
             self.runtime_extensions_dir(),

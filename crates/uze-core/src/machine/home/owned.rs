@@ -583,6 +583,18 @@ const OWNED: &[OwnedPath] = &[
     retired("generated_attachments_dir", Generated, Directory, |home| {
         home.generated_attachments_dir(VENDOR)
     }),
+    // Earlier releases' package copies, kept while a receipt names one;
+    // the delivered-packages collector removes the rest.
+    retired(
+        "retired_packages_dir",
+        Generated,
+        Directory,
+        UzeHome::retired_packages_dir,
+    ),
+    retired("retired_package_dir", Generated, Directory, |home| {
+        home.retired_package_dir(&package())
+    })
+    .swept(),
     owned(
         "delivered_packages_dir",
         Generated,
