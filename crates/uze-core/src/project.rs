@@ -19,6 +19,7 @@
 //! `uze_core::project_lock`, and a name that changes between the inside and
 //! the outside costs more than the prefix saves.
 pub mod anchor;
+pub(crate) mod earlier;
 pub mod manifest;
 pub mod memory;
 pub mod project_context;

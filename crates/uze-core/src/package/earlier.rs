@@ -1,4 +1,7 @@
-//! The move that gave the package bytes a directory of their own.
+//! What the package concern does only because an earlier release left it
+//! (the `earlier-releases` rule): today, the move that gave the package
+//! bytes a directory of their own, declared as `pre_sources_layout` in the
+//! owned map.
 //!
 //! Package bytes lived in `store/plugins` and `store/superseded`. They now
 //! live in `sources/`, so `store/` can be what the harnesses read, one
