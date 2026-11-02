@@ -94,7 +94,7 @@ impl std::fmt::Display for Release {
 }
 
 /// The oldest release a machine can come from and still be carried across.
-pub const FLOOR: Release = Release::alpha(0, 0, 0, 1);
+pub const FLOOR: Release = Release::beta(1, 0, 0, 22);
 
 /// How long a piece of support for an earlier release is needed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

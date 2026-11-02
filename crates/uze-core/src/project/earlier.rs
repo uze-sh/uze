@@ -22,7 +22,7 @@ use crate::home::UzeHome;
 /// (`regions::remove`), only as often as that runs: unbounded.
 pub(crate) fn earlier() -> Vec<Earlier> {
     vec![Earlier {
-        name: "regions earlier releases wrote into AGENTS.md and CLAUDE.md",
+        name: "regions earlier releases wrote into AGENTS.md and a harness's instructions file",
         lasts: Lasts::Unbounded,
         spelled: &[WORKTREE_POLICY, PLUGIN_AUTHORING, INSTRUCTION_BRIDGE],
         site: file!(),

@@ -14,7 +14,7 @@
 
 use std::path::PathBuf;
 
-use uze_document::earlier::{Earlier, Lasts, Release};
+use uze_document::earlier::{Earlier, Lasts};
 
 use crate::store::PackageId;
 
@@ -213,11 +213,6 @@ impl OwnedPath {
             disposable: true,
             ..self
         }
-    }
-
-    /// How long a machine can still hold this retired path.
-    const fn lasts(self, lasts: Lasts) -> Self {
-        OwnedPath { lasts, ..self }
     }
 
     /// The names only this retired path spells.
@@ -465,17 +460,6 @@ const OWNED: &[OwnedPath] = &[
         Opaque,
         UzeHome::terminal_runtime_dir,
     ),
-    // Nothing carries it across: the retired collector removes it.
-    retired(
-        "retired_profiles_path",
-        Record,
-        Document,
-        UzeHome::retired_profiles_path,
-    )
-    .swept()
-    .spelled(&["profiles.json"])
-    // Swept on every bootstrap since #324, whose first release is beta.21.
-    .lasts(Lasts::Until(Release::beta(1, 0, 0, 20))),
     // Carried into `projects/<id>/` by `record::ensure` when a project's
     // directory is first made: only as often as that happens, so unbounded.
     retired("scattered_project_records", Record, Document, |home| {

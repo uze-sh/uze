@@ -248,13 +248,6 @@ impl UzeHome {
         self.state_dir().join("launch-overrides.lock")
     }
 
-    /// Where the removed Profiles screen kept its record. Nothing reads it:
-    /// it is named only so the application can remove what earlier
-    /// releases left there.
-    pub fn retired_profiles_path(&self) -> PathBuf {
-        self.state_dir().join("profiles.json")
-    }
-
     /// The operator's consent to each declared extension, by identity:
     /// the grants accepted, the digest of the code they were accepted for
     /// and the projects it is enabled in. A record: only a person's answer

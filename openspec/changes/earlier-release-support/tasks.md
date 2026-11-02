@@ -39,6 +39,6 @@
 
 - [x] 6.1 Each entry's `lasts` reviewed against what carries it out: two bounded at beta.20, the rest `Unbounded` (D12)
 - [x] 6.2 `journeys/suites/07-upgrade/01` runs `1.0.0-beta.22` against this build, its gestures following that release's picker; verified locally, every scene held (9 checks). The journeys workflow already runs on every path under `crates/` and `src/`
-- [ ] 6.3 Raise `FLOOR` to `Release::Beta(22)` and delete every entry the floor test names, with its tests, in one commit
-- [ ] 6.4 Update tests cited by `docs/architecture/invariants.md` that moved or went; `invariants_citations.rs` green
+- [x] 6.3 `FLOOR` is `1.0.0-beta.22`; the floor test named `retired_profiles_path` and the official marketplace's earlier name, deleted with their code and tests (D13)
+- [x] 6.4 `docs/architecture/invariants.md` cites the moved tests and drops the deleted one; `invariants_citations.rs` green
 - [ ] 6.5 `make check`, `openspec validate --all --strict`, the journeys gate and the Lab green

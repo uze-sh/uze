@@ -1151,12 +1151,6 @@ diagnostic command.
 > `crates/uze-application/src/application/tests.rs::bootstrap_never_mutates_an_already_installed_default_plugin`
 > `crates/uze-application/src/application/tests.rs::read_only_bootstrap_leaves_store_state_byte_identical_on_repeat`
 
-The one exception is a name an earlier release used: a package recorded under
-the official marketplace's retired name, `uze-official`, is taken off with its
-receipts and installed again under `uze`, once.
-
-> `crates/uze-application/src/application/tests.rs::seeding_moves_plugins_off_the_official_marketplaces_old_name`
-
 ### A newer snapshot is reported, never silently applied
 
 `PluginSummary::update_available` is a pure read (a scratch-directory
