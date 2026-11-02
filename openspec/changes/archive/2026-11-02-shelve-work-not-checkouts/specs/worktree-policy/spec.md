@@ -71,17 +71,11 @@ neither reused nor removed, and the operator SHALL be told which.
 ### Requirement: Nothing that can hold work is removed automatically
 The system SHALL NOT remove a working tree holding uncommitted changes, a
 branch holding commits absent from its target, nor a shelf holding changes
-absent from its target, on any automatic path; shelving the changes first
-is how a checkout stops holding them. Whether a branch's work is in the
-target SHALL be answered by what the target carries and not by commit
-identity alone: every commit reachable from it, or the same patch present
-under commits of its own, as a squash merge and a rebase merge each leave
-it. A branch whose work is in the target MAY be removed, as MAY the
-directory of a free checkout unused for longer than the idle age
-`checkout-accounting` keeps, while keeping its branch. A checkout in which
-any process is working, or in which a rebase or a merge is paused, SHALL
-NOT be removed. Discarding work SHALL happen only on an explicit operator
-action naming the task.
+absent from its target, on any automatic path. A branch the target carries,
+by commit or by patch, MAY be removed, as MAY the directory of a free
+checkout past the idle age, keeping its branch. A checkout where a process
+works or an operation is paused SHALL NOT be removed. Discarding work SHALL
+take an explicit operator action naming the task.
 
 #### Scenario: A dirty orphan is preserved, not deleted
 - **WHEN** startup finds a checkout with uncommitted changes and no live agent, nothing working in it and no operation paused in it
@@ -111,15 +105,11 @@ action naming the task.
 ### Requirement: Existing checkouts are adopted at startup
 The system SHALL reconcile the isolation directory, the `agent/` branches,
 the shelves and its persisted task state when a repository's space starts.
-A checkout is taken as the system's own only as `checkout-accounting`
-states: by the record it carries, or on sight when a launched agent's
-record names it or it bears a legacy `agent-<n>` name. A checkout without a
-record SHALL NOT be adopted by inference, whatever its name or place; it is
-listed to the operator. A task without a checkout SHALL be marked from what
-its branch and its shelf hold. A recorded checkout holding work for a task
-whose agent has ended SHALL have that work shelved and SHALL be freed,
-unless it is pinned. Stale worktree registry entries SHALL be pruned only
-after reconciliation.
+A checkout is taken as its own only as `checkout-accounting` states; any
+other is listed to the operator. A task without a checkout SHALL be marked
+from its branch and shelf. A recorded checkout holding an ended agent's work
+SHALL have it shelved and be freed, unless pinned. Stale registry entries
+SHALL be pruned only after reconciliation.
 
 #### Scenario: A legacy checkout is adopted
 - **WHEN** the isolation directory holds checkouts named `agent-<n>`, created before task state existed

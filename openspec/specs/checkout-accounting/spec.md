@@ -25,7 +25,7 @@ by Git.
 #### Scenario: The record outlives lost state
 - **WHEN** UZE's state for the project is deleted and the project's space starts again
 - **THEN** every checkout UZE made is still known as UZE's, and nothing it did not make is taken for one
-- **AND** each is accounted for from its facts: parked when it holds work, free otherwise
+- **AND** each is accounted for from its facts: its work shelved and the checkout freed when it holds work, free otherwise, pinned when an operation is paused or a process works in it
 
 #### Scenario: The record goes with the worktree
 - **WHEN** a recorded checkout's worktree is removed, by the system or with Git directly
@@ -94,58 +94,29 @@ recorded, and SHALL be listed to the operator for adoption.
 - **THEN** it is not recorded, and it is listed to the operator as a checkout to adopt or remove
 
 ### Requirement: Content UZE derives never parks a checkout
-Judging a checkout free or parked, the system SHALL NOT count as work an
-uncommitted change confined to content UZE derives: a lock file change
-moving no pin (each plugin in both locks keeps its revision and digest), or
-one inside UZE's managed regions of the shared instruction file. A checkout
-with only such changes SHALL be free if nothing else holds it, and reuse
-SHALL discard them. A moved pin is work. Rebase, join and delivery SHALL
-still require a working tree with no uncommitted change.
+When deciding whether a checkout holds work, the system SHALL NOT count as
+work an uncommitted change confined to content UZE derives and can produce
+again: a lock file change that moves no plugin's pin, or an instruction file
+change confined to the regions UZE manages. Such a change SHALL NOT be
+shelved, and a checkout holding nothing else SHALL be free, its reuse
+discarding the change. Rebasing, joining and delivering SHALL still require
+a working tree with no uncommitted change at all.
 
 #### Scenario: A lock rewritten inside a slot
-- **WHEN** an agent's checkout ends with the lock file changed only by entries added or dropped, and its branch holds nothing the target lacks
-- **THEN** the checkout is free, and the next agent placed there starts from the base's lock file
+- **WHEN** an agent's checkout ends with the lock file changed only by entries added or dropped, every plugin in both the committed and the working lock keeping its revision and digest, and its branch holds nothing the target lacks
+- **THEN** nothing is shelved, the checkout is free, and the next agent placed there starts from the base's lock file
 
 #### Scenario: A pin moved on purpose
 - **WHEN** an agent's checkout ends with the lock file moving a plugin's pin
-- **THEN** the checkout holds work and is parked
+- **THEN** the checkout holds work, and the change is shelved
 
 #### Scenario: A managed region reprojected inside a slot
 - **WHEN** the only change in a checkout is inside a region UZE manages in the instruction file
-- **THEN** the checkout is free
+- **THEN** nothing is shelved and the checkout is free
 
 #### Scenario: A hand edit beside a managed region
 - **WHEN** the instruction file also has a change outside every managed region
-- **THEN** the checkout holds work and is parked
-
-### Requirement: The pool keeps a few spare slots and no more
-The system SHALL remove the directory of a free slot unused for longer than
-a declared age, three days by default, and SHALL keep every other free slot
-as a spare, so a project has the most slots it had in use at once within
-that age. The rule SHALL touch free slots only, keep each removed slot's
-branch, and be decided from the slots' present state alone. A free slot
-SHALL keep its last agent's name until another agent takes it, and SHALL
-count as a spare. A project MAY declare the age.
-
-#### Scenario: Closing agents leaves spares for the next ones
-- **WHEN** five agents are working and two of them end with nothing left in their checkouts
-- **THEN** both checkouts stay, and the next two agents created are placed in them rather than in new directories
-
-#### Scenario: Spares beyond the declared number are removed
-- **WHEN** five agents end with nothing left in their checkouts and the project declares no age
-- **THEN** all five checkouts stay as spares, since no number of them is declared, and each directory is removed once it has gone unused for three days
-
-#### Scenario: An idle project gives its disk back
-- **WHEN** a free slot has not been used for more than three days and the project declares no age
-- **THEN** its directory is removed and its branch is kept
-
-#### Scenario: Work is never trimmed
-- **WHEN** the pool holds free slots idle past the declared age beside parked or occupied checkouts
-- **THEN** the idle free slots are removed and none of the parked or occupied checkouts is
-
-#### Scenario: A slot keeps its last agent's name while it waits
-- **WHEN** an agent ends with nothing left in its checkout and no other agent takes the slot
-- **THEN** the slot stays at that agent's path, and resuming the agent places it there without moving anything
+- **THEN** the checkout holds work, and the change is shelved
 
 ### Requirement: Every worktree of a project is accounted for
 The system SHALL account for every worktree the repository registers,
@@ -328,13 +299,13 @@ changes, and how many commits it holds that the caller's branch lacks.
 - **THEN** both are listed with their topic, path, branch and state
 
 ### Requirement: An agent with unjoined children is neither delivered nor freed
-The system SHALL refuse to deliver an agent while a child holds commits its
-branch lacks or uncommitted changes, stating which children. When an agent
-ends, the system SHALL release each child holding nothing the agent's branch
-lacks and park each child holding uncommitted changes or commits it lacks;
-an agent with a parked child SHALL itself be parked, its checkout kept,
-whatever its own branch holds. The operator SHALL be able to join a parked
-child into its parked agent, or discard it.
+The system SHALL refuse to deliver an agent while it has a child holding
+commits its branch lacks or uncommitted changes, stating which children.
+When an agent ends, a child's uncommitted changes SHALL be shelved, its
+commits SHALL stay on its branch, and its checkout SHALL be freed. An agent
+with a child holding work SHALL itself be shelved. Resuming it SHALL put each
+such child back in a checkout, shelf restored, to be joined. Discarding the
+agent SHALL discard its children.
 
 #### Scenario: Delivery waits for the children
 - **WHEN** delivery is asked for an agent whose child holds commits the agent's branch lacks, or uncommitted changes
@@ -346,7 +317,11 @@ child into its parked agent, or discard it.
 
 #### Scenario: A child holding work keeps its agent
 - **WHEN** an agent ends with nothing of its own while a child holds commits
-- **THEN** the child and the agent are both parked, both checkouts are kept, and the operator can join the child into the agent
+- **THEN** the agent and the child are both shelved, neither checkout is kept, and the child's commits stay on its branch
+
+#### Scenario: Resuming an agent brings its children back
+- **WHEN** the operator resumes an agent shelved because a child held work
+- **THEN** the child is in a checkout of its own again, under the same topic, and the agent can join it
 
 ### Requirement: Removing a checkout from the view keeps its work
 Removal SHALL keep the branch, and SHALL be refused while the checkout holds
@@ -402,3 +377,51 @@ reading them SHALL never hold up drawing.
 #### Scenario: A slow checkout does not stall the client
 - **WHEN** reading the facts of an agent's checkout takes a long time
 - **THEN** the client keeps drawing and shows those facts once they arrive
+
+### Requirement: The pool keeps free checkouts until they go idle
+The system SHALL keep a free checkout's directory until unused for longer
+than a declared age since last placed or released, three days by default,
+and then remove it on the next collection, keeping its branch. A free
+checkout last held by a subagent SHALL be removed on the next collection
+whatever its age. Both rules SHALL apply to free checkouts only, decided
+from their present state alone.
+
+#### Scenario: Four agents, four checkouts
+- **WHEN** four agents end with nothing left in their checkouts and four new agents are created the same day
+- **THEN** the four new agents are placed in the four existing checkouts and no directory is created
+
+#### Scenario: An idle project gives its disk back
+- **WHEN** a free checkout has not been used for more than three days and the project declares no age
+- **THEN** its directory is removed and its branch is kept
+
+#### Scenario: A subagent's checkout ends with its work
+- **WHEN** a subagent's checkout is freed, by a join or because its agent ended
+- **THEN** its directory is removed on the next collection whatever its age, and its branch is kept
+
+#### Scenario: In use and pinned checkouts are never trimmed
+- **WHEN** a checkout held by a live agent or pinned has gone unchanged for longer than the idle age
+- **THEN** it is not removed
+
+#### Scenario: A checkout used for days is not idle when released
+- **WHEN** an agent worked in a checkout for days and its tab closes
+- **THEN** the checkout is kept for the idle age from that moment
+
+#### Scenario: A task that left nothing is forgotten
+- **WHEN** a task ended more than the idle age ago, closed or integrated, holding no checkout, with no branch, no shelf and no subagent naming it
+- **THEN** its record is removed from the project's task store on the next collection
+
+#### Scenario: A task that left work is never forgotten
+- **WHEN** a task ended more than the idle age ago and its branch or its shelf still holds work
+- **THEN** its record is kept
+
+### Requirement: The idle age is the only thing a project declares about the pool
+A project MAY declare the age as `idle_days` under its worktree policy; it
+SHALL NOT be able to declare a number of checkouts to keep.
+
+#### Scenario: A declared age replaces the default
+- **WHEN** a project declares `idle_days: 7` and a free checkout has gone unused for five days
+- **THEN** its directory is kept
+
+#### Scenario: A manifest still declaring a spare count
+- **WHEN** a project's `agents.yaml` declares `spare` under `workspace:`
+- **THEN** no agent is placed, and the operator is told the policy declares an unknown key named `spare`, as for any other unknown key

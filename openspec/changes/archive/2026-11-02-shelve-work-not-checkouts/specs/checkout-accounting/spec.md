@@ -25,18 +25,14 @@ by Git.
 ### Requirement: Content UZE derives never parks a checkout
 When deciding whether a checkout holds work, the system SHALL NOT count as
 work an uncommitted change confined to content UZE derives and can produce
-again: a change to the project's lock file that moves no plugin's pin —
-every plugin present both in the committed lock and in the working one
-keeps the same revision and digest, so only entries were added or dropped —
-and a change to the shared instruction file confined to the regions UZE
-manages in it. Such a change SHALL NOT be shelved. A checkout whose only
-uncommitted changes are of that kind SHALL be free when nothing else holds
-it, and reuse SHALL discard those changes with the rest of the working
-tree. A moved pin is work. Rebasing, joining and delivering SHALL still
-require a working tree with no uncommitted change at all.
+again: a lock file change that moves no plugin's pin, or an instruction file
+change confined to the regions UZE manages. Such a change SHALL NOT be
+shelved, and a checkout holding nothing else SHALL be free, its reuse
+discarding the change. Rebasing, joining and delivering SHALL still require
+a working tree with no uncommitted change at all.
 
 #### Scenario: A lock rewritten inside a slot
-- **WHEN** an agent's checkout ends with the lock file changed only by entries added or dropped, and its branch holds nothing the target lacks
+- **WHEN** an agent's checkout ends with the lock file changed only by entries added or dropped, every plugin in both the committed and the working lock keeping its revision and digest, and its branch holds nothing the target lacks
 - **THEN** nothing is shelved, the checkout is free, and the next agent placed there starts from the base's lock file
 
 #### Scenario: A pin moved on purpose
@@ -54,16 +50,11 @@ require a working tree with no uncommitted change at all.
 ### Requirement: An agent with unjoined children is neither delivered nor freed
 The system SHALL refuse to deliver an agent while it has a child holding
 commits its branch lacks or uncommitted changes, stating which children.
-When an agent ends, the system SHALL release each child that holds nothing
-the agent's branch lacks; each child holding uncommitted changes SHALL have
-them shelved, each child's commits SHALL stay on the child's branch, and
-every child's checkout SHALL be freed. An agent with a child holding work
-SHALL itself be shelved, whatever its own branch holds. Resuming that agent
-SHALL place each such child back in a checkout of its own, as that agent's
-child under the same topic, with its shelf restored, so that it can be
-joined; that, then joining, SHALL be how the operator brings a shelved
-child's work into its shelved agent. Discarding the agent SHALL discard its
-children.
+When an agent ends, a child's uncommitted changes SHALL be shelved, its
+commits SHALL stay on its branch, and its checkout SHALL be freed. An agent
+with a child holding work SHALL itself be shelved. Resuming it SHALL put each
+such child back in a checkout, shelf restored, to be joined. Discarding the
+agent SHALL discard its children.
 
 #### Scenario: Delivery waits for the children
 - **WHEN** delivery is asked for an agent whose child holds commits the agent's branch lacks, or uncommitted changes
