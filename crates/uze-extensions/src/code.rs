@@ -390,7 +390,9 @@ impl CodeView {
         let Some(path) = selected else {
             return self;
         };
-        self.selected = Some(path);
+        // Through `select`, whatever was open: a surface kept for its unsaved
+        // work is resumed too, and that work is parked rather than replaced.
+        self.select(path);
         self.read_selection_as_what_it_is();
         match self.navigator() {
             // A directory is where the cursor was, and nothing to read.

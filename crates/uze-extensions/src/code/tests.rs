@@ -2655,8 +2655,6 @@ mod hosted {
         );
     }
 
-    /// Typing in `extension`'s open file, then put away the way the host
-    /// puts it away when another agent comes to the front.
     fn on_show(extension: &CodeExtension) -> String {
         super::tab_on_show(extension.code_view().unwrap())
     }
@@ -2725,11 +2723,50 @@ mod hosted {
         sent.open(SURFACE, &checkout("/w"));
         assert_eq!(on_show(&sent), "Files", "a door decides afresh");
         settle_hosted(&mut sent, &machine);
+        press(sent.code_view_mut().unwrap(), Command::Find);
+        settle_hosted(&mut sent, &machine);
         let view = sent.code_view().unwrap();
         assert!(!view.search.pending(), "the search was asked again");
         assert_eq!(view.search.files().len(), 1);
     }
 
+    /// A path sent to a surface kept for its unsaved work takes the viewer to
+    /// that file in the files, from the map too, and the work stays.
+    #[test]
+    fn a_path_sent_to_a_kept_surface_keeps_its_work_and_opens_in_the_files() {
+        let machine = FakeMachine::default()
+            .with_file("/w/a.txt", "one\n")
+            .with_file("/w/b.txt", "two\n");
+        let mut extension = opened(FILES, "/w");
+        typed_then_put_away(&mut extension, &machine);
+        extension.enter(SURFACE, Entry::Door(FILES.to_owned()));
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view_mut().unwrap();
+        assert!(view.has_unsaved());
+        view.absorb_measure(measured());
+        press(view, Command::Close);
+        press(view, Command::ToggleMap);
+        assert_eq!(view.showing(), ContentMode::Map);
+        extension.close(SURFACE);
+
+        extension.enter(
+            SURFACE,
+            Entry::Path {
+                target: PathBuf::from("/w/b.txt"),
+                directory: false,
+                line: None,
+            },
+        );
+        extension.open(SURFACE, &checkout("/w"));
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view().unwrap();
+        assert_eq!(view.selected(), Some(Path::new("/w/b.txt")));
+        assert_eq!(view.showing(), ContentMode::Contents);
+        assert!(view.has_unsaved(), "the work on a.txt stays");
+    }
+
+    /// Typing in `extension`'s open file, then put away the way the host
+    /// puts it away when another agent comes to the front.
     fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
         settle_hosted(extension, machine);
         let view = extension.code_view_mut().unwrap();

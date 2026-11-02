@@ -569,7 +569,7 @@ impl Extension for CodeExtension {
             match sent {
                 Some(place) => {
                     view = view.resuming(place);
-                    view.leave_search();
+                    view.show_half(Half::Files);
                 }
                 None if awaiting == Awaiting::Place => view.go_through_door(mode),
                 None => {}
