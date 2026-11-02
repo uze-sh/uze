@@ -1,7 +1,7 @@
 ---
 name: mutation-audit
 description: Measuring whether UZE's tests would notice the code being wrong, with cargo-mutants - starting and monitoring `mutants.yml`, downloading the evidence, triaging each surviving mutant, writing the test a real gap needs and proving it catches the mutant. Use when someone asks about mutation testing, mutants, survivors, `missed.txt` or a "Missed mutant" annotation, whether tests really prove anything or only pass ("os testes testam mesmo?", "teste que só passa"), to audit a crate's tests, to check tests an agent wrote, or before refactoring code whose tests nobody has measured. Not for reviewing a whole change (that is `code:polish`), not for a coverage figure alone, and not for a security audit (that is `security-audit`).
-compatibility: The GitHub CLI for runs; Linux with bubblewrap (bwrap) for the local lab.
+compatibility: The GitHub CLI for runs; for the local lab, Linux with bubblewrap (bwrap), cargo and this repository's `security-audit` skill, whose sandbox it uses.
 ---
 
 # Mutation audit
@@ -48,14 +48,15 @@ are too. A survivor in a check names a check no test protects.
 ```sh
 gh workflow run mutants.yml -f package=<crate>                      # that crate's tests
 gh workflow run mutants.yml -f package=<crate> -f test_scope=workspace
-gh workflow run mutants.yml -f package=<crate> -f mode=diff -f base=<tag>
+gh workflow run mutants.yml -f package=<crate> -f mode=diff -f base=<tag> -f ref=<branch>
 ```
 
 Scope `crate` is a cheap list of candidates and overstates survivors, because a
 foundation crate's behavior is often tested by whoever uses it. Scope `workspace`
 is the verdict on whether the project as a whole notices. Use `workspace` for a
 small crate and `crate` first for a large one, then confirm what matters in the
-lab. `mode=diff` suits a branch or a release range.
+lab. `mode=diff` suits a branch or a release range. `ref` defaults to `main`, so
+name the branch you are auditing, or the run measures something else and succeeds.
 
 Start one crate at a time: GitHub keeps one run waiting, and a third start
 replaces it. A run shares the account's 20 concurrent jobs with `ci.yml`, so
@@ -119,8 +120,8 @@ rule, even if a consumer already covers part of it. Don't assert an
 implementation detail or duplicate the expression under test:
 
 ```rust
-assert!(pode_votar(18));                // states the rule
-assert_eq!(pode_votar(18), 18 >= 18);   // copies the code and proves nothing
+assert!(may_vote(18));                // states the rule
+assert_eq!(may_vote(18), 18 >= 18);   // copies the code and proves nothing
 ```
 
 A test for a bug the mutant exposed lands with the fix, in a `fix:` commit. A test
@@ -129,11 +130,11 @@ for correct code is a `test:` commit.
 ### 5. Prove it
 
 Run the lab over the changed files, which leaves a list that should be shorter by
-exactly what you meant to catch:
+exactly what you meant to catch. `scripts/lab` is relative to this skill, and the
+script works from any directory:
 
 ```sh
-AUDIT=<scratch>/mutants .agents/skills/mutation-audit/scripts/lab \
-  --package <crate> --file '<path>'
+AUDIT=<scratch>/mutants scripts/lab --package <crate> --file '<path>'
 ```
 
 Add `--test-workspace=true` to judge against the whole workspace, and `--re
@@ -169,7 +170,8 @@ and the change, without the line number, which moves:
 'uze-document/src/lib\.rs.*replace > with >= in read$',
 ```
 
-Check it with `cargo mutants --list --package <crate> | wc -l`. An exclusion
+Check it with `AUDIT=<scratch>/mutants scripts/lab --list --package <crate> | wc -l`.
+An exclusion
 without its reason gets deleted, and anyone changing the code it names re-reads
 it. It is for equivalents and noise, never for a real gap someone would rather not
 fix.
