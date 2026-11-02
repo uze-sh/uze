@@ -4,7 +4,9 @@
 Let a marketplace live in a subdirectory of a Git repository, such as a
 monorepo, and say on registration exactly which checkout and subdirectory
 will be read and how.
+
 ## Requirements
+
 ### Requirement: A marketplace can live below its repository root
 
 The system SHALL accept a marketplace whose `marketplace.json` sits in a
@@ -17,7 +19,7 @@ to it for mirrored reads, linked reads, the lock and update checks.
 - **WHEN** `uze market add <repo>/aikit` registers a marketplace whose
   manifest is `<repo>/aikit/marketplace.json` with a plugin at
   `./flow`, and the marketplace is linked
-- **THEN** `uze install -m flow@<name>` installs `<repo>/aikit/flow`
+- **THEN** `uze add -m flow@<name>` installs `<repo>/aikit/flow`
 
 #### Scenario: Mirrored monorepo marketplace
 
@@ -43,4 +45,3 @@ whether reads follow the working tree (linked) or commits (mirrored).
   remote URL
 - **THEN** the output names the remote as identity and `<repo>/aikit` as what
   is read
-
