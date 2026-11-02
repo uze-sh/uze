@@ -11,7 +11,7 @@ deleting it costs**, never by which module wrote it:
 | bytes | `sources/` | the packages, until they are acquired again |
 | store | `store/` | what each harness reads: its plugins, until they are built again |
 | record | `state/` | the operator: nothing else knows it |
-| authored | the root: `config.toml`, `keys.json`, `theme-overrides.json`, `themes/` | the operator's own text |
+| authored | the root: `config.toml`, `keys.json`, `themes/` | the operator's own text |
 | generated | `runtime/`, `shims/` | nothing: it is produced again |
 | remembered | `cache/` | nothing: it is observed again |
 
@@ -19,6 +19,27 @@ A thing must not sit in a tier that claims a different cost than it has.
 Generated harness content once lived at `state/attachments/`, one letter
 from `attachments.json`, the ledger of who owns what inside it: the answer
 to "can I delete this" was opposite for each.
+
+**A name is one word, and its directory carries the context**: `usage.json`
+in `state/`, not `machine-usage.json`. No file name stands in two tiers, and
+no directory holds a file and a directory of one stem
+(`no_name_uze_owns_stands_for_two_things` in `owned.rs`). A lock guarding
+one document or directory shares its stem and sits beside it
+(`tasks.json` + `tasks.lock`); a lock guarding an activity is named for the
+activity in its scope's directory (`state/fetch.lock`,
+`projects/<p>/delivery.lock`). There is no `locks/` directory: a lock
+outlives nothing it guards, and `mutation.lock` and `config.lock` stay
+where both builds on one machine take them. A lock never sits under a
+swept tree.
+
+**`config.toml` reads by concept.** One section per concept (`appearance`,
+`notifications`, `memory`, `projects`, `extensions`, `preferences`); at most
+two header levels, `[section]` and `[section.<id>]`, deeper structure as
+dotted keys inside the table; one table per identified thing (a built-in
+extension by its bare id, a plugin's by `"plugin@marketplace"`, a project
+by its path); vocabulary ids kept as they are, quoted when they hold a dot
+(`"state.success"`); never a secret. A write changes only its key, under
+`config.lock`, keeping the operator's comments.
 
 **Only records declare a shape.** Generated and remembered things are
 produced or observed again when they cannot be read. Authored files carry

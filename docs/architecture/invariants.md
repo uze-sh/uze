@@ -464,7 +464,7 @@ the installed one did not have asks again.
 
 Trust (may these bytes be installed) is still never persisted. Consent to
 run an extension's code is a different question, answered per grant set and
-recorded in `state/extensions.json` (ADR-041, `extension-platform` D5):
+recorded in `state/extensions/consent.json` (ADR-041, `extension-platform` D5):
 that record is what lets a widened update be held.
 
 > `crates/uze-workspace/src/extensions/consent.rs::tests::consent_is_recorded_by_identity_with_its_grants_and_digest`
@@ -598,11 +598,12 @@ holding the pipe open is swept once before the reader is given up on.
 ### Cache is not required for correctness
 
 `~/.uze/cache` holds only what is observed again when it cannot be read:
-harness detection (`harness_detection.json`), requirement version probes
+harness detection (`detection.json`), requirement version probes
 (`requirements.json`), the shell's observed refusals (`shell.json`),
 attachment inspection (`inspection.json`), the last appearance seen
-(`appearance`), the installed release's notes (`release-notes.md`), the last
-machine Overview collected (`machine-overview.json`) and, for
+(`appearance`), the installed release's notes (`changelog.md`), the last
+machine Overview collected (`overview.json`), what was read of each
+harness's transcripts (`transcripts.json`) and, for
 every marketplace registered by URL, a mirror of its repository (`marketplaces/<name>/repo`, which remembers in
 `transport.json` how it was last reached) with whatever plugins have
 been asked about written out beside it (`marketplaces/<name>/plugins`).
