@@ -195,12 +195,12 @@ pub(crate) fn project_agents(directory: &Path) -> Vec<ProjectAgent> {
     agents
 }
 
-#[cfg(test)]
+// Every case is a symbolic link, which Windows lets an ordinary account
+// make only in developer mode.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
-    #[cfg(unix)]
     #[test]
     fn a_cloned_project_cannot_make_the_agent_walk_endless_or_unbounded() {
         let directory = uze_testkit::temp::scratch("project-agents-hostile");
@@ -226,8 +226,6 @@ mod tests {
         std::fs::remove_dir_all(&directory).ok();
     }
 
-    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
-    #[cfg(unix)]
     #[test]
     fn a_linked_definition_is_not_read() {
         let root = uze_testkit::temp::scratch("project-agents-linked");

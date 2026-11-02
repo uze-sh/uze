@@ -669,6 +669,7 @@ mod plugin_tests {
 
     /// Publishes `package`'s build as a delivery does, recording its
     /// receipt, and answers with the build.
+    #[cfg(unix)]
     fn publish(integration: &AntigravityIntegration, package: &StoredPackage) -> PathBuf {
         let receipt = integration
             .publish_build(
