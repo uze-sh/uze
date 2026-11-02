@@ -3785,6 +3785,19 @@ fn a_search_not_on_show_asks_nothing() {
     assert_eq!(asked(&mut back), 0, "the tree is on show");
 }
 
+/// A search that found nothing leaves Enter in the field too.
+#[test]
+fn enter_in_a_field_with_nothing_found_stays_in_it() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "absent");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    assert!(view.typing(), "the keys stay in the field");
+}
+
 /// A search still unanswered when the surface was put away gets its answer.
 #[test]
 fn a_search_put_away_unanswered_is_answered_when_it_comes_back() {
