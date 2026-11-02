@@ -24,6 +24,13 @@ if [[ ! -x "$sandbox" ]]; then
   exit 1
 fi
 
+mkdir -p "$AUDIT/boxes/mutants"
+exec 9>"$AUDIT/boxes/mutants/lab.lock"
+if ! flock -n 9; then
+  echo "lab: another run is using $AUDIT; give this one its own AUDIT" >&2
+  exit 1
+fi
+
 # CI's versions, so a lab result and a run name mutants the same way.
 workflow="$checkout/.github/workflows/mutants.yml"
 tools="$(sed -n 's/^ *tool: \(cargo-mutants@.*,.*\)$/\1/p' "$workflow")"
@@ -40,13 +47,19 @@ for tool in "${pinned[@]}"; do
 done
 
 copy="$AUDIT/boxes/mutants/work/uze"
+if [[ -L "$copy" ]]; then
+  echo "lab: $copy is a symbolic link, not the copy this script makes" >&2
+  exit 1
+fi
 mkdir -p "$copy"
-# Only the build cache outlives a run. A test file the checkout no longer has
-# would still compile here and catch mutants, a proof of nothing.
-find "$copy" -mindepth 1 -maxdepth 1 ! -name target -exec rm -rf {} +
+# Only the build cache and past results outlive a run. A test file the checkout
+# no longer has would still compile here and catch mutants, a proof of nothing.
+find "$copy" -mindepth 1 -maxdepth 1 ! -name target ! -name 'mutants.out*' -exec rm -rf {} +
+# Fresh times (-m): with the checkout's older ones, cargo would keep the last
+# mutant's build of a file cargo-mutants has since put back.
 git -C "$checkout" ls-files --cached --others --exclude-standard -z |
   (cd "$checkout" && tar --null --ignore-failed-read -T - -c) |
-  tar -x -C "$copy"
+  tar -x -m -C "$copy"
 
 SRC="$checkout" "$sandbox" mutants --net -- \
   bash -c 'cd uze && cargo fetch --locked'
