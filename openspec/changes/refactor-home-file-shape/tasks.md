@@ -41,7 +41,7 @@
 
 ## 7. The name rule and its docs
 
-- [ ] 7.1 Test over `owned_paths()`: no file name in two tiers, no file beside a directory of its stem in one directory (opaque and placeholders skipped)
+- [x] 7.1 `no_name_uze_owns_stands_for_two_things` over `owned_paths()`: no file name in two tiers, no file beside a directory of its stem (a lock guarding the directory excepted); proven against the old `usage.json` pair
 - [ ] 7.2 `.agents/rules/persistence-tiers.md`: the naming and lock rules and the `config.toml` shape under the authored tier
 - [ ] 7.3 Update `docs/architecture/invariants.md` and `docs/versioning.md` where they name old paths or the carry-across contract
 - [ ] 7.4 `make check` and `openspec validate --all --strict` green

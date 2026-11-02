@@ -1017,6 +1017,55 @@ mod tests {
         assert!(!segment_matches("gate-{agent}.log", "gate.log"));
     }
 
+    /// The `persisted-state` naming rule: no file name UZE owns stands in
+    /// two tiers, and no directory holds a file and a directory of one stem
+    /// — save the lock guarding that directory, which shares its stem on
+    /// purpose. Placeholders and opaque subtrees are another owner's.
+    #[test]
+    fn no_name_uze_owns_stands_for_two_things() {
+        let home = UzeHome::at("/uze-home");
+        let current: Vec<&OwnedPath> = UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == Standing::Current && owned.form != Form::Opaque)
+            .collect();
+        let named = |owned: &OwnedPath| {
+            let pattern = owned.pattern(&home);
+            let last = pattern.last().cloned().unwrap_or_default();
+            (!last.contains('{')).then_some((pattern, last))
+        };
+        let mut problems = Vec::new();
+        let files: Vec<_> = current
+            .iter()
+            .filter(|owned| matches!(owned.form, Form::Document | Form::Lock))
+            .filter_map(|owned| named(owned).map(|(pattern, last)| (owned, pattern, last)))
+            .collect();
+        for (index, (left, _, name)) in files.iter().enumerate() {
+            for (right, _, other) in &files[index + 1..] {
+                if name == other && left.tier != right.tier {
+                    problems.push(format!("{name}: {} and {}", left.name, right.name));
+                }
+            }
+        }
+        let stem = |name: &str| name.split('.').next().unwrap_or(name).to_owned();
+        for directory in current.iter().filter(|owned| owned.form == Form::Directory) {
+            let Some((dir_pattern, dir_name)) = named(directory) else {
+                continue;
+            };
+            for (file, file_pattern, file_name) in &files {
+                let beside = file_pattern.len() == dir_pattern.len()
+                    && file_pattern[..file_pattern.len() - 1]
+                        == dir_pattern[..dir_pattern.len() - 1];
+                if beside && stem(file_name) == dir_name && file.form != Form::Lock {
+                    problems.push(format!(
+                        "{dir_name}/ beside {file_name}: {} and {}",
+                        directory.name, file.name
+                    ));
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
+    }
+
     #[test]
     fn every_tier_holds_a_path() {
         for tier in Tier::ALL {
