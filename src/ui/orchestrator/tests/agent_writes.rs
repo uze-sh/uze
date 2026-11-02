@@ -635,6 +635,28 @@ fn a_refusal_over_an_unknown_line_draws_what_clears_it() {
     );
 }
 
+/// Text pasted while the line is unknown is known to be there, as text typed
+/// is, even if erased afterwards.
+#[test]
+fn pasting_over_an_unknown_line_leaves_text_no_answer_sends_along() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-pasted"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("up"));
+    let pane = driven.attach.model.focused_pane();
+    driven
+        .attach
+        .model
+        .remembered
+        .prompt_buffers
+        .get_mut(&pane)
+        .expect("the key made a buffer")
+        .paste("half a thought");
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::UnknownOverText
+    );
+}
+
 /// Only a bundled extension's send, asked about each time, may go over a
 /// line nobody can vouch for: whatever is there would undo what a plugin's
 /// text is held to.
