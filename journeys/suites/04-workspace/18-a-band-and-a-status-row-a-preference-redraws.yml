@@ -11,9 +11,9 @@ about: |
   Extensions screen redraws them without the names.
 
   The machine is what each scene checks: the consent record in
-  `state/extensions.json`, the preference record under
-  `state/extensions/preferences/deck@studio/deck.json`, and the checkout
-  the script read and never wrote. The screen only gates each gesture.
+  `state/extensions.json`, the preference in the operator's
+  `config.toml` under `[preferences."deck@studio/deck"]`, and the
+  checkout the script read and never wrote. The screen only gates each gesture.
 
 world:
   project: demo-app
@@ -196,8 +196,8 @@ scenes:
       - file: "{uze_home}/state/extensions.json"
         exists: false
         about: nobody consented to anything, and nothing was enabled
-      - dir: "{uze_home}/state/extensions/preferences/*"
-        exists: false
+      - cmd:
+          run: "! grep -qs '^\\[preferences\\.' {uze_home}/config.toml"
         about: and nobody set a preference
 
   - scene: and then the workspace offers it, and once enabled its band stands over the agent and its row in the sidebar, both naming the phases
@@ -243,9 +243,9 @@ scenes:
         equals: "{project}"
         count: 1
         about: and it is enabled in this project, and in no other
-      - dir: "{uze_home}/state/extensions/preferences/*"
-        exists: false
-        about: the band names the phases by the preference's default, with nothing recorded
+      - cmd:
+          run: "! grep -qs '^\\[preferences\\.' {uze_home}/config.toml"
+        about: the band names the phases by the preference's default, with nothing set
       - capture:
           name: before-the-preference
           tree: ["{project}"]
@@ -283,8 +283,8 @@ scenes:
         say: turn the toggle off, which the recorded answer below proves
         expect: 'Show each phase''s name {2,}off {2,}on'
         expect_timeout: 10
-      - wait: file
-        until: "{uze_home}/state/extensions/preferences/deck@studio/deck.json"
+      - wait: shell
+        until: "grep -q 'detail = false' {uze_home}/config.toml"
         timeout: 10
         say: the answer is written before the modal is put away
       - key: ["Escape", "Escape"]
@@ -302,10 +302,9 @@ scenes:
         timeout: 20
         say: and so is the row in the sidebar's header
     then:
-      - json: "{uze_home}/state/extensions/preferences/deck@studio/deck.json"
-        at: values.detail
-        equals: "false"
-        about: the operator's answer is recorded, for this extension only
+      - file: "{uze_home}/config.toml"
+        contains: "[preferences.\"deck@studio/deck\"]\ndetail = false"
+        about: the operator's answer is in their config, for this extension only
       - tree: ["{project}"]
         except: ["demo-app/.git/*", "demo-app/.worktrees/*/.git"]
         same_as: before-the-preference
