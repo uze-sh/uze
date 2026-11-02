@@ -1,6 +1,6 @@
 ## D1 — Codex's workspace is the hook's launch directory, not the transcript
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:   squashed on delivery
 - trigger:  the operator asked to measure whether a Codex hook's process directory follows its session under a shared app-server, and to fall back to the transcript's first line otherwise.
@@ -10,7 +10,7 @@
 
 ## D2 — Claude's workspace has no fallback to the payload
 
-- status:   pending
+- status:   accepted
 - task:     2.2
 - commit:   squashed on delivery
 - trigger:  `CLAUDE_PROJECT_DIR` could be missing in some launch the Lab does not exercise.
@@ -20,7 +20,7 @@
 
 ## D3 — The rules engine names its workspace by an entry argument
 
-- status:   pending
+- status:   accepted
 - task:     3.1
 - commit:   squashed on delivery
 - trigger:  the engine is one shared file; Claude's entry is exec form, which expands no variable.
@@ -30,7 +30,7 @@
 
 ## D4 — Claude Code is the one harness whose shell is scripted with no named directory
 
-- status:   pending
+- status:   accepted
 - task:     4.1
 - commit:   squashed on delivery
 - trigger:  the Lab cell scripts a call naming a directory wherever the command tool can carry one.
