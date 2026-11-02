@@ -198,13 +198,14 @@ pub fn record(
         return Ok(());
     };
     crate::record::ensure(home, workspace_root)?;
-    let file = path(home, workspace_root);
     let mut line = serde_json::to_vec(&entry).expect("prompt entry serialization is infallible");
     line.push(b'\n');
     let _held = crate::file_lock::Held::acquire(
         &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
+    // Composed under the lock: the record may have moved during the wait.
+    let file = path(home, workspace_root);
     append_line(&file, &line)?;
     if fs::metadata(&file).is_ok_and(|metadata| metadata.len() > COMPACT_ABOVE_BYTES) {
         compact(&file)?;
@@ -242,6 +243,8 @@ pub fn clear_agent(home: &UzeHome, workspace_root: &Path, agent: &str) -> Result
         &home.prompts_lock_path(&project_id_for(workspace_root)),
         LOCK_PATIENCE,
     )?;
+    // Composed again under the lock: the record may have moved during the wait.
+    let file = path(home, workspace_root);
     let kept: Vec<PromptEntry> = load(&file)
         .into_iter()
         .filter(|entry| entry.agent.as_deref() != Some(agent))

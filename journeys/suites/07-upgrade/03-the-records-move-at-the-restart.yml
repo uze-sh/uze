@@ -14,8 +14,9 @@ about: |
   its next agent in a new file, and after the restart that agent would be
   in a record nothing reads.
 
-  So nothing moves until the client that replaces the old one starts. Until
-  then the new binary reads and writes each record where it is. What the
+  So nothing moves while a client is attached: a second one starting beside
+  it moves nothing either. Until then the new binary reads and writes each
+  record where it is. What the
   machine must show: every agent the old client recorded, including one it
   recorded after a new binary ran, is under today's name after the restart,
   with the same id, and no earlier name is left behind.
@@ -59,6 +60,9 @@ scenes:
           {uze} status
           {uze} doctor
         say: the new binary answers two commands, as an agent's would
+        check: false
+      - shell: "{uze} workspace </dev/null"
+        say: and a second client of this build starts beside the open one
         check: false
       - click: "new"
         say: the client that is still open places another agent

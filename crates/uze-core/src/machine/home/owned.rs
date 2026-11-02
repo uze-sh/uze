@@ -508,8 +508,8 @@ const OWNED: &[OwnedPath] = &[
     .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
     .spelled(&["release-notes.md"]),
     // Records this build renamed, each carried to the name it now has by
-    // `earlier::carry_all` once no client of an earlier release can be open;
-    // only as often as a client starts, so unbounded. Until then the builders
+    // `earlier::carry_all` once no client of an earlier release can be open,
+    // which only a later start finds out, so unbounded. Until then the builders
     // answer with the earlier name and lock. Their locks are removed then.
     retired("retired_tasks_path", Record, Document, |home| {
         home.retired_tasks_path(PROJECT)

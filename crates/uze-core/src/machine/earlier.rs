@@ -43,10 +43,11 @@ pub(crate) fn earlier() -> Vec<Earlier> {
 
 /// Brings the home to today's names, once nothing of the floor release can
 /// be running on it: the settings, every record of the machine and of every
-/// project, and what is left of those names afterwards. Run when a client
-/// starts, which a restart into a new release is, or by a command while no
-/// workspace is running; never beside a client that may still read the
-/// earlier names (`UzeHome`'s builders follow a record until then).
+/// project, and what is left of those names afterwards. Run only when no
+/// client is attached to a running workspace, which is what a restart into
+/// a new release comes to, or no workspace runs at all; never beside a
+/// client that may still read the earlier names (`UzeHome`'s builders follow
+/// a record until then).
 pub fn carry_all(home: &crate::UzeHome) {
     carry_settings(home);
     carry_renamed(home, None);
@@ -91,9 +92,31 @@ fn spelled(path: &Path, project: &str) -> PathBuf {
     PathBuf::from(path.to_string_lossy().replace("{project}", project))
 }
 
+/// A lock file taken without waiting; `None` while another process holds
+/// it. No file means nobody does.
+struct LockedOrAbsent(#[allow(dead_code)] Option<std::fs::File>);
+
+impl LockedOrAbsent {
+    fn try_at(path: &Path) -> Option<Self> {
+        let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) else {
+            return Some(Self(None));
+        };
+        crate::persistence::try_lock_exclusive(&file)
+            .ok()
+            .map(|()| Self(Some(file)))
+    }
+}
+
+/// Removes a lock nobody holds. One somebody holds is left for the next
+/// carry: unlinking it would take the exclusion from under its holder.
+fn remove_unheld(lock: &Path) {
+    if LockedOrAbsent::try_at(lock).is_some() {
+        let _ = std::fs::remove_file(lock);
+    }
+}
+
 /// Removes the locks of the earlier names: nothing takes them once the
-/// records they guarded have moved. A failure leaves an empty file that
-/// `doctor` accounts for.
+/// records they guarded have moved.
 fn remove_earlier_locks(home: &crate::UzeHome, projects: &[String]) {
     for retired in crate::UzeHome::owned_paths().iter().filter(|owned| {
         owned.standing == crate::home::Standing::Retired && owned.form == crate::home::Form::Lock
@@ -106,16 +129,16 @@ fn remove_earlier_locks(home: &crate::UzeHome, projects: &[String]) {
             };
             for lock in std::fs::read_dir(directory).into_iter().flatten().flatten() {
                 if lock.path().extension().is_some_and(|ext| ext == "lock") {
-                    let _ = std::fs::remove_file(lock.path());
+                    remove_unheld(&lock.path());
                 }
             }
             let _ = std::fs::remove_dir(directory);
         } else if text.contains("{project}") {
             for project in projects {
-                let _ = std::fs::remove_file(spelled(&path, project));
+                remove_unheld(&spelled(&path, project));
             }
         } else {
-            let _ = std::fs::remove_file(&path);
+            remove_unheld(&path);
         }
     }
 }
@@ -175,13 +198,26 @@ fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
             None if was.to_string_lossy().contains('{') => continue,
             None => (was, now),
         };
-        if was.is_file() && !now.exists() {
-            if let Some(parent) = now.parent() {
-                let _ = std::fs::create_dir_all(parent);
+        if !was.is_file() {
+            continue;
+        }
+        if now.exists() {
+            // A move cut short between its link and its unlink.
+            if std::fs::read(&was).ok() == std::fs::read(&now).ok() {
+                let _ = std::fs::remove_file(&was);
             }
-            if let Err(error) = move_unless_taken(&was, &now) {
-                tracing::debug!(was = %was.display(), %error, "a record was not carried to its current name");
-            }
+            continue;
+        }
+        // Its writer holds the earlier lock: this one waits for the next
+        // start, and every build goes on finding the record where it is.
+        let Some(_held) = LockedOrAbsent::try_at(&was.with_extension("lock")) else {
+            continue;
+        };
+        if let Some(parent) = now.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(error) = move_unless_taken(&was, &now) {
+            tracing::debug!(was = %was.display(), %error, "a record was not carried to its current name");
         }
     }
 }
@@ -283,8 +319,8 @@ fn carry_settings(home: &crate::UzeHome) {
             }
         }
     }
-    // Read before any lock is taken: every process passes here, and only
-    // a machine holding the old key alone pays for the write.
+    // Read before any lock is taken: only a machine holding the old key
+    // alone pays for the write.
     if matches!(crate::config::get(home, "memory", "harness"), Ok(Some(_)))
         && matches!(crate::config::get(home, "memory", "native"), Ok(None))
         && let Err(error) = crate::config::rename_key(home, "memory", "harness", "native")
@@ -496,7 +532,7 @@ mod tests {
         }
         assert!(
             lock.exists(),
-            "a lock is not carried: an older build still takes it by name"
+            "carrying a record leaves its lock to `remove_earlier_locks`"
         );
     }
 
@@ -551,6 +587,49 @@ mod tests {
 
         assert_eq!(removed, loose.to_vec());
         assert!(kept.exists());
+    }
+
+    #[test]
+    fn a_record_whose_writer_holds_its_lock_waits_for_the_next_carry() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-held").join("uze"));
+        let was = home.retired_tasks_path("p1");
+        let lock_path = home.retired_tasks_lock_path("p1");
+        std::fs::create_dir_all(was.parent().unwrap()).unwrap();
+        std::fs::write(&was, "{}").unwrap();
+        let holder = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .unwrap();
+        crate::persistence::try_lock_exclusive(&holder).unwrap();
+
+        carry_all(&home);
+
+        assert!(was.is_file(), "the writer goes on finding it");
+        assert!(lock_path.exists(), "and goes on being excluded");
+
+        drop(holder);
+        carry_all(&home);
+
+        assert!(!was.exists() && !lock_path.exists());
+        assert!(home.names_only().tasks_path("p1").is_file());
+    }
+
+    #[test]
+    fn a_copy_left_by_a_move_cut_short_is_removed_and_a_different_record_is_not() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-cut-short").join("uze"));
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        let (launches, usage) = (home.launches_path(), home.usage_path());
+        std::fs::write(&launches, "same").unwrap();
+        std::fs::write(home.retired_launches_path(), "same").unwrap();
+        std::fs::write(&usage, "newer").unwrap();
+        std::fs::write(home.retired_usage_path(), "older").unwrap();
+
+        carry_renamed(&home, None);
+
+        assert!(!home.retired_launches_path().exists());
+        assert!(home.retired_usage_path().exists());
     }
 
     #[test]

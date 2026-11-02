@@ -45,7 +45,7 @@ recorded, and no lock UZE holds SHALL sit where maintenance sweeps.
 
 ### Requirement: A renamed record moves once, when no earlier release can be running
 
-UZE SHALL move a renamed record to its current name only when a workspace client starts or no workspace is running, and SHALL then move every project's records at once and remove the earlier names' locks. Until then every command SHALL read and write the record, under its lock, where it is.
+UZE SHALL move a renamed record to its current name only when a workspace client starts with no other client attached, or no workspace is running, and SHALL then move every project's records at once and remove the earlier names' locks. Until then every command SHALL read and write the record, under its lock, where it is.
 
 #### Scenario: A new binary runs beside the client an update left open
 

@@ -56,7 +56,7 @@
 - task:     8.1
 - commit:
 - trigger:  the updater renames the new binary over the old one and restarts nothing, so an open beta.22 client reads `agents.json` while any new `uze` in a pane moved it; reproduced with the real binaries, the client started a second record and the agents in it were no longer read after the restart
-- decided:  `carry_all` runs when a client starts (the restart) or a command sees no workspace running (`workspace_is_claimed`); it moves every project's records at once and removes the earlier locks, markers and the release answer. Until then `UzeHome`'s builders follow a record to where it is, with its lock, and `[memory] native` falls back to `harness`
+- decided:  `carry_all` runs when a client starts and the server says none is attached (the restart), or a command sees no workspace running; it skips a record whose earlier lock is held, and moves every project's records at once and removes the earlier locks, markers and the release answer. Until then `UzeHome`'s builders follow a record to where it is, with its lock, and `[memory] native` falls back to `harness`
 - rejected: carrying where each record is read (what caused it); keeping both names until the next release (leaves files on every machine); staging the binary until the restart (beta.22's updater, already published, installs beta.23)
-- limits:   during the window a new `uze` draws without theme overrides still in `theme-overrides.json`; a second client opened with the new binary beside an old client still open carries under it
+- limits:   during the window a new `uze` draws without theme overrides still in `theme-overrides.json`; a record under neither name (consent, an approval) that a new `uze` and the open client each create first ends under both names, reported by `doctor`; of the record writers, only tasks and prompts recheck their path under the lock
 - blast:    revert the commit; records go back to being carried where they are read

@@ -6,9 +6,10 @@
 //!   removed (the bootstrap normally already did);
 //! - an empty directory in the bytes, store or record tiers that the map
 //!   does not declare, and no declared path lies under, is removed;
-//! - a set-aside record and a revision a failed restore left in
+//! - a set-aside record, a record left under its earlier name beside the
+//!   one it moved to, and a revision a failed restore left in
 //!   `sources/superseded/` are reported with their size, and removed only
-//!   when the person asks (`--discard-leftovers`): either may be the only
+//!   when the person asks (`--discard-leftovers`): any of them may be the only
 //!   copy of something;
 //! - anything else undeclared in the bytes, store, record or authored tiers
 //!   is reported as unknown — possibly a newer build's — and never deleted.

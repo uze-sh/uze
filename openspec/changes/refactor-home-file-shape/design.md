@@ -166,7 +166,7 @@ a directory of one stem. Opaque subtrees and placeholders are skipped.
 
 - [The updater replaces the binary and restarts nothing, so a client of the
   floor release stays open beside every new `uze` a pane starts] → nothing
-  moves until a client starts or no workspace is running; until then each
+  moves until a client starts with none attached, or no workspace is running; until then each
   builder answers with the record's earlier name and lock (D6). A record that
   still ends up under both names (a second client opened beside an old one, or
   a downgrade) is reported by `doctor` and removed by `--discard-leftovers`.

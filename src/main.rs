@@ -387,18 +387,49 @@ fn answers_for_the_active_theme(command: &Option<Command>) -> bool {
     )
 }
 
-/// Whether this command may bring the home to today's names: nothing of an
-/// earlier release can be running beside it. A client starting is the
-/// restart into this release (a client inside a pane is only asking the
-/// running one for a space); any other command has to see no workspace.
-fn may_carry_the_home(command: &Option<Command>) -> bool {
+/// Whether this command may bring the home to today's names: no client of
+/// an earlier release can be open beside it. Without a workspace, none is.
+/// With one, the server is what knows: only a client starting asks it, and
+/// only while a record is uncarried, because the answer takes a second. A
+/// client that just restarted into this release may still be counted for
+/// the instant its connection takes to close, so it asks once more.
+fn may_carry_the_home(home: &UzeHome, command: &Option<Command>) -> bool {
     let opens_a_client = matches!(command, Some(Command::Workspace { action: None, .. }))
         && std::env::var_os("UZE_PANE").is_none();
-    opens_a_client || !uze_terminal::workspace_is_running()
+    let resumed = matches!(
+        command,
+        Some(Command::Workspace {
+            action: None,
+            resumed: true
+        })
+    );
+    carry_is_safe(
+        uze_terminal::workspace_is_running(),
+        opens_a_client,
+        uze_application::earlier::holds_uncarried_records(home),
+        || (0..if resumed { 2 } else { 1 }).any(|_| no_client_is_attached()),
+    )
+}
+
+fn carry_is_safe(
+    workspace_runs: bool,
+    opens_a_client: bool,
+    uncarried: bool,
+    no_client_attached: impl FnOnce() -> bool,
+) -> bool {
+    !workspace_runs || (opens_a_client && (!uncarried || no_client_attached()))
+}
+
+fn no_client_is_attached() -> bool {
+    match uze_terminal::usage() {
+        Ok(uze_terminal::Usage::NotRunning) => true,
+        Ok(uze_terminal::Usage::Running(report)) => report.clients.count == 0,
+        _ => false,
+    }
 }
 
 fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
-    if may_carry_the_home(&cli.command) {
+    if may_carry_the_home(&home, &cli.command) {
         uze_application::earlier::carry_all(&home);
     }
     // Before anything is drawn or printed, so the CLI's first line and the
@@ -852,6 +883,31 @@ fn open_workspace(home: UzeHome, verbose: bool, resumed: bool) -> Result<()> {
 /// contains `@` itself. This walks `clap`'s own generated command tree
 /// (not a hand-maintained list) so the guarantee cannot silently rot as
 /// commands are added.
+#[cfg(test)]
+mod carry_gate_tests {
+    use super::carry_is_safe;
+
+    #[test]
+    fn the_home_is_carried_only_with_no_client_that_may_read_its_earlier_names() {
+        assert!(carry_is_safe(false, false, true, || panic!(
+            "no server to ask"
+        )));
+        assert!(
+            !carry_is_safe(true, false, true, || panic!("only a client starting asks")),
+            "a command beside a running workspace leaves it"
+        );
+        assert!(carry_is_safe(true, true, true, || true), "the restart");
+        assert!(
+            !carry_is_safe(true, true, true, || false),
+            "a second client beside one still open"
+        );
+        assert!(
+            carry_is_safe(true, true, false, || panic!("nothing left to move")),
+            "what is left after the records moved goes without asking"
+        );
+    }
+}
+
 #[cfg(test)]
 mod grammar_tests {
     use clap::CommandFactory;

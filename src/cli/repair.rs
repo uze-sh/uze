@@ -154,9 +154,7 @@ fn render_home(home: &std::path::Path, entries: &[SchemaEntry]) -> String {
             ),
             (SchemaFinding::Stranded, false) => (
                 Change::Attention,
-                format!(
-                    "{size}, an earlier version's copy of a record that moved: nothing reads it"
-                ),
+                format!("{size}, written under a record's earlier name: nothing reads it"),
             ),
             (SchemaFinding::Superseded, false) => (
                 Change::Attention,
@@ -320,7 +318,7 @@ mod tests {
         );
         assert!(
             text.contains(
-                "state/launch-overrides.json   1.0 KB, an earlier version's copy of a record that moved"
+                "state/launch-overrides.json   1.0 KB, written under a record's earlier name"
             ),
             "{text}"
         );

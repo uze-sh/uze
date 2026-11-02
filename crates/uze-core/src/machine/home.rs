@@ -252,7 +252,7 @@ impl UzeHome {
 
     /// What a record was named before this build renamed it (see the
     /// owned map's retired entries, each naming the builder it became):
-    /// read only by the step that carries it to its current name.
+    /// where a record stays, and every build uses it, until it is carried.
     pub fn retired_tasks_path(&self, project_id: &str) -> PathBuf {
         self.project_dir(project_id).join("agents.json")
     }
