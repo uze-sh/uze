@@ -1,57 +1,81 @@
 # Decisions
 
-## D-1. Ladder checks live in `uze_document::earlier::rungs`
+## D1 — Ladder checks live in `uze_document::earlier::rungs`
 
-- **Chose:** `rungs::<T>()` asserts the ladder is contiguous, ends at `T::SHAPE` and that `lasts` never grows going down; the architecture suite calls every crate's `earlier()`, so every ladder is checked there.
-- **Over:** a separate suite walking ladders, which needs every record type to be visible to the root test crate (most are private to their module).
-- **Why:** the check sits where the ladder is turned into entries, and a module that forgets `rungs()` gets a dead-code warning (`-D warnings`) or the suite's coverage scan.
-- status:
+- status:   pending
+- task:     1.4
+- commit:   c06be4a7
+- trigger:  the task list as planned (1.4) did not fit what the code showed
+- decided:  `rungs::<T>()` asserts the ladder is contiguous, ends at `T::SHAPE` and that `lasts` never grows going down; the architecture suite calls every crate's `earlier()`, so every ladder is checked there.
+- rejected: a separate suite walking ladders, which needs every record type to be visible to the root test crate (most are private to their module). — the check sits where the ladder is turned into entries, and a module that forgets `rungs()` gets a dead-code warning (`-D warnings`) or the suite's coverage scan.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-2. A crate-level `earlier` module in `uze-core`, outside the five concerns
+## D2 — A crate-level `earlier` module in `uze-core`, outside the five concerns
 
-- **Chose:** `uze_core::earlier`, gathering the concerns' entries, beside `capability/`, `delivery/` and the rest.
-- **Over:** one aggregator per concern, re-exported at the root.
-- **Why:** it is a registry the suite reads, not a concern of its own; one door per crate is what the suite needs.
-- status:
+- status:   pending
+- task:     1.3
+- commit:   c06be4a7
+- trigger:  the task list as planned (1.3) did not fit what the code showed
+- decided:  `uze_core::earlier`, gathering the concerns' entries, beside `capability/`, `delivery/` and the rest.
+- rejected: one aggregator per concern, re-exported at the root. — it is a registry the suite reads, not a concern of its own; one door per crate is what the suite needs.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-3. Identifier marks are `legacy_`, `retired_` and `earlier_`; `pre_` is dropped
+## D3 — Identifier marks are `legacy_`, `retired_` and `earlier_`; `pre_` is dropped
 
-- **Chose:** three prefixes, counted at a word start on code lines, with `src/ui/orchestrator/input.rs` sanctioned (the X10 mouse encoding).
-- **Over:** the design's four, including `pre_`.
-- **Why:** measured, `pre_` matched `pre_tool_use` (17, a hook event) and `pre_exec` (6, `CommandExt`) and only three real sites (`pre_sources_layout`), which `spelled` covers once that entry is declared.
-- status:
+- status:   pending
+- task:     1.5
+- commit:   de2025f2
+- trigger:  the task list as planned (1.5) did not fit what the code showed
+- decided:  three prefixes, counted at a word start on code lines, with `src/ui/orchestrator/input.rs` sanctioned (the X10 mouse encoding).
+- rejected: the design's four, including `pre_`. — measured, `pre_` matched `pre_tool_use` (17, a hook event) and `pre_exec` (6, `CommandExt`) and only three real sites (`pre_sources_layout`), which `spelled` covers once that entry is declared.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-4. The unmarked-default rule freezes today's 43 defaults as exact budgets
+## D4 — The unmarked-default rule freezes today's 43 defaults as exact budgets
 
-- **Chose:** a per-file exact budget of `#[serde(default)]` attributes without `Additive` in the doc above, in files that implement `Shaped`.
-- **Over:** annotating all 43 now.
-- **Why:** each one needs a judgement (additive versus an earlier shape's absence, which belongs in a rung); freezing them stops new ones today and leaves the judgement to the commit that touches each record.
-- status:
+- status:   pending
+- task:     1.5
+- commit:   de2025f2
+- trigger:  the task list as planned (1.5) did not fit what the code showed
+- decided:  a per-file exact budget of `#[serde(default)]` attributes without `Additive` in the doc above, in files that implement `Shaped`.
+- rejected: annotating all 43 now. — each one needs a judgement (additive versus an earlier shape's absence, which belongs in a rung); freezing them stops new ones today and leaves the judgement to the commit that touches each record.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-5. A retired owned path gains `lasts` and `spelled`, not `carried_by`
+## D5 — A retired owned path gains `lasts` and `spelled`, not `carried_by`
 
-- **Chose:** `.lasts(..)` and `.spelled(..)` on `OwnedPath`; `UzeHome::earlier()` turns every retired entry into an `Earlier`.
-- **Over:** the design's `.carried_by(fn)`.
-- **Why:** D3 keeps every runner where it runs, so a function pointer on the entry would be called by nothing; the entry names its runner in a comment instead (`record::ensure`, `MutationLock::acquire`, the bootstrap sweep).
-- status:
+- status:   pending
+- task:     2.1
+- commit:   aa503978
+- trigger:  the task list as planned (2.1) did not fit what the code showed
+- decided:  `.lasts(..)` and `.spelled(..)` on `OwnedPath`; `UzeHome::earlier()` turns every retired entry into an `Earlier`.
+- rejected: the design's `.carried_by(fn)`. — D3 keeps every runner where it runs, so a function pointer on the entry would be called by nothing; the entry names its runner in a comment instead (`record::ensure`, `MutationLock::acquire`, the bootstrap sweep).
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-6. The carries move into `earlier` modules; their fences stay beside their records
+## D6 — The carries move into `earlier` modules; their fences stay beside their records
 
-- **Chose:** `package/sources.rs` becomes `package/earlier.rs`, and `carry_across_the_move` moves to `project/earlier.rs`; `rewrite_registry_with_digests`, `rewrite_ledger` and `rewrite_marketplaces` stay in `store.rs` and `state.rs`.
-- **Over:** moving the fences too.
-- **Why:** each fence rewrites a record through types private to its module (`RawPackageRegistry`, `MarketplaceRegistry`); moving them would widen those types for one caller. They are named in the carry they serve and go with it.
-- status:
+- status:   pending
+- task:     2.2
+- commit:   aa503978
+- trigger:  the task list as planned (2.2) did not fit what the code showed
+- decided:  `package/sources.rs` becomes `package/earlier.rs`, and `carry_across_the_move` moves to `project/earlier.rs`; `rewrite_registry_with_digests`, `rewrite_ledger` and `rewrite_marketplaces` stay in `store.rs` and `state.rs`.
+- rejected: moving the fences too. — each fence rewrites a record through types private to its module (`RawPackageRegistry`, `MarketplaceRegistry`); moving them would widen those types for one caller. They are named in the carry they serve and go with it.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-7. `retired_profiles_path` lasts until beta.20
+## D7 — `retired_profiles_path` lasts until beta.20
 
-- **Chose:** `Until(1.0.0-beta.20)`: #324 retired it and sweeps it on every bootstrap; its first release is beta.21.
-- **Over:** leaving it `Unbounded` until task 6.1.
-- **Why:** a swept path is the one kind that can be bounded today, and the builder `.lasts()` needs a first user.
-- status:
+- status:   pending
+- task:     2.1
+- commit:   aa503978
+- trigger:  the task list as planned (2.1) did not fit what the code showed
+- decided:  `Until(1.0.0-beta.20)`: #324 retired it and sweeps it on every bootstrap; its first release is beta.21.
+- rejected: leaving it `Unbounded` until task 6.1. — a swept path is the one kind that can be bounded today, and the builder `.lasts()` needs a first user.
+- blast:    revert the commit; no record or path on disk changes shape
 
-## D-8. Generated-tier staleness and receipt reconciliation are not entries
+## D8 — Generated-tier staleness and receipt reconciliation are not entries
 
-- **Chose:** no `Earlier` entry for a hook wrapper or rules engine "generated by an earlier build" that inspection accepts as matched (`hooks.rs`, `rules.rs`), nor for `retire_package_receipts`, `retire_superseded_receipts` and `release_obsolete_co_holders` in `lifecycle/attach.rs`.
-- **Over:** declaring each, as tasks 3.3 and 3.4 planned.
-- **Why:** none handles what one release left. Each is how the generated tier and the receipt model treat *any* earlier build's output — produced again, retired by receipt — and none ever becomes removable, so an entry would sit `Unbounded` forever and teach the floor nothing. What one release left (the runtime-tree engine path, the uze-local marketplace, plugins installed straight from the Store) is declared.
-- status:
+- status:   pending
+- task:     3.3, 3.4
+- commit:   258cbdfb
+- trigger:  the task list as planned (3.3, 3.4) did not fit what the code showed
+- decided:  no `Earlier` entry for a hook wrapper or rules engine "generated by an earlier build" that inspection accepts as matched (`hooks.rs`, `rules.rs`), nor for `retire_package_receipts`, `retire_superseded_receipts` and `release_obsolete_co_holders` in `lifecycle/attach.rs`.
+- rejected: declaring each, as tasks 3.3 and 3.4 planned. — none handles what one release left. Each is how the generated tier and the receipt model treat *any* earlier build's output — produced again, retired by receipt — and none ever becomes removable, so an entry would sit `Unbounded` forever and teach the floor nothing. What one release left (the runtime-tree engine path, the uze-local marketplace, plugins installed straight from the Store) is declared.
+- blast:    revert the commit; no record or path on disk changes shape
