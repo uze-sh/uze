@@ -14,16 +14,20 @@ about: |
   beside the one on `PATH`. A rule without a direction has them taking
   turns destroying each other's records, each saying it had recovered.
 
-  Every other test of this writes the two shapes itself. This runs the two
-  binaries: this build records an agent, and then the release a user has
-  installed — which predates every shape here — is asked to read it.
+  Every other test of this runs one binary against a document it wrote.
+  This runs the release a user has installed against a record a newer build
+  left: this build records an agent, and the record is laid under the name
+  the release reads, in a shape ahead of every shape it knows. A record
+  this build renamed would otherwise never meet the release at all, and
+  "left alone" would hold for a file it never opened.
 
-  What the machine must show: the newer build's records are byte-for-byte
-  what they were, and nothing was set aside.
+  What the machine must show: the record the release met is byte-for-byte
+  what it was, this build's own is untouched, and nothing was set aside.
 
 world:
   project: demo-app
-  released: v0.0.0-alpha.6
+  # The newest tag, which is also the release floor.
+  released: v1.0.0-beta.22
   manifest: |
     workspace:
       target: main
@@ -48,13 +52,21 @@ scenes:
         expect: 'agent 1(?!: preparing)'
         expect_timeout: 90
         pause: 1.5
-      - shell: |
-          set -e
-          cat {uze_home}/state/projects/*/tasks.json > {world}/recorded-before
-        say: keep the record exactly as this build wrote it
       - shell: "{uze} workspace stop"
         say: this build lets go of the workspace
         check: false
+      - shell: |
+          set -e
+          cat {uze_home}/state/projects/*/tasks.json > {world}/recorded-before
+          {python} -c "
+          import glob, json, pathlib
+          [store] = glob.glob('{uze_home}/state/projects/*/tasks.json')
+          record = json.load(open(store))
+          record['schema_version'] = 999
+          pathlib.Path(store).with_name('agents.json').write_text(json.dumps(record))
+          "
+          cat {uze_home}/state/projects/*/agents.json > {world}/newer-before
+        say: a newer build's record, under the name the release reads
     then:
       - agents: { count: 1 }
         about: one agent, recorded under this build's own shape
@@ -65,7 +77,29 @@ scenes:
         say: the release a user has installed reads the project
       - shell: "{released_uze} doctor || true"
         say: and is asked for its own report of the machine
+      - open: ["{released_uze}", "workspace"]
+        say: and opens on the project, reading its agents
+        expect: demo-app
+        expect_timeout: 30
+        pause: 2.0
+      - shell: "{released_uze} workspace stop"
+        say: and lets go of it
+        check: false
     then:
+      - cmd:
+          run: |
+            {python} -c "
+            import glob
+            [store] = glob.glob('{uze_home}/state/projects/*/agents.json')
+            before = open('{world}/newer-before').read()
+            print('unchanged' if open(store).read() == before else 'REWRITTEN')
+            "
+          stdout_contains: unchanged
+        about: |
+          the record the release met is byte-for-byte what it was. An older
+          binary that had rewritten it — or emptied it, or recorded the
+          project again from the machine — would have taken work it could
+          not even read the shape of.
       - cmd:
           run: |
             {python} -c "
@@ -75,11 +109,7 @@ scenes:
             print('unchanged' if open(store).read() == before else 'REWRITTEN')
             "
           stdout_contains: unchanged
-        about: |
-          the record is byte-for-byte what this build wrote. An older
-          binary that had rewritten it — or emptied it, or recorded the
-          project again from the machine — would have taken work it could
-          not even read the shape of.
+        about: and this build's own record, under its own name, was not touched
       - cmd:
           run: ls {uze_home}/state/projects/*/ | grep -c unreadable || true
           stdout_contains: "0"
