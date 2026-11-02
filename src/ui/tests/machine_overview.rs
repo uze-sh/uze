@@ -265,10 +265,18 @@ fn a_harness_narrows_the_menu_the_table_and_the_totals() {
         !drawn.iter().any(|row| row.contains("vercel:nextjs")),
         "Claude's only"
     );
-    assert!(
-        drawn.iter().any(|row| row.contains("5 sessions")),
-        "{drawn:#?}"
-    );
+    assert_eq!(fact(&drawn, "sessions"), "5", "{drawn:#?}");
+}
+
+/// What the card at the foot of the menu says beside `name`.
+fn fact(drawn: &[String], name: &str) -> String {
+    let row = drawn
+        .iter()
+        .find(|row| row.contains(&format!("│ {name} ")))
+        .unwrap_or_else(|| panic!("the card names {name}: {drawn:#?}"));
+    let (_, after) = row.split_once(&format!("│ {name} ")).unwrap();
+    let (said, _) = after.split_once('│').unwrap();
+    said.trim().to_owned()
 }
 
 fn now_seconds() -> u64 {
@@ -279,13 +287,56 @@ fn now_seconds() -> u64 {
 }
 
 #[test]
-fn the_header_counts_every_session_and_says_since_when() {
+fn the_card_counts_every_session_and_says_since_when() {
     let model = model();
     let drawn = rows(&model);
-    assert!(
-        drawn.iter().any(|row| row.contains("45 sessions · since ")),
-        "{drawn:#?}"
-    );
+    assert_eq!(fact(&drawn, "sessions"), "45");
+    assert!(!fact(&drawn, "since").is_empty());
+    assert_eq!(fact(&drawn, "tokens/session"), "~360");
+    assert_eq!(fact(&drawn, "to look at"), "1");
+}
+
+#[test]
+fn the_figures_stand_on_the_card_and_never_beside_the_title() {
+    let mut model = model();
+    model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
+    let drawn = rows(&model);
+    let title = drawn.iter().find(|row| row.contains("Overview")).unwrap();
+    for word in ["session", "since", "synced"] {
+        assert!(!title.contains(word), "{title}");
+    }
+    let hooks = drawn.iter().position(|row| row.contains("hooks")).unwrap();
+    let synced = drawn
+        .iter()
+        .position(|row| row.contains("│ synced "))
+        .unwrap();
+    assert!(synced > hooks, "under the menu's sections: {drawn:#?}");
+}
+
+#[test]
+fn a_short_screen_keeps_the_sections_and_the_freshness_on_the_card() {
+    let mut model = model();
+    model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
+    let tall = rows(&model);
+    let cut = (20..36)
+        .rev()
+        .map(|height| buffer_rows(&drawn_at(&model, 180, height).0))
+        .find(|drawn| !drawn.iter().any(|row| row.contains("│ tokens/session ")))
+        .expect("a height the whole card does not fit");
+    assert!(tall.iter().any(|row| row.contains("│ tokens/session ")));
+    assert!(cut.iter().any(|row| row.contains("│ synced ")), "{cut:#?}");
+    for section in ["skills", "agents", "mcp servers", "hooks", "rules"] {
+        assert!(cut.iter().any(|row| row.contains(section)), "{cut:#?}");
+    }
+}
+
+#[test]
+fn nothing_read_yet_draws_no_card() {
+    let mut model = model();
+    model.remembered.machine.overview = None;
+    let drawn = rows(&model);
+    let menu_edge = drawn.iter().filter(|row| row.contains("┌──"));
+    assert_eq!(menu_edge.count(), 0, "{drawn:#?}");
 }
 
 #[test]
@@ -660,10 +711,7 @@ fn opening_on_a_snapshot_says_when_it_was_synced_and_reads_nothing() {
     assert!(!force);
     screen.absorb(id, None, Some(std::time::SystemTime::now()), true);
     let drawn = rows(&model);
-    assert!(
-        drawn.iter().any(|row| row.contains("synced just now")),
-        "{drawn:#?}"
-    );
+    assert_eq!(fact(&drawn, "synced"), "just now", "{drawn:#?}");
     assert!(!drawn.iter().any(|row| row.contains("reading harnesses")));
 }
 

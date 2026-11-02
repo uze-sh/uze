@@ -804,6 +804,12 @@ operator rather than assume.
   grid, the slotted top bar.
 - A surface's header shows only its capitalised name, muted; paths and
   branches go in the bottom decoration.
+- A screen's figures about all it holds (the Overview's tokens per session,
+  sessions, since when, last sync) are a card at the foot of its menu's
+  column, a name and a figure per row, the names under the menu's labels
+  and the figures under its counts: never a sentence beside the title,
+  which narrower screens cut. With too little height the card's rows give
+  way from its head, the sections and the freshness staying.
 
 ## CLI output
 

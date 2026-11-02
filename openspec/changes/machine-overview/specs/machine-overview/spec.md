@@ -81,11 +81,11 @@ The Overview SHALL count every session each harness still keeps a record of, fro
 
 #### Scenario: Narrowing to one harness
 - **WHEN** the operator chooses Codex in the harness field
-- **THEN** the header shows Codex's sessions and how many days of records they span
+- **THEN** the screen shows Codex's sessions and how many days of records they span
 
 #### Scenario: A harness that deletes old records
 - **WHEN** a harness keeps only its last 30 days of sessions
-- **THEN** the header says the records reach back 30 days, and no figure claims a longer span
+- **THEN** the screen says the records reach back 30 days, and no figure claims a longer span
 
 ### Requirement: Broken is a fact on disk
 A resource SHALL read `broken` only when a fact on disk proves it cannot work: a hook's command file is missing, an MCP server's local command is not found, a skill or agent file cannot be read or its frontmatter is invalid, a plugin's directory is missing. Its reason SHALL be shown in one line.
@@ -161,11 +161,11 @@ Where a harness's record does not name a use but lets it be inferred from what t
 - **THEN** that server's uses read with `~`
 
 ### Requirement: Uses outlive the harness's own records
-When a harness deletes a record uze has read, its uses SHALL be kept, in a record of uze's own that declares its shape, and SHALL go on counting. A record the harness lists again SHALL be read live and never counted twice. Losing the cache SHALL NOT lose them; the header SHALL say since when uses are counted.
+When a harness deletes a record uze has read, its uses SHALL be kept, in a record of uze's own that declares its shape, and SHALL go on counting. A record the harness lists again SHALL be read live and never counted twice. Losing the cache SHALL NOT lose them; the screen SHALL say since when uses are counted.
 
 #### Scenario: A harness deletes a month-old transcript
 - **WHEN** a harness deletes a transcript in which a skill was used twice, after uze read it
-- **THEN** the skill's uses still count those two, and the header's date reaches back to them
+- **THEN** the skill's uses still count those two, and the screen's date reaches back to them
 
 ### Requirement: A record already read is not read again
 A record unchanged since the last collection SHALL NOT be opened again, and one only appended to SHALL be read from where the last reading stopped. Losing what was kept between readings SHALL cost only a fresh reading.
@@ -182,7 +182,7 @@ Counting sessions SHALL read at most a record's opening metadata and file time. 
 - **THEN** the phrase is in neither the snapshot nor anything kept between readings
 
 ### Requirement: The first frame never waits on collection
-Opening the Overview SHALL draw at once from what was last collected, and a fresh collection SHALL run in the background, marked in flight in the header. No frame SHALL wait on reading a harness's files or running a harness's command.
+Opening the Overview SHALL draw at once from what was last collected, and a fresh collection SHALL run in the background, marked in flight on the screen. No frame SHALL wait on reading a harness's files or running a harness's command.
 
 #### Scenario: Opening with nothing collected
 - **WHEN** the Overview is opened with nothing collected yet

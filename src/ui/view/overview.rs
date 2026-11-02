@@ -1,17 +1,17 @@
 //! TUI view — the Overview route: what every harness on this machine
 //! carries, whoever installed it.
 //!
-//! The screen's name and what the machine holds, two fields that narrow
-//! it (a harness, a period), then three columns: a menu of sections (uze's
-//! own findings while there are any, then each kind of resource with its
-//! count and what in it needs looking at), the table of the section chosen
-//! with its own search, and a panel describing the row the keyboard is on.
+//! The screen's name and the field that narrows it (a harness), then three
+//! columns: a menu of sections (uze's own findings while there are any, then
+//! each kind of resource with its count and what in it needs looking at) over
+//! a card of what the machine holds, the table of the section chosen with its
+//! own search, and a panel describing the row the keyboard is on.
 
 use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Padding, Paragraph},
 };
 
 use uze_application::machine_overview::{
@@ -26,7 +26,7 @@ use crate::ui::machine::{
 use crate::ui::model::{Focus, ResizablePanel, Route, TuiModel};
 use crate::ui::theme::{self, Symbol, Token};
 use crate::ui::view::health::{Alert, Severity};
-use crate::ui::widget::{definitions, message, row, screen_header, text};
+use crate::ui::widget::{Surface, TRAILING_PAD, definitions, message, row, screen_header, text};
 
 use super::FIELD_KEY_WIDTH;
 
@@ -44,8 +44,9 @@ const STATUS_GAP: &str = "  ";
 const STATUS_WIDTH: usize = 14;
 /// Below this table width the `from` column gives way to the name.
 const FROM_NEEDS: u16 = 64;
-/// The menu's width, and the air between it and the table.
-const MENU_WIDTH: u16 = 22;
+/// The menu's width, and the air between it and the table. Wide enough for
+/// the card under it to say `tokens/session ~12.4k` on one row.
+const MENU_WIDTH: u16 = 24;
 const MENU_GAP: u16 = 3;
 const ROW_INDENT: usize = 2;
 /// The columns a row keeps clear inside its right edge.
@@ -114,6 +115,7 @@ fn render_body(
         body_height,
     );
     render_menu(frame, menu, model, alerts.len(), hits);
+    render_facts(frame, menu, model, alerts.len());
     let table = Rect::new(
         menu.right() + MENU_GAP,
         top,
@@ -218,6 +220,50 @@ fn render_menu(
         hits.push((rect, hit));
         frame.render_widget(Paragraph::new(Line::from(spans)), rect);
     }
+}
+
+/// What the machine holds, on a card against the foot of the menu's column.
+/// With too little room under the sections, the rows at its head give way
+/// first, so the one saying how fresh it all is stays.
+fn render_facts(frame: &mut ratatui::Frame<'_>, area: Rect, model: &TuiModel, findings: usize) {
+    const BORDERS: u16 = 2;
+    const AIR_OVER: u16 = 1;
+    let facts = facts(model);
+    let sections = model.remembered.machine.sections(findings).len() as u16;
+    let room = area
+        .height
+        .saturating_sub(sections + AIR_OVER + BORDERS)
+        .min(facts.len() as u16);
+    if room == 0 {
+        return;
+    }
+    let height = room + BORDERS;
+    let card = Rect::new(area.x, area.bottom() - height, area.width, height);
+    // One column on the left, so its names stand under the menu's labels; the
+    // trailing pad its figures keep ends them under the menu's counts.
+    let inner = Surface::card()
+        .padding(Padding::left(1))
+        .render(frame, card);
+    let lines: Vec<Line<'static>> = facts[facts.len() - usize::from(room)..]
+        .iter()
+        .map(|fact| fact_line(fact, inner.width))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn fact_line(fact: &Fact, width: u16) -> Line<'static> {
+    let name = text::elide(
+        fact.name,
+        usize::from(width.saturating_sub(TRAILING_PAD + 1)),
+    );
+    let mut spans = vec![Span::styled(name, theme::fg(Token::TextDim))];
+    row::push_trailing(
+        &mut spans,
+        width,
+        fact.said.clone(),
+        theme::color(fact.tone),
+    );
+    Line::from(spans)
 }
 
 /// The table of the section chosen: its search, its headings and its rows.
@@ -403,8 +449,7 @@ fn render_headings(
     }
 }
 
-/// The screen's name, what the machine holds, and the two fields that
-/// narrow it, against the right edge.
+/// The screen's name, and the field that narrows it against the right edge.
 fn render_header(
     frame: &mut ratatui::Frame<'_>,
     rect: Rect,
@@ -421,15 +466,17 @@ fn render_header(
         .iter()
         .map(|(_, label)| text::columns(label) as u16 + arrows + 3)
         .sum::<u16>();
-    let note_area = Rect {
+    let title_area = Rect {
         width: rect.width.saturating_sub(fields_width + 1),
         ..rect
     };
-    let note = Span::styled(
-        text::elide(&summary(model), usize::from(note_area.width)),
-        theme::fg(Token::TextMuted),
+    screen_header::inline(
+        frame,
+        title_area,
+        Route::Overview.label(),
+        Span::raw(""),
+        None,
     );
-    screen_header::inline(frame, note_area, Route::Overview.label(), note, None);
 
     let mut x = rect.right().saturating_sub(fields_width);
     for (field, label) in fields {
@@ -466,12 +513,29 @@ fn render_header(
     }
 }
 
-/// What the machine holds, in a few words: what it costs per session,
-/// its sessions in the period the field shows, what to look at, and the
-/// collection in flight.
-fn summary(model: &TuiModel) -> String {
+/// A row of the card: what it names and what it says about it.
+struct Fact {
+    name: &'static str,
+    said: String,
+    tone: Token,
+}
+
+impl Fact {
+    fn new(name: &'static str, said: String) -> Self {
+        Self {
+            name,
+            said,
+            tone: Token::TextSecondary,
+        }
+    }
+}
+
+/// What the machine holds: what it costs per session, its sessions and how
+/// far back they reach, what to look at, and the collection in flight or the
+/// last one.
+fn facts(model: &TuiModel) -> Vec<Fact> {
     let screen = &model.remembered.machine;
-    let mut parts = Vec::new();
+    let mut facts = Vec::new();
     if let Some(overview) = &screen.overview {
         let shown: Vec<&OverviewResource> = overview
             .resources
@@ -483,9 +547,9 @@ fn summary(model: &TuiModel) -> String {
             .filter_map(|resource| resource.per_session)
             .sum();
         if per_session > 0 {
-            parts.push(format!(
-                "{} tokens per session",
-                machine::tokens(per_session)
+            facts.push(Fact::new(
+                Column::PerSession.label(),
+                machine::tokens(per_session),
             ));
         }
         let shown_harnesses: Vec<_> = overview
@@ -499,7 +563,7 @@ fn summary(model: &TuiModel) -> String {
             .collect();
         if !sessions.is_empty() {
             let total: u64 = sessions.iter().map(|counts| counts.total).sum();
-            parts.push(counted(total as usize, "session"));
+            facts.push(Fact::new("sessions", total.to_string()));
         }
         let since = shown_harnesses
             .iter()
@@ -515,25 +579,28 @@ fn summary(model: &TuiModel) -> String {
             .flatten()
             .min();
         if let Some(day) = since {
-            parts.push(format!("since {}", date_said(day)));
+            facts.push(Fact::new("since", date_said(day)));
         }
         let look = shown
             .iter()
             .filter(|resource| resource.status != Status::Ok)
             .count();
         if look > 0 {
-            parts.push(format!("{look} to look at"));
+            facts.push(Fact {
+                tone: Token::StateWarning,
+                ..Fact::new("to look at", look.to_string())
+            });
         }
     }
     if screen.reading {
-        parts.push(format!(
-            "{} reading harnesses",
-            theme::frame(Symbol::StatusWorking, model.tick)
+        facts.push(Fact::new(
+            "reading harnesses",
+            theme::frame(Symbol::StatusWorking, model.tick),
         ));
     } else if let Some(at) = screen.collected_at {
-        parts.push(format!("synced {}", synced_said(at)));
+        facts.push(Fact::new("synced", synced_said(at)));
     }
-    parts.join(" · ")
+    facts
 }
 
 fn counted(count: usize, noun: &str) -> String {
