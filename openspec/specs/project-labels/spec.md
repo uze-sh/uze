@@ -59,7 +59,7 @@ command line SHALL be unaffected.
 
 ### Requirement: The agent's menu renames the agent or its project
 An agent's context menu SHALL offer one `Rename` entry opening `Agent`
-and `Project`, by pointer and by keyboard as `Continue in` does, whenever
+and `Project`, by pointer and by keyboard as `Restart in` does, whenever
 the agent's project is known. `Agent` SHALL rename the agent as before;
 `Project` SHALL edit the project's label inline on that row, seeded with
 the name the row shows. Elsewhere the entry SHALL stay a plain `Rename`.
@@ -81,14 +81,15 @@ the name the row shows. Elsewhere the entry SHALL stay a plain `Rename`.
 - **THEN** `Rename` still offers `Project`
 
 ### Requirement: A menu entry that opens a submenu is marked by an arrow
-A context menu entry that opens a submenu SHALL be marked by an arrow
-against the menu's right edge, drawn from the glyph set in use, and SHALL
-carry no ellipsis. An ellipsis SHALL mark only an entry that asks before
-acting. A plain `Rename` that opens no submenu SHALL carry no arrow.
+A context menu entry that opens a submenu, or a panel beside the menu,
+SHALL be marked by an arrow against the menu's right edge, drawn from the
+glyph set in use, and SHALL carry no ellipsis. An ellipsis SHALL mark only
+an entry that asks before acting. A plain `Rename` that opens no submenu
+SHALL carry no arrow.
 
 #### Scenario: The agent's menu
 - **WHEN** the operator opens the menu of an agent whose project is known
-- **THEN** `Rename` and `Continue in` each end in an arrow at the menu's right edge, and neither carries an ellipsis
+- **THEN** `Rename` and `Restart in` each end in an arrow at the menu's right edge, and neither carries an ellipsis
 
 #### Scenario: A shell's menu
 - **WHEN** the operator opens the menu of a shell tab

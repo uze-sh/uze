@@ -390,10 +390,9 @@ open that view with the box zoomed into selected and in view.
 The surface SHALL open by a `toggle-architect` action bound in the
 workspace and in the code surface, and by a chip in the tab strip; the
 same action SHALL close it. While it is open its scope SHALL seal the
-keyboard from the pane underneath. From it, the changes and files entry
-points SHALL open the code surface directly. Every key the surface
-answers to SHALL be a named, rebindable action listed in the action index,
-and the surface's footer SHALL advertise keys read from the keymap.
+keyboard from the pane underneath. Every key the surface answers to SHALL be a named, rebindable action listed
+in the action index, and the surface's footer SHALL advertise keys read
+from the keymap.
 
 #### Scenario: Opening from the tab strip
 - **WHEN** the architect chip in the tab strip is clicked
@@ -406,6 +405,14 @@ and the surface's footer SHALL advertise keys read from the keymap.
 #### Scenario: A rebound key
 - **WHEN** the user's keymap binds `choose-artifact` to another chord
 - **THEN** the footer SHALL show that chord
+
+#### Scenario: From the architect to the review
+- **WHEN** the review's door is pressed while the architect is open
+- **THEN** the review SHALL open on the checkout in front
+
+#### Scenario: From the architect to the code surface
+- **WHEN** the files entry point is pressed while the architect is open
+- **THEN** the code surface SHALL open directly
 
 ### Requirement: Reading the artifacts never blocks the workspace
 Resolving the project's declaration and reading its artifact files SHALL

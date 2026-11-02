@@ -89,3 +89,15 @@ OpenCode's newest-session observation stays; only the existence check
 changed, to a lookup by id.
 
 Source change: openspec/changes/archive/2026-10-16-refresh-harness-deliveries/
+
+**2026-11-02 — A launch's inputs travel in a record the boundary reads**
+(`launch-overrides`). The flags and variables an agent is launched with are
+recorded before its tab opens, owner-only under `state/`, and the shim reads
+them back only after it has verified the launch's claim. The pane's command
+stays the bare launcher, because argv reads as the operator taking the launch
+over and would turn continuity off, and the tab's environment is too small to
+carry them. This makes the record, not the pane, the authority over what an
+owned launch carries; a later per-launch input binds to it. A launch with no
+shim placed has no continuity to lose, so there the client appends them itself.
+
+Source change: openspec/changes/archive/2026-11-02-launch-overrides/

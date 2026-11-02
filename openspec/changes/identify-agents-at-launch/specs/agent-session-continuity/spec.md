@@ -55,3 +55,7 @@ carrying no identity.
 #### Scenario: A launch from inside an agent is ordinary
 - **WHEN** an agent's harness starts another harness process in its own pane
 - **THEN** the inner process starts fresh and the agent's recorded conversation is unchanged
+
+#### Scenario: Overrides never turn continuity off
+- **WHEN** an agent is launched from the workspace with overrides
+- **THEN** none of them is an argument the catalog marks as UZE's, session and resume arguments included, and the agent resumes or starts its task's conversation as it would with none
