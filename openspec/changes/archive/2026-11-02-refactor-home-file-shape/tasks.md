@@ -7,7 +7,7 @@
 ## 2. Carry steps (after `earlier-release-support` lands)
 
 - [x] 2.1 Every renamed record is a `retired(..)` entry naming the builder it became (`.renamed_to`); its old lock is a retired, unswept entry (an older build still takes it); all `Unbounded`
-- [x] 2.2 One carry, `uze_core::earlier::carry_renamed(home, project)`, moves a project's or the machine's renamed records where the new name is free; run by `UzeApplication`'s constructor, `MutationLock::acquire`, `record::ensure` and the three project readers
+- [x] 2.2 (Where it runs was replaced by 8.1: see D6.) One carry, `uze_core::earlier::carry_renamed(home, project)`, moves a project's or the machine's renamed records where the new name is free; run by `UzeApplication`'s constructor, `MutationLock::acquire`, `record::ensure` and the three project readers
 - [x] 2.3 `theme-overrides.json` is carried into `[appearance.colors|symbols|syntax]` key by key, never over a key the operator has, and removed; `[memory] harness` becomes `native` keeping its comment; a `config.toml` that does not parse stops the carry and leaves the file
 - [x] 2.4 A home seeded with the beta.22 names comes out renamed with the same content, twice; a record already at its new name is never overwritten
 

@@ -142,8 +142,9 @@ SHALL ring once so the operator hears what they chose.
 ### Requirement: The operator's settings are one file they can edit
 
 UZE SHALL keep the operator's machine settings — the theme, the glyph set,
-and when finished agents ring — in one TOML file, `config.toml`, at the root
-of the UZE home. Writing one setting SHALL leave every other part of the file
+their overrides of the active theme, and when finished agents ring — in one
+TOML file, `config.toml`, at the root of the UZE home, one section per
+concept. Writing one setting SHALL leave every other part of the file
 unchanged, including comments and sections this build does not know. A file
 that does not parse SHALL be reported and SHALL NOT be written over.
 
@@ -160,3 +161,15 @@ that does not parse SHALL be reported and SHALL NOT be written over.
 - **THEN** the choice is refused with the file named, and the file is left as
   it was
 
+#### Scenario: Overrides written in the settings file
+
+- **WHEN** the operator writes a colour under `[appearance.colors]` and a
+  glyph under `[appearance.symbols]` in `config.toml`, then selects another
+  theme
+- **THEN** both apply over the newly selected theme
+
+#### Scenario: An override that does not resolve
+
+- **WHEN** an override in `config.toml` names a colour that is not one
+- **THEN** UZE reports it, naming `config.toml` and the section, and draws
+  the active theme without that override
