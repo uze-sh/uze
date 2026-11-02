@@ -24,4 +24,4 @@ them when the workspace opens and whenever they change.
 
 #### Scenario: The review's preference is edited in its drawer
 - **WHEN** the operator selects Review on the Extensions screen
-- **THEN** the drawer lists `Mark viewed automatically` with its value, editable by key and by click
+- **THEN** the drawer lists `Mark viewed once read` with its value, editable by key and by click
