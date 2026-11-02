@@ -368,7 +368,7 @@ impl UzeHome {
     /// one a killed UZE left behind is swept by the next process's first
     /// run, once older than any run could be.
     pub fn extension_scratch_root(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("scratch")
+        self.runtime_extensions_dir().join("scratch")
     }
 
     /// The pictures the programs of extension `id` of `plugin@marketplace`
@@ -381,14 +381,14 @@ impl UzeHome {
 
     /// Every extension's [`Self::extension_pictures_dir`].
     pub fn extension_pictures_root(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("pictures")
+        self.runtime_extensions_dir().join("pictures")
     }
 
     /// What each declared extension cost the workspace that last measured
     /// it: runs per minute, p95 and memory, which `uze doctor` reads.
     /// Generated: the next workspace measures them again.
     pub fn extension_costs_path(&self) -> PathBuf {
-        self.runtime_dir().join("extensions").join("costs.json")
+        self.runtime_extensions_dir().join("costs.json")
     }
 
     /// The guard every read-modify-write of the extensions record takes:
@@ -797,8 +797,9 @@ impl UzeHome {
     /// seconds after the launch that wrote it. `rules` holds which rules
     /// each running session was already given: sweeping it would deliver
     /// them all again on the session's next tool call. `extensions` holds
-    /// compiled extension views: sweeping it costs a compile on the next
-    /// open, so it is kept rather than swept by every `doctor`. `agents`
+    /// compiled extension views, programs' scratch and pictures and their
+    /// costs, each with its own collector: sweeping the views costs a
+    /// compile on the next open. `agents`
     /// holds what each agent reported while it runs: its own collector
     /// keeps it while a project records the agent.
     pub fn runtime_tenants(&self) -> [PathBuf; 7] {
@@ -809,8 +810,14 @@ impl UzeHome {
             self.delivered_packages_dir(),
             self.runtime_sessions_dir(),
             self.runtime_rules_dir(),
-            self.compiled_extensions_dir(),
+            self.runtime_extensions_dir(),
         ]
+    }
+
+    /// The extensions' corner of the runtime tree: their compiled views,
+    /// their programs' scratch and pictures, and what they cost.
+    pub fn runtime_extensions_dir(&self) -> PathBuf {
+        self.runtime_dir().join("extensions")
     }
 
     /// Declared extensions as last compiled, one file per digest of an
@@ -818,7 +825,13 @@ impl UzeHome {
     /// time the extension is opened, and an entry no extension's files
     /// digest to any more is simply never read again.
     pub fn compiled_extensions_dir(&self) -> PathBuf {
-        self.runtime_dir().join("extensions")
+        self.runtime_extensions_dir().join("compiled")
+    }
+
+    /// Where an earlier release kept one compiled extension: loose in the
+    /// extensions' corner, beside what is not a view.
+    pub fn loose_compiled_extension_path(&self, digest: &str) -> PathBuf {
+        self.runtime_extensions_dir().join(format!("{digest}.json"))
     }
 
     /// One compiled extension, by the digest of the files it was compiled

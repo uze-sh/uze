@@ -617,6 +617,21 @@ const OWNED: &[OwnedPath] = &[
     )
     .swept(),
     owned(
+        "runtime_extensions_dir",
+        Generated,
+        Directory,
+        UzeHome::runtime_extensions_dir,
+    ),
+    // Compiled views an earlier release kept loose in the extensions'
+    // corner; the compiled-views collector removes them when it next runs.
+    retired(
+        "loose_compiled_extension_path",
+        Generated,
+        Document,
+        |home| home.loose_compiled_extension_path("{digest}"),
+    )
+    .swept(),
+    owned(
         "compiled_extensions_dir",
         Generated,
         Directory,

@@ -13,7 +13,7 @@
 
 ## 3. New tenants and builders
 
-- [ ] 3.1 Add a `runtime_extensions_dir` tenant; `compiled_extensions_dir` becomes `runtime/extensions/compiled/`
+- [x] 3.1 `runtime_extensions_dir` is the tenant; `compiled_extensions_dir` is `runtime/extensions/compiled/`; views an earlier release kept loose are a retired swept family the compiled-views collector removes through `application/earlier.rs`
 - [ ] 3.2 `runtime/packages/` → `runtime/servers/` (builder, collector, MCP materialize, uninstall)
 - [ ] 3.3 Add `setup_log_path` (`logs/setup/<harness>.log`) used by `src/cli/setup.rs`; `gate_log_path` → `logs/gate/<agent>.log`; anchor the map test on `logs_dir()`; check `Journals` still filters by prefix
 - [ ] 3.4 Runtime projection marker `project.json` → `root.json`

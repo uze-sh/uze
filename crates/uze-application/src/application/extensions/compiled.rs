@@ -229,7 +229,7 @@ impl crate::application::Collectable for CompiledViews<'_> {
     }
 
     fn roots(&self) -> &'static [&'static str] {
-        &["compiled_extension_path"]
+        &["compiled_extension_path", "loose_compiled_extension_path"]
     }
 
     fn collect(&self, home: &uze_core::UzeHome) -> crate::application::Collected {
@@ -240,7 +240,11 @@ impl crate::application::Collectable for CompiledViews<'_> {
             }
         };
         let installed = self.0.extensions().installed();
-        crate::application::Collected::removed(self.name(), pruned_compiled_cache(home, &installed))
+        let mut removed = pruned_compiled_cache(home, &installed);
+        removed.extend(crate::application::earlier::remove_loose_compiled_views(
+            home,
+        ));
+        crate::application::Collected::removed(self.name(), removed)
     }
 }
 

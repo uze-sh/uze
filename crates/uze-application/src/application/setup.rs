@@ -27,12 +27,24 @@ pub enum ProvisionRoute {
 /// lock it already holds.
 pub(crate) struct Retired;
 
+/// The map's retired, disposable paths this collector removes by name:
+/// one spelled with a placeholder is a family only its owner can list, and
+/// its owner's collector removes it.
+fn removed_by_name() -> impl Iterator<Item = &'static uze_core::home::OwnedPath> {
+    UzeHome::disposable_paths().filter(|owned| {
+        owned.standing == uze_core::home::Standing::Retired
+            && !owned
+                .pattern(&UzeHome::at("/"))
+                .iter()
+                .any(|segment| segment.contains('{'))
+    })
+}
+
 impl Retired {
     /// What of the retired list — the map's retired, disposable paths — is
     /// still on this machine.
     fn present(home: &UzeHome) -> Vec<PathBuf> {
-        UzeHome::disposable_paths()
-            .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
+        removed_by_name()
             .map(|owned| owned.path(home))
             .filter(|path| std::fs::symlink_metadata(path).is_ok())
             .collect()
@@ -61,12 +73,8 @@ impl Collectable for Retired {
     }
 
     fn roots(&self) -> &'static [&'static str] {
-        static ROOTS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
-            UzeHome::disposable_paths()
-                .filter(|owned| owned.standing == uze_core::home::Standing::Retired)
-                .map(|owned| owned.name)
-                .collect()
-        });
+        static ROOTS: std::sync::LazyLock<Vec<&'static str>> =
+            std::sync::LazyLock::new(|| removed_by_name().map(|owned| owned.name).collect());
         &ROOTS
     }
 

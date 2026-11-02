@@ -378,6 +378,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "session_context_dir",
             "runtime_rules_dir",
             "rules_sessions_dir",
+            "runtime_extensions_dir",
             "compiled_extensions_dir",
             "compiled_extension_path",
             "extension_scratch_root",
