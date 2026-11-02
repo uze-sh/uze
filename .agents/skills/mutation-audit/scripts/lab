@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# lab <cargo-mutants arguments...>
+#
+# Runs cargo-mutants over a copy of this checkout, inside the security-audit
+# skill's sandbox: the operator's home hidden, an own PID namespace so a mutant
+# that signals everything reaches only the box, and no network once the
+# dependencies are fetched. What a mutant changes can delete files, end
+# processes and write harness configuration, so it never runs bare here.
+#
+#   AUDIT=<scratch dir> lab --package uze-document --file 'crates/uze-document/src/lib.rs'
+#
+# AUDIT holds the box and the tools, and is required. The results land in
+# $AUDIT/boxes/mutants/work/uze/mutants.out.
+set -euo pipefail
+
+: "${AUDIT:?set AUDIT to a scratch directory outside the repository}"
+export AUDIT
+here="$(cd "$(dirname "$0")" && pwd)"
+checkout="$(git -C "$here" rev-parse --show-toplevel)"
+sandbox="$checkout/.agents/skills/security-audit/scripts/sandbox"
+
+# The versions `.github/workflows/mutants.yml` installs.
+for tool in cargo-mutants@27.1.0 cargo-nextest@0.9.146; do
+  if [[ ! -x "$AUDIT/bin/${tool%@*}" ]]; then
+    cargo install --locked --root "$AUDIT" "$tool"
+  fi
+done
+
+copy="$AUDIT/boxes/mutants/work/uze"
+mkdir -p "$copy"
+git -C "$checkout" ls-files --cached --others --exclude-standard -z |
+  (cd "$checkout" && tar --null --ignore-failed-read -T - -c) |
+  tar -x -C "$copy"
+
+SRC="$checkout" "$sandbox" mutants --net -- \
+  bash -c 'cd uze && cargo fetch --locked'
+SRC="$checkout" "$sandbox" mutants -- \
+  bash -c 'cd uze && CARGO_NET_OFFLINE=true exec cargo mutants --in-place --no-shuffle --colors never --test-tool nextest "$@"' \
+  lab "$@"
