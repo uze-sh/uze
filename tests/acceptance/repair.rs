@@ -525,6 +525,33 @@ fn home_entries(report: &serde_json::Value) -> Vec<(String, String, bool)> {
         .collect()
 }
 
+/// A file an earlier release wrote that nothing reads any more goes on the
+/// next repair, and a second run has nothing left to say.
+#[test]
+fn a_file_of_an_earlier_release_is_removed() {
+    let env = delivered();
+    let cache = env.uze_home.join("cache");
+    fs::create_dir_all(&cache).unwrap();
+    let retired = [
+        "harness_detection.json",
+        "machine-overview.json",
+        "machine-usage.json",
+        "release-notes.md",
+    ]
+    .map(|name| cache.join(name));
+    for path in &retired {
+        fs::write(path, "{}").unwrap();
+    }
+
+    let (code, report) = repair_json(&env);
+
+    assert_eq!(code, Some(0), "{report:#}");
+    for path in &retired {
+        assert!(!path.exists(), "{}: {report:#}", path.display());
+    }
+    a_second_run_repairs_nothing(&env);
+}
+
 /// Something no part of this build declares, in the records, the bytes or
 /// the operator's own files, may be a newer build's: reported, never
 /// deleted, however often repair runs.
