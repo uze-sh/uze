@@ -585,13 +585,18 @@ const OWNED: &[OwnedPath] = &[
     owned("agent_context_dir", Generated, Directory, |home| {
         home.agent_context_dir(PROJECT, AGENT)
     }),
-    owned(
+    // Where earlier releases kept what harnesses read; nothing writes here
+    // since #345. Each integration removes what it left once no receipt
+    // names it, which happens only when its package is next delivered or
+    // detached: unbounded, and still a runtime tenant so no sweep takes a
+    // path a receipt names.
+    retired(
         "runtime_attachments_dir",
         Generated,
         Directory,
         UzeHome::runtime_attachments_dir,
     ),
-    owned("generated_attachments_dir", Generated, Directory, |home| {
+    retired("generated_attachments_dir", Generated, Directory, |home| {
         home.generated_attachments_dir(VENDOR)
     }),
     owned(

@@ -613,17 +613,16 @@ impl UzeHome {
         self.logs_dir().join(format!("gate-{agent}.log"))
     }
 
-    /// Where an integration stages what it writes before it moves into place,
-    /// and where earlier releases kept what harnesses read: a generated
-    /// marketplace, a hook wrapper, the rules engine. No harness reads from
-    /// here any more ([`Self::vendor_store_dir`] is what they read), so
-    /// deleting it costs nothing; what an earlier release left here is
-    /// removed once no receipt names it.
+    /// Where earlier releases kept what harnesses read: a generated
+    /// marketplace, a hook wrapper, the rules engine. Retired: no harness
+    /// reads from here any more ([`Self::vendor_store_dir`] is what they
+    /// read), and what an earlier release left is removed once no receipt
+    /// names it.
     pub fn generated_attachments_dir(&self, vendor: &str) -> PathBuf {
         self.runtime_attachments_dir().join(vendor)
     }
 
-    /// The parent of every [`Self::generated_attachments_dir`]: staging only.
+    /// The parent of every [`Self::generated_attachments_dir`]: retired.
     pub fn runtime_attachments_dir(&self) -> PathBuf {
         self.runtime_dir().join("attachments")
     }
