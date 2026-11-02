@@ -81,6 +81,24 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
     }
 }
 
+/// Whether `project`'s record that `builder` composes is on disk, under
+/// its current name or the one an earlier release gave it: what a walk
+/// over many projects asks without carrying any of them.
+pub fn is_recorded(home: &crate::UzeHome, project: &str, builder: &str) -> bool {
+    crate::UzeHome::owned_paths()
+        .iter()
+        .filter(|owned| owned.name == builder || owned.renamed_to == Some(builder))
+        .any(|owned| {
+            PathBuf::from(
+                owned
+                    .path(home)
+                    .to_string_lossy()
+                    .replace("{project}", project),
+            )
+            .is_file()
+        })
+}
+
 /// Moves `was` to `now` only while nothing is at `now`: a link refuses a
 /// taken name where a rename would replace it, so a record another process
 /// wrote since the check is never overwritten by the earlier one.
@@ -296,6 +314,18 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&now).unwrap(), "older");
         assert!(!was.exists());
+    }
+
+    #[test]
+    fn a_record_under_its_earlier_name_is_recorded_and_stays_where_it_is() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("is-recorded").join("uze"));
+        let was = home.retired_tasks_path("p1");
+        std::fs::create_dir_all(was.parent().unwrap()).unwrap();
+        std::fs::write(&was, "{}").unwrap();
+
+        assert!(is_recorded(&home, "p1", "tasks_path"));
+        assert!(!is_recorded(&home, "p2", "tasks_path"));
+        assert!(was.exists() && !home.tasks_path("p1").exists());
     }
 
     #[test]

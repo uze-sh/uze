@@ -117,7 +117,7 @@ impl Workspace<'_> {
     #[tracing::instrument(name = "workspace.end_abandoned_agents", skip_all, fields(root = %root.display()))]
     pub fn end_abandoned_agents(&self, root: &Path, echoed: &[String]) -> Vec<String> {
         let root = canonical(root);
-        if !task::store_path(&self.0.home, &root).exists() {
+        if !task::is_recorded(&self.0.home, &root) {
             return Vec::new();
         }
         task::locked(&self.0.home, &root, |store| {
@@ -337,7 +337,7 @@ impl Workspace<'_> {
     /// repository, and answers whether it was one.
     fn forget_in_the_root(&self, root: &Path, task_id: &str) -> Result<bool> {
         let root = canonical(root);
-        if !task::store_path(&self.0.home, &root).exists() {
+        if !task::is_recorded(&self.0.home, &root) {
             return Ok(false);
         }
         task::locked(&self.0.home, &root, |store| {

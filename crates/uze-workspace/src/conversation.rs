@@ -520,7 +520,7 @@ pub struct Claim<'a> {
 pub fn project_of(home: &UzeHome, cwd: &Path) -> Option<PathBuf> {
     let cwd = cwd.canonical().unwrap_or_else(|_| cwd.to_path_buf());
     cwd.ancestors()
-        .find(|root| task::store_path(home, root).exists())
+        .find(|root| task::is_recorded(home, root))
         .map(Path::to_path_buf)
 }
 
@@ -542,7 +542,7 @@ pub fn owner_of(home: &UzeHome, claim: Claim<'_>) -> Option<Owner> {
         .canonical()
         .unwrap_or_else(|_| claim.cwd.to_path_buf());
     cwd.ancestors().find_map(|root| {
-        if !task::store_path(home, root).exists() {
+        if !task::is_recorded(home, root) {
             return None;
         }
         let store = task::load(home, root).ok()?;

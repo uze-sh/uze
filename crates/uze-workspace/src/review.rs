@@ -178,7 +178,7 @@ pub fn agent_of_checkout(
         .canonical()
         .unwrap_or_else(|_| checkout.to_path_buf());
     let found = checkout.ancestors().find_map(|root| {
-        if !task::store_path(home, root).exists() {
+        if !task::is_recorded(home, root) {
             return None;
         }
         let store = task::load(home, root).ok()?;
