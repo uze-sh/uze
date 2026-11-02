@@ -6,5 +6,5 @@ use uze_document::earlier::Earlier;
 
 /// This crate's entries: its records' ladder rungs, then its own.
 pub fn earlier() -> Vec<Earlier> {
-    crate::runtime::earlier()
+    crate::runtime::earlier::earlier()
 }

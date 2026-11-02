@@ -31,9 +31,9 @@
 
 ## 5. Wire and command spelling
 
-- [ ] 5.1 `uze-terminal/src/runtime/earlier.rs` from `endpoint.rs`'s older-protocol paths
-- [ ] 5.2 `src/cli/earlier.rs`: `--resumed`, `uze terminal`, the refused `--instructions`
-- [ ] 5.3 Budgets at zero; remove the budget lists
+- [x] 5.1 `uze-terminal/src/runtime/earlier.rs`: the persisted workspace's rungs and the server older than the claimant record; finding a server of another protocol or at an older endpoint stays in `endpoint.rs`, as the `persisted-state` addressability rule (D11)
+- [x] 5.2 `src/earlier.rs` (the library half, which the suite reaches): the refused `--instructions`; `--resumed` and `uze terminal` stay, read by every later release (D11)
+- [x] 5.3 Marks at zero; the budget list is gone and any mark fails
 
 ## 6. Releases
 
