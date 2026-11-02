@@ -78,8 +78,24 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
 /// taken name where a rename would replace it, so a record another process
 /// wrote since the check is never overwritten by the earlier one.
 fn move_unless_taken(was: &Path, now: &Path) -> std::io::Result<()> {
-    std::fs::hard_link(was, now)?;
-    std::fs::remove_file(was)
+    move_with(was, now, |was, now| std::fs::hard_link(was, now))
+}
+
+/// The same, linking with `link`. A filesystem that cannot link (FAT, some
+/// network shares) is moved by a rename once `now` is seen free again: the
+/// narrower guard, but a record that is never carried is worse.
+fn move_with(
+    was: &Path,
+    now: &Path,
+    link: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    match link(was, now) {
+        Ok(()) => std::fs::remove_file(was),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists || now.exists() => {
+            Err(error)
+        }
+        Err(_) => std::fs::rename(was, now),
+    }
 }
 
 /// Carries what an earlier release kept outside `config.toml` into it: the
@@ -267,6 +283,20 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&now).unwrap(), "newer");
         assert_eq!(std::fs::read_to_string(&was).unwrap(), "older");
+    }
+
+    #[test]
+    fn a_filesystem_that_cannot_link_still_carries_a_record() {
+        let scratch = uze_testkit::temp::scratch("carry-move-no-links");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let (was, now) = (scratch.join("was.json"), scratch.join("now.json"));
+        std::fs::write(&was, "older").unwrap();
+        let unsupported = |_: &Path, _: &Path| Err(std::io::ErrorKind::Unsupported.into());
+
+        move_with(&was, &now, unsupported).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&now).unwrap(), "older");
+        assert!(!was.exists());
     }
 
     #[test]
