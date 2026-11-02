@@ -287,6 +287,7 @@ impl uze_document::Shaped for ConversationRecord {
         &[uze_document::Step {
             from: 2,
             to: 3,
+            lasts: uze_document::earlier::Lasts::Unbounded,
             // Shape 2's briefing named a generated file under `runtime/`,
             // which is not carried across; the conversations are.
             climb: |mut document| {

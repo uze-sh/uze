@@ -400,6 +400,7 @@ impl uze_document::Shaped for RawPackageRegistry {
         &[uze_document::Step {
             from: 1,
             to: 2,
+            lasts: uze_document::earlier::Lasts::Unbounded,
             climb: Ok,
         }]
     }

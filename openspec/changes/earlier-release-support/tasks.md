@@ -1,6 +1,6 @@
 ## 1. Vocabulary, suite and rule
 
-- [ ] 1.1 `uze-document`: `Release` (alpha, beta, stable; ordered), `Lasts { Until, Unbounded }`, `FLOOR = Release::Alpha(1)`, `Earlier { name, lasts, spelled, site }` and the `earlier!` macro; `Step` gains `lasts`; widen the crate doc and `document-ladder.md`
+- [x] 1.1 `uze-document`: `Release` (alpha, beta, stable; ordered), `Lasts { Until, Unbounded }`, `FLOOR = Release::Alpha(1)`, `Earlier { name, lasts, spelled, site }` and the `earlier!` macro; `Step` gains `lasts`; widen the crate doc and `document-ladder.md`
 - [ ] 1.2 Re-export the vocabulary from `uze-application` for `uze-integrations`'s consumers and `src/`; add `uze-document` to `uze-integrations`
 - [ ] 1.3 Every `Step` literal (state.rs, store.rs, task.rs, conversation.rs, terminal persist.rs) declares `lasts: Unbounded`; each crate exposes `pub fn earlier()` including its ladders
 - [ ] 1.4 `tests/architecture/earlier.rs`: floor; `FLOOR <= CARGO_PKG_VERSION`; `lasts` non-decreasing up a ladder; ladders contiguous; every `impl … Shaped for` covered by its crate's `earlier()`

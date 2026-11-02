@@ -62,6 +62,7 @@ mod shapes {
             &[uze_document::Step {
                 from: 1,
                 to: 2,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: Ok,
             }]
         }
@@ -86,6 +87,7 @@ mod shapes {
                 uze_document::Step {
                     from: 1,
                     to: 2,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: |mut document| {
                         if let Some(receipts) = document.get_mut("receipts")
                             && let Some(keyed) = receipts.as_object()
@@ -99,11 +101,13 @@ mod shapes {
                 uze_document::Step {
                     from: 2,
                     to: 3,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: Ok,
                 },
                 uze_document::Step {
                     from: 3,
                     to: 4,
+                    lasts: uze_document::earlier::Lasts::Unbounded,
                     climb: Ok,
                 },
             ]

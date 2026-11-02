@@ -644,6 +644,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 3,
                 to: 4,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
@@ -670,6 +671,7 @@ impl uze_document::Shaped for AgentStore {
             uze_document::Step {
                 from: 4,
                 to: 5,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     if let Some(agents) = document
                         .get_mut("agents")
