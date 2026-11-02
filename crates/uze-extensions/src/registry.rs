@@ -90,7 +90,7 @@ mod tests {
     }
 
     #[test]
-    fn no_builtin_declares_a_secret() {
+    fn a_builtin_declares_no_secret_and_defaults_it_may_hold() {
         for extension in ExtensionRegistry::builtin().all() {
             assert!(
                 extension

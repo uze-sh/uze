@@ -1737,32 +1737,12 @@ fn clicking_a_builtins_toggle_is_pressing_enter_on_it() {
 #[test]
 fn a_builtins_preferences_are_set_in_its_drawer() {
     let review = uze_extensions::review::CATALOG;
-    let mut model = TuiModel {
-        route: Route::Extensions,
-        focus: Focus::Content,
-        extensions: uze_extensions::registry::ExtensionRegistry::builtin()
-            .all()
-            .to_vec(),
-        ..TuiModel::default()
-    };
+    let mut model = on_the_reviews_preferences();
     assert_eq!(
         model.selected_extension().map(|entry| entry.id()),
         Some(review.id.to_owned())
     );
     let declared = review.preferences();
-    model.builtin_preferences.insert(
-        review.id.to_owned(),
-        vec![uze_application::PreferenceRow {
-            name: declared[0].name.clone(),
-            label: declared[0].label.clone(),
-            kind: "toggle",
-            value: serde_json::json!(true),
-            values: Vec::new(),
-            default: serde_json::json!(true),
-            min: None,
-            max: None,
-        }],
-    );
     let label = declared[0].label.clone();
     let screen = screen_of(&model);
     assert!(
