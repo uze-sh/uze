@@ -38,7 +38,9 @@
 //!   saw and moves on; the next mutation heals.
 //!
 //! A ladder step is a function from one shape to the next, and it is
-//! removable once no machine can still be below it. That is what makes this
+//! removable once the release floor passes the last release whose run could
+//! leave a record below it ([`earlier`], which also holds every other kind of
+//! support for what an earlier release left). That is what makes this
 //! the opposite of the scattered compatibility this project refuses: the
 //! current struct stays clean *because* the old shapes live here rather
 //! than as optional fields nobody ever deletes.
@@ -48,6 +50,8 @@
 //! again when they cannot be read — there is nothing in them to carry.
 
 #![forbid(unsafe_code)]
+
+pub mod earlier;
 
 use std::{
     fs,
@@ -124,6 +128,9 @@ pub struct Step {
     /// The change itself, over the record's own document rather than over a
     /// struct — the struct for `from` no longer exists, which is the point.
     pub climb: fn(serde_json::Value) -> Result<serde_json::Value>,
+    /// How long a record can still be met in `from`: unbounded while a
+    /// record is rewritten only when it is next changed.
+    pub lasts: earlier::Lasts,
 }
 
 /// Every step this record has, oldest first and contiguous.
@@ -395,6 +402,7 @@ mod tests {
                 Step {
                     from: 1,
                     to: 2,
+                    lasts: crate::earlier::Lasts::Unbounded,
                     // Shape 1 carried a `kind` nothing reads any more.
                     climb: |mut document| {
                         if let Some(object) = document.as_object_mut() {
@@ -406,6 +414,7 @@ mod tests {
                 Step {
                     from: 2,
                     to: 3,
+                    lasts: crate::earlier::Lasts::Unbounded,
                     climb: |mut document| {
                         if let Some(object) = document.as_object_mut() {
                             object.insert("target".to_owned(), "main".into());
@@ -625,6 +634,7 @@ mod tests {
             &[Step {
                 from: 1,
                 to: 1,
+                lasts: crate::earlier::Lasts::Unbounded,
                 climb: Ok,
             }]
         }

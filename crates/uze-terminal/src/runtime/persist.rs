@@ -51,6 +51,7 @@ impl uze_document::Shaped for PersistedWorkspace {
             uze_document::Step {
                 from: 1,
                 to: 2,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     for space in spaces_of(&mut document) {
                         space.remove("kind");
@@ -61,6 +62,7 @@ impl uze_document::Shaped for PersistedWorkspace {
             uze_document::Step {
                 from: 2,
                 to: 3,
+                lasts: uze_document::earlier::Lasts::Unbounded,
                 climb: |mut document| {
                     let mut count = 0;
                     for (index, space) in spaces_of(&mut document).enumerate() {
