@@ -105,8 +105,8 @@ pub enum CodeOutcome {
     Copy(String),
 }
 
-/// Which list the navigator is showing — always the one the content mode
-/// reads from, which is why it is derived rather than kept.
+/// Which list stands beside a file. Kept rather than derived from the
+/// field: going back to the tree must not cost what a search found.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NavigatorMode {
     /// The checkout's own tree, listed as it is opened.
@@ -143,6 +143,8 @@ pub enum ContentMode {
 pub(super) enum Half {
     /// The checkout's tree, and a file read out of it.
     Files,
+    /// What every file holds of a text, and a file read out of that.
+    Search,
     /// A picture of where the lines are.
     Map,
 }
@@ -226,6 +228,8 @@ pub struct CodeView {
     /// ask that discards them.
     closing_tab: Option<PathBuf>,
     search: search::Search,
+    /// The list beside a file: what the map stands over, and comes back to.
+    list: NavigatorMode,
     /// What the host still has to do for the files half, oldest first.
     queue: VecDeque<FileRequest>,
     /// A failure about the surface rather than about one file.
@@ -310,6 +314,8 @@ pub struct CodeHeld {
     before_map: ContentMode,
     map_showing: MapShowing,
     focus: Focus,
+    list: NavigatorMode,
+    search: search::Search,
 }
 
 impl CodeView {
@@ -341,6 +347,7 @@ impl CodeView {
             tabs: Vec::new(),
             closing_tab: None,
             search: search::Search::default(),
+            list: NavigatorMode::Files,
             queue: VecDeque::new(),
             error: None,
             notice: None,
@@ -403,9 +410,17 @@ impl CodeView {
             before_map,
             map_showing,
             focus,
+            list,
+            search,
         } = held;
         let was_files = self.navigator() == NavigatorMode::Files;
         self.content = content;
+        self.list = list;
+        self.search = search;
+        // The answer it was waiting for went with the surface it left.
+        if self.search.pending() {
+            self.ask_search();
+        }
         if !was_files && self.navigator() == NavigatorMode::Files {
             self.expand(self.root.clone());
         }
@@ -423,6 +438,8 @@ impl CodeView {
             before_map: self.before_map,
             map_showing: self.map_showing,
             focus: self.focus,
+            list: self.list,
+            search: self.search.clone(),
         }
     }
 
@@ -439,12 +456,8 @@ impl CodeView {
     /// The list that goes with what the content is showing.
     fn navigator(&self) -> NavigatorMode {
         match self.content {
-            // The files' list is the tree until something is typed into its
-            // search, and what that found while it holds text.
-            ContentMode::Contents | ContentMode::Preview if !self.search.query.is_empty() => {
-                NavigatorMode::Search
-            }
-            ContentMode::Contents | ContentMode::Preview | ContentMode::Map => NavigatorMode::Files,
+            ContentMode::Contents | ContentMode::Preview => self.list,
+            ContentMode::Map => NavigatorMode::Files,
         }
     }
 
@@ -560,7 +573,7 @@ impl CodeView {
 
     /// Whether keys land in the search's field, over the files' list.
     fn typing_a_search(&self) -> bool {
-        self.search.typing && matches!(self.content, ContentMode::Contents | ContentMode::Preview)
+        self.search.typing && self.navigator() == NavigatorMode::Search
     }
 
     /// The path the cursor stands on, whichever half it is in.
@@ -880,6 +893,11 @@ impl CodeView {
         // The menu was opened on the list this leaves.
         self.menu = None;
         let line = self.line_in_view();
+        // A document's rows are not its source's lines, so a scroll into the
+        // source may lie past the end of what the preview draws.
+        if mode == ContentMode::Preview {
+            self.scroll = 0;
+        }
         self.content = mode;
         match mode {
             ContentMode::Contents | ContentMode::Preview => {
@@ -973,15 +991,18 @@ impl CodeView {
     /// when you use it: a control whose members come and go is one you
     /// have to look at again after every press, and the eye was already
     /// on the place the chip used to be.
-    pub(super) fn halves(&self) -> [Half; 2] {
-        [Half::Files, Half::Map]
+    pub(super) fn halves(&self) -> [Half; 3] {
+        [Half::Files, Half::Search, Half::Map]
     }
 
     /// Which of them is on show.
     pub(super) fn half(&self) -> Half {
         match self.content {
             ContentMode::Map => Half::Map,
-            ContentMode::Contents | ContentMode::Preview => Half::Files,
+            ContentMode::Contents | ContentMode::Preview => match self.list {
+                NavigatorMode::Files => Half::Files,
+                NavigatorMode::Search => Half::Search,
+            },
         }
     }
 
@@ -995,11 +1016,22 @@ impl CodeView {
             // document it is, which is the same rule arriving at a file
             // any other way follows.
             Half::Files => {
-                let mode = match self.selected_is_markdown() {
-                    true => ContentMode::Preview,
-                    false => ContentMode::Contents,
-                };
-                self.show(mode);
+                // From the search only the list changes: the file beside it
+                // stays as it was being read.
+                if self.content == ContentMode::Map {
+                    let mode = match self.selected_is_markdown() {
+                        true => ContentMode::Preview,
+                        false => ContentMode::Contents,
+                    };
+                    self.show(mode);
+                }
+                self.leave_search();
+            }
+            // Back where it was left, or into the field with nothing yet
+            // to go back to.
+            Half::Search => {
+                self.stand_on_search();
+                self.search.typing = self.search.query.is_empty();
             }
             Half::Map => {
                 if self.content != ContentMode::Map {
@@ -1371,25 +1403,39 @@ impl CodeView {
 
     /// Goes to the search and into its field, from anywhere.
     fn find(&mut self) {
+        self.stand_on_search();
+        self.search.typing = true;
+    }
+
+    /// Puts the search in front with the keyboard on its list, from
+    /// anywhere, leaving what it holds as it was.
+    fn stand_on_search(&mut self) {
         if let Some(open) = self.open.as_mut() {
             open.editing = false;
         }
-        if !matches!(self.content, ContentMode::Contents | ContentMode::Preview) {
-            self.show_half(Half::Files);
+        self.menu = None;
+        self.list = NavigatorMode::Search;
+        if self.content == ContentMode::Map {
+            self.show(self.before_map);
         }
-        self.search.typing = true;
         self.focus = Focus::Navigator;
     }
 
-    /// Lets go of the search: the field empties and the tree is back.
-    ///
-    /// The tree opens down to the selection, which a search may have
-    /// moved to a file in a directory the tree never had open.
-    fn clear_search(&mut self) {
+    /// Back to the tree, the search kept for coming back to. The tree opens
+    /// down to the selection, which a search may have moved to a file in a
+    /// directory the tree never had open.
+    fn leave_search(&mut self) {
         self.search.typing = false;
-        self.search.query.clear();
-        self.ask_search();
+        self.list = NavigatorMode::Files;
         self.reveal_selection();
+    }
+
+    /// Empties the field and stays in it, for the next thing to look for.
+    fn clear_search(&mut self) {
+        self.search.query.clear();
+        self.search.typing = true;
+        self.focus = Focus::Navigator;
+        self.ask_search();
     }
 
     /// Asks again for what the field holds now, in place of any search
@@ -1635,10 +1681,10 @@ pub fn handle_command(view: &mut CodeView, command: Command, space: Size) -> Cod
         return CodeOutcome::Stay;
     }
 
-    // What a search found is a level over the tree: the way out of it
-    // comes before the way out of the surface, as the map's levels do.
+    // The search is a level over the tree: the way out of it comes before
+    // the way out of the surface, as the map's levels do.
     if command == Command::Close && view.navigator() == NavigatorMode::Search {
-        view.clear_search();
+        view.leave_search();
         return CodeOutcome::Stay;
     }
 
@@ -1769,8 +1815,15 @@ fn search_field_command(view: &mut CodeView, command: Command) {
             view.search.query.pop();
             view.ask_search();
         }
-        // Out of the field and back to the tree, as a filter is let go of.
-        Command::Close => view.clear_search(),
+        // Out of the field to what it found, or, with nothing found to go
+        // to, out of the search.
+        Command::Close if view.search.query.is_empty() => view.leave_search(),
+        Command::Close => {
+            view.search.typing = false;
+            if view.search.cursor.is_none() {
+                view.search.step(true);
+            }
+        }
         Command::SelectNext => {
             view.search.typing = false;
             view.search.step(true);
@@ -1934,7 +1987,6 @@ pub fn handle_mouse(view: &mut CodeView, hit: Option<ViewHit>, space: Size) -> C
         Some(ViewHit::SelectTab(index)) => view.show_tab(index),
         Some(ViewHit::CloseTab(index)) => view.close_tab(index, asked),
         Some(ViewHit::FocusField) => view.find(),
-        // Emptied and let go of: the tree is back, and the keys with it.
         Some(ViewHit::ClearField) => view.clear_search(),
         Some(ViewHit::OpenMenu(index)) => match view.navigator() {
             NavigatorMode::Search => {}

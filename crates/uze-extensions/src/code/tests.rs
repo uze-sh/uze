@@ -1828,12 +1828,12 @@ fn returning_to_a_file_the_tree_has_not_listed_opens_its_ancestors() {
 }
 
 /// Once the surface is open, showing another mode switches to it, and the
-/// list beside the content is the one that mode reads from: a search the
-/// files hold stands aside for the map and is back with the files.
+/// list beside the content is the one that mode reads from: the search
+/// stands aside for the map and is back when the map is left.
 #[test]
 fn showing_another_mode_switches_to_it_and_the_navigator_follows() {
     let mut view = files_at("/w");
-    view.search.query = "fog".to_owned();
+    view.list = NavigatorMode::Search;
     assert_eq!(view.navigator(), NavigatorMode::Search);
 
     view.show(ContentMode::Map);
@@ -2365,7 +2365,10 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     press(&mut view, Command::Activate);
     settle(&mut view, &machine);
     let drawn = render::view(&view, space());
-    assert_eq!(chips(&drawn.subjects), [("Files", true), ("Map", false)]);
+    assert_eq!(
+        chips(&drawn.subjects),
+        [("Files", true), ("Search", false), ("Map", false)]
+    );
     assert_eq!(chips(&drawn.modes), [("Preview", true), ("Source", false)]);
     // Each half is a thing, and says which. A way of *drawing* one is
     // not a thing, and carries no mark at all.
@@ -2375,7 +2378,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
             .iter()
             .map(|mode| mode.icon)
             .collect::<Vec<_>>(),
-        [RowIcon::Directory, RowIcon::Map]
+        [RowIcon::Directory, RowIcon::Search, RowIcon::Map]
     );
     assert!(
         drawn.modes.iter().all(|mode| mode.icon == RowIcon::None),
@@ -2392,7 +2395,7 @@ fn the_header_offers_the_halves_on_one_side_and_the_renderings_on_the_other() {
     let drawn = render::view(&view, space());
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", true), ("Map", false)],
+        [("Files", true), ("Search", false), ("Map", false)],
         "the halves never come and go — the row that says where you are \
          is the one thing that may not move when it is used"
     );
@@ -2431,7 +2434,7 @@ fn the_map_takes_the_frame_and_says_which_level_it_is_on() {
     assert_eq!(steps, ["repo"], "the checkout, and nothing entered yet");
     assert_eq!(
         chips(&drawn.subjects),
-        [("Files", false), ("Map", true)],
+        [("Files", false), ("Search", false), ("Map", true)],
         "which half you are in, and the way to the others as chips \
          somebody can point at rather than keys they have to know"
     );
@@ -3085,8 +3088,8 @@ fn a_search_finds_lines_in_every_file_and_opens_one() {
             .iter()
             .find(|mode| mode.active)
             .map(|mode| mode.label.as_str()),
-        Some("Files"),
-        "the search is the files' own"
+        Some("Search"),
+        "opening what it found stays on the search"
     );
     assert!(
         drawn
@@ -3227,41 +3230,209 @@ fn leaving_the_map_returns_to_the_search_it_was_entered_from() {
     assert_eq!(field.summary.text, "1 result in 1 file");
 }
 
-/// The search stands over the files' tree: typing into it lists what it
-/// found in the tree's place, and Esc lets go of it, tree back.
+fn tab_on_show(view: &CodeView) -> String {
+    render::view(view, space())
+        .subjects
+        .iter()
+        .find(|mode| mode.active)
+        .map(|mode| mode.label.clone())
+        .expect("a tab on show")
+}
+
+fn press_tab(view: &mut CodeView, label: &str) {
+    let index = render::view(view, space())
+        .subjects
+        .iter()
+        .position(|mode| mode.label == label)
+        .expect("that tab");
+    handle_mouse(view, Some(ViewHit::SelectSubject(index)), space());
+}
+
+/// The search is a tab beside the tree: the tree carries no field, and going
+/// to it and back keeps what was typed, what it found and the cursor.
 #[test]
-fn the_files_search_replaces_the_tree_while_it_holds_text() {
+fn the_search_is_a_tab_that_keeps_what_it_found_across_the_tree() {
     let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
     let mut view = files_at("/w");
     settle(&mut view, &machine);
     let list = |view: &CodeView| render::view(view, space()).navigator.expect("a list");
+    assert!(list(&view).field.is_none(), "the tree carries no field");
+
+    press_tab(&mut view, "Search");
+    assert!(view.typing(), "an empty search takes the keys");
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::SelectNext);
+    let cursor = view.search.cursor;
+    assert!(cursor.is_some());
+
+    press_tab(&mut view, "Files");
+    assert!(!view.typing());
     let tree = list(&view);
-    assert_eq!(tree.field.expect("a field over the tree").text, "");
+    assert!(tree.field.is_none());
     assert!(
         matches!(tree.rows[0], NavigatorRow::Item { .. }),
         "the tree"
     );
 
-    handle_mouse(&mut view, Some(ViewHit::FocusField), space());
+    press_tab(&mut view, "Search");
+    assert!(
+        !view.typing(),
+        "a search holding text comes back on its list"
+    );
+    let back = list(&view);
+    assert_eq!(back.field.expect("the field").text, "fog");
+    assert!(matches!(back.rows[0], NavigatorRow::Found { .. }));
+    assert_eq!(view.search.cursor, cursor);
+}
+
+/// Esc goes down a level at a time and empties nothing: from the field to
+/// what it found, from there to the tree, and only then out of the surface.
+#[test]
+fn esc_leaves_the_search_a_level_at_a_time_and_keeps_it() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
     type_text(&mut view, "fog");
     settle(&mut view, &machine);
-    assert!(matches!(list(&view).rows[0], NavigatorRow::Found { .. }));
 
-    press(&mut view, Command::Close);
-    assert!(!view.typing());
-    let back = list(&view);
-    assert_eq!(back.field.expect("the field").text, "");
-    assert!(
-        matches!(back.rows[0], NavigatorRow::Item { .. }),
-        "the tree, back"
-    );
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Stay);
+    assert!(!view.typing(), "out of the field");
+    assert_eq!(tab_on_show(&view), "Search");
+    assert!(view.search.cursor.is_some(), "and onto what it found");
+
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Stay);
+    assert_eq!(tab_on_show(&view), "Files");
+    assert_eq!(view.search.query, "fog");
+
     assert_eq!(press(&mut view, Command::Close), CodeOutcome::Close);
 }
 
-/// The field's clear mark empties it and lets go of it; letting go
-/// of a search opens the tree down to the file it opened, wherever that is.
+/// With nothing found to go to, Esc in the field leaves the search.
 #[test]
-fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
+fn esc_in_an_empty_field_goes_back_to_the_tree() {
+    let mut view = files_at("/w");
+    press(&mut view, Command::Find);
+    assert_eq!(press(&mut view, Command::Close), CodeOutcome::Stay);
+    assert_eq!(tab_on_show(&view), "Files");
+    assert!(!view.typing());
+}
+
+/// Ctrl+F reaches the field from every tab, the map included.
+#[test]
+fn find_goes_to_the_search_from_every_tab() {
+    let mut view = files_at("/w");
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Map);
+    press(&mut view, Command::Find);
+    assert_eq!(tab_on_show(&view), "Search");
+    assert!(view.typing());
+}
+
+/// The field's mark empties it and leaves the keys there; the search is
+/// still the tab on show.
+#[test]
+fn the_clear_mark_empties_the_field_and_stays_on_the_search() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    settle(&mut view, &machine);
+    assert!(view.search.query.is_empty());
+    assert!(view.typing());
+    assert_eq!(tab_on_show(&view), "Search");
+    assert!(
+        render::view(&view, space())
+            .navigator
+            .expect("a list")
+            .rows
+            .is_empty()
+    );
+}
+
+/// A surface put away with its agent and handed back has the search as it
+/// was left.
+#[test]
+fn a_surface_handed_back_keeps_its_search() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    let held = view.held();
+
+    let mut back = files_at("/w").returning(held);
+    settle(&mut back, &machine);
+    assert_eq!(tab_on_show(&back), "Search");
+    assert_eq!(back.search.query, "fog");
+    assert!(!back.search.files().is_empty());
+}
+
+/// Changing list changes the list: a document opened from a search at a line
+/// far down stays as it was read, rather than turning into a preview at a
+/// scroll its source had, past the end of what the preview draws.
+#[test]
+fn changing_list_leaves_what_a_search_opened_as_it_was_read() {
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    let machine = FakeMachine::default().with_file("/w/long.md", &long);
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    let scroll = view.scroll;
+    assert!(scroll > 0, "opened down at the match");
+
+    press_tab(&mut view, "Files");
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents, "still its source");
+    assert_eq!(view.scroll, scroll);
+
+    press_tab(&mut view, "Search");
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Contents);
+    assert_eq!(view.scroll, scroll);
+}
+
+/// A preview opens at the top of the document: its rows are not the source's
+/// lines, and a scroll into the source would draw nothing.
+#[test]
+fn a_document_shown_as_a_preview_from_far_down_its_source_is_not_blank() {
+    // One paragraph: hundreds of lines of source, a few rows of document.
+    let long = format!("{}fog\n", "line\n".repeat(300));
+    let machine = FakeMachine::default().with_file("/w/long.md", &long);
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    assert!(view.scroll > 0);
+
+    press(&mut view, Command::TogglePreview);
+    settle(&mut view, &machine);
+    assert_eq!(view.showing(), ContentMode::Preview);
+    let drawn = render::view(&view, space());
+    let crate::view::Content::Lines { lines, .. } = drawn.content else {
+        panic!("the document's lines");
+    };
+    assert!(!lines.is_empty(), "the preview draws something");
+}
+
+/// Going back to the tree from a search opens it down to the file the
+/// search opened, wherever that is.
+#[test]
+fn leaving_a_search_shows_the_file_it_opened_in_the_tree() {
     let machine = FakeMachine::default()
         .with_directory("/w/src")
         .with_directory("/w/src/deep")
@@ -3279,10 +3450,9 @@ fn clearing_a_search_shows_the_file_it_opened_in_the_tree() {
         Some(Path::new("/w/src/deep/b.rs"))
     );
 
-    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    press_tab(&mut view, "Files");
     settle(&mut view, &machine);
-    assert!(view.search.query.is_empty());
-    assert!(!view.typing(), "and let go of");
+    assert_eq!(view.search.query, "fog", "kept for coming back to");
     let Some(crate::view::Navigator { rows, anchor, .. }) = render::view(&view, space()).navigator
     else {
         panic!("the tree");
@@ -3369,6 +3539,7 @@ fn measure_the_editors_hot_paths() {
     press(&mut view, Command::Close);
 
     view.search.query = "fog".to_owned();
+    view.list = NavigatorMode::Search;
     println!(
         "absorb 2000 hits:            {:?}",
         best(

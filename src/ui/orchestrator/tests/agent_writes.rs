@@ -498,3 +498,180 @@ fn what_will_be_typed_is_shown_to_the_character() {
     let rows = frame_rows(&mut model).join("\n");
     assert!(rows.contains("run `echo hi` and an odd ` mark"), "{rows}");
 }
+
+/// A key that leaves the agent's empty line alone is no reason to refuse:
+/// the prompt the operator just allowed is typed, however long ago it was
+/// pressed.
+#[test]
+fn a_key_that_leaves_an_empty_line_alone_does_not_hold_a_prompt_back() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-empty-line"));
+    for pressed in ["shift+tab", "pageup", "pagedown"] {
+        let mut driven = driven(launched_agent(), &home);
+        driven.press_key(key(pressed));
+        driven.sent();
+        let sent = allowed_by_keyboard(&mut driven, "Review PLAN.md");
+        assert_eq!(sent.len(), 1, "after {pressed}: {sent:?}");
+    }
+}
+
+/// A key that may have put something on the line leaves it unknown, and the
+/// operator allowing the prompt, warned of that, is who decides.
+#[test]
+fn a_prompt_allowed_over_a_line_nobody_can_vouch_for_is_typed_after_a_warning() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-unknown-line",
+    ));
+    for pressed in ["esc", "up", "tab", "ctrl+y"] {
+        let mut driven = driven(launched_agent(), &home);
+        driven.press_key(key(pressed));
+        driven.sent();
+        driven
+            .attach
+            .model
+            .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+        driven.frame();
+        let shown = frame_rows(&mut driven.attach.model).join("\n");
+        assert!(shown.contains("may hold text"), "{shown}");
+        assert!(shown.contains("run as a command"), "{shown}");
+        driven.press_key(key("right"));
+        driven.press_key(key("enter"));
+        driven.pump();
+        let sent = typed(&driven.sent());
+        assert_eq!(sent.len(), 1, "after {pressed}: {sent:?}");
+
+        let pane = driven.attach.model.focused_pane();
+        assert!(
+            !driven
+                .attach
+                .model
+                .remembered
+                .prompt_buffers
+                .contains_key(&pane),
+            "what was submitted left the line empty"
+        );
+    }
+}
+
+/// Text the operator typed stays theirs once a later key makes the line
+/// unknown: allowing a prompt never sends it along.
+#[test]
+fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-typed-unknown",
+    ));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("tab"));
+    driven.sent();
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+    assert!(
+        driven.attach.model.agent_write.is_none(),
+        "not asked when no answer could send it"
+    );
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(
+        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
+        "{said}"
+    );
+}
+
+/// Erasing what was modelled says nothing once the line was unknown: what
+/// the harness made of the text is not what the buffer holds.
+#[test]
+fn erasing_text_a_key_made_unknown_does_not_make_it_answerable() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-erased"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("tab"));
+    driven.press_key(key("backspace"));
+    let pane = driven.attach.model.focused_pane();
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::UnknownOverText
+    );
+}
+
+/// Only a bundled extension's send, asked about each time, may go over a
+/// line nobody can vouch for: whatever is there would undo what a plugin's
+/// text is held to.
+#[test]
+fn only_a_bundled_extensions_attended_prompt_may_go_over_an_unknown_line() {
+    let write = |owner, unattended| super::Write {
+        owner,
+        agent: "a1".to_owned(),
+        action: "review".to_owned(),
+        text: "Review PLAN.md".to_owned(),
+        label: "Review".to_owned(),
+        unattended,
+        summary: None,
+        warned_of_unknown_line: false,
+    };
+    let plugin = Owner::Declared(uze_application::ExtensionIdentity {
+        marketplace: "market".to_owned(),
+        plugin: "gsd".to_owned(),
+        id: "gsd-band".to_owned(),
+    });
+    assert!(write(Owner::Builtin("review"), false).may_go_over_unknown_line());
+    assert!(!write(Owner::Builtin("review"), true).may_go_over_unknown_line());
+    assert!(!write(plugin, false).may_go_over_unknown_line());
+}
+
+/// Esc may clear a line with text on it, so it can no longer be known.
+#[test]
+fn a_key_over_typed_text_still_leaves_the_line_unknown() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-esc-typed"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("esc"));
+    let pane = driven.attach.model.focused_pane();
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::UnknownOverText
+    );
+}
+
+/// Text known to be there is the operator's, whatever they allow.
+#[test]
+fn a_prompt_allowed_over_text_the_operator_typed_is_still_refused() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-typed-line"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.sent();
+    assert!(allowed_by_keyboard(&mut driven, "Review PLAN.md").is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(said.contains("you have text typed"), "{said}");
+}
+
+/// Nobody is there to be warned of an unattended prompt: it is refused, and
+/// the refusal says what clears the line.
+#[test]
+fn an_unattended_prompt_over_an_unknown_line_says_how_to_clear_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-unattended-line",
+    ));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("up"));
+    driven.sent();
+    let ask = on_its_own("review", "Review PLAN.md");
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), ask.clone());
+    driven.frame();
+    let shown = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(!shown.contains("may hold text"), "{shown}");
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(
+        said.contains("can't tell what's typed: ctrl-c if it holds text, else enter"),
+        "{said}"
+    );
+}

@@ -342,7 +342,7 @@ actions! {
     DeleteFile => "delete-file", true,
         "Delete", "Delete the selected file, having been asked once";
     FindInFiles => "find-in-files", false,
-        "Search", "Search every file of the checkout, from the field over the list";
+        "Search", "Search every file of the checkout";
     CloseFileTab => "close-file-tab", false,
         "Close tab", "Put away the file on show, asking first when it has unsaved changes";
     NextFileTab => "next-file-tab", false,

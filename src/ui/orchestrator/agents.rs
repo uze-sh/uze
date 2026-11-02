@@ -268,11 +268,15 @@ impl WorkspaceModel {
     /// agent mid-turn, and never on top of something the operator typed,
     /// or may have typed — a line this client cannot vouch for counts as
     /// typed, since sending into it would carry their words with ours.
+    /// Only the operator, told so in the question about a bundled
+    /// extension's prompt, may send over a line that is merely unknown
+    /// (`write_refusal`).
     pub(super) fn may_submit(&self, pane: PaneId) -> Submission {
         if self.agent_is_working(pane) {
             return Submission::Busy;
         }
         match self.remembered.prompt_buffers.get(&pane) {
+            Some(buffer) if buffer.over_text => Submission::UnknownOverText,
             Some(buffer) if !buffer.trusted => Submission::Unknown,
             Some(buffer) if !buffer.characters.is_empty() => Submission::Typed,
             _ => Submission::Ok,

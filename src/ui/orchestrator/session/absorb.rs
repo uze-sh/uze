@@ -39,8 +39,8 @@ impl Attach<'_> {
             return;
         };
         let submission = self.model.may_submit(pane);
-        match submission.refusal(&task.label) {
-            None => {
+        match (submission.refusal(&task.label), submission.reason()) {
+            (None, _) => {
                 self.submit_notice(pane, &instruction);
                 self.model
                     .note_agent_prompt_submission(pane, &self.identities, None);
@@ -54,7 +54,7 @@ impl Attach<'_> {
                     );
                 }
             }
-            Some((reason, _)) if automatic => {
+            (_, Some(reason)) if automatic => {
                 self.model.raise_toast(
                     ToastKind::Told,
                     "held back",
@@ -62,7 +62,7 @@ impl Attach<'_> {
                     None,
                 );
             }
-            Some((title, detail)) => {
+            (Some((title, detail)), _) => {
                 self.model.raise_toast(ToastKind::Told, title, detail, None);
             }
         }

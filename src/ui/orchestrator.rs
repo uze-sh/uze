@@ -2302,10 +2302,20 @@ pub(super) struct CommitDetailPopup {
 /// control chord this does not encode — marks the buffer untrusted, and an
 /// untrusted buffer is discarded at Enter. Recording nothing is always
 /// preferable to recording a prompt the user never typed.
+///
+/// The keys a harness spends on itself rather than on its input (a mode,
+/// scrolling back) put nothing on an empty line, and counting them would
+/// hold an instruction back over a key pressed long before it. Esc is not
+/// one of them: an interrupt may hand the prompt back to the line, and a
+/// second one may open a picker.
 struct PromptBuffer {
     characters: Vec<char>,
     cursor: usize,
     trusted: bool,
+    /// Text was on the line while it could not be vouched for, so erasing
+    /// `characters` afterwards says nothing about the line: what the harness
+    /// made of it is not what was modelled. Only Enter or Ctrl-C ends this.
+    over_text: bool,
 }
 
 impl Default for PromptBuffer {
@@ -2314,6 +2324,7 @@ impl Default for PromptBuffer {
             characters: Vec::new(),
             cursor: 0,
             trusted: true,
+            over_text: false,
         }
     }
 }
@@ -2325,10 +2336,12 @@ impl PromptBuffer {
     /// directly would be a second place the keyboard is understood.
     fn apply(&mut self, chord: Chord) {
         if chord.mods.ctrl || chord.mods.alt {
-            self.trusted = false;
+            self.stop_vouching(chord);
             return;
         }
         match chord.key {
+            Key::PageUp | Key::PageDown if self.characters.is_empty() => {}
+            Key::Tab if chord.mods.shift && self.characters.is_empty() => {}
             Key::Char(character) => {
                 // The chord vocabulary folds case, so the buffer takes the
                 // character as it was typed rather than as it was bound.
@@ -2359,8 +2372,25 @@ impl PromptBuffer {
             Key::Right => self.cursor = (self.cursor + 1).min(self.characters.len()),
             Key::Home => self.cursor = 0,
             Key::End => self.cursor = self.characters.len(),
-            _ => self.trusted = false,
+            _ => self.stop_vouching(chord),
         }
+        self.note_text_over_unknown_line();
+    }
+
+    fn note_text_over_unknown_line(&mut self) {
+        self.over_text |= !self.trusted && !self.characters.is_empty();
+    }
+
+    /// Says which key cost the line its trust: nothing on screen can, and
+    /// an instruction may be refused over it long afterwards. Only a key
+    /// that is not text arrives here, so what was typed never reaches the
+    /// log.
+    fn stop_vouching(&mut self, chord: Chord) {
+        if self.trusted {
+            tracing::info!(key = %chord, "the agent's input line is no longer known");
+        }
+        self.trusted = false;
+        self.note_text_over_unknown_line();
     }
 
     fn paste(&mut self, text: &str) {
@@ -2368,6 +2398,7 @@ impl PromptBuffer {
             self.characters.insert(self.cursor, character);
             self.cursor += 1;
         }
+        self.note_text_over_unknown_line();
     }
 
     /// The text to record, or `None` when there is nothing trustworthy to
@@ -2398,20 +2429,41 @@ pub(super) enum Submission {
     /// recall, a chord — so what is on the line is unknown until the
     /// operator's next Enter or Ctrl-C.
     Unknown,
+    /// As `Unknown`, over text the operator is known to have typed: theirs,
+    /// so no answer sends it along.
+    UnknownOverText,
 }
 
 impl Submission {
-    /// The toast a refusal says, as its title and detail.
-    fn refusal(self, label: &str) -> Option<(&'static str, String)> {
+    fn title(self) -> Option<&'static str> {
         match self {
             Self::Ok => None,
-            Self::Busy => Some(("agent is busy", label.to_owned())),
-            Self::Typed => Some(("you have text typed", label.to_owned())),
-            Self::Unknown => Some((
-                "can't tell what's typed",
-                "press enter or ctrl-c".to_owned(),
-            )),
+            Self::Busy => Some("agent is busy"),
+            Self::Typed => Some("you have text typed"),
+            Self::Unknown | Self::UnknownOverText => Some("can't tell what's typed"),
         }
+    }
+
+    /// What the operator can do about it, where there is something to say.
+    fn remedy(self) -> Option<&'static str> {
+        matches!(self, Self::Unknown | Self::UnknownOverText)
+            .then_some("ctrl-c if it holds text, else enter")
+    }
+
+    /// The toast a refusal says, as its title and detail.
+    fn refusal(self, label: &str) -> Option<(&'static str, String)> {
+        let title = self.title()?;
+        Some((title, self.remedy().unwrap_or(label).to_owned()))
+    }
+
+    /// The refusal as one phrase, for where it is said beside a label of
+    /// its own.
+    fn reason(self) -> Option<String> {
+        let title = self.title()?;
+        Some(match self.remedy() {
+            Some(remedy) => format!("{title}: {remedy}"),
+            None => title.to_owned(),
+        })
     }
 }
 

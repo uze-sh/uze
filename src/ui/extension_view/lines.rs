@@ -273,6 +273,7 @@ pub(super) fn icon_symbol(icon: RowIcon) -> Option<Symbol> {
         RowIcon::Git => Symbol::FileGit,
         RowIcon::Legal => Symbol::FileLegal,
         RowIcon::Map => Symbol::Map,
+        RowIcon::Search => Symbol::IconSearch,
         RowIcon::Changes => Symbol::Changes,
         RowIcon::InFlight => Symbol::InFlight,
         RowIcon::Contract => Symbol::Contract,

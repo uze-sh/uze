@@ -552,7 +552,8 @@ pub(super) fn render(
         render_approval(frame, frame.area(), open, hits);
     }
     if let Some(open) = &model.agent_write {
-        render_agent_write(frame, frame.area(), open, hits);
+        let line_unknown = model.agent_line_is_unknown(open);
+        render_agent_write(frame, frame.area(), open, line_unknown, hits);
     }
     if let Some(open) = &model.extension_offer {
         render_extension_offer(frame, frame.area(), open, model.hovered, hits);
