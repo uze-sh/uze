@@ -4,11 +4,47 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.23](https://github.com/uze-sh/uze/compare/v1.0.0-beta.22...v1.0.0-beta.23) - 2026-11-02
+
+### Features
+
+- **workspace:** Open pane paths in the code surface on ctrl+click ([#339](https://github.com/uze-sh/uze/pull/339)) ([885c73f](https://github.com/uze-sh/uze/commit/885c73f5e2b2448499076cd52ea07ba727974907))
+- **code:** Add file tabs, a files search and unsaved buffers to the code surface ([#341](https://github.com/uze-sh/uze/pull/341)) ([9e8102c](https://github.com/uze-sh/uze/commit/9e8102c9a079c3f429e69c6562ed9af9ecc733b0))
+- **platform:** Confine extension programs on Windows with AppContainer ([#340](https://github.com/uze-sh/uze/pull/340)) ([1123bd0](https://github.com/uze-sh/uze/commit/1123bd065ae8b1221990a754fb69ac6577f7cd86))
+- **ui:** List every harness's machine-level resources in the Overview ([#342](https://github.com/uze-sh/uze/pull/342)) ([8027f0d](https://github.com/uze-sh/uze/commit/8027f0d02d8aa80db79e1f0923f1f1f821f80426))
+- **review:** Add a built-in review extension for agent branches ([#343](https://github.com/uze-sh/uze/pull/343)) ([b09b1a9](https://github.com/uze-sh/uze/commit/b09b1a9271d39bcce72629e5af255949975ae642))
+- **delivery:** Deliver each harness from a vendor store under the uze home ([#345](https://github.com/uze-sh/uze/pull/345)) [**breaking**] ([0f26e8a](https://github.com/uze-sh/uze/commit/0f26e8a990530e50bd2e4f6be5127ff5d8b07fda))
+- **extensions:** Store extension preferences in config.toml ([#346](https://github.com/uze-sh/uze/pull/346)) [**breaking**] ([6d557af](https://github.com/uze-sh/uze/commit/6d557afe7f18ad1ddb9f72e68a986e85ab3282a2))
+- **code:** Add a search tab to the code surface ([#349](https://github.com/uze-sh/uze/pull/349)) ([3fafc20](https://github.com/uze-sh/uze/commit/3fafc205e9da1004d4f135641807f8cbe75d298a))
+
+### Fixes
+
+- **review:** Hide the review door on a checkout with no changes ([#344](https://github.com/uze-sh/uze/pull/344)) ([0fb5ef3](https://github.com/uze-sh/uze/commit/0fb5ef375adc58002a715e4d592623290c70f055))
+- **code:** Keep unsaved work when a path is sent to a kept surface ([#350](https://github.com/uze-sh/uze/pull/350)) ([aefa20e](https://github.com/uze-sh/uze/commit/aefa20ef35c60e0c103ab57af6fd9d824198a250))
+- **overview:** Move the header's figures to a card under the section menu ([#351](https://github.com/uze-sh/uze/pull/351)) ([3c3fb03](https://github.com/uze-sh/uze/commit/3c3fb03b7dbf2cbeff2e3d1b360b466c6b6155ed))
+
+### Refactor
+
+- **core:** Bound earlier-release support by a release floor and reshape the home ([#347](https://github.com/uze-sh/uze/pull/347)) ([8963aac](https://github.com/uze-sh/uze/commit/8963aacd4ed0e993aaa7b3fb5a90a50b28f863e7))
+
+### Documentation
+
+- **openspec:** Archive eight delivered changes ([#348](https://github.com/uze-sh/uze/pull/348)) ([e772b8f](https://github.com/uze-sh/uze/commit/e772b8fa5983fb80bd8d1fa2d1dd5c08093ad9ca))
+
+### Tests
+
+- **document:** Cover the paths mutants exposed in uze-document ([#353](https://github.com/uze-sh/uze/pull/353)) ([f349c45](https://github.com/uze-sh/uze/commit/f349c4562cde99f56cbc1a6230df1701847e004c))
+
+### CI
+
+- **mutants:** Add a hand-started cargo-mutants workflow ([#352](https://github.com/uze-sh/uze/pull/352)) ([d50ee2a](https://github.com/uze-sh/uze/commit/d50ee2a1ba3bbbb119d6fd10597915303cd311cc))
+
 ## [1.0.0-beta.22](https://github.com/uze-sh/uze/compare/v1.0.0-beta.21...v1.0.0-beta.22) - 2026-10-31
 
 ### Features
 
 - **updates:** Add UZE_RELEASE_CHANNEL and a periodic plugin update pass ([#333](https://github.com/uze-sh/uze/pull/333)) ([7f15b59](https://github.com/uze-sh/uze/commit/7f15b5922e098885193979b17471c0c91c055e1f))
+- **cli:** Move plugin installs from uze install to uze add ([#337](https://github.com/uze-sh/uze/pull/337)) [**breaking**] ([76abcdc](https://github.com/uze-sh/uze/commit/76abcdc466e33fb05790fe678aa43c7a9389f184))
 
 ### Fixes
 
