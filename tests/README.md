@@ -87,6 +87,31 @@ This replaced 19 hand-copied per-harness tests. Do not add a
 and the vendor's spelling to `subjects.rs`. A vendor-named test there is only
 right when the *outcome* is about a named pair of harnesses.
 
+## Mutation testing
+
+Coverage says a line ran; a mutation run says whether a test notices when that
+line is wrong. It costs hours and gates nothing, so it is started by hand, one
+crate at a time:
+
+```sh
+gh workflow run mutants.yml -f package=uze-workspace
+gh workflow run mutants.yml -f package=uze-core -f mode=diff -f base=v0.9.0
+```
+
+The run's summary gives the score and how many mutants were tried; its
+`missed.txt` artifact lists every survivor. A run that says **Incomplete** ran
+out of time: start it again with more `shards`.
+
+A survivor is a question, not a verdict. It may be a real gap, code whose
+change nothing can observe, or, under the default `test_scope=crate`, something
+only `tests/` or another crate would catch. Read it before writing a test, and
+never write one just to kill a mutant: the test states a behavior or it is not
+worth keeping.
+
+Don't run it directly on a machine you care about. A mutant changes code that
+deletes files, ends processes and writes harness configuration, and can take a
+test out of its isolation. A hosted runner is disposable.
+
 ## Support crate
 
 `crates/uze-testkit` owns the shared infrastructure:

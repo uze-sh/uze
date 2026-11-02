@@ -1,0 +1,5 @@
+# What `cargo mutants` may change. `.github/workflows/mutants.yml` says how a
+# run is started and `tests/README.md` how to read one.
+
+# A developer's tool, not the product: nothing in the suite calls it.
+exclude_globs = ["src/bin/**"]

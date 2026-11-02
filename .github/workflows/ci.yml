@@ -646,6 +646,8 @@ jobs:
       # What decides whether an end-to-end leg runs at all.
       - name: Proof unit tests
         run: python3 .github/scripts/test_proof.py
+      - name: Mutants unit tests
+        run: python3 .github/scripts/test_mutants.py
       # Here rather than in each journeys leg: it is seconds, it has to hold
       # on every change — including one whose legs are all reused — and the
       # `proves:` pages it resolves are not part of any leg's proof.

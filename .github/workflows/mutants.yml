@@ -1,0 +1,273 @@
+name: Mutants
+
+# Mutation testing asks what coverage cannot: when the code is wrong, does a
+# test notice? Far too slow to gate anything, so it is started by hand and no
+# other workflow depends on it. `tests/README.md` says how to read a run.
+#
+# Everything a run prints and uploads is public, because this repository is:
+# a surviving mutant in a check names a check no test protects. A survivor that
+# turns out to be a real flaw follows the `security-findings` rule.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: The crate to mutate, one per run
+        required: true
+        type: choice
+        options:
+          - uze
+          - uze-application
+          - uze-contract
+          - uze-core
+          - uze-document
+          - uze-extensions
+          - uze-git
+          - uze-integrations
+          - uze-keys
+          - uze-platform
+          - uze-script
+          - uze-terminal
+          - uze-theme
+          - uze-workspace
+      mode:
+        description: The whole crate, or only what changed since `base`
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - diff
+      base:
+        description: Where `diff` starts; the latest tag when empty
+        required: false
+        type: string
+      ref:
+        description: The branch, tag or commit to test
+        required: false
+        type: string
+        default: main
+      shards:
+        description: How many parts to cut the run into, at most 256
+        required: false
+        type: number
+        default: 6
+      test_scope:
+        description: Whose tests must catch a mutant
+        required: false
+        type: choice
+        default: crate
+        options:
+          - crate
+          - workspace
+
+# One run at a time, because the runners are the ones `ci.yml` needs. GitHub
+# keeps a single run waiting: a third start replaces the second.
+concurrency:
+  group: mutants
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Every later job tests the commit named here, so `main` moving during a
+  # run cannot leave its shards disagreeing about what they mutated.
+  plan:
+    name: Plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      planned: ${{ steps.plan.outputs.planned }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Count the mutants and cut the shards
+        id: plan
+        env:
+          PACKAGE: ${{ inputs.package }}
+          MODE: ${{ inputs.mode }}
+          BASE: ${{ inputs.base }}
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          list=(cargo mutants --list --colors never --package "${PACKAGE}")
+          if [ "${MODE}" = diff ]; then
+            base="${BASE:-$(git describe --tags --abbrev=0)}"
+            git diff "${base}" HEAD -- > mutants.diff
+            list+=(--in-diff mutants.diff)
+          fi
+          planned="$("${list[@]}" | wc -l)"
+          python3 .github/scripts/mutants.py matrix "${SHARDS}" > matrix.json
+          {
+            echo "sha=$(git rev-parse HEAD)"
+            echo "planned=${planned}"
+            echo "shards=$(cat matrix.json)"
+          } >> "${GITHUB_OUTPUT}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: inputs.mode == 'diff'
+        with:
+          name: mutants-diff
+          path: mutants.diff
+
+  # `--baseline=skip` below takes this job's word that the suite is green. A
+  # suite already red would report every mutant as caught.
+  baseline:
+    name: Baseline
+    needs: plan
+    if: needs.plan.outputs.planned != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: workspace-linux
+          # Read, never write: the repository's cache allowance is what keeps
+          # `ci.yml` fast, and a run of this size would evict it.
+          save-if: false
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2
+        with:
+          tool: cargo-nextest@0.9.146
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: web/package.json
+      - name: Prove the suite is green unmutated
+        env:
+          PACKAGE: ${{ inputs.package }}
+          TEST_SCOPE: ${{ inputs.test_scope }}
+        run: |
+          scope=(--package "${PACKAGE}")
+          if [ "${TEST_SCOPE}" = workspace ]; then
+            scope=(--workspace)
+          fi
+          cargo nextest run "${scope[@]}" --no-fail-fast --locked
+
+  shard:
+    name: Shard ${{ matrix.shard }}
+    needs: [plan, baseline]
+    runs-on: ubuntu-24.04
+    # Past the five and a half hours the run itself gets, so a shard out of
+    # time still uploads what it finished. GitHub ends a job at six.
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      # A number, not an input: `ci.yml` runs 44 jobs on the 20 this account
+      # has at once, and this is what leaves it enough of them. More shards
+      # make a run finish rather than make it wider.
+      max-parallel: 6
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: workspace-linux
+          save-if: false
+      - name: Install the tools
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2
+        with:
+          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: web/package.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.mode == 'diff'
+        with:
+          name: mutants-diff
+      - name: Mutate
+        env:
+          PACKAGE: ${{ inputs.package }}
+          MODE: ${{ inputs.mode }}
+          TEST_SCOPE: ${{ inputs.test_scope }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          arguments=(
+            --package "${PACKAGE}"
+            --shard "${SHARD}/${SHARDS}"
+            --baseline=skip
+            --in-place
+            --no-shuffle
+            --colors never
+            --test-tool nextest
+            --timeout 300
+            --build-timeout 1200
+          )
+          if [ "${MODE}" = diff ]; then
+            arguments+=(--in-diff mutants.diff)
+          fi
+          if [ "${TEST_SCOPE}" = workspace ]; then
+            arguments+=(--test-workspace=true)
+          fi
+          status=0
+          timeout --kill-after=2m 330m cargo mutants "${arguments[@]}" || status=$?
+          # A survivor (2), a hang (3) and running out of time (124) are all
+          # results for the report to count. Anything else is a broken run.
+          case "${status}" in
+            0 | 2 | 3 | 124) ;;
+            *) exit "${status}" ;;
+          esac
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          # Not the per-mutant logs: the artifact allowance is 500 MB.
+          path: mutants.out/outcomes.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  report:
+    name: Report
+    needs: [plan, shard]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mutants-shard-*
+          path: shards
+      - name: Join the shards
+        env:
+          PACKAGE: ${{ inputs.package }}
+          PLANNED: ${{ needs.plan.outputs.planned }}
+          SHA: ${{ needs.plan.outputs.sha }}
+        run: |
+          mkdir -p shards
+          python3 .github/scripts/mutants.py report shards \
+            --package "${PACKAGE}" --planned "${PLANNED}" --commit "${SHA}" \
+            --missed missed.txt >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mutants-${{ inputs.package }}-${{ needs.plan.outputs.sha }}
+          path: missed.txt
+          retention-days: 30
