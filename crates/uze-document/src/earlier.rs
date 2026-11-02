@@ -218,4 +218,100 @@ mod tests {
         assert!(!Lasts::Until(floor).below(floor));
         assert!(!Lasts::Unbounded.below(floor));
     }
+
+    const fn step(from: u32, to: u32, lasts: Lasts) -> crate::Step {
+        crate::Step {
+            from,
+            to,
+            climb: Ok,
+            lasts,
+        }
+    }
+
+    const fn until(number: u32) -> Lasts {
+        Lasts::Until(Release::beta(1, 0, 0, number))
+    }
+
+    macro_rules! record {
+        ($name:ident, shape $shape:literal, $($step:expr),+) => {
+            #[derive(serde::Deserialize)]
+            struct $name;
+
+            impl crate::Shaped for $name {
+                const SHAPE: u32 = $shape;
+                const KIND: &'static str = stringify!($name);
+
+                fn ladder() -> crate::Ladder {
+                    const LADDER: crate::Ladder = &[$($step),+];
+                    LADDER
+                }
+            }
+        };
+    }
+
+    /// The release floor can only judge the rungs it is handed: a record whose
+    /// entries went missing would pass that check with nothing checked.
+    #[test]
+    fn every_rung_is_an_entry_naming_its_record_and_how_long_it_lasts() {
+        record!(Listed, shape 3, step(1, 2, until(5)), step(2, 3, Lasts::Unbounded));
+
+        let entries = rungs::<Listed>("declared/here.rs");
+
+        let lasts: Vec<Lasts> = entries.iter().map(|entry| entry.lasts).collect();
+        assert_eq!(lasts, [until(5), Lasts::Unbounded]);
+        for entry in entries {
+            assert_eq!(entry.name, "Listed");
+            assert_eq!(entry.site, "declared/here.rs");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "rung 0 skips a shape")]
+    fn a_rung_that_skips_a_shape_is_refused() {
+        record!(Skipping, shape 3, step(1, 3, Lasts::Unbounded));
+        rungs::<Skipping>("here.rs");
+    }
+
+    #[test]
+    #[should_panic(expected = "rungs 0 and 1 do not meet")]
+    fn rungs_that_do_not_meet_are_refused() {
+        record!(Apart, shape 4, step(1, 2, Lasts::Unbounded), step(3, 4, Lasts::Unbounded));
+        rungs::<Apart>("here.rs");
+    }
+
+    #[test]
+    #[should_panic(expected = "the ladder stops below the shape written")]
+    fn a_ladder_short_of_the_shape_written_is_refused() {
+        record!(Short, shape 3, step(1, 2, Lasts::Unbounded));
+        rungs::<Short>("here.rs");
+    }
+
+    #[test]
+    #[should_panic(expected = "rung 0 lasts longer than the rung above it")]
+    fn a_rung_outlasting_a_later_release_above_it_is_refused() {
+        record!(Late, shape 3, step(1, 2, until(9)), step(2, 3, until(5)));
+        rungs::<Late>("here.rs");
+    }
+
+    #[test]
+    #[should_panic(expected = "rung 0 lasts longer than the rung above it")]
+    fn an_unbounded_rung_beneath_a_bounded_one_is_refused() {
+        record!(Open, shape 3, step(1, 2, Lasts::Unbounded), step(2, 3, until(5)));
+        rungs::<Open>("here.rs");
+    }
+
+    /// A record met in a lower shape can be met in every shape above it, so
+    /// each rung may last as long as the next one and no longer.
+    #[test]
+    fn a_rung_may_last_as_long_as_the_one_above_it() {
+        record!(Equal, shape 3, step(1, 2, until(5)), step(2, 3, until(5)));
+        record!(Rising, shape 3, step(1, 2, until(5)), step(2, 3, until(9)));
+        record!(Bounded, shape 3, step(1, 2, until(5)), step(2, 3, Lasts::Unbounded));
+        record!(Open, shape 3, step(1, 2, Lasts::Unbounded), step(2, 3, Lasts::Unbounded));
+
+        assert_eq!(rungs::<Equal>("here.rs").len(), 2);
+        assert_eq!(rungs::<Rising>("here.rs").len(), 2);
+        assert_eq!(rungs::<Bounded>("here.rs").len(), 2);
+        assert_eq!(rungs::<Open>("here.rs").len(), 2);
+    }
 }

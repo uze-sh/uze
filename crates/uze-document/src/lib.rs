@@ -446,6 +446,21 @@ mod tests {
         assert_eq!(carried, Carried::Absent);
     }
 
+    /// Only a missing file is a first run. Anything else taken for one has the
+    /// caller write a fresh record over bytes it merely failed to read.
+    #[test]
+    fn a_record_that_cannot_be_read_is_reported_not_taken_for_absent() {
+        // A directory stands in for a file every platform refuses to read,
+        // whichever account runs the test.
+        let unreadable = scratch("unreadable");
+        let error = read::<Sample>(&unreadable).unwrap_err();
+        assert!(matches!(error, DocumentError::Read { .. }), "{error}");
+        assert!(
+            !may_be_set_aside(&error),
+            "a failed read says nothing about the bytes, so they stay"
+        );
+    }
+
     #[test]
     fn the_current_shape_is_read_as_it_stands() {
         let directory = scratch("current");
@@ -518,6 +533,29 @@ mod tests {
             may_be_set_aside(&error),
             "behind this build, so the direction rule allows recovery"
         );
+    }
+
+    /// A caller leaves a newer build's record alone, so answering yes to any
+    /// other failure would keep it from ever recovering one of its own.
+    #[test]
+    fn only_a_shape_ahead_of_this_build_was_written_by_a_newer_one() {
+        #[derive(Debug, Deserialize)]
+        struct Narrow;
+        impl Shaped for Narrow {
+            const SHAPE: u32 = 5;
+            const KIND: &'static str = "narrow";
+        }
+        let directory = scratch("newer-build");
+        let answer = |body: &str| {
+            let path = write(&directory, body);
+            read::<Narrow>(&path)
+                .unwrap_err()
+                .written_by_a_newer_build()
+        };
+
+        assert!(answer(r#"{"schema_version": 6}"#), "ahead of this build");
+        assert!(!answer(r#"{"schema_version": 4}"#), "behind this build");
+        assert!(!answer("not json at all"), "not a record at all");
     }
 
     /// The direction rule's whole reason, played out: `target/debug/uze`
@@ -600,6 +638,28 @@ mod tests {
         assert_ne!(first.path, second.path);
         assert_eq!(fs::read_to_string(&first.path).unwrap(), "first");
         assert_eq!(fs::read_to_string(&second.path).unwrap(), "second");
+    }
+
+    /// `uze doctor` reports when a record was set aside from this stamp alone.
+    #[test]
+    fn a_record_set_aside_is_stamped_with_when_it_happened() {
+        let seconds_now = || {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        };
+        let directory = scratch("stamped");
+        let path = write(&directory, "not json at all");
+        let error = read::<Sample>(&path).unwrap_err();
+
+        let before = seconds_now();
+        let moved = set_aside(&path, Sample::KIND, &error).unwrap();
+        let after = seconds_now();
+
+        let name = moved.path.file_name().unwrap().to_str().unwrap();
+        let stamp = set_aside_stamp(name).unwrap();
+        assert!((before..=after).contains(&stamp), "{stamp} in {name}");
     }
 
     /// The number that keeps a second record from replacing the first is

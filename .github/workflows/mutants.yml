@@ -216,14 +216,18 @@ jobs:
             --no-shuffle
             --colors never
             --test-tool nextest
-            --timeout 300
             --build-timeout 1200
           )
           if [ "${MODE}" = diff ]; then
             arguments+=(--in-diff mutants.diff)
           fi
+          # A mutant that outlasts this counts as detected, so it has to stand
+          # well clear of the honest time: the workspace suite alone takes
+          # nearly four minutes on this runner.
           if [ "${TEST_SCOPE}" = workspace ]; then
-            arguments+=(--test-workspace=true)
+            arguments+=(--test-workspace=true --timeout 900)
+          else
+            arguments+=(--timeout 300)
           fi
           status=0
           timeout --kill-after=2m 330m cargo mutants "${arguments[@]}" || status=$?

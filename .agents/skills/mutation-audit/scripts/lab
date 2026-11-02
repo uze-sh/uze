@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# lab <cargo-mutants arguments...>
+#
+# Runs cargo-mutants over a copy of this checkout, inside the security-audit
+# skill's sandbox: the operator's home hidden, an own PID namespace so a mutant
+# that signals everything reaches only the box, and no network once the
+# dependencies are fetched. What a mutant changes can delete files, end
+# processes and write harness configuration, so it never runs bare here.
+#
+#   AUDIT=<scratch dir> lab --package uze-document --file 'crates/uze-document/src/lib.rs'
+#
+# AUDIT holds the box and the tools, and is required. The results land in
+# $AUDIT/boxes/mutants/work/uze/mutants.out.
+set -euo pipefail
+
+: "${AUDIT:?set AUDIT to a scratch directory outside the repository}"
+export AUDIT
+here="$(cd "$(dirname "$0")" && pwd)"
+checkout="$(git -C "$here" rev-parse --show-toplevel)"
+sandbox="$checkout/.agents/skills/security-audit/scripts/sandbox"
+
+if [[ ! -x "$sandbox" ]]; then
+  echo "lab: needs the security-audit skill's sandbox at $sandbox" >&2
+  exit 1
+fi
+
+mkdir -p "$AUDIT/boxes/mutants"
+exec 9>"$AUDIT/boxes/mutants/lab.lock"
+if ! flock -n 9; then
+  echo "lab: another run is using $AUDIT; give this one its own AUDIT" >&2
+  exit 1
+fi
+
+# CI's versions, so a lab result and a run name mutants the same way.
+workflow="$checkout/.github/workflows/mutants.yml"
+tools="$(sed -n 's/^ *tool: \(cargo-mutants@.*,.*\)$/\1/p' "$workflow")"
+if [[ -z "$tools" ]]; then
+  echo "lab: no cargo-mutants and cargo-nextest versions found in $workflow" >&2
+  exit 1
+fi
+IFS=, read -ra pinned <<<"$tools"
+for tool in "${pinned[@]}"; do
+  name="${tool%@*}"
+  if [[ "$("$AUDIT/bin/$name" "${name#cargo-}" --version 2>/dev/null)" != "$name ${tool#*@}"* ]]; then
+    cargo install --locked --force --root "$AUDIT" "$tool"
+  fi
+done
+
+copy="$AUDIT/boxes/mutants/work/uze"
+if [[ -L "$copy" ]]; then
+  echo "lab: $copy is a symbolic link, not the copy this script makes" >&2
+  exit 1
+fi
+mkdir -p "$copy"
+# Only the build cache and past results outlive a run. A test file the checkout
+# no longer has would still compile here and catch mutants, a proof of nothing.
+find "$copy" -mindepth 1 -maxdepth 1 ! -name target ! -name 'mutants.out*' -exec rm -rf {} +
+# Fresh times (-m): with the checkout's older ones, cargo would keep the last
+# mutant's build of a file cargo-mutants has since put back.
+git -C "$checkout" ls-files --cached --others --exclude-standard -z |
+  (cd "$checkout" && tar --null --ignore-failed-read -T - -c) |
+  tar -x -m -C "$copy"
+
+SRC="$checkout" "$sandbox" mutants --net -- \
+  bash -c 'cd uze && cargo fetch --locked'
+SRC="$checkout" "$sandbox" mutants -- \
+  bash -c 'cd uze && CARGO_NET_OFFLINE=true exec cargo mutants --in-place --no-shuffle --colors never --test-tool nextest "$@"' \
+  lab "$@"

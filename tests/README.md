@@ -102,15 +102,10 @@ The run's summary gives the score and how many mutants were tried; its
 `missed.txt` artifact lists every survivor. A run that says **Incomplete** ran
 out of time: start it again with more `shards`.
 
-A survivor is a question, not a verdict. It may be a real gap, code whose
-change nothing can observe, or, under the default `test_scope=crate`, something
-only `tests/` or another crate would catch. Read it before writing a test, and
-never write one just to kill a mutant: the test states a behavior or it is not
-worth keeping.
-
-Don't run it directly on a machine you care about. A mutant changes code that
-deletes files, ends processes and writes harness configuration, and can take a
-test out of its isolation. A hosted runner is disposable.
+A survivor is a question, not a verdict. The `mutation-audit` skill holds the
+whole loop: triaging survivors, writing the test, proving it catches the mutant,
+and the sandboxed lab for local runs. Never run `cargo mutants` bare on a machine
+you care about.
 
 ## Support crate
 
