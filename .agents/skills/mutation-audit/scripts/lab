@@ -7,9 +7,9 @@
 # dependencies are fetched. What a mutant changes can delete files, end
 # processes and write harness configuration, so it never runs bare here.
 #
-#   AUDIT=<scratch dir> lab --package uze-document --file 'crates/uze-document/src/lib.rs'
+#   AUDIT=<dir on a disk> lab --package uze-document --file 'crates/uze-document/src/lib.rs'
 #
-# AUDIT holds the box and the tools, and is required. The results land in
+# AUDIT holds the box, its builds and the tools, and is required. The results land in
 # $AUDIT/boxes/mutants/work/uze/mutants.out.
 set -euo pipefail
 
@@ -25,6 +25,11 @@ if [[ ! -x "$sandbox" ]]; then
 fi
 
 mkdir -p "$AUDIT/boxes/mutants"
+# Builds of the whole workspace fill a memory-backed /tmp, for everyone using it.
+if [[ "$(stat -f -c %T "$AUDIT")" == tmpfs ]]; then
+  echo "lab: $AUDIT is on a tmpfs; put AUDIT on a disk" >&2
+  exit 1
+fi
 exec 9>"$AUDIT/boxes/mutants/lab.lock"
 if ! flock -n 9; then
   echo "lab: another run is using $AUDIT; give this one its own AUDIT" >&2
@@ -61,8 +66,30 @@ git -C "$checkout" ls-files --cached --others --exclude-standard -z |
   (cd "$checkout" && tar --null --ignore-failed-read -T - -c) |
   tar -x -m -C "$copy"
 
+# Tests leave their temporary directories behind, and on a tmpfs a run of the
+# whole suite per mutant runs out of inodes, which reads as every test failing.
+find "$AUDIT/boxes/mutants/tmp" -mindepth 1 -delete 2>/dev/null || true
+
 SRC="$checkout" "$sandbox" mutants --net -- \
   bash -c 'cd uze && cargo fetch --locked'
+
+mutants=(--in-place --no-shuffle --colors never --test-tool nextest)
+trailing=()
+if [[ " $* " == *" --test-workspace=true "* ]]; then
+  # cargo-mutants' baseline tries only --package, and its timeout comes from
+  # that, so here the suite is proven green first and the time is as long as CI's.
+  # Refused in any sandbox, so red in the box: an approval and an install off a
+  # terminal. foreground_status_*: red here for a reason nobody has traced yet.
+  usable='not (test(approving_needs_a_person_at_a_terminal) | test(an_install_off_a_terminal_leaves) | test(an_install_of_what_the_project_declares) | test(foreground_status_prefers_the_shim) | test(foreground_status_ignores_a_shim))'
+  mutants+=(--baseline=skip --timeout 900)
+  trailing=(-- -E "$usable")
+  if [[ " $* " != *" --list "* ]]; then
+    SRC="$checkout" "$sandbox" mutants -- \
+      bash -c 'cd uze && CARGO_NET_OFFLINE=true exec cargo nextest run --workspace -E "$1"' \
+      lab "$usable"
+  fi
+fi
+
 SRC="$checkout" "$sandbox" mutants -- \
-  bash -c 'cd uze && CARGO_NET_OFFLINE=true exec cargo mutants --in-place --no-shuffle --colors never --test-tool nextest "$@"' \
-  lab "$@"
+  bash -c 'cd uze && CARGO_NET_OFFLINE=true exec cargo mutants "$@"' \
+  lab "${mutants[@]}" "$@" "${trailing[@]}"

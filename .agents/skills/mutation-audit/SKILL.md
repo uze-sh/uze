@@ -55,7 +55,8 @@ Scope `crate` is a cheap list of candidates and overstates survivors, because a
 foundation crate's behavior is often tested by whoever uses it. Scope `workspace`
 is the verdict on whether the project as a whole notices. Use `workspace` for a
 small crate and `crate` first for a large one, then confirm what matters in the
-lab. `mode=diff` suits a branch or a release range. `ref` defaults to `main`, so
+lab. In scope `crate`, the survivors of `uze-contract/src/docs.rs` mean nothing: it
+compiles only with feature `schema`, which that scope leaves off. `mode=diff` suits a branch or a release range. `ref` defaults to `main`, so
 name the branch you are auditing, or the run measures something else and succeeds.
 
 Start one crate at a time: GitHub keeps one run waiting, and a third start
@@ -134,10 +135,14 @@ exactly what you meant to catch. `scripts/lab` is relative to this skill, and th
 script works from any directory:
 
 ```sh
-AUDIT=<scratch>/mutants scripts/lab --package <crate> --file '<path>'
+AUDIT=<dir> scripts/lab --package <crate> --file '<path>'
 ```
 
-Add `--test-workspace=true` to judge against the whole workspace, and `--re
+`<dir>` sits on a disk, outside the repository: the builds outgrow a memory-backed
+`/tmp`, which everything else on the machine shares, so the lab refuses a tmpfs.
+
+Add `--test-workspace=true` to judge against the whole workspace, which first proves
+the suite green in the box, as `cargo-mutants`' own baseline would try only the crate, and `--re
 '<pattern>'` to re-run one mutant. Read
 `$AUDIT/boxes/mutants/work/uze/mutants.out/missed.txt`; the file is what proves it.
 
@@ -150,9 +155,13 @@ The box can mislead in three ways:
   mutant, and `uze-terminal`'s `foreground_status_*` have failed in isolated
   environments. When a result surprises you, read that mutant's log under
   `mutants.out/log/` to see which test failed.
-- **No result.** A test that always fails there stops the run at the baseline:
-  "no mutants were tested". Find out why it fails. `--baseline=skip` would hide it
-  by making every mutant read `caught`.
+- **No result.** A test that always fails there stops the run at the baseline.
+  Find out why it fails: anything in a sandbox is refused an approval, for example,
+  so those tests are filtered out for a workspace run in `scripts/lab`. A bare
+  `--baseline=skip` would hide it by making every mutant read `caught`.
+
+A `caught` is only as good as the test that failed. If one test catches unrelated
+mutants, or a report is too good to be true, read the logs first.
 
 ### 6. Deliver
 
@@ -170,7 +179,7 @@ and the change, without the line number, which moves:
 'uze-document/src/lib\.rs.*replace > with >= in read$',
 ```
 
-Check it with `AUDIT=<scratch>/mutants scripts/lab --list --package <crate> | wc -l`.
+Check it with `AUDIT=<dir> scripts/lab --list --package <crate> | wc -l`.
 An exclusion
 without its reason gets deleted, and anyone changing the code it names re-reads
 it. It is for equivalents and noise, never for a real gap someone would rather not
