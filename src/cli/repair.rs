@@ -144,17 +144,16 @@ fn render_home(home: &std::path::Path, entries: &[SchemaEntry]) -> String {
                 (Change::Removed, "left by an earlier version".to_owned())
             }
             (SchemaFinding::EmptyDirectory, true) => (Change::Removed, "empty".to_owned()),
-            (
-                SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded,
-                true,
-            ) => (Change::Removed, format!("{size} discarded")),
+            (SchemaFinding::SetAside | SchemaFinding::Superseded, true) => {
+                (Change::Removed, format!("{size} discarded"))
+            }
             (SchemaFinding::SetAside, false) => (
                 Change::Attention,
                 format!("{size}, a record set aside that nothing reads"),
             ),
-            (SchemaFinding::Stranded, false) => (
+            (SchemaFinding::Stranded, _) => (
                 Change::Attention,
-                format!("{size}, an earlier version's copy beside the current record"),
+                format!("{size}, written by an earlier version after its record moved: kept"),
             ),
             (SchemaFinding::Superseded, false) => (
                 Change::Attention,
@@ -318,7 +317,7 @@ mod tests {
         );
         assert!(
             text.contains(
-                "state/launch-overrides.json   1.0 KB, an earlier version's copy beside the current record"
+                "state/launch-overrides.json   1.0 KB, written by an earlier version after its record moved: kept"
             ),
             "{text}"
         );

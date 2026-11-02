@@ -36,7 +36,8 @@ pub enum SchemaFinding {
     /// The revision a failed restore left, its only copy.
     Superseded,
     /// A record under the name an earlier release gave it, beside the one
-    /// it was carried to: written again by that release after the carry.
+    /// it was carried to: written again by that release after the carry,
+    /// so it may hold what nothing else does. Reported, never removed.
     Stranded,
     /// Nothing this build declares: possibly a newer build's.
     Unknown,
@@ -60,7 +61,7 @@ impl SchemaEntry {
     pub fn is_leftover(&self) -> bool {
         matches!(
             self.finding,
-            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+            SchemaFinding::SetAside | SchemaFinding::Superseded
         )
     }
 }
@@ -86,9 +87,7 @@ pub(crate) fn compare(home: &UzeHome, discard_leftovers: bool) -> Vec<SchemaEntr
         entry.removed = match entry.finding {
             SchemaFinding::Retired => super::collection::remove(&entry.path),
             SchemaFinding::EmptyDirectory => std::fs::remove_dir(&entry.path).is_ok(),
-            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
-                if discard_leftovers =>
-            {
+            SchemaFinding::SetAside | SchemaFinding::Superseded if discard_leftovers => {
                 super::collection::remove(&entry.path)
             }
             _ => false,
@@ -295,8 +294,12 @@ mod tests {
                 false
             )]
         );
-        assert!(entries[0].is_leftover());
-        assert!(home.retired_launches_path().exists());
+        assert!(!entries[0].is_leftover());
+        compare(&home, true);
+        assert!(
+            home.retired_launches_path().exists(),
+            "what the earlier release wrote after the carry is nowhere else"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 
