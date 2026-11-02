@@ -19,7 +19,7 @@ pub(crate) fn earlier() -> Vec<Earlier> {
             // Read until the projection is next prepared, which an agent
             // launched before the upgrade may never do: unbounded.
             lasts: Lasts::Unbounded,
-            spelled: &[],
+            spelled: &[PROJECTION_MARKER],
             site: file!(),
         },
         Earlier {

@@ -478,7 +478,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::retired_detection_cache_path,
     )
     .swept()
-    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["harness_detection.json"]),
     retired(
         "retired_overview_cache_path",
         Remembered,
@@ -486,7 +487,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::retired_overview_cache_path,
     )
     .swept()
-    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["machine-overview.json"]),
     retired(
         "retired_transcripts_cache_path",
         Remembered,
@@ -494,7 +496,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::retired_transcripts_cache_path,
     )
     .swept()
-    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["machine-usage.json"]),
     retired(
         "retired_changelog_cache_path",
         Remembered,
@@ -502,7 +505,8 @@ const OWNED: &[OwnedPath] = &[
         UzeHome::retired_changelog_cache_path,
     )
     .swept()
-    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22))),
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 22)))
+    .spelled(&["release-notes.md"]),
     // Records this build renamed, each carried to the name it now has by
     // `earlier::carry_renamed`, run where their readers and writers start;
     // only as often as those run, so unbounded. Their locks are not
@@ -514,25 +518,29 @@ const OWNED: &[OwnedPath] = &[
     retired("retired_approvals_path", Record, Document, |home| {
         home.retired_approvals_path(PROJECT)
     })
-    .renamed_to("approvals_path"),
+    .renamed_to("approvals_path")
+    .spelled(&["approved-commands.json"]),
     retired("retired_prompts_path", Record, Document, |home| {
         home.retired_prompts_path(PROJECT)
     })
-    .renamed_to("prompts_path"),
+    .renamed_to("prompts_path")
+    .spelled(&["prompt-history.json"]),
     retired(
         "retired_release_path",
         Record,
         Document,
         UzeHome::retired_release_path,
     )
-    .renamed_to("release_path"),
+    .renamed_to("release_path")
+    .spelled(&["update.json"]),
     retired(
         "retired_launches_path",
         Record,
         Document,
         UzeHome::retired_launches_path,
     )
-    .renamed_to("launches_path"),
+    .renamed_to("launches_path")
+    .spelled(&["launch-overrides.json"]),
     retired(
         "retired_usage_path",
         Record,
@@ -546,46 +554,54 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::retired_consent_path,
     )
-    .renamed_to("consent_path"),
+    .renamed_to("consent_path")
+    .spelled(&["extensions.json"]),
     retired("retired_tasks_lock_path", Record, Lock, |home| {
         home.retired_tasks_lock_path(PROJECT)
     }),
     retired("retired_prompts_lock_path", Record, Lock, |home| {
         home.retired_prompts_lock_path(PROJECT)
-    }),
+    })
+    .spelled(&["prompt-history.lock"]),
     retired(
         "retired_release_lock_path",
         Record,
         Lock,
         UzeHome::retired_release_lock_path,
-    ),
+    )
+    .spelled(&["update.lock"]),
     retired(
         "retired_launches_lock_path",
         Record,
         Lock,
         UzeHome::retired_launches_lock_path,
-    ),
+    )
+    .spelled(&["launch-overrides.lock"]),
     retired(
         "retired_usage_lock_path",
         Record,
         Lock,
         UzeHome::retired_usage_lock_path,
-    ),
+    )
+    .spelled(&["machine-usage.lock"]),
     retired(
         "retired_consent_lock_path",
         Record,
         Lock,
         UzeHome::retired_consent_lock_path,
-    ),
+    )
+    .spelled(&["extensions.lock"]),
     retired(
         "retired_fetch_lock_path",
         Record,
         Lock,
         UzeHome::retired_fetch_lock_path,
-    ),
+    )
+    .spelled(&["marketplace-fetch.lock"]),
     retired("retired_mirror_lock_path", Record, Lock, |home| {
         home.retired_mirror_lock_path("{entry}")
-    }),
+    })
+    .spelled(&["marketplace-mirrors"]),
     // Locks, beside the records they guard and never under a swept tree.
     owned(
         "mutation_lock_path",
@@ -660,7 +676,8 @@ const OWNED: &[OwnedPath] = &[
         Authored,
         Document,
         UzeHome::retired_theme_overrides_path,
-    ),
+    )
+    .spelled(&["theme-overrides.json"]),
     owned("themes_dir", Authored, Directory, UzeHome::themes_dir),
     // Generated.
     owned("runtime_dir", Generated, Directory, UzeHome::runtime_dir).swept(),
