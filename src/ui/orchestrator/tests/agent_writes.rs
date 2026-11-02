@@ -551,6 +551,25 @@ fn a_prompt_allowed_over_a_line_nobody_can_vouch_for_is_typed_after_a_warning() 
     }
 }
 
+/// Text the operator typed stays theirs once a later key makes the line
+/// unknown: allowing a prompt never sends it along.
+#[test]
+fn a_prompt_allowed_over_typed_text_a_key_made_unknown_is_still_refused() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-typed-unknown",
+    ));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("tab"));
+    driven.sent();
+    assert!(allowed_by_keyboard(&mut driven, "Review PLAN.md").is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(
+        said.contains("can't tell what's typed: press enter or ctrl-c"),
+        "{said}"
+    );
+}
+
 /// Esc may clear a line with text on it, so it can no longer be known.
 #[test]
 fn a_key_over_typed_text_still_leaves_the_line_unknown() {
@@ -561,7 +580,7 @@ fn a_key_over_typed_text_still_leaves_the_line_unknown() {
     let pane = driven.attach.model.focused_pane();
     assert_eq!(
         driven.attach.model.may_submit(pane),
-        super::Submission::Unknown
+        super::Submission::UnknownOverText
     );
 }
 

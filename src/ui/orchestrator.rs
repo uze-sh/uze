@@ -2417,6 +2417,9 @@ pub(super) enum Submission {
     /// recall, a chord — so what is on the line is unknown until the
     /// operator's next Enter or Ctrl-C.
     Unknown,
+    /// As `Unknown`, over text the operator is known to have typed: theirs,
+    /// so no answer sends it along.
+    UnknownOverText,
 }
 
 impl Submission {
@@ -2426,11 +2429,21 @@ impl Submission {
             Self::Ok => None,
             Self::Busy => Some(("agent is busy", label.to_owned())),
             Self::Typed => Some(("you have text typed", label.to_owned())),
-            Self::Unknown => Some((
+            Self::Unknown | Self::UnknownOverText => Some((
                 "can't tell what's typed",
                 "press enter or ctrl-c".to_owned(),
             )),
         }
+    }
+
+    /// The refusal as one phrase, for where it is said beside a label of
+    /// its own: what clears an unknown line is the part worth keeping.
+    fn reason(self) -> Option<String> {
+        let (title, detail) = self.refusal("")?;
+        Some(match self {
+            Self::Unknown | Self::UnknownOverText => format!("{title}: {detail}"),
+            _ => title.to_owned(),
+        })
     }
 }
 

@@ -372,17 +372,11 @@ impl WorkspaceModel {
         if bridge.awaiting_approval.contains(&write.agent) {
             return Some("it is waiting on an approval".to_owned());
         }
-        match (self.may_submit(pane), write.warned_of_unknown_line) {
-            (Submission::Unknown, true) => {}
-            (submission @ Submission::Unknown, false) => {
-                let (title, how) = submission.refusal(&write.label)?;
-                return Some(format!("{title}: {how}"));
-            }
-            (submission, _) => {
-                if let Some((title, _)) = submission.refusal(&write.label) {
-                    return Some(title.to_owned());
-                }
-            }
+        let submission = self.may_submit(pane);
+        if !(submission == Submission::Unknown && write.warned_of_unknown_line)
+            && let Some(reason) = submission.reason()
+        {
+            return Some(reason);
         }
         let turn = bridge.turns.get(&write.agent).copied().unwrap_or(0);
         bridge
