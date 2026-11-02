@@ -265,10 +265,18 @@ fn a_harness_narrows_the_menu_the_table_and_the_totals() {
         !drawn.iter().any(|row| row.contains("vercel:nextjs")),
         "Claude's only"
     );
-    assert!(
-        drawn.iter().any(|row| row.contains("5 sessions")),
-        "{drawn:#?}"
-    );
+    assert_eq!(fact(&drawn, "sessions"), "5", "{drawn:#?}");
+}
+
+/// What the block at the foot of the menu says beside `name`.
+fn fact(drawn: &[String], name: &str) -> String {
+    let row = drawn
+        .iter()
+        .find(|row| row.contains(&format!("│ {name} ")))
+        .unwrap_or_else(|| panic!("the block names {name}: {drawn:#?}"));
+    let (_, after) = row.split_once(&format!("│ {name} ")).unwrap();
+    let (said, _) = after.split_once('│').unwrap();
+    said.trim().to_owned()
 }
 
 fn now_seconds() -> u64 {
@@ -279,13 +287,104 @@ fn now_seconds() -> u64 {
 }
 
 #[test]
-fn the_header_counts_every_session_and_says_since_when() {
+fn the_block_counts_every_session_and_says_since_when() {
     let model = model();
     let drawn = rows(&model);
-    assert!(
-        drawn.iter().any(|row| row.contains("45 sessions · since ")),
-        "{drawn:#?}"
+    assert_eq!(fact(&drawn, "sessions"), "45");
+    assert!(!fact(&drawn, "since").is_empty());
+    assert_eq!(fact(&drawn, "tokens/session"), "~360");
+    assert_eq!(fact(&drawn, "to look at"), "1");
+}
+
+#[test]
+fn the_title_says_what_the_screen_is_for_as_every_screen_does() {
+    let model = model();
+    let drawn = rows(&model);
+    let title = drawn
+        .iter()
+        .find(|row| row.contains("every harness"))
+        .unwrap();
+    assert!(title.contains("Overview  resources & usage"), "{title}");
+}
+
+#[test]
+fn the_figures_stand_on_the_block_and_never_beside_the_title() {
+    let mut model = model();
+    model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
+    let drawn = rows(&model);
+    let title = drawn
+        .iter()
+        .find(|row| row.contains("every harness"))
+        .unwrap();
+    for word in ["session", "since", "synced"] {
+        assert!(!title.contains(word), "{title}");
+    }
+    let hooks = drawn.iter().position(|row| row.contains("hooks")).unwrap();
+    let synced = drawn
+        .iter()
+        .position(|row| row.contains("│ synced "))
+        .unwrap();
+    assert!(synced > hooks, "under the menu's sections: {drawn:#?}");
+}
+
+#[test]
+fn a_short_screen_keeps_the_sections_and_the_freshness_on_the_block() {
+    let mut model = model();
+    model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
+    let tall = rows(&model);
+    let cut = (20..36)
+        .rev()
+        .map(|height| buffer_rows(&drawn_at(&model, 180, height).0))
+        .find(|drawn| !drawn.iter().any(|row| row.contains("│ tokens/session ")))
+        .expect("a height the whole block does not fit");
+    assert!(tall.iter().any(|row| row.contains("│ tokens/session ")));
+    assert!(cut.iter().any(|row| row.contains("│ synced ")), "{cut:#?}");
+    for section in ["skills", "agents", "mcp servers", "hooks", "rules"] {
+        assert!(cut.iter().any(|row| row.contains(section)), "{cut:#?}");
+    }
+}
+
+#[test]
+fn nothing_read_yet_draws_no_block() {
+    let mut model = model();
+    model.remembered.machine.overview = None;
+    let terminal = drawn_at(&model, 180, 36).0;
+    let buffer = terminal.backend().buffer();
+    let ground = crate::ui::theme::color(uze_theme::Token::SurfaceRecessed);
+    let chosen = buffer_rows(&terminal)
+        .iter()
+        .position(|row| row.contains("skills"))
+        .unwrap() as u16;
+    for y in (chosen + 1)..36 {
+        assert_ne!(buffer[(3, y)].bg, ground, "row {y}");
+    }
+}
+
+#[test]
+fn the_block_is_a_darker_ground_with_a_rule_down_its_left_and_no_frame() {
+    let mut model = model();
+    model.remembered.machine.collected_at = Some(std::time::SystemTime::now());
+    let terminal = drawn_at(&model, 180, 36).0;
+    let buffer = terminal.backend().buffer();
+    let drawn = buffer_rows(&terminal);
+    assert!(!drawn.iter().any(|row| row.contains('┌')), "{drawn:#?}");
+    let y = drawn
+        .iter()
+        .position(|row| row.contains("│ synced "))
+        .unwrap();
+    let x = drawn[y].chars().position(|cell| cell == '│').unwrap() as u16;
+    let ground = crate::ui::theme::color(uze_theme::Token::SurfaceRecessed);
+    for at in [x, x + 2, x + 23] {
+        assert_eq!(buffer[(at, y as u16)].bg, ground, "column {at}");
+    }
+    assert_ne!(buffer[(x + 24, y as u16)].bg, ground, "ends with the menu");
+    let air = y as u16 + 1;
+    assert_eq!(
+        buffer[(x, air)].symbol(),
+        "│",
+        "the rule runs its whole height"
     );
+    assert_eq!(buffer[(x + 2, air)].symbol(), " ");
 }
 
 #[test]
@@ -660,10 +759,7 @@ fn opening_on_a_snapshot_says_when_it_was_synced_and_reads_nothing() {
     assert!(!force);
     screen.absorb(id, None, Some(std::time::SystemTime::now()), true);
     let drawn = rows(&model);
-    assert!(
-        drawn.iter().any(|row| row.contains("synced just now")),
-        "{drawn:#?}"
-    );
+    assert_eq!(fact(&drawn, "synced"), "just now", "{drawn:#?}");
     assert!(!drawn.iter().any(|row| row.contains("reading harnesses")));
 }
 

@@ -79,7 +79,7 @@ impl Route {
     /// screen's own header — two because every route says it the same way.
     pub(crate) fn subtitle(self) -> &'static str {
         match self {
-            Route::Overview => "status & health",
+            Route::Overview => "resources & usage",
             Route::Plugins => "plugins & skills",
             Route::Extensions => "workspace tools",
             Route::Harnesses => "detected agents",
