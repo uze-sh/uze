@@ -38,6 +38,28 @@ fn no_entry_outlives_the_release_floor() {
     );
 }
 
+/// An entry is deleted where its `site` says it is declared, so the site
+/// has to be the file that spells its name.
+#[test]
+fn every_entry_is_declared_where_its_site_says() {
+    let root = repository_root();
+    let astray: Vec<String> = every_entry()
+        .into_iter()
+        .filter(|entry| {
+            std::fs::read_to_string(root.join(entry.site)).map_or(true, |source| {
+                !source.contains(&format!("\"{}\"", entry.name))
+            })
+        })
+        .map(|entry| format!("  {} ({})", entry.name, entry.site))
+        .collect();
+    assert!(
+        astray.is_empty(),
+        "\n\nThese entries' `site` is not the file that declares them; set it \
+         with `file!()` where the entry is written (see {RULE}):\n\n{}\n",
+        astray.join("\n")
+    );
+}
+
 #[test]
 fn the_floor_is_a_release_at_or_below_this_one() {
     let this = Release::parse(env!("CARGO_PKG_VERSION")).expect("the package version is a release");

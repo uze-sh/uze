@@ -128,20 +128,6 @@ pub struct Earlier {
     pub site: &'static str,
 }
 
-/// Declares an [`Earlier`] entry, filling its `site` with the file it is
-/// written in.
-#[macro_export]
-macro_rules! earlier {
-    ($name:expr, $lasts:expr $(, spelled: [$($spelled:expr),* $(,)?])? $(,)?) => {
-        $crate::earlier::Earlier {
-            name: $name,
-            lasts: $lasts,
-            spelled: &[$($($spelled),*)?],
-            site: file!(),
-        }
-    };
-}
-
 /// The rungs of `T`'s ladder as entries, for the crate that owns `T` to
 /// list among its own.
 ///
@@ -231,12 +217,5 @@ mod tests {
         assert!(Lasts::Until(Release::beta(1, 0, 0, 21)).below(floor));
         assert!(!Lasts::Until(floor).below(floor));
         assert!(!Lasts::Unbounded.below(floor));
-    }
-
-    #[test]
-    fn an_entry_names_the_file_that_declares_it() {
-        let entry = crate::earlier!("x", Lasts::Unbounded, spelled: ["old.json"]);
-        assert_eq!(entry.site, file!());
-        assert_eq!(entry.spelled, &["old.json"]);
     }
 }
