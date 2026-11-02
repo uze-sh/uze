@@ -815,6 +815,28 @@ mod tests {
     }
 
     #[test]
+    fn overrides_that_do_not_resolve_are_said_and_the_theme_under_them_still_applies() {
+        let home = scratch("theme-install-broken-overrides");
+        write_config(
+            &home,
+            "[appearance.colors]\n\"accent\" = \"not a colour\"\n",
+        );
+        write_theme(&home, "one", r##"{ "symbols": { "status.idle": "1" } }"##);
+        select(&home, "one");
+
+        let Ok((Some(loaded), problems)) = chosen(&home) else {
+            panic!("the theme under the overrides is applied");
+        };
+
+        assert_eq!(loaded.theme.glyph(uze_theme::Symbol::StatusIdle), "1");
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].starts_with("config.toml [appearance]"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
     fn the_operators_overrides_outlast_the_theme_they_are_applied_over() {
         let home = scratch("theme-overrides");
         write_config(
