@@ -2467,6 +2467,17 @@ impl Submission {
     }
 }
 
+/// The title and detail of a toast saying `outcome` of what `who` asked,
+/// refused for `reason`. A reason that says what to do (`what: how`) is wider
+/// than a toast, so what happened takes the title and what to do leads the
+/// detail, where only `who` can be the part cut.
+fn refusal_toast(outcome: &str, who: &str, reason: &str) -> (String, String) {
+    match reason.split_once(": ") {
+        Some((what, how)) => (format!("{outcome}: {what}"), format!("{how} · {who}")),
+        None => (outcome.to_owned(), format!("{who}: {reason}")),
+    }
+}
+
 /// The keys a hint drew, as targets.
 fn hint_targets(keys: Vec<(Rect, Action)>) -> impl Iterator<Item = (Rect, WorkspaceHit)> {
     keys.into_iter()

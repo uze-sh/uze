@@ -171,12 +171,9 @@ impl WorkspaceModel {
         let by = attribution(&owner);
         let asker = owner.clone();
         let refuse = |model: &mut Self, reason: &str| {
-            model.raise_toast(
-                ToastKind::Told,
-                "not sent",
-                format!("{by}: {}: {reason}", request.label),
-                None,
-            );
+            let who = format!("{by}: {}", request.label);
+            let (title, detail) = refusal_toast("not sent", &who, reason);
+            model.raise_toast(ToastKind::Told, title, detail, None);
             model.tell_written(
                 &asker,
                 &request.action,
@@ -444,12 +441,9 @@ impl Attach<'_> {
                 continue;
             };
             if let Some(reason) = self.model.write_refusal(&write, pane, harness_in_front) {
-                self.model.raise_toast(
-                    ToastKind::Told,
-                    "not sent",
-                    format!("{by}: {}: {reason}", write.label),
-                    None,
-                );
+                let who = format!("{by}: {}", write.label);
+                let (title, detail) = refusal_toast("not sent", &who, &reason);
+                self.model.raise_toast(ToastKind::Told, title, detail, None);
                 self.model
                     .tell_written(&write.owner, &write.action, AgentWritten::Refused(reason));
                 continue;
