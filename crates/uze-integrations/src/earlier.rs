@@ -8,5 +8,6 @@ use uze_core::document::earlier::Earlier;
 pub fn earlier() -> Vec<Earlier> {
     let mut entries = crate::shared::earlier::earlier();
     entries.extend(crate::opencode::earlier::earlier());
+    entries.extend(crate::antigravity::earlier::earlier());
     entries
 }

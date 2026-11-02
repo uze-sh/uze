@@ -19,6 +19,10 @@ use uze_core::{
 /// installed through it.
 pub(crate) const RETIRED_MARKETPLACE: &str = "uze-local";
 
+/// Where earlier releases kept a harness's rules engine, on its own beside
+/// the hook wrapper, under the runtime tree.
+pub(crate) const RETIRED_ENGINE_PATH: &str = "rules/engine";
+
 /// Every integration's shared entries. Each is retired only when a package
 /// it concerns is next delivered or detached, so none is bounded yet.
 pub(crate) fn earlier() -> Vec<Earlier> {
@@ -33,6 +37,12 @@ pub(crate) fn earlier() -> Vec<Earlier> {
             name: "harness content earlier releases staged under the runtime tree",
             lasts: Lasts::Unbounded,
             spelled: &[],
+            site: file!(),
+        },
+        Earlier {
+            name: "the rules engine earlier releases kept on its own under the runtime tree",
+            lasts: Lasts::Unbounded,
+            spelled: &[RETIRED_ENGINE_PATH],
             site: file!(),
         },
         Earlier {
