@@ -119,3 +119,13 @@
 - decided:  `Until(1.0.0-beta.20)` for `retired_profiles_path` (#324, swept on every bootstrap) and the official marketplace's earlier name (#328, moved off on every bootstrap that finds it); both first shipped in beta.21. Every ladder rung, the sources and project-records moves, the runtime attachments tree, the integrations' and the checkouts' entries, the AGENTS.md regions, the old-server and `--instructions` entries are `Unbounded`: what carries each out runs only when its record, package, project or server is next touched, so a machine at the floor can still hold what they handle
 - rejected: deriving `Until` from the release that stopped writing each — true of the writer, false of the machine: a beta.5 `marketplaces.json` survives every later release that never rewrote it
 - blast:    none until the floor rises; then a wrong `Until` deletes live support, which is why only runners that run on every run are bounded
+
+## D13 — Raising the floor deletes the profiles path and the official name with their tests
+
+- status:   pending
+- task:     6.3
+- commit:
+- trigger:  `retired_profiles_path` is the only retired disposable path, and the retired collector's, the schema report's and `doctor --repair`'s tests use it as their example
+- decided:  delete both bounded entries, their code and the tests that prove them; the retired collector and `SchemaFinding::Retired` stay with no subject until `refactor-home-file-shape` retires its renamed locks (swept retired entries, with tests of their own)
+- rejected: keeping `profiles.json` past the floor as a fixture — an entry below the floor that the build tolerates is exactly what the floor exists to refuse
+- blast:    restoring the entries is a revert; the mechanism is untested only between this commit and the home reshape's group 2
