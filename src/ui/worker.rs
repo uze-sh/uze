@@ -60,7 +60,7 @@ pub(crate) enum Intent {
     /// Consent to a declared extension, enable it in a project, or disable
     /// it there: the operator's answer on the Extensions screen.
     ExtensionHere(super::model::ExtensionHere),
-    /// Set one preference of a declared extension.
+    /// Set one preference of an extension, built-in or declared.
     SetPreference {
         owner: crate::ui::model::PreferenceOwner,
         name: String,

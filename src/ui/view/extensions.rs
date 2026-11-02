@@ -600,16 +600,15 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> Vec
     }
 }
 
-/// Each preference as a settings form draws a key, under its heading:
-/// the rows `listed`, or the editor's while the keys are on them.
+/// Each preference as a settings form draws a key, its label in a column
+/// and then the control that changes it, under its heading: the rows
+/// `listed`, or the editor's while the keys are on them.
 fn preference_lines(
     grid: &mut Grid,
     listed: &[uze_application::PreferenceRow],
     editing: Option<&PreferencesEditor>,
     hovered: Option<&Hit>,
 ) -> Vec<PlacedPreference> {
-    // Each preference as a settings form draws a key: its label in a
-    // column, then the control that changes it.
     let mut preference_rows = Vec::new();
     let preferences = editing.map_or(listed, |editor| &editor.rows);
     if !preferences.is_empty() {
