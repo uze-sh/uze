@@ -232,7 +232,7 @@ pub fn project_id_for(canonical_project_root: &Path) -> String {
 /// exercise in reading back artifacts an integration derived: the root is
 /// the one fact deciding whether any of them still has a reason to exist,
 /// and no vendor's own output is obliged to state it.
-pub const PROJECTION_MARKER: &str = "project.json";
+pub const PROJECTION_MARKER: &str = "root.json";
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ProjectionMarker {
@@ -279,7 +279,13 @@ pub fn prepare_project_dir(home: &UzeHome, canonical_project_root: &Path) -> Res
 /// The canonical project root a project's runtime directory records, when
 /// it still records one a reader can understand.
 pub fn projection_root(project_dir: &Path) -> Option<PathBuf> {
-    let raw = fs::read(project_dir.join(PROJECTION_MARKER)).ok()?;
+    read_marker(&project_dir.join(PROJECTION_MARKER))
+        .or_else(|| crate::machine::earlier::projection_root(project_dir))
+}
+
+/// The root a projection marker at `path` names.
+pub(crate) fn read_marker(path: &Path) -> Option<PathBuf> {
+    let raw = fs::read(path).ok()?;
     serde_json::from_slice::<ProjectionMarker>(&raw)
         .ok()
         .map(|marker| marker.root)
@@ -364,7 +370,9 @@ fn write_marker(project_dir: &Path, canonical_project_root: &Path) -> Result<()>
     if fs::read(&path).is_ok_and(|current| current == desired) {
         return Ok(());
     }
-    write_atomic_unsynced(&path, &desired)
+    write_atomic_unsynced(&path, &desired)?;
+    crate::machine::earlier::remove_projection_marker(project_dir);
+    Ok(())
 }
 
 #[cfg(test)]

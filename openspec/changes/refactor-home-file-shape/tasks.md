@@ -16,8 +16,8 @@
 - [x] 3.1 `runtime_extensions_dir` is the tenant; `compiled_extensions_dir` is `runtime/extensions/compiled/`; views an earlier release kept loose are a retired swept family the compiled-views collector removes through `application/earlier.rs`
 - [x] 3.2 `runtime/packages/` → `runtime/servers/`; earlier releases' copies under `runtime/packages/` are a retired tenant, kept while a receipt names one and collected through `application/earlier.rs`; `remove_package` takes a package's old copy through `package/earlier.rs`
 - [x] 3.3 `setup_log_path` (`logs/setup/<harness>.log`) and `gate_log_path` (`logs/gate/<agent>.log`); the loose names an earlier release wrote are retired entries the logs' collector removes through `src/earlier.rs`; the map test anchors on `logs_dir()`; the Lab image tails the new path
-- [ ] 3.4 Runtime projection marker `project.json` → `root.json`
-- [ ] 3.5 Catalogue entries for every new or moved builder
+- [x] 3.4 The runtime projection marker is `root.json`; an earlier release's `project.json` is read through `machine/earlier.rs` until the projection is next prepared, which removes it
+- [x] 3.5 Catalogue entries for `runtime_extensions_dir` and `setup_log_path`; retired paths are answered by the Retired subject from the map
 
 ## 4. Rename records and their guards
 

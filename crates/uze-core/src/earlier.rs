@@ -8,6 +8,7 @@ use uze_document::earlier::Earlier;
 pub fn earlier() -> Vec<Earlier> {
     let mut entries = Vec::new();
     entries.extend(crate::machine::usage::rungs());
+    entries.extend(crate::machine::earlier::earlier());
     entries.extend(crate::package::store::rungs());
     entries.extend(crate::package::hosts::rungs());
     entries.extend(crate::project::record::rungs());
