@@ -41,4 +41,4 @@
 - [x] 6.2 `journeys/suites/07-upgrade/01` runs `1.0.0-beta.22` against this build, its gestures following that release's picker; verified locally, every scene held (9 checks). The journeys workflow already runs on every path under `crates/` and `src/`
 - [x] 6.3 `FLOOR` is `1.0.0-beta.22`; the floor test named `retired_profiles_path` and the official marketplace's earlier name, deleted with their code and tests (D13)
 - [x] 6.4 `docs/architecture/invariants.md` cites the moved tests and drops the deleted one; `invariants_citations.rs` green
-- [ ] 6.5 `make check`, `openspec validate --all --strict`, the journeys gate and the Lab green
+- [x] 6.5 `fmt`, `clippy` (linux, windows x86_64 and aarch64, telemetry), doc tests, `deny`, attributions, `openspec validate --all --strict`, rules and artifacts checks green locally; `cargo test --workspace` green but for the five agent-sandbox tests main fails identically here; the Lab 8/8; the upgrade journey held. Coverage runs in CI

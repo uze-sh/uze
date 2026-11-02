@@ -84,7 +84,7 @@
 
 - status:   pending
 - task:     4.1
-- commit:
+- commit:   9f964f21
 - trigger:  the task said to fold `StaleProjection` into `RetiredRegionsPlan` and have readers consume the plan only; both are serialized in `uze status --json` and `uze install --json`
 - decided:  the knowledge of which regions are retired lives in `project/earlier.rs` and `application/earlier/regions.rs`; every reader outside them uses neutral names (`leftover_regions`, `leftover_region_files`, `spawn_leftover_region_check`), the three read-model fields keep the JSON key with `#[serde(rename = "retired_regions")]`, and `StaleProjection` stays the status read model, now computed from `earlier::regions`
 - rejected: folding `StaleProjection` into the plan — it changes the JSON a script may read, a behaviour change this refactor's non-goals exclude
@@ -94,7 +94,7 @@
 
 - status:   pending
 - task:     4.2
-- commit:
+- commit:   4e42273c
 - trigger:  the task listed `slot_owner`'s `rfind` and occupancy's tolerance with the checkout entries
 - decided:  both stay where they are, unchanged; the three behaviours only an earlier build's state needs (`agent-<n>` slots, a dropped `parent`, several agents on one slot) move into `checkout/earlier.rs` as entries
 - rejected: moving them too — picking the last-recorded holder and releasing an ended task still naming a checkout are what the store does for any state, today's included; an earlier build is one source of it, not the reason for it
@@ -104,7 +104,7 @@
 
 - status:   pending
 - task:     5.1, 5.2
-- commit:
+- commit:   6f472dbd
 - trigger:  the tasks moved `endpoint.rs`'s older-protocol paths and `--resumed`/`uze terminal` into `earlier` modules
 - decided:  `Replaced::AnotherProtocol`, `Replaced::Unreachable`, `make_way` and the older socket candidates stay in `endpoint.rs`; `--resumed` and `uze terminal` stay in the grammar. Declared: the server older than the claimant record (`runtime/earlier.rs`) and the refused `--instructions` (`src/earlier.rs`, in the library half so the suite can gather it)
 - rejected: moving them — each is how a build meets *any* other build (an older client that self-updated, a server another release started), which `persisted-state` requires of every release; none becomes deletable at any floor
@@ -114,7 +114,7 @@
 
 - status:   pending
 - task:     6.1
-- commit:
+- commit:   336598f0
 - trigger:  6.1 asked for each entry's `lasts` from history
 - decided:  `Until(1.0.0-beta.20)` for `retired_profiles_path` (#324, swept on every bootstrap) and the official marketplace's earlier name (#328, moved off on every bootstrap that finds it); both first shipped in beta.21. Every ladder rung, the sources and project-records moves, the runtime attachments tree, the integrations' and the checkouts' entries, the AGENTS.md regions, the old-server and `--instructions` entries are `Unbounded`: what carries each out runs only when its record, package, project or server is next touched, so a machine at the floor can still hold what they handle
 - rejected: deriving `Until` from the release that stopped writing each — true of the writer, false of the machine: a beta.5 `marketplaces.json` survives every later release that never rewrote it
@@ -124,7 +124,7 @@
 
 - status:   pending
 - task:     6.3
-- commit:
+- commit:   8906da58
 - trigger:  `retired_profiles_path` is the only retired disposable path, and the retired collector's, the schema report's and `doctor --repair`'s tests use it as their example
 - decided:  delete both bounded entries, their code and the tests that prove them; the retired collector and `SchemaFinding::Retired` stay with no subject until `refactor-home-file-shape` retires its renamed locks (swept retired entries, with tests of their own)
 - rejected: keeping `profiles.json` past the floor as a fixture — an entry below the floor that the build tolerates is exactly what the floor exists to refuse
