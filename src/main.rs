@@ -371,13 +371,32 @@ fn leaf_command_of(matches: &clap::ArgMatches, argv: &[String]) -> String {
         .unwrap_or_else(|| "help".to_owned())
 }
 
+/// Whether `command` resolves a theme itself and fails with its problem,
+/// which said above that error as well would be said twice. Choosing a
+/// theme replaces the one that will not load, so its problem is moot too.
+fn answers_for_the_active_theme(command: &Option<Command>) -> bool {
+    matches!(
+        command,
+        Some(Command::Config {
+            action: ConfigAction::Theme {
+                action: Some(
+                    ConfigThemeAction::Show { id: None, .. } | ConfigThemeAction::Set { .. }
+                )
+            }
+        })
+    )
+}
+
 fn dispatch(cli: Cli, home: UzeHome) -> Result<()> {
     // Before anything is drawn or printed, so the CLI's first line and the
     // TUI's first frame are already in the operator's theme. A theme that
     // will not load reports itself here and is otherwise ignored — see
     // `theme::install`.
-    for problem in uze::theme::install(&home) {
-        progress::warn(&problem.to_string());
+    let problems = uze::theme::install(&home);
+    if !answers_for_the_active_theme(&cli.command) {
+        for problem in problems {
+            progress::warn(&problem.to_string());
+        }
     }
     // Same moment, same reason: the first keystroke the TUI reads should
     // already mean what the operator said it means.

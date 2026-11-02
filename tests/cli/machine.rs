@@ -2854,3 +2854,42 @@ fn usage_with_no_workspace_running_still_reports_the_disk() {
     assert!(report["disk"]["total"].is_u64());
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// `uze config theme show` answers for the theme itself: the same problem
+/// is not said once as a warning above its own error.
+#[test]
+fn a_theme_that_will_not_load_is_said_once_by_the_command_that_shows_it() {
+    let root = uze_testkit::temp::scratch("cli-theme-said-once");
+    let (home, uze_home) = (root.join("home"), root.join("uze"));
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&uze_home).unwrap();
+    std::fs::write(
+        uze_home.join("config.toml"),
+        "[appearance.symbols]\n\"status.idle\" = 5\n",
+    )
+    .unwrap();
+
+    let uze = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_uze"))
+            .env("UZE_HOME", &uze_home)
+            .isolated_home(&home)
+            .current_dir(&home)
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+
+    let shown = uze(&["config", "theme", "show"]);
+    assert_eq!(
+        shown.matches("config.toml [appearance]").count(),
+        1,
+        "{shown}"
+    );
+    let listed = uze(&["config", "theme", "list"]);
+    assert_eq!(
+        listed.matches("config.toml [appearance]").count(),
+        1,
+        "every other command still says it: {listed}"
+    );
+}
