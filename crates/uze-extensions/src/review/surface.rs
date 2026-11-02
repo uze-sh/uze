@@ -323,7 +323,13 @@ impl ReviewView {
                 self.diff = Some(diff);
                 if moved {
                     self.reading = Reading {
-                        of: self.stamps.get(&path).map(|stamp| (path.clone(), *stamp)),
+                        // The content the diff was asked for, not what the
+                        // list says now: a file may have moved while it was
+                        // read.
+                        of: self
+                            .diffed
+                            .as_ref()
+                            .map(|(read, key)| (read.clone(), key.stamp)),
                         shown_at: Some(Instant::now()),
                         end_seen: false,
                     };
@@ -368,7 +374,7 @@ impl ReviewView {
     /// list before its diff arrived, is not.
     pub(crate) fn leave(&mut self, now: Instant) {
         let reading = std::mem::take(&mut self.reading);
-        if self.marks_by_hand_only || !reading.end_seen || self.diff_pending {
+        if self.marks_by_hand_only || !reading.end_seen {
             return;
         }
         if reading

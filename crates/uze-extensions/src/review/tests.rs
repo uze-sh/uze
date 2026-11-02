@@ -1721,12 +1721,16 @@ fn reopen(extension: &mut ReviewExtension) {
 }
 
 #[test]
-fn closing_the_review_leaves_the_file_on_show() {
+fn closing_the_review_marks_the_file_read_on_show() {
     let mut extension = open_and_read();
     extension.review_view_mut().unwrap().note_seen(SPACE);
     reopen(&mut extension);
     let view = extension.review_view().unwrap();
-    assert_eq!(view.record.viewed.len(), 1, "{:?}", view.record.viewed);
+    assert_eq!(
+        view.record.viewed.iter().collect::<Vec<_>>(),
+        vec![(&"naming.rs".to_owned(), &1)],
+        "the file on show, at the content read"
+    );
 }
 
 #[test]
@@ -1746,4 +1750,50 @@ fn an_unmark_by_hand_outlives_the_review_closing() {
     view.note_seen(SPACE);
     view.step_file(ScrollDirection::Down);
     assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_diff_read_for_older_content_does_not_mark_the_newer_one() {
+    let mut view = reviewing();
+    let naming = PathBuf::from("/w/naming.rs");
+    // The diff of the content stamped 1 is asked; the file moves to 2
+    // while the read is out, and the old diff lands after.
+    let asked = view.diff_key(&naming).unwrap();
+    relisted(&mut view, 2);
+    view.asking = Some((naming.clone(), asked));
+    view.absorb_diff(
+        naming.clone(),
+        Ok(diff_of(&naming, &NAMING.replace("rename", "renamed"))),
+        "x".to_owned(),
+    );
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_read_while_only_the_commit_moved_is_still_marked() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    // The agent commits another file: the diff is read again, the
+    // content on show is the same.
+    let files = view.files.clone();
+    let stamps = view.stamps.clone();
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files,
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps,
+            head: Some("next".to_owned()),
+        }),
+    );
+    assert!(view.diff_pending);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
 }
