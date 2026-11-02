@@ -111,9 +111,16 @@ fn gathered(sources: &[(String, String)], file: &str) -> bool {
         .trim_end_matches("/mod")
         .replace('/', "::");
     let call = format!("crate::{module}::rungs()");
-    sources
-        .iter()
-        .any(|(other, source)| other.starts_with(&root) && without_comments(source).contains(&call))
+    // A sibling may reach it through `super::`, from the same directory.
+    let directory = file.rsplit_once('/').map_or("", |(directory, _)| directory);
+    let last = module.rsplit("::").next().unwrap_or(&module);
+    let sibling_call = format!("super::{last}::rungs()");
+    sources.iter().any(|(other, source)| {
+        let code = without_comments(source);
+        (other.starts_with(&root) && code.contains(&call))
+            || (other.rsplit_once('/').map(|(directory, _)| directory) == Some(directory)
+                && code.contains(&sibling_call))
+    })
 }
 
 /// `source` without its comment lines, so a call commented out is no call.
