@@ -54,9 +54,11 @@ sandbox:
     # Every take starts before the person consented to anything, so the
     # offer the workspace makes when an agent opens in the project is the
     # same on every take: what each extension may reach, then enabled. The
-    # stores go too: focus's sessions and contributions' chosen day.
+    # stores go too: focus's sessions and contributions' chosen day; and
+    # the preferences a take set in the operator's config.
     - rm -f {home}/.uze/state/extensions.json
-    - rm -rf {home}/.uze/state/extensions/store {home}/.uze/state/extensions/preferences
+    - rm -rf {home}/.uze/state/extensions/store
+    - "f={home}/.uze/config.toml; [ -f $f ] && awk '/^\\[/{skip=/^\\[preferences\\./} !skip' $f > $f.take && mv $f.take $f || true"
   patch_json:
     # Claude Code's first run in the project, pre-answered as the base does
     # for its own fixtures.

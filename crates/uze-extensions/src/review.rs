@@ -52,8 +52,23 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     name: "Review",
     description: "The selected agent's branch against its target, commented line by line and sent back to the agent.",
     surface: "Workspace TUI",
-    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v when a file is read, s to tell the agent its review waits, o to open a line in the code surface.",
+    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), s to tell the agent its review waits, o to open a line in the code surface.",
+    declares: preferences,
 };
+
+/// The preference that marks a file viewed as it is left, once it was
+/// read to the end.
+pub const MARK_VIEWED_AUTOMATICALLY: &str = "mark-viewed-automatically";
+
+/// What the operator may set about the review.
+pub(crate) fn preferences() -> Vec<uze_contract::PreferenceDecl> {
+    vec![uze_contract::PreferenceDecl {
+        name: MARK_VIEWED_AUTOMATICALLY.to_owned(),
+        label: "Mark viewed once read".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: true.into(),
+    }]
+}
 
 /// What a gesture asked of the host beyond the surface itself.
 pub(crate) enum Asked {

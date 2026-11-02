@@ -1788,9 +1788,10 @@ pub(super) struct ExtensionAnswer {
     /// was consented to and where it is enabled. Empty for a recompile.
     pub(super) records:
         BTreeMap<uze_application::ExtensionIdentity, Option<uze_application::ExtensionConsent>>,
-    /// What the operator set each found extension's preferences to, each
-    /// admitted against what it declares. Empty for a recompile.
-    pub(super) preferences: BTreeMap<uze_application::ExtensionIdentity, serde_json::Value>,
+    /// What the operator set each extension's preferences to, built-in or
+    /// found, each admitted against what it declares. Empty for a
+    /// recompile.
+    pub(super) preferences: BTreeMap<super::declared::Owner, serde_json::Value>,
     pub(super) loaded: Vec<LoadedExtension>,
 }
 
@@ -1877,14 +1878,32 @@ pub(super) fn spawn_extension_job(
                         (identity, record)
                     })
                     .collect();
+                // Read on every discovery, so one edited by hand in
+                // `config.toml` reaches its extension within one.
+                let builtin = discovery.then(|| {
+                    uze_extensions::registry::ExtensionRegistry::builtin()
+                        .all()
+                        .iter()
+                        .filter_map(|builtin| {
+                            let declared = builtin.preferences();
+                            (!declared.is_empty()).then(|| {
+                                (
+                                    super::declared::Owner::Builtin(builtin.id),
+                                    extensions.builtin_preferences(builtin.id, &declared),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                });
                 let preferences = discovered
                     .iter()
                     .flatten()
                     .filter_map(|installed| {
                         let identity = installed.identity.clone();
                         let preferences = extensions.preferences(&identity).ok()?;
-                        Some((identity, preferences))
+                        Some((super::declared::Owner::Declared(identity), preferences))
                     })
+                    .chain(builtin.into_iter().flatten())
                     .collect();
                 ExtensionAnswer {
                     discovery,

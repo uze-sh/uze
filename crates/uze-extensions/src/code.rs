@@ -88,6 +88,7 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     description: "Contents, history and a map of the active checkout.",
     surface: "Workspace TUI",
     usage: "The timeline sits in the sidebar; open the files with Alt+E or the code chip. `m`, or the Map chip, shows the checkout as a map of where its lines are. Ctrl+F searches every file; open files stand as tabs over the content. The changes are the review's, behind the +N -M door.",
+    declares: crate::registry::no_preferences,
 };
 
 /// Lines kept above a line a search opened, so it is read in its place.

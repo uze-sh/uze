@@ -166,6 +166,17 @@ pub fn extension_offers(enabled: bool) -> Vec<ActionOffer> {
     ]
 }
 
+/// What can be done to a built-in extension: its switch, and its
+/// preferences when it declares any, which are the machine's like the
+/// switch.
+pub fn builtin_extension_offers(enabled: bool, has_preferences: bool) -> Vec<ActionOffer> {
+    let mut offers = extension_offers(enabled);
+    if has_preferences {
+        offers.push(ActionOffer::available(Action::EditPreferences));
+    }
+    offers
+}
+
 /// What can be done to a declared extension, as it stands in the project
 /// the screen was opened in. One that runs code is enabled and disabled
 /// per project, after consent; one that runs nothing or does not compile

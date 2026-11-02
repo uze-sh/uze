@@ -1535,3 +1535,265 @@ fn a_comment_pressed_before_the_list_is_read_waits_for_it() {
         "nothing said of a list that was not read"
     );
 }
+
+/// `reviewing()` with its diff shown long enough ago to have been read.
+fn read_for_a_while() -> ReviewView {
+    let mut view = reviewing();
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view
+}
+
+#[test]
+fn a_diff_read_to_its_end_is_marked_viewed_as_it_is_left() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/tests.rs")));
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+    assert_eq!(view.viewed_count(), 1);
+    assert!(
+        view.unwritten
+            .iter()
+            .any(|change| matches!(change, super::change::Change::Viewed { .. })),
+        "kept to be written"
+    );
+}
+
+#[test]
+fn a_diff_only_glanced_at_or_not_read_to_its_end_stays_not_viewed() {
+    let naming = PathBuf::from("/w/naming.rs");
+    let mut glanced = reviewing();
+    glanced.note_seen(SPACE);
+    glanced.step_file(ScrollDirection::Down);
+    assert_eq!(
+        glanced.viewed(&naming),
+        surface::Viewed::No,
+        "shown too briefly"
+    );
+
+    let mut short_of_the_end = read_for_a_while();
+    short_of_the_end.note_seen(Size {
+        width: 100,
+        height: 2,
+    });
+    short_of_the_end.step_file(ScrollDirection::Down);
+    assert_eq!(
+        short_of_the_end.viewed(&naming),
+        surface::Viewed::No,
+        "its last line was never on screen"
+    );
+}
+
+#[test]
+fn turned_off_a_file_is_marked_only_by_hand() {
+    let mut view = read_for_a_while();
+    view.marks_by_hand_only = true;
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(Path::new("/w/naming.rs")), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_unmarked_by_hand_is_not_marked_again_until_it_changes() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.toggle_viewed(false);
+    view.toggle_viewed(false);
+    assert_eq!(
+        view.viewed(&naming),
+        surface::Viewed::No,
+        "unmarked by hand"
+    );
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(
+        view.viewed(&naming),
+        surface::Viewed::No,
+        "the unmark holds"
+    );
+
+    // The agent changes it, and it is read again to its end.
+    relisted(&mut view, 2);
+    view.step_file(ScrollDirection::Up);
+    view.asking = view.diff_key(&naming).map(|key| (naming.clone(), key));
+    view.absorb_diff(
+        naming.clone(),
+        Ok(diff_of(&naming, &NAMING.replace("rename", "renamed"))),
+        "x".to_owned(),
+    );
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+}
+
+#[test]
+fn a_file_that_moved_since_its_diff_was_read_is_not_marked_on_the_way_out() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    // The agent changes it; its new diff is still being read.
+    relisted(&mut view, 2);
+    assert!(view.diff_pending);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_put_on_show_by_the_list_is_not_marked_before_it_was_read() {
+    let mut view = read_for_a_while();
+    view.note_seen(SPACE);
+    // The list drops naming.rs: tests.rs is put on show, its diff unread.
+    let root = PathBuf::from("/w");
+    let tests = root.join("tests.rs");
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files: vec![
+                ChangedFile {
+                    status: FileStatus::Added,
+                    path: tests.clone(),
+                    renamed_from: None,
+                },
+                ChangedFile {
+                    status: FileStatus::Added,
+                    path: root.join("other.rs"),
+                    renamed_from: None,
+                },
+            ],
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps: [(tests.clone(), 1), (root.join("other.rs"), 1)].into(),
+            head: None,
+        }),
+    );
+    assert_eq!(view.selected.as_deref(), Some(tests.as_path()));
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&tests), surface::Viewed::No);
+}
+
+#[test]
+fn the_end_is_seen_only_once_the_last_line_is_inside_the_text_rows() {
+    let mut view = reviewing();
+    let total = render::lines(&view).len();
+    let as_tall = |height: usize| Size {
+        width: 100,
+        height: u16::try_from(height).unwrap(),
+    };
+    // As many rows as lines, but the heading and its padding take three.
+    view.note_seen(as_tall(total));
+    assert!(!view.reading.end_seen, "the last lines were below the fold");
+    let chrome = total - usize::from(crate::view::text_height(as_tall(total)));
+    view.note_seen(as_tall(total + chrome));
+    assert!(view.reading.end_seen);
+}
+
+/// The review open on `/w` as `reviewing()` leaves it, read for a while.
+fn open_and_read() -> ReviewExtension {
+    use crate::contract::{Checkout, Extension};
+    let mut extension = ReviewExtension::default();
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+    *extension.review_view_mut().unwrap() = read_for_a_while();
+    extension
+}
+
+fn reopen(extension: &mut ReviewExtension) {
+    use crate::contract::{Checkout, Extension};
+    extension.close(SURFACE);
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+}
+
+#[test]
+fn closing_the_review_marks_the_file_read_on_show() {
+    let mut extension = open_and_read();
+    extension.review_view_mut().unwrap().note_seen(SPACE);
+    reopen(&mut extension);
+    let view = extension.review_view().unwrap();
+    assert_eq!(
+        view.record.viewed.iter().collect::<Vec<_>>(),
+        vec![(&"naming.rs".to_owned(), &1)],
+        "the file on show, at the content read"
+    );
+}
+
+#[test]
+fn an_unmark_by_hand_outlives_the_review_closing() {
+    let mut extension = open_and_read();
+    let naming = PathBuf::from("/w/naming.rs");
+    let view = extension.review_view_mut().unwrap();
+    view.toggle_viewed(false);
+    view.toggle_viewed(false);
+    reopen(&mut extension);
+    let view = extension.review_view_mut().unwrap();
+    *view = ReviewView {
+        record: view.record.clone(),
+        unmarked: std::mem::take(&mut view.unmarked),
+        ..read_for_a_while()
+    };
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_diff_read_for_older_content_does_not_mark_the_newer_one() {
+    let mut view = reviewing();
+    let naming = PathBuf::from("/w/naming.rs");
+    // The diff of the content stamped 1 is asked; the file moves to 2
+    // while the read is out, and the old diff lands after.
+    let asked = view.diff_key(&naming).unwrap();
+    relisted(&mut view, 2);
+    view.asking = Some((naming.clone(), asked));
+    view.absorb_diff(
+        naming.clone(),
+        Ok(diff_of(&naming, &NAMING.replace("rename", "renamed"))),
+        "x".to_owned(),
+    );
+    view.reading.shown_at = Some(std::time::Instant::now() - surface::READ_FOR);
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}
+
+#[test]
+fn a_file_read_while_only_the_commit_moved_is_still_marked() {
+    let mut view = read_for_a_while();
+    let naming = PathBuf::from("/w/naming.rs");
+    view.note_seen(SPACE);
+    // The agent commits another file: the diff is read again, the
+    // content on show is the same.
+    let files = view.files.clone();
+    let stamps = view.stamps.clone();
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing {
+            files,
+            uncommitted: Default::default(),
+            partners: Default::default(),
+            stamps,
+            head: Some("next".to_owned()),
+        }),
+    );
+    assert!(view.diff_pending);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+}

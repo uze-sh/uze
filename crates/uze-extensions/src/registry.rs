@@ -13,7 +13,7 @@ use crate::{architect, code, review, spec};
 /// screen renders. Built-ins are compiled into the binary (no loading or
 /// enablement yet), so this is also the shape a future user-installable
 /// extension would populate from its manifest.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct BuiltinExtension {
     pub id: &'static str,
     pub name: &'static str,
@@ -22,6 +22,21 @@ pub struct BuiltinExtension {
     pub surface: &'static str,
     /// One-line how-to-open hint shown in the detail drawer.
     pub usage: &'static str,
+    /// What it lets the operator set, in the order its drawer lists them:
+    /// declared as a manifest declares them, kept and edited the same way.
+    /// Never a `secret`: a built-in reaches nothing a secret opens.
+    pub declares: fn() -> Vec<uze_contract::PreferenceDecl>,
+}
+
+/// The preferences of a built-in that lets the operator set nothing.
+pub fn no_preferences() -> Vec<uze_contract::PreferenceDecl> {
+    Vec::new()
+}
+
+impl BuiltinExtension {
+    pub fn preferences(&self) -> Vec<uze_contract::PreferenceDecl> {
+        (self.declares)()
+    }
 }
 
 /// The built-in extension set, in registration order.
@@ -75,6 +90,20 @@ mod tests {
         assert!(ids.iter().all(|id| !id.is_empty()));
         assert_eq!(registry.get(ids[0]).map(|e| e.id), Some(ids[0]));
         assert!(registry.get("nope").is_none());
+    }
+
+    #[test]
+    fn a_builtin_declares_no_secret_and_defaults_it_may_hold() {
+        for extension in ExtensionRegistry::builtin().all() {
+            assert!(
+                extension
+                    .preferences()
+                    .iter()
+                    .all(|decl| !decl.is_secret() && decl.holds(&decl.default)),
+                "{}",
+                extension.id
+            );
+        }
     }
 
     #[test]

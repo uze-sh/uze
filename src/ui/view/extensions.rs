@@ -260,7 +260,7 @@ fn render_extension_drawer(
     let editing = model
         .preferences
         .as_ref()
-        .filter(|editor| matches!(extension, ExtensionEntry::Declared(summary) if summary.identity == editor.identity));
+        .filter(|editor| editor.owner == crate::ui::model::PreferenceOwner::of(extension));
     let DrawerBody {
         lines,
         preference_rows,
@@ -457,15 +457,21 @@ fn drawer_body(
             }
         }
     }
-    let preference_rows = standing.map_or_else(Vec::new, |standing| {
-        standing_lines(
+    let preference_rows = match standing {
+        Some(standing) => standing_lines(
             &mut grid,
             standing,
             model.extension_project.as_deref(),
             editing,
             model.hovered.as_ref(),
-        )
-    });
+        ),
+        None => preference_lines(
+            &mut grid,
+            model.preference_rows(extension),
+            editing,
+            model.hovered.as_ref(),
+        ),
+    };
     DrawerBody {
         lines: grid.lines,
         preference_rows,
@@ -594,6 +600,64 @@ fn declared_surfaces(summary: &uze_application::DeclaredExtensionSummary) -> Vec
     }
 }
 
+/// Each preference as a settings form draws a key, its label in a column
+/// and then the control that changes it, under its heading: the rows
+/// `listed`, or the editor's while the keys are on them.
+fn preference_lines(
+    grid: &mut Grid,
+    listed: &[uze_application::PreferenceRow],
+    editing: Option<&PreferencesEditor>,
+    hovered: Option<&Hit>,
+) -> Vec<PlacedPreference> {
+    let mut preference_rows = Vec::new();
+    let preferences = editing.map_or(listed, |editor| &editor.rows);
+    if !preferences.is_empty() {
+        // A group of the form, as the settings form spaces one.
+        grid.air(form::GROUP_AIR);
+        grid.lines.push(form::heading("preferences", grid.width));
+        grid.air(form::KEY_AIR);
+        let layout =
+            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
+        for (index, row) in preferences.iter().enumerate() {
+            if index > 0 {
+                grid.air(form::KEY_AIR);
+            }
+            let marked = editing.filter(|editor| editor.selected == index);
+            let state = RowState::of(
+                marked.is_some(),
+                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
+            );
+            let lit = match hovered {
+                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
+                    Some(if *forward {
+                        form::Part::Increase
+                    } else {
+                        form::Part::Decrease
+                    })
+                }
+                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
+                    Some(form::Part::Option(*option))
+                }
+                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
+                _ => None,
+            };
+            let typing = marked.and_then(|editor| editor.typing.as_deref());
+            let key = preference_key(row, state, typing, layout, lit);
+            preference_rows.push(PlacedPreference {
+                line: grid.lines.len(),
+                index,
+                parts: key
+                    .parts
+                    .into_iter()
+                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
+                    .collect(),
+            });
+            grid.lines.push(key.line);
+        }
+    }
+    preference_rows
+}
+
 /// The drawer's account of where a declared extension stands: the grants
 /// it wants with what each lets it do, its programs, its preferences and,
 /// when it runs nothing here or runs elsewhere, why and where.
@@ -654,54 +718,7 @@ fn standing_lines(
         }
     }
 
-    // Each preference as a settings form draws a key: its label in a
-    // column, then the control that changes it.
-    let mut preference_rows = Vec::new();
-    let preferences = editing.map_or(standing.preferences.as_slice(), |editor| &editor.rows);
-    if !preferences.is_empty() {
-        // A group of the form, as the settings form spaces one.
-        grid.air(form::GROUP_AIR);
-        grid.lines.push(form::heading("preferences", grid.width));
-        grid.air(form::KEY_AIR);
-        let layout =
-            form::Layout::fit(preferences.iter().map(|row| row.label.as_str()), grid.width);
-        for (index, row) in preferences.iter().enumerate() {
-            if index > 0 {
-                grid.air(form::KEY_AIR);
-            }
-            let marked = editing.filter(|editor| editor.selected == index);
-            let state = RowState::of(
-                marked.is_some(),
-                hovered == Some(&Hit::ExtensionPreferenceRow(index)),
-            );
-            let lit = match hovered {
-                Some(Hit::ExtensionPreferenceStep { index: at, forward }) if *at == index => {
-                    Some(if *forward {
-                        form::Part::Increase
-                    } else {
-                        form::Part::Decrease
-                    })
-                }
-                Some(Hit::ExtensionPreferenceChoice { index: at, option }) if *at == index => {
-                    Some(form::Part::Option(*option))
-                }
-                Some(Hit::ExtensionPreferenceValue(at)) if *at == index => Some(form::Part::Value),
-                _ => None,
-            };
-            let typing = marked.and_then(|editor| editor.typing.as_deref());
-            let key = preference_key(row, state, typing, layout, lit);
-            preference_rows.push(PlacedPreference {
-                line: grid.lines.len(),
-                index,
-                parts: key
-                    .parts
-                    .into_iter()
-                    .map(|(x, width, part)| (x, width, preference_hit(index, part)))
-                    .collect(),
-            });
-            grid.lines.push(key.line);
-        }
-    }
+    let preference_rows = preference_lines(grid, &standing.preferences, editing, hovered);
 
     let mut notes = Vec::new();
     if standing.condition == Condition::Held {

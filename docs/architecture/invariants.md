@@ -3374,7 +3374,7 @@ answer.
 > `crates/uze-script/src/fetch.rs::tests::a_secret_is_named_never_given`
 > `crates/uze-application/src/application/extensions/fetch.rs::tests::the_secret_goes_on_stdin_and_comes_back_scrubbed`
 > `crates/uze-application/src/application/extensions/fetch.rs::tests::an_unset_secret_or_an_ungranted_host_requests_nothing`
-> `crates/uze-workspace/src/extensions/secrets.rs::tests::a_secret_is_kept_apart_from_the_preferences_and_leaves_with_its_plugin`
+> `crates/uze-workspace/src/extensions/secrets.rs::tests::a_secret_is_kept_out_of_the_config_file_and_leaves_with_its_plugin`
 
 ## Harness conformance (`assert-one-capability-contract`)
 

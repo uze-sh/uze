@@ -124,6 +124,12 @@ pub(super) trait Hosted: Extension {
     /// as Git would have answered. Nothing by default.
     #[cfg(test)]
     fn review_showing(&mut self, _root: PathBuf, _diffs: &[(&str, &str)]) {}
+    /// Whether the review open now marks a file viewed only by hand; `None`
+    /// for any other engine, or no review open.
+    #[cfg(test)]
+    fn review_marks_by_hand_only(&self) -> Option<bool> {
+        None
+    }
     /// Lets go of where the viewer was on `surface`. Nothing by default:
     /// an engine that keeps no place has none to forget.
     fn forget(&mut self, _surface: &str) {}
@@ -268,6 +274,10 @@ impl Hosted for uze_extensions::review::ReviewExtension {
     #[cfg(test)]
     fn review_showing(&mut self, root: PathBuf, diffs: &[(&str, &str)]) {
         self.showing(root, diffs);
+    }
+    #[cfg(test)]
+    fn review_marks_by_hand_only(&self) -> Option<bool> {
+        self.review_view().map(|view| view.marks_by_hand_only())
     }
 }
 impl Hosted for code::CodeExtension {
@@ -479,6 +489,9 @@ pub(super) struct HostedExtensions {
     /// section and its drawer keep one state. None for a declared extension
     /// that has never compiled: its slot is a stand-in for its error.
     pub(super) engines: BTreeMap<Owner, Box<dyn Hosted>>,
+    /// Each built-in's preferences as the last discovery read them; a
+    /// declared one's are on its [`HostedExtension`].
+    pub(super) builtin_preferences: BTreeMap<&'static str, Option<serde_json::Value>>,
     /// The built-ins first, then in identity order, each extension's
     /// surfaces in the order it declares them.
     pub(super) slots: Vec<HostedSlot>,
@@ -535,6 +548,7 @@ impl Default for HostedExtensions {
         let mut hosted = Self {
             extensions: BTreeMap::new(),
             engines: BTreeMap::new(),
+            builtin_preferences: BTreeMap::new(),
             slots: Vec::new(),
             next_slot: 0,
             discovered_at: None,
@@ -698,19 +712,23 @@ impl HostedExtensions {
     /// hands a changed one to its engine. Answers whether any changed.
     pub(super) fn absorb_preferences(
         &mut self,
-        preferences: BTreeMap<ExtensionIdentity, serde_json::Value>,
+        preferences: BTreeMap<Owner, serde_json::Value>,
     ) -> bool {
         let mut moved = false;
-        for (identity, set) in preferences {
-            let Some(extension) = self.extensions.get_mut(&identity) else {
-                continue;
+        for (owner, set) in preferences {
+            let kept = match &owner {
+                Owner::Declared(identity) => match self.extensions.get_mut(identity) {
+                    Some(extension) => &mut extension.preferences,
+                    None => continue,
+                },
+                Owner::Builtin(id) => self.builtin_preferences.entry(id).or_default(),
             };
-            if extension.preferences.as_ref() == Some(&set) {
+            if kept.as_ref() == Some(&set) {
                 continue;
             }
-            extension.preferences = Some(set.clone());
+            *kept = Some(set.clone());
             moved = true;
-            if let Some(engine) = self.engines.get_mut(&Owner::Declared(identity)) {
+            if let Some(engine) = self.engines.get_mut(&owner) {
                 engine.configure(&set);
             }
         }

@@ -104,14 +104,78 @@ pub fn set_in_table(
     key: &str,
     setting: &str,
 ) -> Result<()> {
+    set_scalar_in_table(home, section, table, key, &setting.into())
+}
+
+/// Every scalar `[section."table"]` holds, by key, as JSON: a string, a
+/// number or a boolean. A date, an array or a table is left out: no
+/// owner of a table read this way keeps one.
+pub fn scalars_in_table(
+    home: &UzeHome,
+    section: &str,
+    table: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let document = read(home)?;
+    Ok(document
+        .get(section)
+        .and_then(Item::as_table_like)
+        .and_then(|tables| tables.get(table))
+        .and_then(Item::as_table_like)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(|(key, item)| Some((key.to_owned(), scalar_of(item.as_value()?)?)))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Sets `key` in `[section."table"]` to a JSON scalar, refusing anything
+/// else: the file holds what a person can read and type back.
+pub fn set_scalar_in_table(
+    home: &UzeHome,
+    section: &str,
+    table: &str,
+    key: &str,
+    setting: &serde_json::Value,
+) -> Result<()> {
+    let setting = value_of(setting).ok_or_else(|| UzeError::Write {
+        path: home.config_path(),
+        source: std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("`{setting}` is not a value `{key}` may hold"),
+        ),
+    })?;
     let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
     let mut document = read(home)?;
     let parent = table_like_mut(document.as_table_mut(), section, true)
         .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
     let target = table_like_mut(parent, table, false)
         .ok_or_else(|| malformed(home, format!("`{section}.{table}` is not a table")))?;
-    replace_keeping_decor(target, key, setting.into());
+    replace_keeping_decor(target, key, setting);
     write(home, &document)
+}
+
+fn scalar_of(value: &Value) -> Option<serde_json::Value> {
+    match value {
+        Value::String(text) => Some(text.value().clone().into()),
+        Value::Integer(number) => Some((*number.value()).into()),
+        Value::Float(number) => serde_json::Number::from_f64(*number.value()).map(Into::into),
+        Value::Boolean(flag) => Some((*flag.value()).into()),
+        _ => None,
+    }
+}
+
+fn value_of(setting: &serde_json::Value) -> Option<Value> {
+    match setting {
+        serde_json::Value::String(text) => Some(text.as_str().into()),
+        serde_json::Value::Bool(flag) => Some((*flag).into()),
+        serde_json::Value::Number(number) => match number.as_i64() {
+            Some(whole) => Some(whole.into()),
+            None => number.as_f64().map(Into::into),
+        },
+        _ => None,
+    }
 }
 
 /// Takes `key` out of `[section."table"]`, and the table and the section
@@ -408,6 +472,47 @@ mod tests {
         assert_eq!(
             fs::read_to_string(home.config_path()).unwrap(),
             "[projects.\"/work/uze\"]\nfuture = true\n"
+        );
+    }
+
+    #[test]
+    fn scalars_round_trip_through_a_table_and_the_rest_is_left_out() {
+        let home = home("config-scalars");
+        fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        fs::write(
+            home.config_path(),
+            "[preferences.review]\nlist = [1]\nwhen = 1979-05-27\n",
+        )
+        .unwrap();
+
+        for (key, value) in [
+            ("flag", serde_json::json!(false)),
+            ("count", serde_json::json!(3)),
+            ("ratio", serde_json::json!(0.5)),
+            ("unit", serde_json::json!("GiB")),
+        ] {
+            set_scalar_in_table(&home, "preferences", "review", key, &value).expect("written");
+        }
+        assert!(
+            set_scalar_in_table(
+                &home,
+                "preferences",
+                "review",
+                "nested",
+                &serde_json::json!({})
+            )
+            .is_err()
+        );
+
+        let read = scalars_in_table(&home, "preferences", "review").expect("readable");
+        assert_eq!(
+            serde_json::Value::Object(read),
+            serde_json::json!({ "flag": false, "count": 3, "ratio": 0.5, "unit": "GiB" })
+        );
+        assert!(
+            scalars_in_table(&home, "preferences", "other")
+                .unwrap()
+                .is_empty()
         );
     }
 

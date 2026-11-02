@@ -367,15 +367,9 @@ const OWNED: &[OwnedPath] = &[
     owned("extension_store_path", Record, Document, |home| {
         home.extension_store_path(PLUGIN, EXTENSION, Some(PROJECT))
     }),
-    owned("extension_preferences_path", Record, Document, |home| {
-        home.extension_preferences_path(PLUGIN, EXTENSION)
+    owned("extension_secrets_set_path", Record, Document, |home| {
+        home.extension_secrets_set_path(PLUGIN, EXTENSION)
     }),
-    owned(
-        "extension_plugin_preferences_dir",
-        Record,
-        Directory,
-        |home| home.extension_plugin_preferences_dir(PLUGIN),
-    ),
     owned("extension_secret_path", Record, Document, |home| {
         home.extension_secret_path(PLUGIN, EXTENSION, "{name}")
     }),
@@ -481,8 +475,8 @@ const OWNED: &[OwnedPath] = &[
     owned("extension_store_lock_path", Record, Lock, |home| {
         home.extension_store_lock_path(PLUGIN, EXTENSION, Some(PROJECT))
     }),
-    owned("extension_preferences_lock_path", Record, Lock, |home| {
-        home.extension_preferences_lock_path(PLUGIN, EXTENSION)
+    owned("extension_secrets_set_lock_path", Record, Lock, |home| {
+        home.extension_secrets_set_lock_path(PLUGIN, EXTENSION)
     }),
     owned(
         "binary_check_lock_path",
