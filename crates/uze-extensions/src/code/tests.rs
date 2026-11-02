@@ -2655,8 +2655,6 @@ mod hosted {
         );
     }
 
-    /// Typing in `extension`'s open file, then put away the way the host
-    /// puts it away when another agent comes to the front.
     fn typed_then_put_away(extension: &mut CodeExtension, machine: &FakeMachine) {
         settle_hosted(extension, machine);
         let view = extension.code_view_mut().unwrap();
@@ -3427,6 +3425,32 @@ fn a_document_shown_as_a_preview_from_far_down_its_source_is_not_blank() {
         panic!("the document's lines");
     };
     assert!(!lines.is_empty(), "the preview draws something");
+}
+
+/// The field's mark puts the keys in the field, whatever had them: what is
+/// typed next is a search, never a change to the file beside it.
+#[test]
+fn clearing_the_field_while_editing_puts_the_keys_in_the_field() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Newline);
+    settle(&mut view, &machine);
+    handle_mouse(
+        &mut view,
+        Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+        space(),
+    );
+    assert!(view.editing());
+
+    handle_mouse(&mut view, Some(ViewHit::ClearField), space());
+    type_text(&mut view, "x");
+    assert_eq!(view.search.query, "x");
+    assert!(!view.editing());
+    assert!(!view.has_unsaved(), "the file was not typed into");
 }
 
 /// Going back to the tree from a search opens it down to the file the

@@ -1432,9 +1432,9 @@ impl CodeView {
 
     /// Empties the field and stays in it, for the next thing to look for.
     fn clear_search(&mut self) {
+        self.stand_on_search();
         self.search.query.clear();
         self.search.typing = true;
-        self.focus = Focus::Navigator;
         self.ask_search();
     }
 
