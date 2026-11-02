@@ -348,7 +348,12 @@ impl uze_application::application::Collectable for Journals {
             .iter()
             .flat_map(|name| prune_to_size(&dir, name, JOURNAL_BYTES))
             .collect();
-        removed.extend(crate::earlier::remove_loose_logs(&dir));
+        removed.extend(uze_application::earlier::remove_retired_files(
+            home,
+            &dir,
+            &["loose_gate_log_path", "loose_setup_log_path"],
+            |_| true,
+        ));
         uze_application::application::Collected::removed(self.name(), removed)
     }
 }

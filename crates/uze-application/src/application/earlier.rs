@@ -4,37 +4,22 @@
 //! ([`regions`]).
 
 pub use uze_core::document::earlier::{Earlier, FLOOR, Lasts, Release};
+pub use uze_core::earlier::remove_retired_files;
 
 pub(crate) mod regions;
 
 /// This crate's entries. The AGENTS.md regions are declared where they are
 /// named, in `uze-core`.
 pub fn earlier() -> Vec<Earlier> {
-    vec![
-        Earlier {
-            name: "compiled extension views earlier releases kept loose in runtime/extensions",
-            // Removed when the compiled-views collector next runs: unbounded.
-            lasts: Lasts::Unbounded,
-            spelled: &[],
-            site: file!(),
-        },
-        Earlier {
-            name: "package copies earlier releases kept in runtime/packages for every harness",
-            // Kept while a receipt names one: unbounded.
-            lasts: Lasts::Unbounded,
-            spelled: &[],
-            site: file!(),
-        },
-        Earlier {
-            name: "package copies in runtime/packages kept for beta.22's MCP servers",
-            // beta.22 starts an installed package's server from its copy
-            // there; once it is below the floor, `collect_package_copies`
-            // keeps only what a receipt names.
-            lasts: Lasts::Until(Release::beta(1, 0, 0, 22)),
-            spelled: &[],
-            site: file!(),
-        },
-    ]
+    vec![Earlier {
+        name: "package copies in runtime/packages kept for beta.22's MCP servers",
+        // beta.22 starts an installed package's server from its copy
+        // there; once it is below the floor, `collect_package_copies`
+        // keeps only what a receipt names.
+        lasts: Lasts::Until(Release::beta(1, 0, 0, 22)),
+        spelled: &[],
+        site: file!(),
+    }]
 }
 
 /// The owned map's name for one of [`package_copies_dir`]'s copies, which
@@ -85,26 +70,22 @@ pub(crate) fn collect_package_copies(
 }
 
 /// Removes the compiled views an earlier release kept loose in the
-/// extensions' corner (`loose_compiled_extension_path`): sixteen hex digits
-/// and `.json`, which nothing in that corner is named today.
+/// extensions' corner (`loose_compiled_extension_path`), whose digest is
+/// sixteen hex digits: the map's `{digest}` stands for any name, and
+/// `costs.json` lives in the same corner.
 pub(crate) fn remove_loose_compiled_views(home: &uze_core::UzeHome) -> Vec<std::path::PathBuf> {
-    std::fs::read_dir(home.runtime_extensions_dir())
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file()
-                && path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .and_then(|name| name.strip_suffix(".json"))
-                    .is_some_and(|key| {
-                        key.len() == 16 && key.bytes().all(|byte| byte.is_ascii_hexdigit())
-                    })
-        })
-        .filter(|path| std::fs::remove_file(path).is_ok())
-        .collect()
+    uze_core::earlier::remove_retired_files(
+        home,
+        &home.runtime_extensions_dir(),
+        &["loose_compiled_extension_path"],
+        |path| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|digest| {
+                    digest.len() == 16 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+        },
+    )
 }
 
 #[cfg(test)]

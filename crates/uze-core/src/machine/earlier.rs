@@ -81,6 +81,38 @@ pub fn carry_renamed(home: &crate::UzeHome, project: Option<&str>) {
     }
 }
 
+/// Removes the files directly in `dir` that one of the owned map's retired
+/// entries `names` composes and `also` accepts: the map's own pattern, so
+/// a collector never spells an earlier release's names a second time.
+pub fn remove_retired_files(
+    home: &crate::UzeHome,
+    dir: &Path,
+    names: &[&str],
+    also: impl Fn(&Path) -> bool,
+) -> Vec<PathBuf> {
+    let retired: Vec<_> = names
+        .iter()
+        .filter_map(|name| crate::UzeHome::owned_path(name))
+        .collect();
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && also(path))
+        .filter(|path| {
+            let relative: Vec<String> = path
+                .strip_prefix(home.root())
+                .unwrap_or(path)
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            retired.iter().any(|owned| owned.matches(home, &relative))
+        })
+        .filter(|path| std::fs::remove_file(path).is_ok())
+        .collect()
+}
+
 /// Whether `project`'s record that `builder` composes is on disk, under
 /// its current name or the one an earlier release gave it: what a walk
 /// over many projects asks without carrying any of them.
@@ -326,6 +358,31 @@ mod tests {
         assert!(is_recorded(&home, "p1", "tasks_path"));
         assert!(!is_recorded(&home, "p2", "tasks_path"));
         assert!(was.exists() && !home.tasks_path("p1").exists());
+    }
+
+    #[test]
+    fn only_the_logs_earlier_releases_kept_loose_are_removed() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("loose-logs").join("uze"));
+        std::fs::create_dir_all(home.logs_dir()).unwrap();
+        let loose = [
+            home.loose_gate_log_path("a1"),
+            home.loose_setup_log_path("codex"),
+        ];
+        let kept = home.logs_dir().join("uze.log");
+        for path in loose.iter().chain([&kept]) {
+            std::fs::write(path, "x").unwrap();
+        }
+
+        let mut removed = remove_retired_files(
+            &home,
+            &home.logs_dir(),
+            &["loose_gate_log_path", "loose_setup_log_path"],
+            |_| true,
+        );
+        removed.sort();
+
+        assert_eq!(removed, loose.to_vec());
+        assert!(kept.exists());
     }
 
     #[test]
