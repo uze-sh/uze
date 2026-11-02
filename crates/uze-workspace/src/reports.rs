@@ -247,7 +247,9 @@ fn recorded_agents(home: &UzeHome) -> Option<std::collections::BTreeSet<String>>
         .flatten()
         .flatten()
     {
-        let tasks = home.tasks_path(&project.file_name().to_string_lossy());
+        let id = project.file_name().to_string_lossy().into_owned();
+        uze_core::earlier::carry_renamed(home, Some(&id));
+        let tasks = home.tasks_path(&id);
         let carried = uze_document::read::<crate::task::AgentStore>(&tasks).ok()?;
         recorded.extend(
             carried
@@ -465,6 +467,18 @@ mod tests {
         assert_eq!(removed, vec![home.agent_runtime_dir("gone")]);
         assert!(home.agent_reports_path("kept").exists());
         assert!(!home.agent_runtime_dir("gone").exists());
+    }
+
+    #[test]
+    fn an_agent_recorded_under_the_floor_releases_name_keeps_its_reports() {
+        let root = uze_testkit::temp::scratch("agent-reports-earlier-name");
+        let home = UzeHome::at(root.join("uze"));
+        record_agents(&home, "p1", &["kept"]);
+        std::fs::rename(home.tasks_path("p1"), home.retired_tasks_path("p1")).unwrap();
+        append(&home, "kept", report("turn.started")).unwrap();
+
+        assert!(collect_unrecorded_agents(&home).is_empty());
+        assert!(home.agent_reports_path("kept").exists());
     }
 
     #[test]
