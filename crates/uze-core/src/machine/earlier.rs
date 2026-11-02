@@ -124,8 +124,9 @@ fn carry_settings(home: &crate::UzeHome) {
         }
     }
     // Read before any lock is taken: every process passes here, and only
-    // a machine still holding the old key pays for the write.
+    // a machine holding the old key alone pays for the write.
     if matches!(crate::config::get(home, "memory", "harness"), Ok(Some(_)))
+        && matches!(crate::config::get(home, "memory", "native"), Ok(None))
         && let Err(error) = crate::config::rename_key(home, "memory", "harness", "native")
     {
         tracing::warn!(%error, "`[memory] harness` was not carried to `native`");
@@ -352,6 +353,22 @@ mod tests {
             carried("carry-glyphs-chosen", "[appearance]\nglyphs = \"nerd\"\n").as_deref(),
             Some("nerd"),
             "the operator's own choice is kept"
+        );
+    }
+
+    #[test]
+    fn a_memory_key_already_carried_takes_no_lock_on_the_next_run() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-memory-both").join("uze"));
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        let config = "[memory]\nharness = \"off\"\nnative = \"keep\"\n";
+        std::fs::write(home.config_path(), config).unwrap();
+
+        carry_renamed(&home, None);
+
+        assert_eq!(std::fs::read_to_string(home.config_path()).unwrap(), config);
+        assert!(
+            !home.config_lock_path().exists(),
+            "only a machine with the old key alone pays for the lock"
         );
     }
 
