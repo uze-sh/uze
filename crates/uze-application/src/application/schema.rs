@@ -35,6 +35,9 @@ pub enum SchemaFinding {
     SetAside,
     /// The revision a failed restore left, its only copy.
     Superseded,
+    /// A record under the name an earlier release gave it, beside the one
+    /// it was carried to: written again by that release after the carry.
+    Stranded,
     /// Nothing this build declares: possibly a newer build's.
     Unknown,
 }
@@ -57,7 +60,7 @@ impl SchemaEntry {
     pub fn is_leftover(&self) -> bool {
         matches!(
             self.finding,
-            SchemaFinding::SetAside | SchemaFinding::Superseded
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
         )
     }
 }
@@ -83,7 +86,9 @@ pub(crate) fn compare(home: &UzeHome, discard_leftovers: bool) -> Vec<SchemaEntr
         entry.removed = match entry.finding {
             SchemaFinding::Retired => super::collection::remove(&entry.path),
             SchemaFinding::EmptyDirectory => std::fs::remove_dir(&entry.path).is_ok(),
-            SchemaFinding::SetAside | SchemaFinding::Superseded if discard_leftovers => {
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+                if discard_leftovers =>
+            {
                 super::collection::remove(&entry.path)
             }
             _ => false,
@@ -139,6 +144,8 @@ impl Walk<'_> {
             if let Some(retired) = self.retired_at(&here) {
                 if retired.disposable {
                     self.found(path, tier, SchemaFinding::Retired);
+                } else if self.carried_beside(retired, &here) {
+                    self.found(path, tier, SchemaFinding::Stranded);
                 }
                 continue;
             }
@@ -178,6 +185,31 @@ impl Walk<'_> {
             .find(|owned| owned.matches(self.home, here))
     }
 
+    /// Whether the record a retired name at `here` was renamed to is on
+    /// disk too, its placeholders spelled as `here` spells them: the
+    /// earlier name was written again after the carry, and is never
+    /// carried over the newer state.
+    fn carried_beside(&self, retired: &OwnedPath, here: &[String]) -> bool {
+        let Some(current) = retired.renamed_to.and_then(UzeHome::owned_path) else {
+            return false;
+        };
+        let spelled: std::collections::BTreeMap<String, &String> = retired
+            .pattern(self.home)
+            .into_iter()
+            .zip(here)
+            .filter(|(segment, _)| segment.starts_with('{'))
+            .collect();
+        let mut path = self.home.root().to_path_buf();
+        for segment in current.pattern(self.home) {
+            match spelled.get(&segment) {
+                Some(value) => path.push(value.as_str()),
+                None if segment.starts_with('{') => return false,
+                None => path.push(segment),
+            }
+        }
+        path.exists()
+    }
+
     /// Whether a declared path lies under `here`, so the walk goes on.
     fn leads_somewhere(&self, here: &[String]) -> bool {
         self.current
@@ -186,7 +218,10 @@ impl Walk<'_> {
     }
 
     fn found(&mut self, path: PathBuf, tier: Tier, finding: SchemaFinding) {
-        let kept = matches!(finding, SchemaFinding::SetAside | SchemaFinding::Superseded);
+        let kept = matches!(
+            finding,
+            SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded
+        );
         self.found.push(SchemaEntry {
             bytes: kept.then(|| measure(&path, &[]).0),
             path,
@@ -239,6 +274,29 @@ mod tests {
         std::fs::write(home.runtime_dir().join("whatever"), "x").unwrap();
 
         assert_eq!(compare(&home, false), []);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_earlier_name_beside_its_current_record_is_reported_and_kept() {
+        let (home, root) = home("schema-stranded");
+        std::fs::write(home.retired_launches_path(), "older").unwrap();
+        std::fs::write(home.launch_overrides_path(), "newer").unwrap();
+        std::fs::create_dir_all(home.retired_tasks_path("p1").parent().unwrap()).unwrap();
+        std::fs::write(home.retired_tasks_path("p1"), "not carried yet").unwrap();
+
+        let entries = compare(&home, false);
+
+        assert_eq!(
+            findings(&entries),
+            [(
+                SchemaFinding::Stranded,
+                "launch-overrides.json".to_owned(),
+                false
+            )]
+        );
+        assert!(entries[0].is_leftover());
+        assert!(home.retired_launches_path().exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

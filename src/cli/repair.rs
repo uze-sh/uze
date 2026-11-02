@@ -144,12 +144,17 @@ fn render_home(home: &std::path::Path, entries: &[SchemaEntry]) -> String {
                 (Change::Removed, "left by an earlier version".to_owned())
             }
             (SchemaFinding::EmptyDirectory, true) => (Change::Removed, "empty".to_owned()),
-            (SchemaFinding::SetAside | SchemaFinding::Superseded, true) => {
-                (Change::Removed, format!("{size} discarded"))
-            }
+            (
+                SchemaFinding::SetAside | SchemaFinding::Superseded | SchemaFinding::Stranded,
+                true,
+            ) => (Change::Removed, format!("{size} discarded")),
             (SchemaFinding::SetAside, false) => (
                 Change::Attention,
                 format!("{size}, a record set aside that nothing reads"),
+            ),
+            (SchemaFinding::Stranded, false) => (
+                Change::Attention,
+                format!("{size}, an earlier version's copy beside the current record"),
             ),
             (SchemaFinding::Superseded, false) => (
                 Change::Attention,
