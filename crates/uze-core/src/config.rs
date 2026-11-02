@@ -104,14 +104,7 @@ pub fn set_in_table(
     key: &str,
     setting: &str,
 ) -> Result<()> {
-    let _held = FileLock::acquire(&home.config_lock_path(), WRITE_WAIT, WRITE_RETRY)?;
-    let mut document = read(home)?;
-    let parent = table_like_mut(document.as_table_mut(), section, true)
-        .ok_or_else(|| malformed(home, format!("`{section}` is not a table")))?;
-    let target = table_like_mut(parent, table, false)
-        .ok_or_else(|| malformed(home, format!("`{section}.{table}` is not a table")))?;
-    replace_keeping_decor(target, key, setting.into());
-    write(home, &document)
+    set_scalar_in_table(home, section, table, key, &setting.into())
 }
 
 /// Every scalar `[section."table"]` holds, by key, as JSON: a string, a
