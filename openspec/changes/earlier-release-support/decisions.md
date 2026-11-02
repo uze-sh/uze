@@ -109,3 +109,13 @@
 - decided:  `Replaced::AnotherProtocol`, `Replaced::Unreachable`, `make_way` and the older socket candidates stay in `endpoint.rs`; `--resumed` and `uze terminal` stay in the grammar. Declared: the server older than the claimant record (`runtime/earlier.rs`) and the refused `--instructions` (`src/earlier.rs`, in the library half so the suite can gather it)
 - rejected: moving them — each is how a build meets *any* other build (an older client that self-updated, a server another release started), which `persisted-state` requires of every release; none becomes deletable at any floor
 - blast:    revert the commit
+
+## D12 — Two entries are bounded; every other stays `Unbounded`
+
+- status:   pending
+- task:     6.1
+- commit:
+- trigger:  6.1 asked for each entry's `lasts` from history
+- decided:  `Until(1.0.0-beta.20)` for `retired_profiles_path` (#324, swept on every bootstrap) and the official marketplace's earlier name (#328, moved off on every bootstrap that finds it); both first shipped in beta.21. Every ladder rung, the sources and project-records moves, the runtime attachments tree, the integrations' and the checkouts' entries, the AGENTS.md regions, the old-server and `--instructions` entries are `Unbounded`: what carries each out runs only when its record, package, project or server is next touched, so a machine at the floor can still hold what they handle
+- rejected: deriving `Until` from the release that stopped writing each — true of the writer, false of the machine: a beta.5 `marketplaces.json` survives every later release that never rewrote it
+- blast:    none until the floor rises; then a wrong `Until` deletes live support, which is why only runners that run on every run are bounded

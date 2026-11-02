@@ -37,7 +37,7 @@
 
 ## 6. Releases
 
-- [ ] 6.1 Derive each entry's `lasts` from `git tag --contains` (version order); `Until` only where its runner runs on every run, `Unbounded` otherwise
+- [x] 6.1 Each entry's `lasts` reviewed against what carries it out: two bounded at beta.20, the rest `Unbounded` (D12)
 - [ ] 6.2 `journeys/suites/07-upgrade/01` runs `1.0.0-beta.22` against this build; `.github/workflows/journeys.yml` path filters cover the `earlier` modules
 - [ ] 6.3 Raise `FLOOR` to `Release::Beta(22)` and delete every entry the floor test names, with its tests, in one commit
 - [ ] 6.4 Update tests cited by `docs/architecture/invariants.md` that moved or went; `invariants_citations.rs` green
