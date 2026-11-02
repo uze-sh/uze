@@ -93,15 +93,16 @@ pub fn resolve_with_layers(
         Ok(resolved) => Ok(resolved),
         // When the theme resolves without them, the overrides are what is
         // wrong: say so, naming where they were written.
-        Err(error)
-            if assemble(app, home, id, false).is_ok() && app.themes().overrides()?.is_some() =>
-        {
-            let detail = error.to_string();
-            let detail = detail
-                .split_once(": ")
-                .map_or(detail.as_str(), |(_, rest)| rest);
-            Err(unusable(format!("{OVERRIDES_SOURCE}: {detail}")))
-        }
+        Err(error) if assemble(app, home, id, false).is_ok() => match overrides(app)? {
+            Some((_, source)) => {
+                let detail = error.to_string();
+                let detail = detail
+                    .split_once(": ")
+                    .map_or(detail.as_str(), |(_, rest)| rest);
+                Err(unusable(format!("{source}: {detail}")))
+            }
+            None => Err(error),
+        },
         Err(error) => Err(error),
     }
 }
@@ -166,7 +167,7 @@ fn assemble(
         layers.push(set);
     }
     layers.extend(ancestry.iter());
-    if let Some(overrides) = overrides.as_ref() {
+    if let Some((overrides, _)) = overrides.as_ref() {
         layers.push(overrides);
     }
 
@@ -184,8 +185,8 @@ fn assemble(
             .rev()
             .map(|id| format!("`{id}`")),
     );
-    if overrides.is_some() {
-        named.push(OVERRIDES_SOURCE.to_owned());
+    if let Some((_, source)) = overrides {
+        named.push(source.to_owned());
     }
 
     uze_theme::resolve_stack(&identity, &layers)
@@ -344,16 +345,14 @@ fn written(
     )))
 }
 
-/// Where the operator's overrides are read from, as a message names it.
-const OVERRIDES_SOURCE: &str = "config.toml [appearance]";
-
-/// The operator's own overrides, if they wrote any.
-fn overrides(app: &UzeApplication) -> Result<Option<ThemeFile>> {
+/// The operator's own overrides, if they wrote any, and where a message
+/// says they were read from.
+fn overrides(app: &UzeApplication) -> Result<Option<(ThemeFile, &'static str)>> {
     let Some((layer, source)) = app.themes().overrides()? else {
         return Ok(None);
     };
     uze_theme::parse_value(source, layer)
-        .map(Some)
+        .map(|file| Some((file, source)))
         .map_err(|error| unusable(format!("{source}: {error}")))
 }
 
@@ -423,8 +422,10 @@ fn chosen(home: &UzeHome) -> std::result::Result<(Option<Loaded>, Vec<String>), 
 
     match resolve(&app, home, &id) {
         Ok(loaded) => Ok((Some(loaded), Vec::new())),
+        // Resolving without the overrides is what tells them apart from
+        // a theme that is itself broken.
         Err(problem) => match assemble(&app, home, &id, false) {
-            Ok((loaded, _)) if problem.to_string().starts_with(OVERRIDES_SOURCE) => {
+            Ok((loaded, _)) if matches!(app.themes().overrides(), Ok(Some(_))) => {
                 Ok((Some(loaded), vec![problem.to_string()]))
             }
             _ => Err(problem.to_string()),
