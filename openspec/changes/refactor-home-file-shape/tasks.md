@@ -4,14 +4,12 @@
 - [ ] 1.2 Move the reports lock to `state/reports.lock` (one machine-wide guard) and take it in `uze-workspace/src/reports.rs`
 - [ ] 1.3 Test: `doctor` while a recorded agent holds the reports lock leaves its reports and the exclusion intact; an unrecorded agent's reports are collected
 
-## 2. Remove legacy carry and retired paths
+## 2. Carry steps (after `earlier-release-support` lands)
 
-- [ ] 2.1 Delete `pre_sources_layout`, `carry_into_sources` and its call in `MutationLock::acquire`
-- [ ] 2.2 Delete `scattered_project_records` and `carry_across_the_move`
-- [ ] 2.3 Delete `retired_profiles_path`, the `Retired` collector and its catalogue subject; keep `Standing::Retired` with no entry using it
-- [ ] 2.4 Delete `runtime/attachments` (builders, tenant, owned entries, catalogue subjects), `retire_unnamed_attachments`, the skill-wrapper cleanup, the `starts_with(runtime_attachments_dir)` checks and `RETIRED_MARKETPLACE`
-- [ ] 2.5 Reset each `Shaped` ladder to its current shape as the only rung; keep the newer-build refusal and its tests
-- [ ] 2.6 `cargo test --workspace` and `cargo clippy --all-targets -- -D warnings` green
+- [ ] 2.1 For every rename in groups 3–6, add the old path as a `retired(..)` entry with `.last_written_by(Release::beta(22))`; records get `.carried_by(step)`, locks are swept
+- [ ] 2.2 One carry step per project directory moves `agents.*`, `approved-commands.json` and `prompt-history.*` together
+- [ ] 2.3 Carry `theme-overrides.json` into `[appearance.*]` and `[memory] harness` to `[memory] native`, stopping and reporting on a `config.toml` that does not parse
+- [ ] 2.4 Test: a home seeded with the beta.22 names comes out with the new names and the same content; a rerun changes nothing
 
 ## 3. New tenants and builders
 
@@ -27,7 +25,7 @@
 - [ ] 4.2 `update.{json,lock}` → `release.{json,lock}`; `launch-overrides.{json,lock}` → `launches.{json,lock}`; `machine-usage.{json,lock}` → `usage.{json,lock}`
 - [ ] 4.3 `extensions.{json,lock}` → `extensions/consent.{json,lock}`
 - [ ] 4.4 `marketplace-fetch.lock` → `fetch.lock`; `marketplace-mirrors/<entry>.lock` → `mirrors/<entry>.lock`
-- [ ] 4.5 Update journeys (globs and seeds) and conformance seeds (`conformance/contract/{continuity,instructions}.py`) that spell the old names; suspend `journeys/suites/07-upgrade/01` until the first stable release, keep `02`
+- [ ] 4.5 Update journeys (globs and seeds) and conformance seeds (`conformance/contract/{continuity,instructions}.py`) that spell the old names; `07-upgrade/01` proves the beta.22 home is carried across
 - [ ] 4.6 `journey validate` and `cargo test --workspace` green
 
 ## 5. Rename the remembered tier
@@ -44,6 +42,6 @@
 ## 7. The name rule and its docs
 
 - [ ] 7.1 Test over `owned_paths()`: no file name in two tiers, no file beside a directory of its stem in one directory (opaque and placeholders skipped)
-- [ ] 7.2 `.agents/rules/persistence-tiers.md`: the naming and lock rules, the beta policy (no carry, no retired entry) and the `config.toml` shape under the authored tier
+- [ ] 7.2 `.agents/rules/persistence-tiers.md`: the naming and lock rules and the `config.toml` shape under the authored tier
 - [ ] 7.3 Update `docs/architecture/invariants.md` and `docs/versioning.md` where they name old paths or the carry-across contract
 - [ ] 7.4 `make check` and `openspec validate --all --strict` green
