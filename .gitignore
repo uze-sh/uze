@@ -31,6 +31,9 @@ journeys/.evidence/
 # them wherever the instrumented process happened to be standing)
 *.profraw
 
+# cargo mutants: what one run tried and found, in the checkout it ran from.
+mutants.out*/
+
 # Python bytecode, from the Lab, the journeys runner and the CI scripts.
 __pycache__/
 
