@@ -403,6 +403,7 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "collection_record_path",
             "logs_dir",
             "gate_log_path",
+            "setup_log_path",
         ],
         artifacts: &[],
         registrations: &[],

@@ -603,7 +603,24 @@ impl UzeHome {
     /// what the agent is pointed at instead of having it typed into its
     /// pane. One per agent, replaced by the next refusal.
     pub fn gate_log_path(&self, agent: &str) -> PathBuf {
+        self.logs_dir().join("gate").join(format!("{agent}.log"))
+    }
+
+    /// What `uze setup` last printed while it set `harness` up, buffered
+    /// so the screen keeps the summary; replaced by the next setup.
+    pub fn setup_log_path(&self, harness: &str) -> PathBuf {
+        self.logs_dir().join("setup").join(format!("{harness}.log"))
+    }
+
+    /// Where earlier releases kept a gate's and a setup's output: loose in
+    /// the logs, by a prefix. Removed by the logs' collector.
+    pub fn loose_gate_log_path(&self, agent: &str) -> PathBuf {
         self.logs_dir().join(format!("gate-{agent}.log"))
+    }
+
+    /// See [`Self::loose_gate_log_path`].
+    pub fn loose_setup_log_path(&self, harness: &str) -> PathBuf {
+        self.logs_dir().join(format!("setup-{harness}.log"))
     }
 
     /// Where earlier releases kept what harnesses read: a generated

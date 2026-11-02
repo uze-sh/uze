@@ -123,11 +123,17 @@ mod tests {
         std::fs::create_dir_all(&unnamed).unwrap();
         let ledger = format!("{{\"target\":\"{}/skills/x\"}}", named.display());
 
-        assert_eq!(collect_package_copies(&home, &ledger), vec![unnamed.clone()]);
+        assert_eq!(
+            collect_package_copies(&home, &ledger),
+            vec![unnamed.clone()]
+        );
         assert!(named.is_dir() && !unnamed.exists());
 
         std::fs::remove_dir_all(&named).unwrap();
         assert!(collect_package_copies(&home, "").is_empty());
-        assert!(!holds_package_copies(&home), "the emptied directory goes too");
+        assert!(
+            !holds_package_copies(&home),
+            "the emptied directory goes too"
+        );
     }
 }

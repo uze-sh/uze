@@ -344,13 +344,12 @@ impl uze_application::application::Collectable for Journals {
 
     fn collect(&self, home: &uze_application::UzeHome) -> uze_application::application::Collected {
         let dir = home.logs_dir();
-        uze_application::application::Collected::removed(
-            self.name(),
-            JOURNALS
-                .iter()
-                .flat_map(|name| prune_to_size(&dir, name, JOURNAL_BYTES))
-                .collect(),
-        )
+        let mut removed: Vec<PathBuf> = JOURNALS
+            .iter()
+            .flat_map(|name| prune_to_size(&dir, name, JOURNAL_BYTES))
+            .collect();
+        removed.extend(crate::earlier::remove_loose_logs(&dir));
+        uze_application::application::Collected::removed(self.name(), removed)
     }
 }
 

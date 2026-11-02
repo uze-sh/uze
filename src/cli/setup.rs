@@ -204,7 +204,7 @@ pub(crate) enum SetupEnding {
 ///
 /// Progress contract: `setup` runs harnesses **sequentially
 /// in registration order**, one opaque container per harness. The vendor
-/// installer's output is buffered to `$UZE_HOME/cache/logs/setup-<harness>.log`
+/// installer's output is buffered to `$UZE_HOME/cache/logs/setup/<harness>.log`
 /// instead of interleaving on the terminal, so the terminal shows only
 /// ordered step headers and the per-harness final status.
 pub(crate) fn run_setup(
@@ -227,8 +227,6 @@ pub(crate) fn run_setup(
         return Ok(SetupEnding::Clean);
     }
     let total = targets.len();
-    let logs_dir = home.logs_dir();
-    let _ = std::fs::create_dir_all(&logs_dir);
     let mut had_warning = false;
     let mut failed_harnesses: Vec<String> = Vec::new();
     let mut lines = String::new();
@@ -236,7 +234,10 @@ pub(crate) fn run_setup(
 
     for id in &targets {
         let name = app.health().integration_label(id);
-        let log_path = logs_dir.join(format!("setup-{id}.log"));
+        let log_path = home.setup_log_path(id);
+        if let Some(logs) = log_path.parent() {
+            let _ = std::fs::create_dir_all(logs);
+        }
         let _ = std::fs::write(
             &log_path,
             format!("=== uze setup {id} — {} ===\n", chrono_stamp()),

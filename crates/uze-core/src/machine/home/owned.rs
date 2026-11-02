@@ -769,6 +769,16 @@ const OWNED: &[OwnedPath] = &[
     owned("gate_log_path", Remembered, Document, |home| {
         home.gate_log_path(AGENT)
     }),
+    owned("setup_log_path", Remembered, Document, |home| {
+        home.setup_log_path("{harness}")
+    }),
+    // The logs' collector removes what earlier releases left loose here.
+    retired("loose_gate_log_path", Remembered, Document, |home| {
+        home.loose_gate_log_path(AGENT)
+    }),
+    retired("loose_setup_log_path", Remembered, Document, |home| {
+        home.loose_setup_log_path("{harness}")
+    }),
 ];
 
 impl UzeHome {

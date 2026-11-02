@@ -1587,6 +1587,7 @@ fn every_path_uze_owns_is_named_in_the_map() {
                 "runtime_dir()",
                 "sources_dir()",
                 "store_dir()",
+                "logs_dir()",
             ] {
                 let joined = format!("{anchor}.join(");
                 let mut rest = source.as_str();
