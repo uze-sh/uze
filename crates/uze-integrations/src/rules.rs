@@ -476,7 +476,7 @@ pub(crate) fn detach(artifact: &ManagedArtifact) -> Result<AttachmentInspection>
     } else if delivered
         .place
         .file_name()
-        .is_some_and(|name| name == plugin::RETIRED_FILE)
+        .is_some_and(|name| name == crate::opencode::earlier::RETIRED_RULES_FILE)
     {
         // An earlier release's plugin of its own, matched above: it would
         // go on starting the engine.

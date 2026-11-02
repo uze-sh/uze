@@ -18,7 +18,7 @@
 ## 3. Harness files
 
 - [x] 3.1 `shared/earlier.rs`: the retired `uze-local` marketplace, the runtime-tree leftovers (one `remove_runtime_leftover` for the two detach paths), the staging root and its sweep, and the Skill-wrapper root and cleanup the four verticals share; `uze_integrations::earlier::earlier()` gathers the entries
-- [ ] 3.2 `opencode/earlier.rs`: runtime-plugin retired files, `uze-rules.ts`, `hooks-<pkg>.ts` bridges, read by `bridge.rs`, `rules.rs` and `opencode.rs` where they run today
+- [x] 3.2 `opencode/earlier.rs`: the plugin files of their own (`uze-agent-context.ts`, `uze-rules.ts`) and the per-package hook bridge path, read by setup, `rules.rs` and `opencode.rs` where they run today
 - [ ] 3.3 `claude/earlier.rs`, `antigravity/earlier.rs`, `codex/earlier.rs`; earlier-build artifacts accepted as matched (`hooks.rs`, `rules.rs`) declare entries
 - [ ] 3.4 Receipt retirement in `lifecycle/attach.rs` declares its entries
 - [ ] 3.5 Lower the budgets; the Lab passes for every harness

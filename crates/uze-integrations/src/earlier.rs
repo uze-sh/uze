@@ -6,5 +6,7 @@ use uze_core::document::earlier::Earlier;
 
 /// This crate's entries: what every vertical shares, then each vertical's.
 pub fn earlier() -> Vec<Earlier> {
-    crate::shared::earlier::earlier()
+    let mut entries = crate::shared::earlier::earlier();
+    entries.extend(crate::opencode::earlier::earlier());
+    entries
 }
