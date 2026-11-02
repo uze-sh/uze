@@ -390,6 +390,8 @@ pub const CATALOGUE: &[HealthCheck] = &[
             "extension_pictures_root",
             "extension_pictures_dir",
             "extension_costs_path",
+            "runtime_agents_dir",
+            "agent_runtime_dir",
             "agent_reports_path",
             "cache_dir",
             "harnesses_cache_path",

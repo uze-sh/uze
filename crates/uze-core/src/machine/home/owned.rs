@@ -520,6 +520,12 @@ const OWNED: &[OwnedPath] = &[
     owned("memory_lock_path", Record, Lock, |home| {
         home.memory_lock_path(&home.machine_memory_dir())
     }),
+    owned(
+        "agent_reports_lock_path",
+        Record,
+        Lock,
+        UzeHome::agent_reports_lock_path,
+    ),
     // Authored.
     owned("config_path", Authored, Document, UzeHome::config_path),
     owned("keymap_path", Authored, Document, UzeHome::keymap_path),
@@ -627,11 +633,18 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::extension_costs_path,
     ),
+    owned(
+        "runtime_agents_dir",
+        Generated,
+        Directory,
+        UzeHome::runtime_agents_dir,
+    ),
+    owned("agent_runtime_dir", Generated, Directory, |home| {
+        home.agent_runtime_dir(AGENT)
+    })
+    .swept(),
     owned("agent_reports_path", Generated, Document, |home| {
         home.agent_reports_path(AGENT)
-    }),
-    owned("agent_reports_lock_path", Generated, Lock, |home| {
-        home.agent_reports_lock_path(AGENT)
     }),
     owned("shims_dir", Generated, Directory, UzeHome::shims_dir),
     owned("shim_path", Generated, Document, |home| {
