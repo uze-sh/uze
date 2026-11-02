@@ -43,11 +43,10 @@ disposable path with none, or with two. Unknown entries under the bytes,
 store, record and authored tiers are reported, never deleted: two builds
 share one machine, and a newer one's state is unknown to an older one.
 
-**A path is retired only when no supported build reads it**: a generated or
-remembered path, or a record no supported build still reads, as a ladder
-step becomes deletable once no machine is below it. It stays in
-`owned_paths()` as `retired`, and the retired list removes it on every
-bootstrap (`disposable`) unless a step carries it across. **A retired name is
+**A path is retired, not deleted, when UZE stops writing it**: it stays in
+`owned_paths()` as `retired`, the retired list removes it on every
+bootstrap (`disposable`) unless a step carries it across, and it goes when
+the release floor passes it (the `earlier-releases` rule). **A retired name is
 never reused** for anything else: an older build that still finds it would
 read it as what it was.
 
