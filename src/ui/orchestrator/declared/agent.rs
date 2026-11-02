@@ -52,6 +52,9 @@ pub(in crate::ui::orchestrator) struct Write {
     /// What a bundled extension says it asks, in the operator's words,
     /// shown instead of the text it types; never a plugin's.
     pub(in crate::ui::orchestrator) summary: Option<String>,
+    /// The operator allowed this having been told nobody can say what is on
+    /// the agent's line, which makes whatever is there theirs to send.
+    pub(in crate::ui::orchestrator) warned_of_unknown_line: bool,
 }
 
 /// What extensions may still write.
@@ -142,6 +145,9 @@ pub(in crate::ui::orchestrator) struct AgentWriteDialog {
     /// Whether the last frame showed the text whole: nothing is allowed
     /// that was not read (D182).
     shown_whole: std::cell::Cell<bool>,
+    /// Whether the last frame warned that the agent's line is unknown:
+    /// allowing counts as accepting that only once it was said.
+    warned_of_unknown_line: std::cell::Cell<bool>,
 }
 
 impl WorkspaceModel {
@@ -231,6 +237,7 @@ impl WorkspaceModel {
             label: request.label.clone(),
             unattended: request.unattended,
             summary: summary_shown(&owner, &request),
+            warned_of_unknown_line: false,
         };
         let writes = &mut self.remembered.declared.bridge.writes;
         if request.unattended
@@ -250,6 +257,7 @@ impl WorkspaceModel {
             agent_label: format!("{} · {}", seen.label, seen.space),
             on_allow: false,
             shown_whole: std::cell::Cell::new(false),
+            warned_of_unknown_line: std::cell::Cell::new(false),
         });
         self.dirty = true;
     }
@@ -288,9 +296,10 @@ impl WorkspaceModel {
         {
             return;
         }
-        let Some(dialog) = self.agent_write.take() else {
+        let Some(mut dialog) = self.agent_write.take() else {
             return;
         };
+        dialog.write.warned_of_unknown_line = dialog.warned_of_unknown_line.get();
         if !allow {
             self.tell_written(
                 &dialog.write.owner,
@@ -311,6 +320,15 @@ impl WorkspaceModel {
             );
         }
         writes.allowed.push(dialog.write);
+    }
+
+    /// Whether the agent `open` asks about has a line nobody can vouch for.
+    pub(in crate::ui::orchestrator) fn agent_line_is_unknown(
+        &self,
+        open: &AgentWriteDialog,
+    ) -> bool {
+        self.pane_for_agent(&open.write.agent)
+            .is_some_and(|pane| self.may_submit(pane) == Submission::Unknown)
     }
 
     /// Pauses every extension's writes, or lets them go again; either way
@@ -339,7 +357,10 @@ impl WorkspaceModel {
 
     /// Why `write` may not be typed into `pane` now, or `None` when it
     /// may: the agent ready, its harness in front of the pane, no approval
-    /// waiting, nothing typed, and within the rates.
+    /// waiting, nothing typed, and within the rates. A line nobody can vouch
+    /// for holds back only a write the operator was not warned about; one
+    /// nobody pressed anything for still needs them to clear it, and is
+    /// told how.
     fn write_refusal(&self, write: &Write, pane: PaneId, harness_in_front: bool) -> Option<String> {
         let bridge = &self.remembered.declared.bridge;
         if bridge.writes.paused {
@@ -351,8 +372,17 @@ impl WorkspaceModel {
         if bridge.awaiting_approval.contains(&write.agent) {
             return Some("it is waiting on an approval".to_owned());
         }
-        if let Some((title, _)) = self.may_submit(pane).refusal(&write.label) {
-            return Some(title.to_owned());
+        match (self.may_submit(pane), write.warned_of_unknown_line) {
+            (Submission::Unknown, true) => {}
+            (submission @ Submission::Unknown, false) => {
+                let (title, how) = submission.refusal(&write.label)?;
+                return Some(format!("{title}: {how}"));
+            }
+            (submission, _) => {
+                if let Some((title, _)) = submission.refusal(&write.label) {
+                    return Some(title.to_owned());
+                }
+            }
         }
         let turn = bridge.turns.get(&write.agent).copied().unwrap_or(0);
         bridge
@@ -408,6 +438,8 @@ impl Attach<'_> {
                 continue;
             }
             self.submit_notice(pane, &write.text);
+            // Submitted, so the line is empty again whatever was on it.
+            self.model.remembered.prompt_buffers.remove(&pane);
             self.model
                 .tell_written(&write.owner, &write.action, AgentWritten::Typed);
             self.model
@@ -506,13 +538,18 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
     frame: &mut ratatui::Frame<'_>,
     area: Rect,
     open: &AgentWriteDialog,
+    line_unknown: bool,
     hits: &mut Vec<(Rect, WorkspaceHit)>,
 ) {
     crate::ui::widget::scrim::render(frame, area);
     // UZE's own words for a bundled extension's ask; anything else is
     // shown as it will be typed, every character of it (D182).
     let quotes_code = open.write.summary.is_some() && !open.write.unattended;
-    let (title, body, confirm) = if open.write.unattended {
+    // Allowing for a day says nothing about what is on the line at each of
+    // the writes it lets through, so only an answer about this one warns.
+    let warns = line_unknown && !open.write.unattended;
+    open.warned_of_unknown_line.set(warns);
+    let (title, mut body, confirm) = if open.write.unattended {
         (
             format!("Let {} prompt this agent on its own?", open.write.label),
             vec![
@@ -538,6 +575,9 @@ pub(in crate::ui::orchestrator) fn render_agent_write(
             "Type it",
         )
     };
+    if warns {
+        body.push("It may have text typed, which would go with this.".to_owned());
+    }
     let question = Dialog {
         tone: Tone::Caution,
         title: title.as_str().into(),

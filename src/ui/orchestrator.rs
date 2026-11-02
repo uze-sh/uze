@@ -2302,6 +2302,11 @@ pub(super) struct CommitDetailPopup {
 /// control chord this does not encode — marks the buffer untrusted, and an
 /// untrusted buffer is discarded at Enter. Recording nothing is always
 /// preferable to recording a prompt the user never typed.
+///
+/// The keys a harness spends on itself rather than on its input (an
+/// interrupt, a mode, scrolling back) put nothing on an empty line, and
+/// counting them would hold an instruction back over a key pressed long
+/// before it. With text on the line they still count: Esc may clear it.
 struct PromptBuffer {
     characters: Vec<char>,
     cursor: usize,
@@ -2325,10 +2330,12 @@ impl PromptBuffer {
     /// directly would be a second place the keyboard is understood.
     fn apply(&mut self, chord: Chord) {
         if chord.mods.ctrl || chord.mods.alt {
-            self.trusted = false;
+            self.stop_vouching(chord);
             return;
         }
         match chord.key {
+            Key::Esc | Key::PageUp | Key::PageDown if self.characters.is_empty() => {}
+            Key::Tab if chord.mods.shift && self.characters.is_empty() => {}
             Key::Char(character) => {
                 // The chord vocabulary folds case, so the buffer takes the
                 // character as it was typed rather than as it was bound.
@@ -2359,8 +2366,19 @@ impl PromptBuffer {
             Key::Right => self.cursor = (self.cursor + 1).min(self.characters.len()),
             Key::Home => self.cursor = 0,
             Key::End => self.cursor = self.characters.len(),
-            _ => self.trusted = false,
+            _ => self.stop_vouching(chord),
         }
+    }
+
+    /// Says which key cost the line its trust: nothing on screen can, and
+    /// an instruction may be refused over it long afterwards. Only a key
+    /// that is not text arrives here, so what was typed never reaches the
+    /// log.
+    fn stop_vouching(&mut self, chord: Chord) {
+        if self.trusted {
+            tracing::info!(key = %chord, "the agent's input line is no longer known");
+        }
+        self.trusted = false;
     }
 
     fn paste(&mut self, text: &str) {

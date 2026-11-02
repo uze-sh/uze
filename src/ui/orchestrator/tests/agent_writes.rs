@@ -498,3 +498,110 @@ fn what_will_be_typed_is_shown_to_the_character() {
     let rows = frame_rows(&mut model).join("\n");
     assert!(rows.contains("run `echo hi` and an odd ` mark"), "{rows}");
 }
+
+/// A key that leaves the agent's empty line alone is no reason to refuse:
+/// the prompt the operator just allowed is typed, however long ago it was
+/// pressed.
+#[test]
+fn a_key_that_leaves_an_empty_line_alone_does_not_hold_a_prompt_back() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-empty-line"));
+    for pressed in ["esc", "shift+tab", "pageup", "pagedown"] {
+        let mut driven = driven(launched_agent(), &home);
+        driven.press_key(key(pressed));
+        driven.sent();
+        let sent = allowed_by_keyboard(&mut driven, "Review PLAN.md");
+        assert_eq!(sent.len(), 1, "after {pressed}: {sent:?}");
+    }
+}
+
+/// A key that may have put something on the line leaves it unknown, and the
+/// operator allowing the prompt, warned of that, is who decides.
+#[test]
+fn a_prompt_allowed_over_a_line_nobody_can_vouch_for_is_typed_after_a_warning() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-unknown-line",
+    ));
+    for pressed in ["up", "tab", "ctrl+y"] {
+        let mut driven = driven(launched_agent(), &home);
+        driven.press_key(key(pressed));
+        driven.sent();
+        driven
+            .attach
+            .model
+            .ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+        driven.frame();
+        let shown = frame_rows(&mut driven.attach.model).join("\n");
+        assert!(shown.contains("may have text typed"), "{shown}");
+        driven.press_key(key("right"));
+        driven.press_key(key("enter"));
+        driven.pump();
+        let sent = typed(&driven.sent());
+        assert_eq!(sent.len(), 1, "after {pressed}: {sent:?}");
+
+        let pane = driven.attach.model.focused_pane();
+        assert!(
+            !driven
+                .attach
+                .model
+                .remembered
+                .prompt_buffers
+                .contains_key(&pane),
+            "what was submitted left the line empty"
+        );
+    }
+}
+
+/// Esc may clear a line with text on it, so it can no longer be known.
+#[test]
+fn a_key_over_typed_text_still_leaves_the_line_unknown() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-esc-typed"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.press_key(key("esc"));
+    let pane = driven.attach.model.focused_pane();
+    assert_eq!(
+        driven.attach.model.may_submit(pane),
+        super::Submission::Unknown
+    );
+}
+
+/// Text known to be there is the operator's, whatever they allow.
+#[test]
+fn a_prompt_allowed_over_text_the_operator_typed_is_still_refused() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-typed-line"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("a"));
+    driven.sent();
+    assert!(allowed_by_keyboard(&mut driven, "Review PLAN.md").is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(said.contains("you have text typed"), "{said}");
+}
+
+/// Nobody is there to be warned of an unattended prompt: it is refused, and
+/// the refusal says what clears the line.
+#[test]
+fn an_unattended_prompt_over_an_unknown_line_says_how_to_clear_it() {
+    let home = UzeHome::at(uze_testkit::temp::scratch(
+        "orchestrator-agent-unattended-line",
+    ));
+    let mut driven = driven(launched_agent(), &home);
+    driven.press_key(key("up"));
+    driven.sent();
+    let ask = on_its_own("review", "Review PLAN.md");
+    driven
+        .attach
+        .model
+        .ask_of_agent(Owner::Builtin("probe"), ask.clone());
+    driven.frame();
+    let shown = frame_rows(&mut driven.attach.model).join("\n");
+    assert!(!shown.contains("may have text typed"), "{shown}");
+    driven.press_key(key("right"));
+    driven.press_key(key("enter"));
+    driven.pump();
+    assert!(typed(&driven.sent()).is_empty());
+    let said = format!("{:?}", driven.attach.model.toast_stack());
+    assert!(
+        said.contains("can't tell what's typed: press enter or ctrl-c"),
+        "{said}"
+    );
+}
