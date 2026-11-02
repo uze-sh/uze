@@ -660,11 +660,9 @@ impl Attach<'_> {
 
     /// The operator's names for projects, asked once a session and again
     /// after each one written, so the model only ever holds what the file
-    /// says; and what writing one answered.
+    /// says; and what writing one answered. Asking comes after the reads
+    /// are drained, so an answer is never absorbed by the pump that asked.
     pub(super) fn absorb_project_labels(&mut self) {
-        if self.model.remembered.project_labels_asked == 0 {
-            self.ask_project_labels();
-        }
         while let Ok(read) = self.channels.project_labels.receiver.try_recv() {
             if read.asked != self.model.remembered.project_labels_asked {
                 continue;
@@ -679,6 +677,9 @@ impl Attach<'_> {
                 Err(_) => {}
             }
             self.model.dirty = true;
+        }
+        if self.model.remembered.project_labels_asked == 0 {
+            self.ask_project_labels();
         }
         while let Ok(resolution) = self.channels.project_label_writes.receiver.try_recv() {
             self.model.remembered.project_label_writing = false;
