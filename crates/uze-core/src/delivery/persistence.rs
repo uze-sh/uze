@@ -514,6 +514,17 @@ pub fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_mutation_carries_the_machine_records_the_floor_release_named() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("mutation-carries").join("uze"));
+        fs::create_dir_all(home.state_dir()).unwrap();
+        fs::write(home.retired_release_path(), "{}").unwrap();
+
+        let _held = MutationLock::acquire(&home).unwrap();
+
+        assert!(home.binary_path().is_file());
+    }
+
     fn siblings(dir: &Path) -> Vec<String> {
         let mut names: Vec<String> = fs::read_dir(dir)
             .unwrap()

@@ -1012,6 +1012,27 @@ mod tests {
         assert_eq!(unprompted.label, unprompted.id.as_str());
     }
 
+    #[test]
+    fn agents_the_floor_release_recorded_are_still_loaded() {
+        let home = home("tasks-earlier-name");
+        let root = uze_testkit::temp::scratch("tasks-earlier-name-project");
+        let kept = task("kept");
+        let mut store = AgentStore::default();
+        store.upsert(kept.clone());
+        save(&home, &root, &store).unwrap();
+        let current = store_path(&home, &root);
+        let id = current
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        std::fs::rename(&current, home.retired_tasks_path(&id)).unwrap();
+
+        assert!(load(&home, &root).unwrap().get(&kept.id).is_some());
+    }
+
     /// The property the split exists for: everything keyed on the task is
     /// untouched by a new label.
     #[test]

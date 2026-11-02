@@ -282,6 +282,21 @@ pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn an_approval_the_floor_release_recorded_still_runs_the_commands() {
+        let (home, project) = home("approval-earlier-name");
+        let declared = policy(&["pnpm install"], &["pnpm test"]);
+        approve(&home, &project, &ProjectCommands::of(&declared)).unwrap();
+        let id = project_id_for(&project);
+        std::fs::rename(
+            home.approved_commands_path(&id),
+            home.retired_approvals_path(&id),
+        )
+        .unwrap();
+
+        assert!(consent(&home, &project, &declared).setup().is_some());
+    }
+
     fn home(label: &str) -> (UzeHome, PathBuf) {
         let root = uze_testkit::temp::scratch(label);
         let project = root.join("project");

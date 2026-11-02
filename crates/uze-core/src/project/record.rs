@@ -141,6 +141,20 @@ pub(crate) fn rungs() -> Vec<uze_document::earlier::Earlier> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_project_opens_on_the_records_the_floor_release_named() {
+        let (home, root) = home("project-record-carries");
+        let project = root.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let id = project_id_for(&canonical(&project));
+        fs::create_dir_all(home.project_dir(&id)).unwrap();
+        fs::write(home.retired_approvals_path(&id), "{}").unwrap();
+
+        ensure(&home, &project).unwrap();
+
+        assert!(home.approved_commands_path(&id).is_file());
+    }
+
     fn home(name: &str) -> (UzeHome, PathBuf) {
         let root = uze_testkit::temp::scratch(name);
         fs::create_dir_all(&root).unwrap();

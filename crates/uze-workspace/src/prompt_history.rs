@@ -346,6 +346,21 @@ fn truncate_chars(value: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn prompts_the_floor_release_recorded_are_still_listed() {
+        let temp = TempHome::new("prompts-earlier-name");
+        let root = Path::new("/tmp/ws-earlier");
+        record(&temp.home, root, &origin(1, "agent"), "kept").unwrap();
+        let id = project_id_for(root);
+        fs::rename(
+            temp.home.prompt_history_path(&id),
+            temp.home.retired_prompts_path(&id),
+        )
+        .unwrap();
+
+        assert_eq!(list_for_agent(&temp.home, root, "agent", 10).len(), 1);
+    }
+
     struct TempHome {
         home: UzeHome,
     }
