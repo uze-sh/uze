@@ -152,7 +152,7 @@ impl IntegrationPort for OpenCodeIntegration {
     /// No derived view to rebuild; what an earlier layout staged for this
     /// harness and nothing names any more goes.
     fn republish_packages(&self, _packages: &[uze_core::store::StoredPackage]) -> Result<()> {
-        crate::shared::path::retire_unnamed_attachments(&self.uze_home, "opencode", Vec::new)
+        crate::shared::earlier::retire_unnamed_attachments(&self.uze_home, "opencode", Vec::new)
     }
 
     /// `opencode` is both the stable id and the name people type — the

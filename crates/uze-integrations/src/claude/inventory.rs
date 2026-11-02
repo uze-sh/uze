@@ -19,7 +19,8 @@ use uze_core::{
 };
 
 use super::plugin::ClaudeMarketplace;
-use crate::shared::marketplace::{MARKETPLACE, MarketplaceDialect, RETIRED_MARKETPLACE};
+use crate::shared::earlier::RETIRED_MARKETPLACE;
+use crate::shared::marketplace::{MARKETPLACE, MarketplaceDialect};
 
 /// The receipt kind uze's machine setup writes for its rules engine hook.
 const RULES_ENGINE_KIND: &str = "rules-engine";

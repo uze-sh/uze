@@ -17,7 +17,7 @@
 
 ## 3. Harness files
 
-- [ ] 3.1 `shared/earlier.rs`: retired marketplace names (`uze-local`), skill-wrapper roots (one implementation for four verticals); `IntegrationRegistry::earlier()` gathers every vertical's entries
+- [x] 3.1 `shared/earlier.rs`: the retired `uze-local` marketplace, the runtime-tree leftovers (one `remove_runtime_leftover` for the two detach paths), the staging root and its sweep, and the Skill-wrapper root and cleanup the four verticals share; `uze_integrations::earlier::earlier()` gathers the entries
 - [ ] 3.2 `opencode/earlier.rs`: runtime-plugin retired files, `uze-rules.ts`, `hooks-<pkg>.ts` bridges, read by `bridge.rs`, `rules.rs` and `opencode.rs` where they run today
 - [ ] 3.3 `claude/earlier.rs`, `antigravity/earlier.rs`, `codex/earlier.rs`; earlier-build artifacts accepted as matched (`hooks.rs`, `rules.rs`) declare entries
 - [ ] 3.4 Receipt retirement in `lifecycle/attach.rs` declares its entries

@@ -5,7 +5,8 @@ use std::path::Path;
 
 use uze_core::{Result, home::UzeHome};
 
-use super::marketplace::{MARKETPLACE, MarketplaceDialect, RETIRED_MARKETPLACE};
+use super::earlier::RETIRED_MARKETPLACE;
+use super::marketplace::{MARKETPLACE, MarketplaceDialect};
 
 /// Unregisters each marketplace of UZE's that this harness still lists at a
 /// root inside the UZE home — its vendor store, or the root an earlier

@@ -17,6 +17,7 @@ fn every_entry() -> Vec<Earlier> {
     entries.extend(uze_workspace::earlier::earlier());
     entries.extend(uze_terminal::earlier::earlier());
     entries.extend(uze_application::earlier::earlier());
+    entries.extend(uze_integrations::earlier::earlier());
     entries
 }
 

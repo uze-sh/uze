@@ -47,7 +47,7 @@ use uze_core::{
 use super::CodexIntegration;
 use crate::shared::skill::{
     EXPLICIT_ONLY_POLICY_YAML, attach_skill_tree, entry_name, invalid_policy_plan,
-    render_skill_wrapper, setup_pending_plan, skill_label, skill_tree_plan, skill_wrapper_root,
+    render_skill_wrapper, setup_pending_plan, skill_label, skill_tree_plan,
 };
 
 /// What a `harness:` block names Codex by.
@@ -87,11 +87,11 @@ impl CodexIntegration {
     /// Removes the generated-tier directory an earlier build linked a Skill
     /// entry to, once nothing links to it any more.
     pub(super) fn cleanup_unused_wrapper(&self, target: &Path) -> Result<()> {
-        crate::shared::path::cleanup_unused_wrapper(
+        crate::shared::earlier::cleanup_unused_wrapper(
             target,
-            &crate::shared::path::attachment_root(&self.uze_home, "codex"),
+            &crate::shared::earlier::attachment_root(&self.uze_home, "codex"),
             &self.skills_dir,
-            &skill_wrapper_root(&self.uze_home, "codex"),
+            &crate::shared::earlier::skill_wrapper_root(&self.uze_home, "codex"),
             &|wrapper| wrapper.join("SKILL.md").is_file(),
         )
     }
