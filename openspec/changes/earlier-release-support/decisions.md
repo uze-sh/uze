@@ -27,3 +27,24 @@
 - **Over:** annotating all 43 now.
 - **Why:** each one needs a judgement (additive versus an earlier shape's absence, which belongs in a rung); freezing them stops new ones today and leaves the judgement to the commit that touches each record.
 - status:
+
+## D-5. A retired owned path gains `lasts` and `spelled`, not `carried_by`
+
+- **Chose:** `.lasts(..)` and `.spelled(..)` on `OwnedPath`; `UzeHome::earlier()` turns every retired entry into an `Earlier`.
+- **Over:** the design's `.carried_by(fn)`.
+- **Why:** D3 keeps every runner where it runs, so a function pointer on the entry would be called by nothing; the entry names its runner in a comment instead (`record::ensure`, `MutationLock::acquire`, the bootstrap sweep).
+- status:
+
+## D-6. The carries move into `earlier` modules; their fences stay beside their records
+
+- **Chose:** `package/sources.rs` becomes `package/earlier.rs`, and `carry_across_the_move` moves to `project/earlier.rs`; `rewrite_registry_with_digests`, `rewrite_ledger` and `rewrite_marketplaces` stay in `store.rs` and `state.rs`.
+- **Over:** moving the fences too.
+- **Why:** each fence rewrites a record through types private to its module (`RawPackageRegistry`, `MarketplaceRegistry`); moving them would widen those types for one caller. They are named in the carry they serve and go with it.
+- status:
+
+## D-7. `retired_profiles_path` lasts until beta.20
+
+- **Chose:** `Until(1.0.0-beta.20)`: #324 retired it and sweeps it on every bootstrap; its first release is beta.21.
+- **Over:** leaving it `Unbounded` until task 6.1.
+- **Why:** a swept path is the one kind that can be bounded today, and the builder `.lasts()` needs a first user.
+- status:

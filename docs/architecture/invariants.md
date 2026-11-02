@@ -2717,8 +2717,8 @@ build refuses both by name instead of pruning entries whose bytes it cannot
 find; only then do the bytes move, one directory at a time, and each
 package's digest is recorded from the moved bytes.
 
-> `crates/uze-core/src/package/sources.rs::tests::the_fence_is_written_and_every_moved_package_gets_its_digest`
-> `crates/uze-core/src/package/sources.rs::tests::the_bytes_move_and_nothing_is_overwritten`
+> `crates/uze-core/src/package/earlier.rs::tests::the_fence_is_written_and_every_moved_package_gets_its_digest`
+> `crates/uze-core/src/package/earlier.rs::tests::the_bytes_move_and_nothing_is_overwritten`
 > `crates/uze-core/src/package/store.rs::tests::a_registry_from_a_newer_build_is_refused_and_nothing_is_pruned`
 
 ### Every path UZE owns is named in one place

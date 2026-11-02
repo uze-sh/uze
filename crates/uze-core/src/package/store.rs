@@ -391,7 +391,7 @@ struct RawPackageRegistry {
 /// otherwise go on recreating `store/plugins` and installing into it, bytes
 /// this build never reads, so it must refuse the registry as newer than
 /// itself; the step up carries every entry unchanged, and the digests are
-/// backfilled by the move (`package::sources`), which can read the disk.
+/// backfilled by the move (`package::earlier`), which can read the disk.
 impl uze_document::Shaped for RawPackageRegistry {
     const SHAPE: u32 = 2;
     const KIND: &'static str = "packages";

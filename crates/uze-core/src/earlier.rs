@@ -12,5 +12,6 @@ pub fn earlier() -> Vec<Earlier> {
     entries.extend(crate::package::hosts::rungs());
     entries.extend(crate::project::record::rungs());
     entries.extend(crate::delivery::state::rungs());
+    entries.extend(crate::UzeHome::earlier());
     entries
 }

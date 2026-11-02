@@ -14,6 +14,8 @@
 
 use std::path::PathBuf;
 
+use uze_document::earlier::{Earlier, Lasts, Release};
+
 use crate::store::PackageId;
 
 use super::UzeHome;
@@ -132,6 +134,13 @@ pub struct OwnedPath {
     /// (`every_disposable_root_has_one_collector`); the map holds no rule
     /// of its own.
     pub disposable: bool,
+    /// For a retired path, how long a machine can still hold it (the
+    /// `earlier-releases` rule); a current path lasts as long as it is
+    /// written.
+    pub lasts: Lasts,
+    /// For a retired path, the names only it spells: no production code
+    /// outside this map writes them.
+    pub spelled: &'static [&'static str],
     compose: fn(&UzeHome) -> PathBuf,
 }
 
@@ -144,6 +153,7 @@ impl std::fmt::Debug for OwnedPath {
             .field("form", &self.form)
             .field("standing", &self.standing)
             .field("disposable", &self.disposable)
+            .field("lasts", &self.lasts)
             .finish()
     }
 }
@@ -204,6 +214,16 @@ impl OwnedPath {
             ..self
         }
     }
+
+    /// How long a machine can still hold this retired path.
+    const fn lasts(self, lasts: Lasts) -> Self {
+        OwnedPath { lasts, ..self }
+    }
+
+    /// The names only this retired path spells.
+    const fn spelled(self, spelled: &'static [&'static str]) -> Self {
+        OwnedPath { spelled, ..self }
+    }
 }
 
 /// How [`package`]'s placeholder id is spelled in a path, and the
@@ -256,6 +276,8 @@ const fn owned(
         form,
         standing: Standing::Current,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
         compose,
     }
 }
@@ -272,6 +294,8 @@ const fn retired(
         form,
         standing: Standing::Retired,
         disposable: false,
+        lasts: Lasts::Unbounded,
+        spelled: &[],
         compose,
     }
 }
@@ -448,10 +472,16 @@ const OWNED: &[OwnedPath] = &[
         Document,
         UzeHome::retired_profiles_path,
     )
-    .swept(),
+    .swept()
+    .spelled(&["profiles.json"])
+    // Swept on every bootstrap since #324, whose first release is beta.21.
+    .lasts(Lasts::Until(Release::beta(1, 0, 0, 20))),
+    // Carried into `projects/<id>/` by `record::ensure` when a project's
+    // directory is first made: only as often as that happens, so unbounded.
     retired("scattered_project_records", Record, Document, |home| {
         home.scattered_project_records(PROJECT).agents
-    }),
+    })
+    .spelled(&["prompt-history"]),
     // Locks, beside the records they guard and never under a swept tree.
     owned(
         "mutation_lock_path",
@@ -735,6 +765,20 @@ impl UzeHome {
     /// The owned path a builder composes, by the builder's name.
     pub fn owned_path(name: &str) -> Option<&'static OwnedPath> {
         OWNED.iter().find(|owned| owned.name == name)
+    }
+
+    /// Every retired path, as the entries the release floor holds.
+    pub fn earlier() -> Vec<Earlier> {
+        OWNED
+            .iter()
+            .filter(|owned| owned.standing == Standing::Retired)
+            .map(|owned| Earlier {
+                name: owned.name,
+                lasts: owned.lasts,
+                spelled: owned.spelled,
+                site: file!(),
+            })
+            .collect()
     }
 
     /// Every path UZE sweeps: each has exactly one collector.

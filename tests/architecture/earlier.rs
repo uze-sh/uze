@@ -8,6 +8,9 @@ use crate::layering::{production_sources, repository_root};
 
 const RULE: &str = ".agents/rules/earlier-releases.md";
 
+/// The owned map composes every path UZE owns, a retired one included.
+const THE_MAP: &str = "crates/uze-core/src/machine/home.rs";
+
 /// Every entry the workspace declares.
 fn every_entry() -> Vec<Earlier> {
     let mut entries = uze_core::earlier::earlier();
@@ -311,10 +314,8 @@ fn a_retired_name_is_spelled_only_by_its_entry() {
         for spelled in entry.spelled {
             let quoted = format!("\"{spelled}\"");
             for (file, source) in &sources {
-                if !entry.site.replace('\\', "/").ends_with(file.as_str())
-                    && !file.ends_with(entry.site)
-                    && source.contains(&quoted)
-                {
+                let declares = entry.site.replace('\\', "/").ends_with(file.as_str());
+                if !declares && file != THE_MAP && source.contains(&quoted) {
                     failures.push(format!(
                         "  {quoted} in {file}, declared by {} ({})",
                         entry.name, entry.site
