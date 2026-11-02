@@ -95,8 +95,7 @@ pub fn append(home: &UzeHome, agent: &str, report: Report) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(written)?;
     }
-    let _held =
-        crate::file_lock::Held::acquire(&home.agent_reports_lock_path(agent), LOCK_PATIENCE)?;
+    let _held = crate::file_lock::Held::acquire(&home.agent_reports_lock_path(), LOCK_PATIENCE)?;
     let mut line = serde_json::to_vec(&report.bounded()).expect("a report serializes");
     line.push(b'\n');
     let mut file = std::fs::OpenOptions::new()
@@ -211,6 +210,54 @@ fn ends_with_last(file: &mut std::fs::File, cursor: &Cursor) -> bool {
         return false;
     };
     serde_json::from_slice::<Report>(line).is_ok_and(|report| report == *last)
+}
+
+/// The corners of the runtime tree whose agent no project records any
+/// more, removed: what a launch's agent reported outlives nothing but the
+/// agent. Nothing is removed while a project's agents cannot be read,
+/// since an agent this pass cannot see may still be running.
+///
+/// The corners are listed before the records are read: an agent is
+/// recorded before its pane can report, so a corner this listing holds has
+/// its agent on disk by the time the records are read.
+pub fn collect_unrecorded_agents(home: &UzeHome) -> Vec<std::path::PathBuf> {
+    let corners: Vec<_> = std::fs::read_dir(home.runtime_agents_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .collect();
+    let Some(recorded) = recorded_agents(home) else {
+        return Vec::new();
+    };
+    corners
+        .into_iter()
+        .filter(|corner| !recorded.contains(&*corner.file_name().to_string_lossy()))
+        .map(|corner| corner.path())
+        .filter(|path| std::fs::remove_dir_all(path).is_ok())
+        .collect()
+}
+
+/// Every agent any project records, or `None` when a project's agents
+/// cannot be read.
+fn recorded_agents(home: &UzeHome) -> Option<std::collections::BTreeSet<String>> {
+    let mut recorded = std::collections::BTreeSet::new();
+    for project in std::fs::read_dir(home.projects_dir())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let tasks = home.tasks_path(&project.file_name().to_string_lossy());
+        let carried = uze_document::read::<crate::task::AgentStore>(&tasks).ok()?;
+        recorded.extend(
+            carried
+                .record()
+                .into_iter()
+                .flat_map(|store| store.agents)
+                .map(|agent| agent.id.as_str().to_owned()),
+        );
+    }
+    Some(recorded)
 }
 
 #[cfg(test)]
@@ -387,5 +434,66 @@ mod tests {
         let mut sorted = delivered.clone();
         sorted.dedup();
         assert_eq!(sorted, delivered, "nothing was delivered twice");
+    }
+
+    fn record_agents(home: &UzeHome, project: &str, agents: &[&str]) {
+        let store = crate::task::AgentStore {
+            agents: agents
+                .iter()
+                .map(|id| crate::task::Agent {
+                    id: crate::task::AgentId::adopted(id),
+                    ..crate::task::Agent::in_the_root("claude")
+                })
+                .collect(),
+            ..crate::task::AgentStore::default()
+        };
+        let path = home.tasks_path(project);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&store).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_recorded_agents_reports_survive_collection_and_an_unrecorded_ones_go() {
+        let root = uze_testkit::temp::scratch("agent-reports-collect");
+        let home = UzeHome::at(root.join("uze"));
+        record_agents(&home, "p1", &["kept"]);
+        append(&home, "kept", report("turn.started")).unwrap();
+        append(&home, "gone", report("turn.started")).unwrap();
+
+        let removed = collect_unrecorded_agents(&home);
+
+        assert_eq!(removed, vec![home.agent_runtime_dir("gone")]);
+        assert!(home.agent_reports_path("kept").exists());
+        assert!(!home.agent_runtime_dir("gone").exists());
+    }
+
+    #[test]
+    fn nothing_is_collected_while_a_projects_agents_cannot_be_read() {
+        let root = uze_testkit::temp::scratch("agent-reports-unreadable");
+        let home = UzeHome::at(root.join("uze"));
+        let tasks = home.tasks_path("p1");
+        std::fs::create_dir_all(tasks.parent().unwrap()).unwrap();
+        std::fs::write(&tasks, b"not a record").unwrap();
+        append(&home, "a1", report("turn.started")).unwrap();
+
+        assert!(collect_unrecorded_agents(&home).is_empty());
+        assert!(home.agent_reports_path("a1").exists());
+    }
+
+    #[test]
+    fn the_runtime_sweep_leaves_a_reporting_agent_alone() {
+        let root = uze_testkit::temp::scratch("agent-reports-sweep");
+        let home = UzeHome::at(root.join("uze"));
+        append(&home, "a1", report("turn.started")).unwrap();
+        let _held = crate::file_lock::Held::acquire(
+            &home.agent_reports_lock_path(),
+            std::time::Duration::from_secs(1),
+        )
+        .unwrap();
+
+        crate::harness_runtime::prune_projection_paths(&home);
+
+        assert!(home.agent_reports_path("a1").exists());
+        assert!(home.agent_reports_lock_path().exists());
     }
 }

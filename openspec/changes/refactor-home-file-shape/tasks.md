@@ -1,8 +1,8 @@
 ## 1. Reports survive maintenance
 
-- [ ] 1.1 Add `runtime/agents` to `runtime_tenants` and an owned entry for it; register a workspace `Collectable` that removes the directory of an agent no project records
-- [ ] 1.2 Move the reports lock to `state/reports.lock` (one machine-wide guard) and take it in `uze-workspace/src/reports.rs`
-- [ ] 1.3 Test: `doctor` while a recorded agent holds the reports lock leaves its reports and the exclusion intact; an unrecorded agent's reports are collected
+- [x] 1.1 Add `runtime/agents` to `runtime_tenants` and an owned entry for it; register a workspace `Collectable` that removes the directory of an agent no project records
+- [x] 1.2 Move the reports lock to `state/reports.lock` (one machine-wide guard) and take it in `uze-workspace/src/reports.rs`
+- [x] 1.3 Test: `doctor` while a recorded agent holds the reports lock leaves its reports and the exclusion intact; an unrecorded agent's reports are collected
 
 ## 2. Carry steps (after `earlier-release-support` lands)
 
