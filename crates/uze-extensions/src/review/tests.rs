@@ -1690,3 +1690,60 @@ fn the_end_is_seen_only_once_the_last_line_is_inside_the_text_rows() {
     view.note_seen(as_tall(total + chrome));
     assert!(view.reading.end_seen);
 }
+
+/// The review open on `/w` as `reviewing()` leaves it, read for a while.
+fn open_and_read() -> ReviewExtension {
+    use crate::contract::{Checkout, Extension};
+    let mut extension = ReviewExtension::default();
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+    *extension.review_view_mut().unwrap() = read_for_a_while();
+    extension
+}
+
+fn reopen(extension: &mut ReviewExtension) {
+    use crate::contract::{Checkout, Extension};
+    extension.close(SURFACE);
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+        },
+    );
+}
+
+#[test]
+fn closing_the_review_leaves_the_file_on_show() {
+    let mut extension = open_and_read();
+    extension.review_view_mut().unwrap().note_seen(SPACE);
+    reopen(&mut extension);
+    let view = extension.review_view().unwrap();
+    assert_eq!(view.record.viewed.len(), 1, "{:?}", view.record.viewed);
+}
+
+#[test]
+fn an_unmark_by_hand_outlives_the_review_closing() {
+    let mut extension = open_and_read();
+    let naming = PathBuf::from("/w/naming.rs");
+    let view = extension.review_view_mut().unwrap();
+    view.toggle_viewed(false);
+    view.toggle_viewed(false);
+    reopen(&mut extension);
+    let view = extension.review_view_mut().unwrap();
+    *view = ReviewView {
+        record: view.record.clone(),
+        unmarked: std::mem::take(&mut view.unmarked),
+        ..read_for_a_while()
+    };
+    view.note_seen(SPACE);
+    view.step_file(ScrollDirection::Down);
+    assert_eq!(view.viewed(&naming), surface::Viewed::No);
+}

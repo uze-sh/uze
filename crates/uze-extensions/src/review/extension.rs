@@ -103,6 +103,9 @@ pub struct ReviewExtension {
     places: std::collections::BTreeMap<PathBuf, Place>,
     /// The operator turned off marking a file viewed as it is left.
     marks_by_hand_only: bool,
+    /// Each checkout's files unmarked by hand, kept past the review
+    /// closing, as another agent coming to the front closes it too.
+    unmarked: std::collections::BTreeMap<PathBuf, std::collections::BTreeMap<PathBuf, u64>>,
 }
 
 /// Where the viewer was on a checkout's review.
@@ -822,6 +825,7 @@ impl Extension for ReviewExtension {
         }
         view.open_on = self.open_on.take();
         view.marks_by_hand_only = self.marks_by_hand_only;
+        view.unmarked = self.unmarked.remove(&checkout.root).unwrap_or_default();
         self.listed_at = None;
         self.open = Some(view);
     }
@@ -842,6 +846,8 @@ impl Extension for ReviewExtension {
         }
         if let Some(mut view) = self.open.take() {
             view.leave(Instant::now());
+            self.unmarked
+                .insert(view.root.clone(), std::mem::take(&mut view.unmarked));
             self.places.insert(
                 view.root.clone(),
                 Place {
