@@ -1046,6 +1046,21 @@ fn an_open_review_that_cannot_be_kept_never_holds_up_another_agents() {
     assert_eq!(host.comments_of("a1"), ["a1's"]);
 }
 
+/// A write with no agent to go to is nobody's: the one agent left in the
+/// checkout once the others go must not inherit it.
+#[test]
+fn a_write_for_nobody_never_lands_on_the_agent_left_in_the_checkout() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    extension.agents(&serde_json::json!([
+        { "id": "a1", "checkout": "/w" },
+        { "id": "a2", "checkout": "/w" },
+    ]));
+    drafted_and_closed(&mut extension, None, "nobody's");
+    extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+    assert!(extension.jobs().is_empty(), "nothing is left to write");
+}
+
 #[test]
 fn a_write_that_keeps_failing_is_said_once() {
     use crate::contract::{Extension, Outcome};

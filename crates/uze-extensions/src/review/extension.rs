@@ -1038,6 +1038,8 @@ impl Extension for ReviewExtension {
             .map(|(_, root)| root.clone())
             .filter(|root| workers(&before, root) != workers(&self.agents, root))
             .collect();
+        self.waiting
+            .retain(|(of, _)| of.agent.is_some() || !moved.contains(&of.root));
         let agents = &self.agents;
         self.records.retain(|of, _| {
             !moved.contains(&of.root)
