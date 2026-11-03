@@ -886,12 +886,15 @@ fn what_is_written_lands_in_the_record_of_the_agent_it_was_written_for() {
     use crate::contract::Extension;
     let mut extension = ReviewExtension::default();
     drafted_and_closed(&mut extension, Some("a1"), "a1's");
+    drafted_and_closed(&mut extension, Some("a2"), "a2's");
     let host = KeepingEach::default();
-    for job in extension.jobs() {
-        extension.absorb((job.run)(&host));
+    for _ in 0..2 {
+        for job in extension.jobs() {
+            extension.absorb((job.run)(&host));
+        }
     }
     assert_eq!(host.comments_of("a1"), ["a1's"]);
-    assert!(host.comments_of("a2").is_empty());
+    assert_eq!(host.comments_of("a2"), ["a2's"]);
 }
 
 /// The drawer's read of the agent in front is that agent's own.
