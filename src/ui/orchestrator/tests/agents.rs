@@ -1006,9 +1006,12 @@ fn the_agent_in_front_is_named_for_its_tab_and_for_a_shell_beside_it() {
             .map(|tab| tab.id)
             .collect()
     };
+    let identities = identities_in_the_root();
     select_tab(&mut model, tabs[0]);
+    model.note_space_projects(&identities);
     assert_eq!(model.agent_id_in_front().as_deref(), Some("a1"));
     select_tab(&mut model, tabs[1]);
+    model.note_space_projects(&identities);
     assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
 
     let session = model.session.as_mut().unwrap();
@@ -1022,6 +1025,7 @@ fn the_agent_in_front_is_named_for_its_tab_and_for_a_shell_beside_it() {
     tab.agent = Some(tabs[1]);
     let shell = tab.id;
     select_tab(&mut model, shell);
+    model.note_space_projects(&identities);
     assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
 
     let session = model.session.as_mut().unwrap();
@@ -1031,5 +1035,45 @@ fn the_agent_in_front_is_named_for_its_tab_and_for_a_shell_beside_it() {
         .find(|tab| tab.id == shell)
         .unwrap();
     tab.agent = None;
+    model.note_space_projects(&identities);
     assert_eq!(model.agent_id_in_front(), None, "a shell of the space");
+}
+
+/// A harness run by hand in a shell beside an agent makes that shell what
+/// the workspace is about: the directory in front is the shell's, and the
+/// identity in front must not stay the agent's beside it, or the review asks
+/// one agent's record of another's directory.
+#[test]
+fn the_agent_in_front_never_names_another_tab_than_the_directory_in_front() {
+    let mut model = agents_in_the_root_session();
+    let first = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .find(|tab| tab.pane.process != "shell")
+        .unwrap()
+        .id;
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let pane = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    session.update_pane_status(pane, "/other".into(), "claude".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == pane)
+        .unwrap();
+    tab.agent = Some(first);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    model.note_space_projects(&identities_in_the_root());
+
+    assert_eq!(model.agent_directory_in_front(), Some(Path::new("/other")));
+    assert_eq!(
+        model.agent_id_in_front(),
+        None,
+        "nobody UZE launched stands in /other"
+    );
 }

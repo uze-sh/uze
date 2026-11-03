@@ -133,13 +133,12 @@ impl WorkspaceModel {
         self.agent_in_front.as_deref()
     }
 
-    /// The identity of the agent whose context is in front: its own tab's,
-    /// a shell beside it answering for it. `None` for a tab UZE launched no
-    /// agent in.
+    /// The identity of the agent whose context is in front, read off the
+    /// tab [`Self::agent_directory_in_front`] is read off, so the two never
+    /// name different agents. `None` for a tab UZE launched no agent in.
     pub(super) fn agent_id_in_front(&self) -> Option<String> {
-        let tab = self.selected_tab()?;
-        let agent = self.tab(tab)?.agent.unwrap_or(tab);
-        launched_agent_id(self.tab(agent)?).map(str::to_owned)
+        self.tab_agent_id(self.agent_tab_in_front?)
+            .map(str::to_owned)
     }
 
     /// Where a new agent's directory step opens: the project of the agent
