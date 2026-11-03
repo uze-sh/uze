@@ -1,8 +1,12 @@
 """What the upgrade contract accepts as the bytes being where they belong."""
 
+import os
+import sys
 import unittest
 
-from contract.upgrade import SOURCES_HELD, _bytes_held_in_sources
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+from contract.upgrade import SOURCES_HELD, _bytes_held_in_sources  # noqa: E402
 
 VENDOR_STORES = ["antigravity", "claude", "codex"]
 
