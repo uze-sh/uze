@@ -1018,6 +1018,34 @@ fn a_file_unmarked_for_one_agent_is_not_unmarked_for_another() {
     assert_eq!(extension.review_view().unwrap().unmarked.len(), 1);
 }
 
+/// A review open that cannot be kept fails for good, and what another agent
+/// left waiting still reaches its record.
+#[test]
+fn an_open_review_that_cannot_be_kept_never_holds_up_another_agents() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    drafted_and_closed(&mut extension, Some("a1"), "a1's");
+    extension.open(SURFACE, &shared_checkout(None));
+    extension
+        .review_view_mut()
+        .unwrap()
+        .change(change::Change::Draft {
+            id: 1,
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "nobody's".to_owned(),
+        });
+    let host = KeepingEach::default();
+    for _ in 0..3 {
+        for job in extension.jobs() {
+            extension.absorb((job.run)(&host));
+        }
+        extension.retry_now();
+    }
+    assert_eq!(host.comments_of("a1"), ["a1's"]);
+}
+
 #[test]
 fn a_write_that_keeps_failing_is_said_once() {
     use crate::contract::{Extension, Outcome};

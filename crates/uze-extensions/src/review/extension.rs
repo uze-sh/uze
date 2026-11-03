@@ -493,10 +493,17 @@ impl ReviewExtension {
         if self.writing || self.retry_at.is_some_and(|at| Instant::now() < at) {
             return;
         }
+        // A review open that cannot be kept fails for as long as it stands,
+        // and what waits for another must not wait with it.
+        let others_first = !self.waiting.is_empty()
+            && self
+                .open
+                .as_ref()
+                .is_some_and(|view| view.record_error.is_some());
         let from_view = self
             .open
             .as_mut()
-            .filter(|view| !view.unwritten.is_empty())
+            .filter(|view| !others_first && !view.unwritten.is_empty())
             .map(|view| (ReviewOf::open_in(view), std::mem::take(&mut view.unwritten)));
         let Some((of, changes)) =
             from_view.or_else(|| (!self.waiting.is_empty()).then(|| self.waiting.remove(0)))
