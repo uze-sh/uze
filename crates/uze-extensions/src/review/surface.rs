@@ -155,6 +155,11 @@ pub struct ReviewView {
 }
 
 impl ReviewView {
+    /// The agent this review is kept for, when one is in front.
+    pub fn kept_for(&self) -> Option<&str> {
+        self.agent.as_deref()
+    }
+
     pub fn opening(root: PathBuf, display_root: String) -> Self {
         Self {
             agent: None,

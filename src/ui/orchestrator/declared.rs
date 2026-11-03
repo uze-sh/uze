@@ -20,9 +20,7 @@ use uze_application::{
     InstalledExtension, SourceData,
 };
 use uze_contract::Clean;
-use uze_extensions::contract::{
-    Checkout, Entry, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot,
-};
+use uze_extensions::contract::{Entry, Extension, Opaque, Outcome, SurfaceInfo, SurfaceSlot};
 use uze_extensions::declared::{
     Absence, DataState, DeclaredExtension, NODE_CAP, RecordedAction, TraceEntry, TraceNode,
 };
@@ -128,6 +126,12 @@ pub(super) trait Hosted: Extension {
     /// for any other engine, or no review open.
     #[cfg(test)]
     fn review_marks_by_hand_only(&self) -> Option<bool> {
+        None
+    }
+    /// The agent the review open now is kept for; `None` for any other
+    /// engine, no review open, or no agent in front.
+    #[cfg(test)]
+    fn review_agent(&self) -> Option<String> {
         None
     }
     /// Lets go of where the viewer was on `surface`. Nothing by default:
@@ -278,6 +282,10 @@ impl Hosted for uze_extensions::review::ReviewExtension {
     #[cfg(test)]
     fn review_marks_by_hand_only(&self) -> Option<bool> {
         self.review_view().map(|view| view.marks_by_hand_only())
+    }
+    #[cfg(test)]
+    fn review_agent(&self) -> Option<String> {
+        self.review_view()?.kept_for().map(str::to_owned)
     }
 }
 impl Hosted for code::CodeExtension {
@@ -1664,16 +1672,7 @@ pub(super) fn open_surface_with(
     }
     model.close_surface();
     model.stand_extension_in_front();
-    let checkout = Checkout {
-        root: root.clone(),
-        display: crate::ui::display_project_path(&root),
-        target: model
-            .remembered
-            .targets
-            .get(&evaluation_key(&root))
-            .cloned(),
-        agent: model.agent_id_in_front(),
-    };
+    let checkout = model.checkout_at(root.clone());
     let declared = &mut model.remembered.declared;
     if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {
         let key = (slot.owner.clone(), slot.surface.id.clone(), root.clone());

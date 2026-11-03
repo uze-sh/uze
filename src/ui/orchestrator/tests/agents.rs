@@ -1077,3 +1077,31 @@ fn the_agent_in_front_never_names_another_tab_than_the_directory_in_front() {
         "nobody UZE launched stands in /other"
     );
 }
+
+/// What the workspace tells an extension is the agent in front: the review
+/// opened from each of two agents in one directory is kept for that agent.
+#[test]
+fn the_review_opens_for_the_agent_in_front_of_a_shared_directory() {
+    use crate::ui::orchestrator::surfaces::open_review;
+    let mut model = agents_in_the_root_session();
+    let identities = identities_in_the_root();
+    let tabs: Vec<TabId> = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .filter(|tab| tab.pane.process != "shell")
+        .map(|tab| tab.id)
+        .collect();
+    let owner = super::Owner::Builtin(uze_extensions::review::CATALOG.id);
+    for (tab, agent) in tabs.into_iter().zip(["a1", "a2"]) {
+        select_tab(&mut model, tab);
+        model.note_space_projects(&identities);
+        open_review(&mut model);
+        let engine = model.remembered.declared.engine(&owner).unwrap();
+        assert_eq!(engine.review_agent().as_deref(), Some(agent));
+        model.close_surface();
+    }
+}

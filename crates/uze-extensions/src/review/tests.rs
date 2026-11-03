@@ -879,6 +879,118 @@ fn a_write_that_cannot_land_never_holds_up_another_agents() {
     assert_eq!(host.comments_of("a1"), ["a1's"]);
 }
 
+/// What each agent writes in a checkout they share lands in that agent's
+/// record, however late it is written.
+#[test]
+fn what_is_written_lands_in_the_record_of_the_agent_it_was_written_for() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    drafted_and_closed(&mut extension, Some("a1"), "a1's");
+    let host = KeepingEach::default();
+    for job in extension.jobs() {
+        extension.absorb((job.run)(&host));
+    }
+    assert_eq!(host.comments_of("a1"), ["a1's"]);
+    assert!(host.comments_of("a2").is_empty());
+}
+
+/// The drawer's read of the agent in front is that agent's own.
+#[test]
+fn the_door_reads_the_review_of_the_agent_in_front() {
+    use crate::Host as _;
+    use crate::contract::Extension;
+    let host = KeepingEach::default();
+    for (agent, text) in [("a1", "a1's"), ("a2", "a2's")] {
+        host.update_review_record(Path::new("/w"), Some(agent), &mut |record| {
+            change::Change::Draft {
+                id: 1,
+                path: "naming.rs".to_owned(),
+                rows: Vec::new(),
+                excerpt: String::new(),
+                text: text.to_owned(),
+            }
+            .apply(record);
+        })
+        .unwrap();
+    }
+    let mut extension = ReviewExtension::default();
+    extension.focus(Some(&shared_checkout(Some("a2"))));
+    for job in extension.jobs() {
+        extension.absorb((job.run)(&host));
+    }
+    let drawer = format!("{:?}", extension.view(COMMENTS, SPACE));
+    assert!(drawer.contains("a2's"), "{drawer}");
+    assert!(!drawer.contains("a1's"), "{drawer}");
+}
+
+/// Opening the review on another agent in the checkout hands it nothing of
+/// what the one before left to be written.
+#[test]
+fn a_review_opened_for_an_agent_takes_nothing_another_left_waiting() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    drafted_and_closed(&mut extension, Some("a1"), "a1's");
+    extension.open(SURFACE, &shared_checkout(Some("a2")));
+    let view = extension.review_view().unwrap();
+    assert!(view.record.comments.is_empty());
+    assert!(view.unwritten.is_empty());
+    extension.close(SURFACE);
+    extension.open(SURFACE, &shared_checkout(Some("a1")));
+    let view = extension.review_view().unwrap();
+    assert_eq!(view.record.comments.len(), 1, "a1's, back with a1");
+}
+
+/// A list read asked for one agent lands after the review moved to another
+/// in the same checkout: Git's answer stands, the record is not theirs.
+#[test]
+fn a_list_read_of_one_agent_never_lays_its_record_over_anothers() {
+    use crate::Host as _;
+    use crate::contract::Extension;
+    let host = KeepingEach::default();
+    host.update_review_record(Path::new("/w"), Some("a1"), &mut |record| {
+        change::Change::Draft {
+            id: 1,
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "a1's".to_owned(),
+        }
+        .apply(record);
+    })
+    .unwrap();
+    let mut extension = ReviewExtension::default();
+    extension.open(SURFACE, &shared_checkout(Some("a1")));
+    let asked = extension.jobs();
+    extension.close(SURFACE);
+    extension.open(SURFACE, &shared_checkout(Some("a2")));
+    for job in asked {
+        extension.absorb((job.run)(&host));
+    }
+    assert!(
+        extension.review_view().unwrap().record.comments.is_empty(),
+        "a2 was shown a1's comment"
+    );
+}
+
+/// A file one agent's review unmarked by hand stays that review's.
+#[test]
+fn a_file_unmarked_for_one_agent_is_not_unmarked_for_another() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    extension.open(SURFACE, &shared_checkout(Some("a1")));
+    extension
+        .review_view_mut()
+        .unwrap()
+        .unmarked
+        .insert(PathBuf::from("/w/naming.rs"), 7);
+    extension.close(SURFACE);
+    extension.open(SURFACE, &shared_checkout(Some("a2")));
+    assert!(extension.review_view().unwrap().unmarked.is_empty());
+    extension.close(SURFACE);
+    extension.open(SURFACE, &shared_checkout(Some("a1")));
+    assert_eq!(extension.review_view().unwrap().unmarked.len(), 1);
+}
+
 #[test]
 fn a_write_that_keeps_failing_is_said_once() {
     use crate::contract::{Extension, Outcome};

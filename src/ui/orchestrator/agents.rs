@@ -141,6 +141,16 @@ impl WorkspaceModel {
             .map(str::to_owned)
     }
 
+    /// `root` as an extension is shown it, with whoever is in front of it.
+    pub(super) fn checkout_at(&self, root: PathBuf) -> uze_extensions::contract::Checkout {
+        uze_extensions::contract::Checkout {
+            display: crate::ui::display_project_path(&root),
+            target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+            agent: self.agent_id_in_front(),
+            root,
+        }
+    }
+
     /// Where a new agent's directory step opens: the project of the agent
     /// in front, else the project the space's latest agent works in, else
     /// nowhere in particular — the home directory.
