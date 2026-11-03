@@ -316,7 +316,7 @@ impl ReviewExtension {
         let Some(agent) = self.agent_of(&of) else {
             self.say(
                 &of,
-                Span::new("no agent UZE launched is in front here", Role::Warning),
+                Span::new("no agent UZE launched is ready here", Role::Warning),
             );
             return Outcome::Stay;
         };
