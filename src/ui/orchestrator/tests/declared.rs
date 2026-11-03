@@ -2839,6 +2839,7 @@ fn a_builtins_preferences_reach_its_engine_when_they_change() {
             root: PathBuf::from("/w"),
             display: "/w".to_owned(),
             target: None,
+            agent: None,
         },
     );
     assert_eq!(engine.review_marks_by_hand_only(), Some(true));

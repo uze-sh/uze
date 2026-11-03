@@ -158,6 +158,7 @@ fn answers(model: &mut WorkspaceModel, envelope: uze_contract::Envelope, now: In
         root: PathBuf::from(ROOT),
         display: ROOT.to_owned(),
         target: None,
+        agent: None,
     }));
     model.pass_engines(now);
     let jobs = model

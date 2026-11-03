@@ -1572,6 +1572,7 @@ mod hosted {
             root: root.to_path_buf(),
             display: root.display().to_string(),
             target,
+            agent: None,
         }
     }
 

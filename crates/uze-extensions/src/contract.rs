@@ -199,6 +199,10 @@ pub struct Checkout {
     /// The branch the checkout delivers to, once the host has evaluated
     /// it.
     pub target: Option<String>,
+    /// The agent UZE launched whose tab is in front: agents may share a
+    /// checkout, so the checkout alone does not say which is being looked
+    /// at.
+    pub agent: Option<String>,
 }
 
 /// Something that happens to a checkout: what an extension asks the host

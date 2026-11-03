@@ -641,11 +641,15 @@ impl uze_extensions::Host for EngineHost {
             .and_then(|policy| policy.target)
     }
 
-    /// The review the operator keeps for the agent working in `checkout`.
-    fn review_record(&self, checkout: &Path) -> Result<review::ReviewRecord, String> {
+    /// The review the operator keeps for the agent `in_front` in `checkout`.
+    fn review_record(
+        &self,
+        checkout: &Path,
+        in_front: Option<&str>,
+    ) -> Result<review::ReviewRecord, String> {
         let app = super::tui_application(self.home.clone()).map_err(|error| error.to_string())?;
         app.workspace()
-            .review_of_checkout(checkout)
+            .review_of_checkout(checkout, in_front)
             .map(|record| from_kept(&record))
             .map_err(|error| error.to_string())
     }
@@ -655,11 +659,12 @@ impl uze_extensions::Host for EngineHost {
     fn update_review_record(
         &self,
         checkout: &Path,
+        in_front: Option<&str>,
         change: &mut dyn FnMut(&mut review::ReviewRecord),
     ) -> Result<review::ReviewRecord, String> {
         let app = super::tui_application(self.home.clone()).map_err(|error| error.to_string())?;
         app.workspace()
-            .update_review(checkout, |kept| {
+            .update_review(checkout, in_front, |kept| {
                 let mut record = from_kept(kept);
                 change(&mut record);
                 into_kept(&record, kept);

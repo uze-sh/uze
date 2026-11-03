@@ -30,11 +30,7 @@ impl WorkspaceModel {
         self.close_overlay();
         self.action_index = None;
         self.context_menu = None;
-        let checkout = self.focused_cwd().map(|root| Checkout {
-            display: crate::ui::display_project_path(&root),
-            target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
-            root,
-        });
+        let checkout = self.focused_cwd().map(|root| self.checkout_at(root));
         if let (Some(checkout), Some((surface, engine))) =
             (checkout, self.remembered.declared.slot_engine_mut(id))
         {

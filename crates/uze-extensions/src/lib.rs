@@ -316,10 +316,14 @@ pub trait Host {
         Err("this host shows no extension's pictures".to_owned())
     }
 
-    /// The review kept for the agent whose checkout `checkout` is. Only
-    /// the review extension asks it. A host that keeps no reviews keeps
-    /// none.
-    fn review_record(&self, _checkout: &std::path::Path) -> Result<review::ReviewRecord, String> {
+    /// The review kept for the agent `in_front` in `checkout`, or with
+    /// none in front for the one agent working there. Only the review
+    /// extension asks it. A host that keeps no reviews keeps none.
+    fn review_record(
+        &self,
+        _checkout: &std::path::Path,
+        _in_front: Option<&str>,
+    ) -> Result<review::ReviewRecord, String> {
         Err("this host keeps no reviews".to_owned())
     }
 
@@ -330,6 +334,7 @@ pub trait Host {
     fn update_review_record(
         &self,
         _checkout: &std::path::Path,
+        _in_front: Option<&str>,
         _change: &mut dyn FnMut(&mut review::ReviewRecord),
     ) -> Result<review::ReviewRecord, String> {
         Err("this host keeps no reviews".to_owned())

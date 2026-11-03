@@ -135,13 +135,7 @@ impl WorkspaceModel {
         answers: &mpsc::Sender<EngineAnswer>,
         now: Instant,
     ) -> usize {
-        let in_front = self
-            .focused_cwd()
-            .map(|root| uze_extensions::contract::Checkout {
-                display: crate::ui::display_project_path(&root),
-                target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
-                root,
-            });
+        let in_front = self.focused_cwd().map(|root| self.checkout_at(root));
         let offered: BTreeSet<Owner> = self
             .remembered
             .declared

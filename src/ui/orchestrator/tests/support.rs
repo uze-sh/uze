@@ -514,6 +514,7 @@ pub(super) fn give_timeline(model: &mut WorkspaceModel, timeline: uze_extensions
         root: cwd.clone(),
         display: cwd.display().to_string(),
         target: None,
+        agent: None,
     }));
     engine.absorb(uze_extensions::contract::Opaque::new(
         uze_extensions::code::TimelineRead {
@@ -1207,6 +1208,7 @@ pub(super) fn count_spec(model: &mut WorkspaceModel, summary: uze_extensions::sp
         root: cwd.clone(),
         display: cwd.display().to_string(),
         target: None,
+        agent: None,
     }));
     engine.absorb(uze_extensions::contract::Opaque::new(
         uze_extensions::spec::SummaryRead {
