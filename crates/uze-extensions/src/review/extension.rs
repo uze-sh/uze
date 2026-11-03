@@ -120,9 +120,9 @@ pub struct ReviewExtension {
     retry_at: Option<Instant>,
     /// How many writes have been answered.
     generation: u64,
-    /// A failed write was said: the retries after it say nothing more
-    /// until one succeeds.
-    failure_told: bool,
+    /// The reviews whose failed write was said: the retries after it say
+    /// nothing more until one of that review's succeeds.
+    failure_told: std::collections::BTreeSet<ReviewOf>,
     reading_diff: bool,
     writing: bool,
     /// What the next open is for: a return puts back what was held.
@@ -1187,7 +1187,7 @@ impl Extension for ReviewExtension {
             match &written.record {
                 Ok(_) => {
                     self.retry_at = None;
-                    self.failure_told = false;
+                    self.failure_told.remove(&written.of);
                 }
                 // Put back, to be tried again on the list's cadence: a
                 // failed write must not drop what the operator wrote.
@@ -1215,7 +1215,7 @@ impl Extension for ReviewExtension {
                 Some(view) => view.absorb_record(written.record, &[]),
                 None => {
                     if let Err(error) = written.record
-                        && !std::mem::replace(&mut self.failure_told, true)
+                        && self.failure_told.insert(written.of)
                     {
                         return Outcome::Failed {
                             title: "the review was not kept".to_owned(),

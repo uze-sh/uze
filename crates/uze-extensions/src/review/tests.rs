@@ -1061,6 +1061,29 @@ fn a_write_for_nobody_never_lands_on_the_agent_left_in_the_checkout() {
     assert!(extension.jobs().is_empty(), "nothing is left to write");
 }
 
+/// Another review being written is no news about the one that cannot be
+/// kept: that one is still said once.
+#[test]
+fn a_write_that_keeps_failing_is_said_once_while_another_agents_land() {
+    use crate::contract::{Extension, Outcome};
+    let mut extension = ReviewExtension::default();
+    drafted_and_closed(&mut extension, None, "nobody's");
+    let host = KeepingEach::default();
+    let mut said = 0;
+    for _ in 0..3 {
+        drafted_and_closed(&mut extension, Some("a1"), "a1's");
+        for _ in 0..2 {
+            for job in extension.jobs() {
+                if matches!(extension.absorb((job.run)(&host)), Outcome::Failed { .. }) {
+                    said += 1;
+                }
+            }
+            extension.retry_now();
+        }
+    }
+    assert_eq!(said, 1);
+}
+
 #[test]
 fn a_write_that_keeps_failing_is_said_once() {
     use crate::contract::{Extension, Outcome};
