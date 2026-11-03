@@ -165,8 +165,17 @@ fn launches(harness: &FakeHarness) -> Vec<Vec<String>> {
     harness.invocations()
 }
 
-/// The command a hook of the launch through `shim` runs, with `uze` for it
-/// to find on `PATH`.
+/// `uze` on the `PATH` a launch gets, and where it is: what a launcher that
+/// is a copy has to go by.
+fn uze_on_path(env: &TestEnvironment) -> PathBuf {
+    let uze = env
+        .fake_bin
+        .join(uze_platform::executable::file_name("uze"));
+    uze_platform::executable::place_launcher(uze_bin(), &uze).unwrap();
+    uze
+}
+
+/// The command a hook of the launch through `shim` runs.
 fn reporter_hook_through(env: &TestEnvironment, harness: &FakeHarness, shim: &Path) -> String {
     let (_primary, slot, id) = managed_slot(env);
     launch(env, shim, &slot, &[], Launch::Composed { identity: &id });
@@ -196,10 +205,7 @@ fn the_reporter_hooks_run_uze_through_a_shim_that_is_a_copy() {
     std::fs::create_dir_all(&shims).unwrap();
     let copy = shims.join(uze_platform::executable::file_name(HARNESS));
     uze_platform::executable::place_copy(uze_bin(), &copy).unwrap();
-    let uze = env
-        .fake_bin
-        .join(uze_platform::executable::file_name("uze"));
-    uze_platform::executable::place_launcher(uze_bin(), &uze).unwrap();
+    let uze = uze_on_path(&env);
 
     let command = reporter_hook_through(&env, &harness, &copy);
 
@@ -217,6 +223,7 @@ fn the_reporter_hooks_run_uze_through_the_shim_as_placed() {
     let env = TestEnvironment::isolated();
     let harness = harness_recording_its_conversations(&env);
     let placed = shim(&env);
+    uze_on_path(&env);
 
     let command = reporter_hook_through(&env, &harness, &placed);
 
