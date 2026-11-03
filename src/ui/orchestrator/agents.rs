@@ -135,9 +135,19 @@ impl WorkspaceModel {
 
     /// The identity of the agent whose context is in front, read off the
     /// tab [`Self::agent_directory_in_front`] is read off, so the two never
-    /// name different agents. `None` for a tab UZE launched no agent in.
+    /// name different agents; a harness run by hand beside an agent answers
+    /// for that agent only while it stands in that agent's directory. `None`
+    /// for a tab UZE launched no agent in.
     pub(super) fn agent_id_in_front(&self) -> Option<String> {
-        self.tab_agent_id(self.agent_tab_in_front?)
+        let tab = self.agent_tab_in_front?;
+        if let Some(id) = self.tab_agent_id(tab) {
+            return Some(id.to_owned());
+        }
+        let by_hand = self.tab(tab)?;
+        let beside = self.tab(by_hand.agent?)?;
+        (named_checkout(&beside.pane.cwd) == named_checkout(&by_hand.pane.cwd))
+            .then(|| launched_agent_id(beside))
+            .flatten()
             .map(str::to_owned)
     }
 

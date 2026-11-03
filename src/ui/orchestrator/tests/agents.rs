@@ -1105,3 +1105,35 @@ fn the_review_opens_for_the_agent_in_front_of_a_shared_directory() {
         model.close_surface();
     }
 }
+
+/// The same harness by hand with the shell still in its agent's directory
+/// is that agent's terminal: its review does not go away for it.
+#[test]
+fn a_harness_by_hand_beside_an_agent_in_its_directory_answers_for_it() {
+    let mut model = agents_in_the_root_session();
+    let first = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .find(|tab| tab.pane.process != "shell")
+        .unwrap()
+        .id;
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let pane = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    session.update_pane_status(pane, "/repo".into(), "claude".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == pane)
+        .unwrap();
+    tab.agent = Some(first);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    model.note_space_projects(&identities_in_the_root());
+
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a1"));
+}
