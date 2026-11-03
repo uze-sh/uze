@@ -165,28 +165,12 @@ fn launches(harness: &FakeHarness) -> Vec<Vec<String>> {
     harness.invocations()
 }
 
-/// The hooks a launch is given report through `uze`. A shim that knows
-/// itself by the harness's name must not hand them its own path: the hook
-/// would start the harness, which refuses `uze agent report`'s arguments.
-/// A launcher that is a copy is the case every platform can run; a link,
-/// which macOS names the same way, is held in `uze_platform::executable`.
-#[test]
-fn the_reporter_hooks_run_uze_and_not_the_shim_they_were_launched_through() {
-    let env = TestEnvironment::isolated();
-    let harness = harness_recording_its_conversations(&env);
-    let shims = UzeHome::at(&env.uze_home).shims_dir();
-    std::fs::create_dir_all(&shims).unwrap();
-    let shim = shims.join(uze_platform::executable::file_name(HARNESS));
-    uze_platform::executable::place_copy(uze_bin(), &shim).unwrap();
-    let uze = env
-        .fake_bin
-        .join(uze_platform::executable::file_name("uze"));
-    uze_platform::executable::place_launcher(uze_bin(), &uze).unwrap();
-    let (_primary, slot, id) = managed_slot(&env);
-
-    launch(&env, &shim, &slot, &[], Launch::Composed { identity: &id });
-
-    let launches = launches(&harness);
+/// The command a hook of the launch through `shim` runs, with `uze` for it
+/// to find on `PATH`.
+fn reporter_hook_through(env: &TestEnvironment, harness: &FakeHarness, shim: &Path) -> String {
+    let (_primary, slot, id) = managed_slot(env);
+    launch(env, shim, &slot, &[], Launch::Composed { identity: &id });
+    let launches = launches(harness);
     let settings = launches[0]
         .iter()
         .position(|argument| argument == "--settings")
@@ -194,12 +178,52 @@ fn the_reporter_hooks_run_uze_and_not_the_shim_they_were_launched_through() {
         .unwrap_or_else(|| panic!("the launch carries the reporter: {launches:?}"));
     let settings: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(settings).unwrap()).unwrap();
-    let command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         .as_str()
-        .unwrap();
+        .unwrap()
+        .to_owned()
+}
+
+/// The hooks a launch is given report through `uze`. A shim that knows
+/// itself by the harness's name must not hand them its own path: the hook
+/// would start the harness, which refuses `uze agent report`'s arguments.
+/// A launcher that is a copy names itself on every platform.
+#[test]
+fn the_reporter_hooks_run_uze_through_a_shim_that_is_a_copy() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let shims = UzeHome::at(&env.uze_home).shims_dir();
+    std::fs::create_dir_all(&shims).unwrap();
+    let copy = shims.join(uze_platform::executable::file_name(HARNESS));
+    uze_platform::executable::place_copy(uze_bin(), &copy).unwrap();
+    let uze = env
+        .fake_bin
+        .join(uze_platform::executable::file_name("uze"));
+    uze_platform::executable::place_launcher(uze_bin(), &uze).unwrap();
+
+    let command = reporter_hook_through(&env, &harness, &copy);
+
     assert!(
         command.contains(&*uze.to_string_lossy()),
         "the hook runs uze: {command}"
+    );
+}
+
+/// The launcher as it is placed. macOS answers `current_exe` with the link
+/// a process started through, so this is the launch that fails there and
+/// nowhere else when the link is taken for the program.
+#[test]
+fn the_reporter_hooks_run_uze_through_the_shim_as_placed() {
+    let env = TestEnvironment::isolated();
+    let harness = harness_recording_its_conversations(&env);
+    let placed = shim(&env);
+
+    let command = reporter_hook_through(&env, &harness, &placed);
+
+    let shims = UzeHome::at(&env.uze_home).shims_dir();
+    assert!(
+        !command.contains(&*shims.to_string_lossy()),
+        "the hook runs uze, not the shim: {command}"
     );
 }
 
