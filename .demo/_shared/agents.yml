@@ -69,6 +69,12 @@ sandbox:
     # from an older binary's embedded bytes reads as an update waiting on
     # the Plugins screen.
     - rm -rf {home}/.uze
+    # What an earlier build delivered goes with it. The receipts that would let
+    # setup take it back were in that .uze, so its hook stays in the harness's
+    # settings pointing at a file nothing writes any more, and the agent then
+    # prints a hook error on camera at every tool call. `patch_json` writes the
+    # sandbox's permissions back after provisioning.
+    - rm -f {home}/.claude/settings.json {home}/.codex/hooks.json
     # OpenCode v2 runs a background service on one fixed port per machine,
     # not per HOME: with the operator's own OpenCode running, the sandbox's
     # cannot bind it and the pane sits on "Starting background server...".
