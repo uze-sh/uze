@@ -972,6 +972,33 @@ fn a_list_read_of_one_agent_never_lays_its_record_over_anothers() {
     );
 }
 
+/// The open review's own read is of the agent it is kept for.
+#[test]
+fn the_open_review_reads_the_record_of_its_agent() {
+    use crate::Host as _;
+    use crate::contract::Extension;
+    let host = KeepingEach::default();
+    host.update_review_record(Path::new("/w"), Some("a1"), &mut |record| {
+        change::Change::Draft {
+            id: 1,
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "a1's".to_owned(),
+        }
+        .apply(record);
+    })
+    .unwrap();
+    let mut extension = ReviewExtension::default();
+    extension.open(SURFACE, &shared_checkout(Some("a1")));
+    for job in extension.jobs() {
+        extension.absorb((job.run)(&host));
+    }
+    let view = extension.review_view().unwrap();
+    assert_eq!(view.record.comments.len(), 1);
+    assert_eq!(view.record_error, None);
+}
+
 /// A file one agent's review unmarked by hand stays that review's.
 #[test]
 fn a_file_unmarked_for_one_agent_is_not_unmarked_for_another() {
