@@ -3401,6 +3401,106 @@ mod derived_naming_tests {
         );
     }
 
+    /// An agent in place is recorded under the directory its pane stood in,
+    /// which a repository's root need not be: the name typed over its tab
+    /// has to reach that record.
+    #[test]
+    fn a_name_reaches_an_agent_placed_in_a_subdirectory_of_the_repository() {
+        let (app, repository) = project("label-subdirectory", "  branch: conventional\n");
+        let inside = repository.root().join("src");
+        std::fs::create_dir_all(&inside).unwrap();
+        let placed = app
+            .workspace()
+            .place_new_agent(&inside, Some(PlacementKind::InPlace), "claude-code", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+
+        app.workspace()
+            .label_agent(&inside, id.as_str(), "sync sales")
+            .unwrap();
+
+        let store = task::load(&app.home, &inside.canonical().unwrap()).unwrap();
+        assert_eq!(store.get(&id).unwrap().label, "sync sales");
+    }
+
+    /// A nearer directory recording other agents is not where this one is:
+    /// the search goes on up to the store that names it.
+    #[test]
+    fn a_name_passes_over_a_nearer_store_that_does_not_record_the_agent() {
+        let (app, repository) = project("label-nested-stores", "  branch: conventional\n");
+        let root = repository.root().to_path_buf();
+        let inside = root.join("src");
+        std::fs::create_dir_all(&inside).unwrap();
+        let in_the_root = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::InPlace), "claude-code", &[])
+            .unwrap();
+        let id = in_the_root.placement.agent().clone();
+        app.workspace()
+            .place_new_agent(&inside, Some(PlacementKind::InPlace), "claude-code", &[])
+            .unwrap();
+
+        app.workspace()
+            .label_agent(&inside, id.as_str(), "sync sales")
+            .unwrap();
+
+        let store = task::load(&app.home, &root.canonical().unwrap()).unwrap();
+        assert_eq!(store.get(&id).unwrap().label, "sync sales");
+    }
+
+    /// A worktree somebody made outside the repository has the repository's
+    /// root in none of its ancestors, and is still the repository's.
+    #[test]
+    fn a_name_reaches_the_primary_from_a_worktree_outside_the_repository() {
+        let (app, repository) = project("label-outside-worktree", "  branch: conventional\n");
+        let root = repository.root().to_path_buf();
+        let placed = placed(&app, &root);
+        let parent = uze_testkit::temp::scratch("label-outside-worktree-tree");
+        let outside = parent.join("tree");
+        repository.git_in(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "elsewhere",
+                &outside.to_string_lossy(),
+            ],
+        );
+
+        app.workspace()
+            .label_agent(&outside, &placed.id, "sync sales")
+            .unwrap();
+
+        let store = task::load(&app.home, &root.canonical().unwrap()).unwrap();
+        assert_eq!(
+            store.get(&AgentId::adopted(&placed.id)).unwrap().label,
+            "sync sales"
+        );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    /// An agent in place needs no repository, and neither does its name.
+    #[test]
+    fn a_name_reaches_an_agent_placed_outside_any_repository() {
+        let (app, _repository) = project("label-plain-directory", "  branch: conventional\n");
+        let plain = uze_testkit::temp::scratch("label-plain-directory-tree");
+        let placed = app
+            .workspace()
+            .place_new_agent(&plain, Some(PlacementKind::InPlace), "claude-code", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+
+        app.workspace()
+            .label_agent(&plain, id.as_str(), "sync sales")
+            .unwrap();
+
+        let store = task::load(&app.home, &plain.canonical().unwrap()).unwrap();
+        assert_eq!(store.get(&id).unwrap().label, "sync sales");
+        std::fs::remove_dir_all(plain).unwrap();
+    }
+
     /// Naming an agent asks nothing of the project's policy, so a manifest
     /// that does not parse does not cost the operator the name they typed.
     #[test]

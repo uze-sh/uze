@@ -38,6 +38,25 @@ pub fn own_or_replacement(name: &str) -> Option<PathBuf> {
         .or_else(|| on_path(name))
 }
 
+/// This program's own file, for a process that may have been started through
+/// the launcher `launcher`, or `name` on `PATH` when its file cannot say.
+///
+/// What `current_exe` answers there depends on the platform: Linux resolves
+/// a link to the program, macOS names the link, and a launcher that is a
+/// copy (Windows) is a program of the launcher's name. Handing that path to
+/// a harness would have it run the harness, not this program.
+pub fn own_behind_launcher(launcher: &str, name: &str) -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|current| behind_launcher(&current, launcher))
+        .or_else(|| on_path(name))
+}
+
+fn behind_launcher(current: &Path, launcher: &str) -> Option<PathBuf> {
+    let resolved = crate::path::canonical(current).ok()?;
+    (invoked_name(resolved.as_os_str()).as_deref() != Some(launcher)).then_some(resolved)
+}
+
 /// `command` and `arguments` as a program that starts another directly,
 /// with no shell in between, has to name it: a harness launching an MCP
 /// server, say. Unchanged on Unix. On Windows a batch launcher (`npx` is
@@ -627,6 +646,53 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// macOS answers `current_exe` with the link a process started through,
+    /// so the program behind a launcher is read from the link, not its name.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_the_program_answers_the_program() {
+        let directory = uze_testkit::temp::scratch("behind-link");
+        std::fs::create_dir_all(directory.join("shims")).unwrap();
+        let program = directory.join("uze");
+        std::fs::write(&program, "").unwrap();
+        let link = directory.join("shims/claude");
+        place_launcher(&program, &link).unwrap();
+
+        assert_eq!(
+            behind_launcher(&link, "claude"),
+            Some(crate::path::canonical(&program).unwrap())
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// A launcher that is a copy names itself however it is resolved, and
+    /// says nothing about where the program is.
+    #[test]
+    fn a_copy_of_the_program_under_the_launchers_name_answers_nothing() {
+        let directory = uze_testkit::temp::scratch("behind-copy");
+        std::fs::create_dir_all(&directory).unwrap();
+        let copy = directory.join("claude");
+        std::fs::write(&copy, "").unwrap();
+
+        assert_eq!(behind_launcher(&copy, "claude"), None);
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// Not started through the launcher: the program is the running file.
+    #[test]
+    fn the_program_itself_answers_itself() {
+        let directory = uze_testkit::temp::scratch("behind-itself");
+        std::fs::create_dir_all(&directory).unwrap();
+        let program = directory.join("uze");
+        std::fs::write(&program, "").unwrap();
+
+        assert_eq!(
+            behind_launcher(&program, "claude"),
+            Some(crate::path::canonical(&program).unwrap())
+        );
+        let _ = std::fs::remove_dir_all(directory);
+    }
 
     /// A launcher written as a batch file on Windows and a script on Unix
     /// runs when started the way a harness starts an MCP server: directly,

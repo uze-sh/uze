@@ -41,14 +41,32 @@ impl Workspace<'_> {
         }
         // The repository alone, not its policy: a label is no branch name,
         // and a manifest that does not parse has nothing to say about it.
-        let primary = worktree::primary_checkout(cwd)
+        let root = self
+            .root_recording(cwd, agent_id)
             .ok_or_else(|| UzeError::UnknownTask(agent_id.to_owned()))?;
-        task::locked(&self.0.home, &primary, |store| {
+        task::locked(&self.0.home, &root, |store| {
             let agent = task_mut(store, agent_id)
                 .ok_or_else(|| UzeError::UnknownTask(agent_id.to_owned()))?;
             agent.label = label.to_owned();
             Ok(())
         })
+    }
+
+    /// The root whose store records `agent_id`, for a pane standing in
+    /// `cwd`. An agent in place is recorded under the directory it was placed
+    /// in, which may be below the repository's root or in no repository at
+    /// all; any other under its primary checkout, which a worktree made
+    /// outside the repository does not have among its ancestors.
+    fn root_recording(&self, cwd: &Path, agent_id: &str) -> Option<PathBuf> {
+        canonical(cwd)
+            .ancestors()
+            .map(Path::to_path_buf)
+            .chain(worktree::primary_checkout(cwd))
+            .find(|root| {
+                task::is_recorded(&self.0.home, root)
+                    && task::load(&self.0.home, root)
+                        .is_ok_and(|store| store.agent(agent_id).is_some())
+            })
     }
 
     #[tracing::instrument(name = "workspace.name_task", skip_all, fields(agent = %claim.id, cwd = %claim.cwd.display(), proposed = %proposed), err)]
