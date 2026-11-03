@@ -474,12 +474,13 @@ impl crate::Host for Keeping {
     fn syntax_theme(&self) -> String {
         crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned()
     }
-    fn review_record(&self, _: &Path) -> Result<ReviewRecord, String> {
+    fn review_record(&self, _: &Path, _: Option<&str>) -> Result<ReviewRecord, String> {
         Ok(self.0.lock().unwrap().clone())
     }
     fn update_review_record(
         &self,
         _: &Path,
+        _: Option<&str>,
         change: &mut dyn FnMut(&mut ReviewRecord),
     ) -> Result<ReviewRecord, String> {
         let mut kept = self.0.lock().unwrap();
@@ -496,6 +497,7 @@ fn a_draft_kept_just_before_the_review_closes_is_still_written() {
         root: PathBuf::from("/w"),
         display: "/w".to_owned(),
         target: None,
+        agent: None,
     };
     extension.open(SURFACE, &checkout);
     let view = extension.review_view_mut().unwrap();
@@ -592,6 +594,7 @@ fn sending_extension() -> ReviewExtension {
         root: PathBuf::from("/w"),
         display: "/w".to_owned(),
         target: None,
+        agent: None,
     };
     extension.focus(Some(&checkout));
     extension.open(SURFACE, &checkout);
@@ -673,7 +676,7 @@ fn a_draft_laid_again_over_a_record_holding_it_is_not_kept_twice() {
 }
 
 #[test]
-fn a_review_is_not_sent_where_two_agents_share_the_checkout() {
+fn a_review_is_not_sent_where_two_agents_share_the_checkout_and_neither_is_in_front() {
     use crate::contract::{Extension, Outcome};
     let mut extension = sending_extension();
     extension.agents(&serde_json::json!([
@@ -682,6 +685,38 @@ fn a_review_is_not_sent_where_two_agents_share_the_checkout() {
     ]));
     let asked = extension.command(SURFACE, Command::Send, SPACE);
     assert_eq!(asked, Outcome::Stay, "nothing is typed into either");
+}
+
+#[test]
+fn a_review_in_a_shared_checkout_is_sent_to_the_agent_in_front() {
+    use crate::contract::{Checkout, Extension, Outcome};
+    let mut extension = ReviewExtension::default();
+    let checkout = Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+        agent: Some("a2".to_owned()),
+    };
+    extension.focus(Some(&checkout));
+    extension.open(SURFACE, &checkout);
+    extension.agents(&serde_json::json!([
+        { "id": "a1", "checkout": "/w" },
+        { "id": "a2", "checkout": "/w" },
+    ]));
+    extension
+        .review_view_mut()
+        .unwrap()
+        .change(change::Change::Draft {
+            id: 1,
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "check".to_owned(),
+        });
+    let Outcome::Agent(asked) = extension.command(SURFACE, Command::Send, SPACE) else {
+        panic!("the send is asked");
+    };
+    assert_eq!(asked.agent.as_deref(), Some("a2"));
 }
 
 #[test]
@@ -933,6 +968,7 @@ fn a_draft_made_just_before_the_review_closed_is_there_when_it_opens_again() {
         root: PathBuf::from("/w"),
         display: "/w".to_owned(),
         target: None,
+        agent: None,
     };
     extension.open(SURFACE, &checkout);
     assert_eq!(extension.review_view().unwrap().drafts().len(), 1);
@@ -1371,6 +1407,7 @@ fn a_comment_pressed_in_the_drawer_opens_the_review_on_it() {
             root: PathBuf::from("/w"),
             display: "/w".to_owned(),
             target: None,
+            agent: None,
         },
     );
     let view = extension.review_view_mut().unwrap();
@@ -1701,6 +1738,7 @@ fn open_and_read() -> ReviewExtension {
             root: PathBuf::from("/w"),
             display: "/w".to_owned(),
             target: None,
+            agent: None,
         },
     );
     *extension.review_view_mut().unwrap() = read_for_a_while();
@@ -1716,6 +1754,7 @@ fn reopen(extension: &mut ReviewExtension) {
             root: PathBuf::from("/w"),
             display: "/w".to_owned(),
             target: None,
+            agent: None,
         },
     );
 }

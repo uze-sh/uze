@@ -1044,6 +1044,7 @@ mod hosted {
             root: PathBuf::from(root),
             display: root.to_owned(),
             target: None,
+            agent: None,
         }
     }
 

@@ -1672,6 +1672,7 @@ pub(super) fn open_surface_with(
             .targets
             .get(&evaluation_key(&root))
             .cloned(),
+        agent: model.agent_id_in_front(),
     };
     let declared = &mut model.remembered.declared;
     if let Some(slot) = declared.slots.iter().find(|slot| slot.id == id) {

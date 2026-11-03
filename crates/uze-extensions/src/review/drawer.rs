@@ -197,8 +197,8 @@ pub(crate) fn drawer(record: &ReviewRecord, agent: bool, notice: Option<&Span>) 
             false => root.children.push(Node::new(
                 next(),
                 NodeKind::Notice {
-                    text: "No agent UZE launched works in this checkout alone, so the drafts \
-                           cannot be sent."
+                    text: "No agent UZE launched is in front here, so the drafts cannot be \
+                           sent."
                         .to_owned(),
                     role: Role::Warning,
                 },

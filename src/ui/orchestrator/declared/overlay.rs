@@ -33,6 +33,7 @@ impl WorkspaceModel {
         let checkout = self.focused_cwd().map(|root| Checkout {
             display: crate::ui::display_project_path(&root),
             target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+            agent: self.agent_id_in_front(),
             root,
         });
         if let (Some(checkout), Some((surface, engine))) =

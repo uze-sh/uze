@@ -140,6 +140,7 @@ impl WorkspaceModel {
             .map(|root| uze_extensions::contract::Checkout {
                 display: crate::ui::display_project_path(&root),
                 target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+                agent: self.agent_id_in_front(),
                 root,
             });
         let offered: BTreeSet<Owner> = self

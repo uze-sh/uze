@@ -991,3 +991,45 @@ fn resumed_work_takes_the_operator_to_its_space() {
         "resumed work is followed into the space it opened in: {sent:?}"
     );
 }
+
+/// Agents share a directory, so the review asks which of them is in front:
+/// the tab's own, a shell beside one answering for that agent.
+#[test]
+fn the_agent_in_front_is_named_for_its_tab_and_for_a_shell_beside_it() {
+    let mut model = agents_in_the_root_session();
+    let tabs: Vec<TabId> = {
+        let space = model.session.as_ref().unwrap().selected_space();
+        space
+            .tabs
+            .iter()
+            .filter(|tab| tab.pane.process != "shell")
+            .map(|tab| tab.id)
+            .collect()
+    };
+    select_tab(&mut model, tabs[0]);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a1"));
+    select_tab(&mut model, tabs[1]);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
+
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let shell = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == shell)
+        .unwrap();
+    tab.agent = Some(tabs[1]);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
+
+    let session = model.session.as_mut().unwrap();
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == shell)
+        .unwrap();
+    tab.agent = None;
+    assert_eq!(model.agent_id_in_front(), None, "a shell of the space");
+}

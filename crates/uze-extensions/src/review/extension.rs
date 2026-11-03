@@ -3,7 +3,7 @@
 //! says what the branch adds and what waits on the operator, kept current
 //! whether or not the view is open.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use super::change::{self, Change};
@@ -57,22 +57,50 @@ struct DoorState {
     took: Duration,
 }
 
+/// Whose review: a checkout, and the agent in front in it. Agents sharing a
+/// checkout share its diff and keep a review each, so what is known of a
+/// review is kept by this, and what Git says by the root alone.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct ReviewOf {
+    root: PathBuf,
+    agent: Option<String>,
+}
+
+impl ReviewOf {
+    fn in_front(checkout: &Checkout) -> Self {
+        Self {
+            root: checkout.root.clone(),
+            agent: checkout.agent.clone(),
+        }
+    }
+
+    fn open_in(view: &ReviewView) -> Self {
+        Self {
+            root: view.root.clone(),
+            agent: view.agent.clone(),
+        }
+    }
+
+    fn is_open_in(&self, view: &ReviewView) -> bool {
+        self.root == view.root && self.agent == view.agent
+    }
+}
+
 #[derive(Default)]
 pub struct ReviewExtension {
     open: Option<ReviewView>,
     focus: Option<Checkout>,
     door: DoorState,
-    /// Each checkout's review as last read or written, kept per checkout
-    /// so the one in front never shows another's, and an agent come back
-    /// to shows its comments before its read lands.
-    records: std::collections::HashMap<PathBuf, ReviewRecord>,
+    /// Each review as last read or written, so the one in front never
+    /// shows another's, and an agent come back to shows its comments before
+    /// its read lands.
+    records: std::collections::HashMap<ReviewOf, ReviewRecord>,
     /// Each open agent, by the checkout it works in.
     agents: Vec<(String, PathBuf)>,
-    sending: Option<(PathBuf, Sending)>,
+    sending: Option<(ReviewOf, Sending)>,
     /// What the drawer last had to say about a send (refused, declined),
-    /// and the checkout it was said of: another checkout's drawer never
-    /// shows it.
-    drawer_notice: Option<(PathBuf, Span)>,
+    /// and the review it was said of: another's drawer never shows it.
+    drawer_notice: Option<(ReviewOf, Span)>,
     /// A comment a press in the drawer asked the review to open on.
     open_on: Option<u64>,
     /// The agent a send was typed into, until its turn finishes or it is
@@ -83,11 +111,11 @@ pub struct ReviewExtension {
     listed_at: Option<Instant>,
     /// How long the last list read took.
     list_took: Duration,
-    /// Changes made on a review that closed before they were written, by
-    /// checkout: written all the same, and handed back if it opens first.
-    waiting: Vec<(PathBuf, Vec<Change>)>,
+    /// Changes made on a review that closed before they were written:
+    /// written all the same, and handed back if it opens first.
+    waiting: Vec<(ReviewOf, Vec<Change>)>,
     /// The changes a write is out for, put back if it fails.
-    in_flight: Option<(PathBuf, Vec<Change>)>,
+    in_flight: Option<(ReviewOf, Vec<Change>)>,
     /// A write that failed is tried again from here, not on every pass.
     retry_at: Option<Instant>,
     /// How many writes have been answered.
@@ -103,9 +131,9 @@ pub struct ReviewExtension {
     places: std::collections::BTreeMap<PathBuf, Place>,
     /// The operator turned off marking a file viewed as it is left.
     marks_by_hand_only: bool,
-    /// Each checkout's files unmarked by hand, kept past the review
-    /// closing, as another agent coming to the front closes it too.
-    unmarked: std::collections::BTreeMap<PathBuf, std::collections::BTreeMap<PathBuf, u64>>,
+    /// Each review's files unmarked by hand, kept past the review closing,
+    /// as another agent coming to the front closes it too.
+    unmarked: std::collections::BTreeMap<ReviewOf, std::collections::BTreeMap<PathBuf, u64>>,
 }
 
 /// Where the viewer was on a checkout's review.
@@ -132,7 +160,7 @@ struct ListRead {
     /// How many writes had been answered when it was asked: a record read
     /// before a write landed is older than what is on screen.
     generation: u64,
-    root: PathBuf,
+    of: ReviewOf,
     filter: super::Filter,
     base: Base,
     branch: String,
@@ -151,7 +179,7 @@ struct DoorRead {
     took: Duration,
     /// How many writes had been answered when it was asked.
     generation: u64,
-    root: PathBuf,
+    of: ReviewOf,
     base: Base,
     totals: Option<Totals>,
     /// The record as read, an error being a checkout that keeps none;
@@ -160,7 +188,7 @@ struct DoorRead {
 }
 
 struct Written {
-    root: PathBuf,
+    of: ReviewOf,
     record: Result<ReviewRecord, String>,
 }
 
@@ -183,13 +211,20 @@ impl ReviewExtension {
         (surface == SURFACE).then_some(self.open.as_mut()).flatten()
     }
 
-    /// The one agent working in `root`. Several have no checkout of their
-    /// own, and the review is kept for none of them.
-    fn agent_of(&self, root: &Path) -> Option<String> {
-        let mut here = self.agents.iter().filter(|(_, checkout)| checkout == root);
-        match (here.next(), here.next()) {
-            (Some((id, _)), None) => Some(id.clone()),
-            _ => None,
+    /// The agent a review goes to: the one it is kept for, while it works
+    /// there, or with none in front the one agent working in its checkout.
+    fn agent_of(&self, of: &ReviewOf) -> Option<String> {
+        let mut here = self
+            .agents
+            .iter()
+            .filter(|(_, checkout)| *checkout == of.root)
+            .map(|(id, _)| id);
+        match &of.agent {
+            Some(agent) => here.find(|id| *id == agent).cloned(),
+            None => match (here.next(), here.next()) {
+                (Some(id), None) => Some(id.clone()),
+                _ => None,
+            },
         }
     }
 
@@ -217,11 +252,11 @@ impl ReviewExtension {
                 else {
                     return Outcome::Stay;
                 };
-                let in_front = self.focus.as_ref().map(|focus| &focus.root);
+                let in_front = self.focus.as_ref().map(ReviewOf::in_front);
                 match self
                     .open
                     .as_mut()
-                    .filter(|view| Some(&view.root) == in_front)
+                    .filter(|view| in_front.as_ref().is_some_and(|of| of.is_open_in(view)))
                 {
                     Some(view) => {
                         view.go_to_thread_id(id);
@@ -237,37 +272,36 @@ impl ReviewExtension {
         }
     }
 
-    /// The checkout in front and its review as it stands: the view's,
-    /// open on it, else what the door last read.
-    fn record_in_front(&self) -> Option<(&Path, &ReviewRecord)> {
-        let root = &self.focus.as_ref()?.root;
+    /// The review in front as it stands: the view's, open on it, else what
+    /// the door last read.
+    fn record_in_front(&self) -> Option<(ReviewOf, &ReviewRecord)> {
+        let of = ReviewOf::in_front(self.focus.as_ref()?);
         match &self.open {
-            Some(view) if &view.root == root => Some((root, &view.record)),
-            _ => self
-                .records
-                .get(root)
-                .map(|record| (root.as_path(), record)),
+            Some(view) if of.is_open_in(view) => Some((of, &view.record)),
+            _ => {
+                let record = self.records.get(&of)?;
+                Some((of, record))
+            }
         }
     }
 
-    /// Says `span` of `root`'s send where it was asked: its review, when
+    /// Says `span` of a review's send where it was asked: the review, when
     /// that is open, and its drawer.
-    fn say(&mut self, root: &Path, span: Span) {
-        if let Some(view) = self.open.as_mut().filter(|view| view.root == root) {
+    fn say(&mut self, of: &ReviewOf, span: Span) {
+        if let Some(view) = self.open.as_mut().filter(|view| of.is_open_in(view)) {
             view.notice = Some(span.clone());
         }
-        self.drawer_notice = Some((root.to_path_buf(), span));
+        self.drawer_notice = Some((of.clone(), span));
     }
 
-    /// Asks the bridge to tell the agent of the checkout in front that its
+    /// Asks the bridge to tell the agent of the review in front that its
     /// drafts wait for it, from the review or from the drawer, open or
     /// not. The drafts become a send only once the bridge says the line
     /// was typed.
     fn send(&mut self) -> Outcome {
-        let Some((root, record)) = self.record_in_front() else {
+        let Some((of, record)) = self.record_in_front() else {
             return Outcome::Stay;
         };
-        let root = root.to_path_buf();
         let ids: Vec<u64> = record
             .comments
             .iter()
@@ -276,22 +310,19 @@ impl ReviewExtension {
             .collect();
         let next_send = record.next_send.max(1);
         if ids.is_empty() {
-            self.say(&root, Span::new("no drafts to send", Role::Muted));
+            self.say(&of, Span::new("no drafts to send", Role::Muted));
             return Outcome::Stay;
         }
-        let Some(agent) = self.agent_of(&root) else {
+        let Some(agent) = self.agent_of(&of) else {
             self.say(
-                &root,
-                Span::new(
-                    "no agent UZE launched works in this checkout",
-                    Role::Warning,
-                ),
+                &of,
+                Span::new("no agent UZE launched is in front here", Role::Warning),
             );
             return Outcome::Stay;
         };
         if self.sending.is_some() {
             self.say(
-                &root,
+                &of,
                 Span::new("a send is waiting for your answer", Role::Muted),
             );
             return Outcome::Stay;
@@ -300,7 +331,7 @@ impl ReviewExtension {
         let line = change::send_line(ids.len(), next_send);
         let summary = change::send_summary(ids.len());
         self.sending = Some((
-            root,
+            of,
             Sending {
                 ids,
                 agent: agent.clone(),
@@ -375,27 +406,28 @@ impl ReviewExtension {
         view.relist = false;
         self.listing = true;
         self.listed_at = Some(Instant::now());
-        let root = view.root.clone();
+        let of = ReviewOf::open_in(view);
         let filter = view.filter;
         let known = view.base.clone();
         let target = self.focus.as_ref().and_then(|focus| focus.target.clone());
         let generation = self.generation;
-        let fallback_root = root.clone();
+        let fallback_of = of.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
                 let started = Instant::now();
+                let root = &of.root;
                 let base = match filter {
-                    super::Filter::All => git::base(host, &root, target.as_deref(), &known),
+                    super::Filter::All => git::base(host, root, target.as_deref(), &known),
                     super::Filter::Uncommitted => Base::default(),
                 };
-                let listing = git::listing(host, &root, base.commit.as_deref());
-                let record = host.review_record(&root);
+                let listing = git::listing(host, root, base.commit.as_deref());
+                let record = host.review_record(root, of.agent.as_deref());
                 Opaque::new(ListRead {
                     took: started.elapsed(),
                     record,
                     generation,
-                    branch: crate::shared::checkout::branch_of(host, &root),
-                    root,
+                    branch: crate::shared::checkout::branch_of(host, root),
+                    of,
                     filter,
                     base,
                     listing,
@@ -405,7 +437,7 @@ impl ReviewExtension {
                 Opaque::new(ListRead {
                     took: Duration::ZERO,
                     generation,
-                    root: fallback_root,
+                    of: fallback_of,
                     filter,
                     base: Base::default(),
                     branch: String::new(),
@@ -465,27 +497,28 @@ impl ReviewExtension {
             .open
             .as_mut()
             .filter(|view| !view.unwritten.is_empty())
-            .map(|view| (view.root.clone(), std::mem::take(&mut view.unwritten)));
-        let Some((root, changes)) =
+            .map(|view| (ReviewOf::open_in(view), std::mem::take(&mut view.unwritten)));
+        let Some((of, changes)) =
             from_view.or_else(|| (!self.waiting.is_empty()).then(|| self.waiting.remove(0)))
         else {
             return;
         };
         self.writing = true;
-        self.in_flight = Some((root.clone(), changes.clone()));
-        let fallback_root = root.clone();
+        self.in_flight = Some((of.clone(), changes.clone()));
+        let fallback_of = of.clone();
         jobs.push(Job {
             run: Box::new(move |host| {
-                let record = host.update_review_record(&root, &mut |record| {
-                    for change in &changes {
-                        change.apply(record);
-                    }
-                });
-                Opaque::new(Written { root, record })
+                let record =
+                    host.update_review_record(&of.root, of.agent.as_deref(), &mut |record| {
+                        for change in &changes {
+                            change.apply(record);
+                        }
+                    });
+                Opaque::new(Written { of, record })
             }),
             fallback: Box::new(move || {
                 Opaque::new(Written {
-                    root: fallback_root,
+                    of: fallback_of,
                     record: Err("writing the review failed".to_owned()),
                 })
             }),
@@ -543,20 +576,20 @@ impl ReviewExtension {
             true => self.door.base.clone(),
             false => Base::default(),
         };
-        let root = focus.root.clone();
-        let fallback_root = root.clone();
+        let of = ReviewOf::in_front(&focus);
+        let fallback_of = of.clone();
         let generation = self.generation;
         jobs.push(Job {
             run: Box::new(move |host| {
                 let started = Instant::now();
-                let base = git::base(host, &root, focus.target.as_deref(), &known);
-                let totals = git::totals(host, &root, base.commit.as_deref());
+                let base = git::base(host, &of.root, focus.target.as_deref(), &known);
+                let totals = git::totals(host, &of.root, base.commit.as_deref());
                 Opaque::new(DoorRead {
                     took: started.elapsed(),
                     totals,
-                    record: Some(host.review_record(&root)),
+                    record: Some(host.review_record(&of.root, of.agent.as_deref())),
                     generation,
-                    root,
+                    of,
                     base,
                 })
             }),
@@ -564,7 +597,7 @@ impl ReviewExtension {
                 Opaque::new(DoorRead {
                     took: Duration::ZERO,
                     generation,
-                    root: fallback_root,
+                    of: fallback_of,
                     base: Base::default(),
                     totals: None,
                     record: None,
@@ -593,9 +626,11 @@ impl ReviewExtension {
             display: root.display().to_string(),
             root: root.clone(),
             target: None,
+            agent: None,
         });
         self.door.root = Some(root.clone());
-        let record = self.records.entry(root).or_default();
+        let of = ReviewOf { root, agent: None };
+        let record = self.records.entry(of).or_default();
         Change::Draft {
             id: record.free_id(),
             path: path.to_owned(),
@@ -658,27 +693,27 @@ impl ReviewExtension {
         self.retry_at = None;
     }
 
-    /// The changes a write is out for on `root`, if one is.
-    /// Keeps `record` as `root`'s, with what is still on its way to disk
-    /// laid over it: a read or a write answered before a change landed
+    /// Keeps `record` as the review's, with what is still on its way to
+    /// disk laid over it: a read or a write answered before a change landed
     /// never takes that change away from the bar or the drawer.
-    fn know(&mut self, root: PathBuf, mut record: ReviewRecord) {
-        let pending = self.in_flight_for(&root).into_iter().chain(
+    fn know(&mut self, of: ReviewOf, mut record: ReviewRecord) {
+        let pending = self.in_flight_for(&of).into_iter().chain(
             self.waiting
                 .iter()
-                .filter(|(waiting, _)| *waiting == root)
+                .filter(|(waiting, _)| *waiting == of)
                 .flat_map(|(_, changes)| changes.clone()),
         );
         for change in pending {
             change.apply(&mut record);
         }
-        self.records.insert(root, record);
+        self.records.insert(of, record);
     }
 
-    fn in_flight_for(&self, root: &Path) -> Vec<Change> {
+    /// The changes a write is out for on this review, if one is.
+    fn in_flight_for(&self, of: &ReviewOf) -> Vec<Change> {
         self.in_flight
             .as_ref()
-            .filter(|(written, _)| written == root)
+            .filter(|(written, _)| written == of)
             .map(|(_, changes)| changes.clone())
             .unwrap_or_default()
     }
@@ -724,13 +759,13 @@ impl Extension for ReviewExtension {
             SURFACE => self.open.as_ref().map(|view| super::view(view, space)),
             ITEM => super::drawer::item(self.record_in_front()?.1),
             COMMENTS => {
-                let (root, record) = self.record_in_front()?;
+                let (of, record) = self.record_in_front()?;
                 Some(super::drawer::drawer(
                     record,
-                    self.agent_of(root).is_some(),
+                    self.agent_of(&of).is_some(),
                     self.drawer_notice
                         .as_ref()
-                        .filter(|(said, _)| said == root)
+                        .filter(|(said, _)| *said == of)
                         .map(|(_, span)| span),
                 ))
             }
@@ -807,7 +842,9 @@ impl Extension for ReviewExtension {
         if surface != SURFACE {
             return;
         }
+        let of = ReviewOf::in_front(checkout);
         let mut view = ReviewView::opening(checkout.root.clone(), checkout.display.clone());
+        view.agent = checkout.agent.clone();
         if let Some(place) = self.places.get(&checkout.root) {
             view.selected = place.selected.clone();
             view.filter = place.filter;
@@ -816,16 +853,16 @@ impl Extension for ReviewExtension {
         // every record it reads is shown with them laid over it.
         let (mine, others): (Vec<_>, Vec<_>) = std::mem::take(&mut self.waiting)
             .into_iter()
-            .partition(|(root, _)| *root == checkout.root);
+            .partition(|(waiting, _)| *waiting == of);
         self.waiting = others;
         view.unwritten = mine.into_iter().flat_map(|(_, changes)| changes).collect();
-        if let Some(record) = self.records.get(&checkout.root) {
-            let in_flight = self.in_flight_for(&checkout.root);
+        if let Some(record) = self.records.get(&of) {
+            let in_flight = self.in_flight_for(&of);
             view.absorb_record(Ok(record.clone()), &in_flight);
         }
         view.open_on = self.open_on.take();
         view.marks_by_hand_only = self.marks_by_hand_only;
-        view.unmarked = self.unmarked.remove(&checkout.root).unwrap_or_default();
+        view.unmarked = self.unmarked.remove(&of).unwrap_or_default();
         self.listed_at = None;
         self.open = Some(view);
     }
@@ -846,8 +883,9 @@ impl Extension for ReviewExtension {
         }
         if let Some(mut view) = self.open.take() {
             view.leave(Instant::now());
+            let of = ReviewOf::open_in(&view);
             self.unmarked
-                .insert(view.root.clone(), std::mem::take(&mut view.unmarked));
+                .insert(of.clone(), std::mem::take(&mut view.unmarked));
             self.places.insert(
                 view.root.clone(),
                 Place {
@@ -859,9 +897,9 @@ impl Extension for ReviewExtension {
             // operator's work never waits on the surface staying open.
             // The door says what the surface last showed; laid again over
             // it, a change waiting to be written is a repeat.
-            self.records.insert(view.root.clone(), view.record.clone());
+            self.records.insert(of.clone(), view.record.clone());
             if !view.unwritten.is_empty() {
-                self.waiting.push((view.root.clone(), view.unwritten));
+                self.waiting.push((of, view.unwritten));
             }
         }
     }
@@ -943,8 +981,7 @@ impl Extension for ReviewExtension {
     }
 
     fn focus(&mut self, checkout: Option<&Checkout>) {
-        let moved =
-            self.focus.as_ref().map(|focus| &focus.root) != checkout.map(|checkout| &checkout.root);
+        let moved = self.focus.as_ref().map(ReviewOf::in_front) != checkout.map(ReviewOf::in_front);
         self.focus = checkout.cloned();
         if moved {
             self.door.at = None;
@@ -967,8 +1004,9 @@ impl Extension for ReviewExtension {
                     .collect()
             })
             .unwrap_or_default();
-        // A review is kept for the agent working in a checkout: another
-        // come to work there, or none, and what was kept is not theirs.
+        // A review is kept for an agent working in a checkout: when the
+        // workers change, one kept for nobody in particular or for an agent
+        // gone from there is not the newcomers'.
         let workers = |agents: &[(String, PathBuf)], root: &PathBuf| -> Vec<String> {
             agents
                 .iter()
@@ -981,9 +1019,15 @@ impl Extension for ReviewExtension {
             .map(|(_, root)| root.clone())
             .filter(|root| workers(&before, root) != workers(&self.agents, root))
             .collect();
-        for root in moved {
-            self.records.remove(&root);
-        }
+        let agents = &self.agents;
+        self.records.retain(|of, _| {
+            !moved.contains(&of.root)
+                || of.agent.as_ref().is_some_and(|kept_for| {
+                    agents
+                        .iter()
+                        .any(|(id, checkout)| id == kept_for && *checkout == of.root)
+                })
+        });
         // An agent gone takes the turn it was on with it.
         if let Some(agent) = &self.working
             && !self.agents.iter().any(|(id, _)| id == agent)
@@ -1008,10 +1052,10 @@ impl Extension for ReviewExtension {
         if action != SEND_ACTION {
             return;
         }
-        let Some((root, sending)) = self.sending.take() else {
+        let Some((of, sending)) = self.sending.take() else {
             return;
         };
-        let open = self.open.as_mut().filter(|view| view.root == root);
+        let open = self.open.as_mut().filter(|view| of.is_open_in(view));
         if written == AgentWritten::Typed {
             let sent = Change::Sent {
                 ids: sending.ids,
@@ -1021,12 +1065,12 @@ impl Extension for ReviewExtension {
             // still stands to show it.
             // The door's record says it at once too, for the drawer and
             // the bar, open review or not.
-            if let Some(record) = self.records.get_mut(&root) {
+            if let Some(record) = self.records.get_mut(&of) {
                 sent.apply(record);
             }
             match open {
                 Some(view) => view.change(sent),
-                None => self.waiting.push((root.clone(), vec![sent])),
+                None => self.waiting.push((of, vec![sent])),
             }
             self.working = Some(sending.agent);
             return;
@@ -1034,12 +1078,9 @@ impl Extension for ReviewExtension {
         match written {
             AgentWritten::Typed => {}
             AgentWritten::Refused(reason) => {
-                self.say(
-                    &root,
-                    Span::new(format!("not sent: {reason}"), Role::Warning),
-                );
+                self.say(&of, Span::new(format!("not sent: {reason}"), Role::Warning));
             }
-            AgentWritten::Declined => self.say(&root, Span::new("not sent", Role::Muted)),
+            AgentWritten::Declined => self.say(&of, Span::new("not sent", Role::Muted)),
         }
     }
 
@@ -1062,11 +1103,11 @@ impl Extension for ReviewExtension {
             if let Some(read) = answer.downcast::<ListRead>() {
                 self.listing = false;
                 self.list_took = read.took;
-                let in_flight = self.in_flight_for(&read.root);
+                let in_flight = self.in_flight_for(&read.of);
                 let current = read.generation == self.generation;
-                if let Some(view) = self.open.as_mut().filter(|view| view.root == read.root) {
+                if let Some(view) = self.open.as_mut().filter(|view| view.root == read.of.root) {
                     view.absorb_listing(read.filter, read.base, read.branch, read.listing);
-                    if current {
+                    if current && read.of.is_open_in(view) {
                         view.absorb_record(read.record, &in_flight);
                     }
                 }
@@ -1086,8 +1127,10 @@ impl Extension for ReviewExtension {
             if let Some(read) = answer.downcast::<DoorRead>() {
                 self.door.reading = false;
                 self.door.took = read.took;
-                if self.focus.as_ref().map(|focus| &focus.root) == Some(&read.root) {
-                    self.door.root = Some(read.root.clone());
+                // A read of the agent before stays unanswered for the one
+                // now in front, whose own read is still due.
+                if self.focus.as_ref().map(ReviewOf::in_front).as_ref() == Some(&read.of) {
+                    self.door.root = Some(read.of.root.clone());
                     self.door.base = read.base;
                     self.door.totals = read.totals;
                     self.door.at = Some(Instant::now());
@@ -1096,16 +1139,17 @@ impl Extension for ReviewExtension {
                     // Older than the last write answered: not taken, and
                     // asked again on the next pass rather than a period on.
                     Some(_) if read.generation != self.generation => {
-                        if self.door.root.as_ref() == Some(&read.root) {
+                        if self.door.root.as_ref() == Some(&read.of.root) {
                             self.door.at = None;
                         }
                     }
-                    Some(Ok(record)) => self.know(read.root, record),
-                    // A checkout never read that answers none keeps no
-                    // review (a shell, a shared checkout); one read before
-                    // keeps what it held through a read that failed.
+                    Some(Ok(record)) => self.know(read.of, record),
+                    // A review never read that answers none is not kept
+                    // (a shell, a shared checkout with no agent in front);
+                    // one read before keeps what it held through a read
+                    // that failed.
                     Some(Err(_)) => {
-                        self.records.entry(read.root).or_default();
+                        self.records.entry(read.of).or_default();
                     }
                     None => {}
                 }
@@ -1128,21 +1172,25 @@ impl Extension for ReviewExtension {
                 // failed write must not drop what the operator wrote.
                 Err(_) => {
                     self.retry_at = Some(Instant::now() + LIST_EVERY);
-                    if let Some((root, changes)) = in_flight {
-                        match self.open.as_mut().filter(|view| view.root == root) {
+                    if let Some((of, changes)) = in_flight {
+                        match self.open.as_mut().filter(|view| of.is_open_in(view)) {
                             Some(view) => {
                                 let newer = std::mem::take(&mut view.unwritten);
                                 view.unwritten = changes.into_iter().chain(newer).collect();
                             }
-                            None => self.waiting.insert(0, (root, changes)),
+                            None => self.waiting.insert(0, (of, changes)),
                         }
                     }
                 }
             }
             if let Ok(record) = &written.record {
-                self.know(written.root.clone(), record.clone());
+                self.know(written.of.clone(), record.clone());
             }
-            match self.open.as_mut().filter(|view| view.root == written.root) {
+            match self
+                .open
+                .as_mut()
+                .filter(|view| written.of.is_open_in(view))
+            {
                 Some(view) => view.absorb_record(written.record, &[]),
                 None => {
                     if let Err(error) = written.record
@@ -1224,7 +1272,7 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
-    use super::{Base, DoorRead, ReviewExtension, ReviewRecord};
+    use super::{Base, DoorRead, ReviewExtension, ReviewOf, ReviewRecord};
     use crate::contract::{AgentWritten, Checkout, Extension, Opaque};
 
     fn checkout(root: &str) -> Checkout {
@@ -1232,6 +1280,7 @@ mod tests {
             root: PathBuf::from(root),
             display: root.to_owned(),
             target: None,
+            agent: None,
         }
     }
 
@@ -1263,7 +1312,10 @@ mod tests {
         Opaque::new(DoorRead {
             took: Duration::ZERO,
             generation,
-            root: PathBuf::from(root),
+            of: ReviewOf {
+                root: PathBuf::from(root),
+                agent: None,
+            },
             base: Base::default(),
             totals: None,
             record: Some(record),
@@ -1284,7 +1336,8 @@ mod tests {
     }
 
     /// A checkout that keeps no review (a shell, a checkout two agents
-    /// share) never shows the one before's: its failed read is no review.
+    /// share with neither in front) never shows the one before's: its
+    /// failed read is no review.
     #[test]
     fn a_checkout_whose_review_cannot_be_read_never_shows_anothers() {
         let mut extension = ReviewExtension::default();
@@ -1367,6 +1420,95 @@ mod tests {
         assert_eq!(drafts(&extension), 0, "x's drafts are not y's");
     }
 
+    /// The checkout in front with `agent`'s tab in front of it.
+    fn agent_in_front(root: &str, agent: &str) -> Checkout {
+        Checkout {
+            agent: Some(agent.to_owned()),
+            ..checkout(root)
+        }
+    }
+
+    /// The bug this guards: agents sharing a checkout could not be reviewed
+    /// at all. Each keeps its own, and coming to the front shows it.
+    #[test]
+    fn agents_sharing_a_checkout_each_show_their_own_review() {
+        let mut extension = ReviewExtension::default();
+        extension.agents(&serde_json::json!([
+            { "id": "a1", "checkout": "/w" },
+            { "id": "a2", "checkout": "/w" },
+        ]));
+        extension.focus(Some(&agent_in_front("/w", "a1")));
+        let mut with_a_draft = ReviewRecord::default();
+        super::Change::Draft {
+            id: 1,
+            path: "a.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: "check".to_owned(),
+        }
+        .apply(&mut with_a_draft);
+        extension.know(
+            ReviewOf {
+                root: PathBuf::from("/w"),
+                agent: Some("a1".to_owned()),
+            },
+            with_a_draft,
+        );
+        assert_eq!(drafts(&extension), 1);
+        extension.focus(Some(&agent_in_front("/w", "a2")));
+        assert_eq!(drafts(&extension), 0, "a1's is not a2's");
+        extension.focus(Some(&agent_in_front("/w", "a1")));
+        assert_eq!(drafts(&extension), 1, "a1's again at once, before its read");
+    }
+
+    /// Another agent coming to share the checkout takes nothing from the
+    /// one already reviewed there.
+    #[test]
+    fn an_agent_joining_the_checkout_leaves_the_others_review_alone() {
+        let mut extension = ReviewExtension::default();
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        extension.focus(Some(&agent_in_front("/w", "a1")));
+        extension.know(
+            ReviewOf {
+                root: PathBuf::from("/w"),
+                agent: Some("a1".to_owned()),
+            },
+            ReviewRecord::default(),
+        );
+        extension.agents(&serde_json::json!([
+            { "id": "a1", "checkout": "/w" },
+            { "id": "a2", "checkout": "/w" },
+        ]));
+        assert!(extension.record_in_front().is_some(), "a1's stands");
+        extension.agents(&serde_json::json!([{ "id": "a2", "checkout": "/w" }]));
+        assert!(
+            extension.record_in_front().is_none(),
+            "a1 is gone from here"
+        );
+    }
+
+    /// Coming to the front, another agent's review is read at once, even
+    /// over the door's read of the one before.
+    #[test]
+    fn another_agent_in_front_is_read_at_once_though_a_read_of_the_last_lands() {
+        let mut extension = ReviewExtension::default();
+        extension.focus(Some(&agent_in_front("/w", "a1")));
+        assert_eq!(extension.jobs().len(), 1, "a1's door");
+        extension.focus(Some(&agent_in_front("/w", "a2")));
+        extension.absorb(Opaque::new(DoorRead {
+            took: Duration::ZERO,
+            generation: 0,
+            of: ReviewOf {
+                root: PathBuf::from("/w"),
+                agent: Some("a1".to_owned()),
+            },
+            base: Base::default(),
+            totals: None,
+            record: Some(Ok(ReviewRecord::default())),
+        }));
+        assert_eq!(extension.jobs().len(), 1, "a2's door, not a period on");
+    }
+
     /// What the drawer says of one checkout's send stays that checkout's:
     /// declined in one, another's drawer says nothing of it.
     #[test]
@@ -1395,7 +1537,11 @@ mod tests {
         extension.drafted(PathBuf::from("/w"), "a.rs", "check");
         extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
         let before = extension.generation;
-        let on_disk = extension.records[&PathBuf::from("/w")].clone();
+        let on_disk = extension.records[&ReviewOf {
+            root: PathBuf::from("/w"),
+            agent: None,
+        }]
+            .clone();
         let _ = extension.send();
         extension.agent_write(super::SEND_ACTION, AgentWritten::Typed);
         assert_eq!(drafts(&extension), 0, "sent");

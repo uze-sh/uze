@@ -2572,6 +2572,7 @@ mod hosted {
             root: PathBuf::from(root),
             display: root.to_owned(),
             target: None,
+            agent: None,
         }
     }
 
@@ -3115,6 +3116,7 @@ mod hosted {
             root: root.clone(),
             display: root.display().to_string(),
             target: None,
+            agent: None,
         };
         extension.focus(Some(&front));
         let reads: Vec<Opaque> = extension

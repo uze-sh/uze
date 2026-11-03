@@ -133,6 +133,15 @@ impl WorkspaceModel {
         self.agent_in_front.as_deref()
     }
 
+    /// The identity of the agent whose context is in front: its own tab's,
+    /// a shell beside it answering for it. `None` for a tab UZE launched no
+    /// agent in.
+    pub(super) fn agent_id_in_front(&self) -> Option<String> {
+        let tab = self.selected_tab()?;
+        let agent = self.tab(tab)?.agent.unwrap_or(tab);
+        launched_agent_id(self.tab(agent)?).map(str::to_owned)
+    }
+
     /// Where a new agent's directory step opens: the project of the agent
     /// in front, else the project the space's latest agent works in, else
     /// nowhere in particular — the home directory.

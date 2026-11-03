@@ -82,6 +82,8 @@ pub(crate) struct Discarding {
 /// The review, open on one checkout.
 pub struct ReviewView {
     pub(crate) root: PathBuf,
+    /// The agent whose review this is, the checkout perhaps being shared.
+    pub(crate) agent: Option<String>,
     pub(crate) display_root: String,
     pub(crate) branch: String,
     pub(crate) filter: Filter,
@@ -155,6 +157,7 @@ pub struct ReviewView {
 impl ReviewView {
     pub fn opening(root: PathBuf, display_root: String) -> Self {
         Self {
+            agent: None,
             root,
             display_root,
             branch: String::new(),

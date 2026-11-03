@@ -80,6 +80,7 @@ pub(super) fn checkout(root: &str) -> Checkout {
         root: PathBuf::from(root),
         display: root.to_owned(),
         target: None,
+        agent: None,
     }
 }
 
