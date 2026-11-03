@@ -559,7 +559,8 @@ fn give_context(
     }
     // The agent tells the workspace what it is doing through the uze that
     // launched it: this launch only, never a hook of every session.
-    if let Ok(uze) = std::env::current_exe() {
+    if let Some(uze) = uze_platform::executable::own_behind_launcher(integration.shim_name(), "uze")
+    {
         let dir = agent_context::dir(home, &owner.project_root, agent);
         if let Some(reporter) = integration.reporter(&uze_core::integration::ReporterContext {
             uze: &uze,
