@@ -55,8 +55,8 @@ impl Workspace<'_> {
     /// The root whose store records `agent_id`, for a pane standing in
     /// `cwd`. An agent in place is recorded under the directory it was placed
     /// in, which may be below the repository's root or in no repository at
-    /// all; an isolated one under its primary checkout, which may hold its
-    /// slot anywhere.
+    /// all; any other under its primary checkout, which a worktree made
+    /// outside the repository does not have among its ancestors.
     fn root_recording(&self, cwd: &Path, agent_id: &str) -> Option<PathBuf> {
         canonical(cwd)
             .ancestors()
