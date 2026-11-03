@@ -170,6 +170,8 @@ mod tests {
         );
         assert!(unicode_glyph_problem("🐕").is_some());
         assert!(unicode_glyph_problem("\u{f017}").is_some());
+        assert!(unicode_glyph_problem(" ").is_some(), "only whitespace");
+        assert!(unicode_glyph_problem("\u{7}").is_some(), "only a control");
         assert_eq!(ascii_glyph_problem("PR"), None);
         assert!(ascii_glyph_problem("abc").is_some());
         assert!(ascii_glyph_problem("é").is_some());

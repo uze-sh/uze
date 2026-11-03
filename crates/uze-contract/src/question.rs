@@ -166,3 +166,16 @@ impl Answer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sound_is_read_by_its_name() {
+        assert_eq!(Sound::parse("done"), Some(Sound::Done));
+        assert_eq!(Sound::parse("attention"), Some(Sound::Attention));
+        assert_eq!(Sound::parse("error"), Some(Sound::Error));
+        assert_eq!(Sound::parse("beep"), None);
+    }
+}

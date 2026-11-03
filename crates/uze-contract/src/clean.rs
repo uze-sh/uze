@@ -332,6 +332,7 @@ mod tests {
         ] {
             assert_eq!(Clean::label(text).as_str(), text);
             assert_eq!(AsRef::<str>::as_ref(&Clean::label(text)), text);
+            assert_eq!(Clean::label(text).to_string(), text);
         }
     }
 }
