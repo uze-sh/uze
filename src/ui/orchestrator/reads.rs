@@ -413,7 +413,7 @@ pub(super) fn spawn_memory_proposals(home: &UzeHome, sender: mpsc::Sender<Propos
     let home = home.clone();
     let parent = tracing::Span::current();
     thread::spawn(move || {
-        let _span = tracing::info_span!(parent: &parent, "tui.memory_proposals").entered();
+        let _pass = crate::telemetry::background_pass!("tui.memory_proposals", parent: &parent);
         let proposals = answered_or(
             || {
                 tui_application(home)
