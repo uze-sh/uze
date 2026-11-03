@@ -766,6 +766,119 @@ impl crate::Host for Refusing {
     }
 }
 
+/// A host that keeps a review for each agent, as the workspace's does, and
+/// like it refuses one asked with no agent in front of a shared checkout.
+#[derive(Default)]
+struct KeepingEach(std::sync::Mutex<std::collections::HashMap<String, ReviewRecord>>);
+
+impl KeepingEach {
+    fn comments_of(&self, agent: &str) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap()
+            .get(agent)
+            .map(|record| record.comments.iter().map(|c| c.text.clone()).collect())
+            .unwrap_or_default()
+    }
+}
+
+impl crate::Host for KeepingEach {
+    fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+        Err("no git here".to_owned())
+    }
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        Ok(path.to_path_buf())
+    }
+    fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+        Err(crate::Unreadable::NotText)
+    }
+    fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
+        Ok(Vec::new())
+    }
+    fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+        unreachable!()
+    }
+    fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn rename_path(&self, _: &Path, _: &Path, _: &Path) -> Result<(), String> {
+        unreachable!()
+    }
+    fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+        unreachable!()
+    }
+    fn syntax_theme(&self) -> String {
+        crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned()
+    }
+    fn review_record(&self, _: &Path, in_front: Option<&str>) -> Result<ReviewRecord, String> {
+        let agent = in_front.ok_or("none is in front")?;
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .get(agent)
+            .cloned()
+            .unwrap_or_default())
+    }
+    fn update_review_record(
+        &self,
+        _: &Path,
+        in_front: Option<&str>,
+        change: &mut dyn FnMut(&mut ReviewRecord),
+    ) -> Result<ReviewRecord, String> {
+        let agent = in_front.ok_or("none is in front")?;
+        let mut kept = self.0.lock().unwrap();
+        let record = kept.entry(agent.to_owned()).or_default();
+        change(record);
+        Ok(record.clone())
+    }
+}
+
+fn shared_checkout(agent: Option<&str>) -> crate::contract::Checkout {
+    crate::contract::Checkout {
+        root: PathBuf::from("/w"),
+        display: "/w".to_owned(),
+        target: None,
+        agent: agent.map(str::to_owned),
+    }
+}
+
+/// `text` written on the review of `agent`, which closes before it is
+/// written.
+fn drafted_and_closed(extension: &mut ReviewExtension, agent: Option<&str>, text: &str) {
+    use crate::contract::Extension;
+    extension.open(SURFACE, &shared_checkout(agent));
+    extension
+        .review_view_mut()
+        .unwrap()
+        .change(change::Change::Draft {
+            id: 1,
+            path: "naming.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: text.to_owned(),
+        });
+    extension.close(SURFACE);
+}
+
+/// A review no agent keeps fails for good: what another agent has waiting
+/// behind it, a send included, still reaches its record.
+#[test]
+fn a_write_that_cannot_land_never_holds_up_another_agents() {
+    use crate::contract::Extension;
+    let mut extension = ReviewExtension::default();
+    drafted_and_closed(&mut extension, None, "nobody's");
+    drafted_and_closed(&mut extension, Some("a1"), "a1's");
+    let host = KeepingEach::default();
+    for _ in 0..2 {
+        for job in extension.jobs() {
+            extension.absorb((job.run)(&host));
+        }
+        extension.retry_now();
+    }
+    assert_eq!(host.comments_of("a1"), ["a1's"]);
+}
+
 #[test]
 fn a_write_that_keeps_failing_is_said_once() {
     use crate::contract::{Extension, Outcome};

@@ -693,6 +693,18 @@ impl ReviewExtension {
         self.retry_at = None;
     }
 
+    /// Puts back a write that failed, ahead of what its review still has
+    /// waiting and behind every other review's: one that can never land
+    /// holds up nobody else's, a send included.
+    fn wait_behind_the_others(&mut self, of: ReviewOf, changes: Vec<Change>) {
+        let (later, others): (Vec<_>, Vec<_>) = std::mem::take(&mut self.waiting)
+            .into_iter()
+            .partition(|(waiting, _)| *waiting == of);
+        self.waiting = others;
+        self.waiting.push((of, changes));
+        self.waiting.extend(later);
+    }
+
     /// Keeps `record` as the review's, with what is still on its way to
     /// disk laid over it: a read or a write answered before a change landed
     /// never takes that change away from the bar or the drawer.
@@ -1178,7 +1190,7 @@ impl Extension for ReviewExtension {
                                 let newer = std::mem::take(&mut view.unwritten);
                                 view.unwritten = changes.into_iter().chain(newer).collect();
                             }
-                            None => self.waiting.insert(0, (of, changes)),
+                            None => self.wait_behind_the_others(of, changes),
                         }
                     }
                 }
