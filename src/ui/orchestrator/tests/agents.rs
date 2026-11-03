@@ -991,3 +991,149 @@ fn resumed_work_takes_the_operator_to_its_space() {
         "resumed work is followed into the space it opened in: {sent:?}"
     );
 }
+
+/// Agents share a directory, so the review asks which of them is in front:
+/// the tab's own, a shell beside one answering for that agent.
+#[test]
+fn the_agent_in_front_is_named_for_its_tab_and_for_a_shell_beside_it() {
+    let mut model = agents_in_the_root_session();
+    let tabs: Vec<TabId> = {
+        let space = model.session.as_ref().unwrap().selected_space();
+        space
+            .tabs
+            .iter()
+            .filter(|tab| tab.pane.process != "shell")
+            .map(|tab| tab.id)
+            .collect()
+    };
+    let identities = identities_in_the_root();
+    select_tab(&mut model, tabs[0]);
+    model.note_space_projects(&identities);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a1"));
+    select_tab(&mut model, tabs[1]);
+    model.note_space_projects(&identities);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
+
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let shell = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == shell)
+        .unwrap();
+    tab.agent = Some(tabs[1]);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    model.note_space_projects(&identities);
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a2"));
+
+    let session = model.session.as_mut().unwrap();
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.id == shell)
+        .unwrap();
+    tab.agent = None;
+    model.note_space_projects(&identities);
+    assert_eq!(model.agent_id_in_front(), None, "a shell of the space");
+}
+
+/// A harness run by hand in a shell beside an agent makes that shell what
+/// the workspace is about: the directory in front is the shell's, and the
+/// identity in front must not stay the agent's beside it, or the review asks
+/// one agent's record of another's directory.
+#[test]
+fn the_agent_in_front_never_names_another_tab_than_the_directory_in_front() {
+    let mut model = agents_in_the_root_session();
+    let first = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .find(|tab| tab.pane.process != "shell")
+        .unwrap()
+        .id;
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let pane = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    session.update_pane_status(pane, "/other".into(), "claude".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == pane)
+        .unwrap();
+    tab.agent = Some(first);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    model.note_space_projects(&identities_in_the_root());
+
+    assert_eq!(model.agent_directory_in_front(), Some(Path::new("/other")));
+    assert_eq!(
+        model.agent_id_in_front(),
+        None,
+        "nobody UZE launched stands in /other"
+    );
+}
+
+/// What the workspace tells an extension is the agent in front: the review
+/// opened from each of two agents in one directory is kept for that agent.
+#[test]
+fn the_review_opens_for_the_agent_in_front_of_a_shared_directory() {
+    use crate::ui::orchestrator::surfaces::open_review;
+    let mut model = agents_in_the_root_session();
+    let identities = identities_in_the_root();
+    let tabs: Vec<TabId> = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .filter(|tab| tab.pane.process != "shell")
+        .map(|tab| tab.id)
+        .collect();
+    let owner = super::Owner::Builtin(uze_extensions::review::CATALOG.id);
+    for (tab, agent) in tabs.into_iter().zip(["a1", "a2"]) {
+        select_tab(&mut model, tab);
+        model.note_space_projects(&identities);
+        open_review(&mut model);
+        let engine = model.remembered.declared.engine(&owner).unwrap();
+        assert_eq!(engine.review_agent().as_deref(), Some(agent));
+        model.close_surface();
+    }
+}
+
+/// The same harness by hand with the shell still in its agent's directory
+/// is that agent's terminal: its review does not go away for it.
+#[test]
+fn a_harness_by_hand_beside_an_agent_in_its_directory_answers_for_it() {
+    let mut model = agents_in_the_root_session();
+    let first = model
+        .session
+        .as_ref()
+        .unwrap()
+        .selected_space()
+        .tabs
+        .iter()
+        .find(|tab| tab.pane.process != "shell")
+        .unwrap()
+        .id;
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let pane = session.add_tab(space, "shell".into(), None, 80, 24, "/repo".into());
+    session.update_pane_status(pane, "/repo".into(), "claude".into());
+    let tab = session.workspace.spaces[0]
+        .tabs
+        .iter_mut()
+        .find(|tab| tab.pane.id == pane)
+        .unwrap();
+    tab.agent = Some(first);
+    let shell = tab.id;
+    select_tab(&mut model, shell);
+    model.note_space_projects(&identities_in_the_root());
+
+    assert_eq!(model.agent_id_in_front().as_deref(), Some("a1"));
+}

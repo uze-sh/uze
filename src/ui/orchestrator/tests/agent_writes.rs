@@ -75,6 +75,33 @@ fn a_prompt_is_shown_then_typed_once_allowed_and_a_second_in_the_turn_is_dropped
     );
 }
 
+/// A request names no agent when it means the one the surface stands for,
+/// and a shell beside an agent stands for that agent: the sidebar marks it
+/// and its surfaces stay in the pane.
+#[test]
+fn a_shell_beside_an_agent_asks_of_that_agent() {
+    let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-beside"));
+    let mut driven = driven(launched_agent(), &home);
+    driven.pump();
+    let model = &mut driven.attach.model;
+    let agent = model.selected_tab().expect("the agent is in front");
+    let session = model.session.as_mut().unwrap();
+    let space = session.workspace.selected_space;
+    let pane = session.add_tab(space, "shell".into(), Some(agent), 80, 24, "/repo".into());
+    let shell = session.workspace.spaces[0]
+        .tabs
+        .iter()
+        .find(|tab| tab.pane.id == pane)
+        .unwrap()
+        .id;
+    select_tab(model, shell);
+    model.note_space_projects(&identities_fixture());
+
+    model.ask_of_agent(Owner::Builtin("probe"), prompt("Review PLAN.md"));
+
+    assert!(model.agent_write.is_some(), "asked of the agent beside it");
+}
+
 #[test]
 fn a_paused_workspace_takes_no_prompt_and_a_command_character_is_refused() {
     let home = UzeHome::at(uze_testkit::temp::scratch("orchestrator-agent-pause"));

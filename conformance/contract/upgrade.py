@@ -116,6 +116,22 @@ def _layouts(output):
     return [part.split(LAYOUT_END, 1)[0].split() for part in parts]
 
 
+def _bytes_held_in_sources(layouts):
+    """Whether the upgraded home keeps the bytes in `sources/`, and what the
+    evidence says. Judged on the home after the upgrade: the previous release
+    is the newest tag, so once one ships with `sources/` there is nothing left
+    for the upgrade to move, and that must not read as the upgrade failing.
+    """
+    if len(layouts) != 2:
+        return False, f"layouts: {layouts}"
+    before, after = layouts
+    if "plugins" in after or SOURCES_HELD not in after:
+        return False, f"layouts: {layouts}"
+    if "plugins" in before:
+        return True, "the previous release's `store/plugins` became `sources/`"
+    return True, "the previous release already kept `sources/`, and they stay"
+
+
 def _assert(bindings, skills, output):
     # Two releases may share a version number until one is published, so
     # what says they differ is the bytes of each binary.
@@ -128,20 +144,8 @@ def _assert(bindings, skills, output):
         if distinct
         else f"binary digests: {digests}",
     )
-    layouts = _layouts(output)
-    moved = (
-        len(layouts) == 2
-        and "plugins" in layouts[0]
-        and "plugins" not in layouts[1]
-        and SOURCES_HELD in layouts[1]
-    )
-    check(
-        "upgrade-bytes-moved-to-sources",
-        moved,
-        "the previous release's `store/plugins` became `sources/`"
-        if moved
-        else f"layouts: {layouts}",
-    )
+    held, detail = _bytes_held_in_sources(_layouts(output))
+    check("upgrade-bytes-held-in-sources", held, detail)
     if bindings.plugin_listing is not None:
         held = _between(output, HELD_BEGIN, HELD_END)
         listed = _between(output, LISTING_BEGIN, LISTING_END)

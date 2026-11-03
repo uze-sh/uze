@@ -205,6 +205,20 @@ numbered send only once the line is typed.
 - **WHEN** the operator declines the bridge's confirmation
 - **THEN** the drafts stay drafts
 
+### Requirement: Agents sharing a checkout keep a review each
+Agents working in one checkout SHALL share its diff and keep a review each.
+The review drawn, written and sent SHALL be that of the agent whose tab is in
+front, a shell beside an agent answering for it. With no agent in front of a
+checkout several share, nothing SHALL be kept or sent.
+
+#### Scenario: Two agents in the project's root
+- **WHEN** two agents work in the project's root and the operator comments with the first in front, then brings the second to the front
+- **THEN** the second's review shows none of the first's comments, and bringing the first back shows them again
+
+#### Scenario: The send follows the agent in front
+- **WHEN** the operator sends a draft with an agent in front in a checkout it shares
+- **THEN** the line is typed into that agent and the other is told nothing
+
 ### Requirement: The agent reads the review through the CLI
 `uze agent review show` SHALL be accepted only from an agent UZE launched,
 and SHALL print that agent's sent, unanswered comments: send and comment

@@ -133,6 +133,34 @@ impl WorkspaceModel {
         self.agent_in_front.as_deref()
     }
 
+    /// The identity of the agent whose context is in front, read off the
+    /// tab [`Self::agent_directory_in_front`] is read off, so the two never
+    /// name different agents; a harness run by hand beside an agent answers
+    /// for that agent only while it stands in that agent's directory. `None`
+    /// for a tab UZE launched no agent in.
+    pub(super) fn agent_id_in_front(&self) -> Option<String> {
+        let tab = self.agent_tab_in_front?;
+        if let Some(id) = self.tab_agent_id(tab) {
+            return Some(id.to_owned());
+        }
+        let by_hand = self.tab(tab)?;
+        let beside = self.tab(by_hand.agent?)?;
+        (named_checkout(&beside.pane.cwd) == named_checkout(&by_hand.pane.cwd))
+            .then(|| launched_agent_id(beside))
+            .flatten()
+            .map(str::to_owned)
+    }
+
+    /// `root` as an extension is shown it, with whoever is in front of it.
+    pub(super) fn checkout_at(&self, root: PathBuf) -> uze_extensions::contract::Checkout {
+        uze_extensions::contract::Checkout {
+            display: crate::ui::display_project_path(&root),
+            target: self.remembered.targets.get(&evaluation_key(&root)).cloned(),
+            agent: self.agent_id_in_front(),
+            root,
+        }
+    }
+
     /// Where a new agent's directory step opens: the project of the agent
     /// in front, else the project the space's latest agent works in, else
     /// nowhere in particular — the home directory.

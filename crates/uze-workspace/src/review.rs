@@ -166,13 +166,15 @@ pub fn forget(home: &UzeHome, project_root: &Path, agent: &AgentId) {
     let _ = std::fs::remove_file(store_path(home, project_root, agent));
 }
 
-/// The project and agent whose checkout `checkout` is: the one agent the
-/// nearest project's records place there. Several agents working in one
-/// directory have no checkout of their own, and a review kept for one of
-/// them could be sent to another, so they have none.
+/// The project and agent whose review is being read in `checkout`: the
+/// agent `in_front`, when the nearest project's records place it there, or
+/// with nobody in front the one agent they place there. Agents sharing a
+/// directory share its diff and keep a review each, so which of them is
+/// meant is never guessed from the directory.
 pub fn agent_of_checkout(
     home: &UzeHome,
     checkout: &Path,
+    in_front: Option<&str>,
 ) -> std::result::Result<(std::path::PathBuf, AgentId), NoReview> {
     let checkout = checkout
         .canonical()
@@ -196,10 +198,17 @@ pub fn agent_of_checkout(
         // lookup goes on up.
         (!here.is_empty()).then(|| (root.to_path_buf(), here))
     });
-    match found {
-        Some((root, mut here)) if here.len() == 1 => Ok((root, here.remove(0))),
-        Some((_, here)) if here.len() > 1 => Err(NoReview::Shared(here.len())),
-        _ => Err(NoReview::NoAgent),
+    let Some((root, mut here)) = found else {
+        return Err(NoReview::NoAgent);
+    };
+    match in_front {
+        Some(agent) => here
+            .into_iter()
+            .find(|id| id.as_str() == agent)
+            .map(|id| (root, id))
+            .ok_or(NoReview::NoAgent),
+        None if here.len() == 1 => Ok((root, here.remove(0))),
+        None => Err(NoReview::Shared(here.len())),
     }
 }
 
@@ -207,7 +216,7 @@ pub fn agent_of_checkout(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NoReview {
     NoAgent,
-    /// So many agents work in it.
+    /// So many agents work in it, and none of them is in front.
     Shared(usize),
 }
 
@@ -215,28 +224,34 @@ impl From<NoReview> for UzeError {
     fn from(reason: NoReview) -> Self {
         UzeError::AgentWork(match reason {
             NoReview::NoAgent => "no agent UZE launched works in this checkout".to_owned(),
-            NoReview::Shared(many) => format!(
-                "{many} agents work in this checkout; a review is kept for an agent with a checkout of its own"
-            ),
+            NoReview::Shared(many) => {
+                format!("{many} agents work in this checkout and none is in front")
+            }
         })
     }
 }
 
-/// The review of the agent working in `checkout`, for the review surface.
-pub fn of_checkout(home: &UzeHome, checkout: &Path) -> Result<ReviewRecord> {
-    let (project, agent) = agent_of_checkout(home, checkout)?;
+/// The review of the agent [`agent_of_checkout`] answers, for the review
+/// surface.
+pub fn of_checkout(
+    home: &UzeHome,
+    checkout: &Path,
+    in_front: Option<&str>,
+) -> Result<ReviewRecord> {
+    let (project, agent) = agent_of_checkout(home, checkout, in_front)?;
     load(home, &project, &agent)
 }
 
-/// [`update`], for the agent working in `checkout`, by the person
+/// [`update`], for the agent [`agent_of_checkout`] answers, by the person
 /// reviewing: what the agent wrote is the agent's, so the answers on disk
 /// and an answered status stand whatever `change` leaves.
 pub fn update_checkout(
     home: &UzeHome,
     checkout: &Path,
+    in_front: Option<&str>,
     change: impl FnOnce(&mut ReviewRecord),
 ) -> Result<ReviewRecord> {
-    let (project, agent) = agent_of_checkout(home, checkout)?;
+    let (project, agent) = agent_of_checkout(home, checkout, in_front)?;
     update(home, &project, &agent, |record| {
         let agents: BTreeMap<u64, (Vec<String>, bool)> = record
             .comments
@@ -499,7 +514,7 @@ mod tests {
         sent_to(&home, &root, &only.0);
         let stale = load(&home, &root, &only.0).unwrap();
         reply(&home, claim(&only, &root), "1/1", "done").unwrap();
-        let kept = update_checkout(&home, &root, |record| {
+        let kept = update_checkout(&home, &root, None, |record| {
             *record = stale.clone();
             record.viewed.insert("naming.rs".to_owned(), 7);
         })
@@ -539,15 +554,47 @@ mod tests {
         store.upsert(agent);
         task::save(&home, &root, &store).unwrap();
         task::save(&home, &checkout, &AgentStore::default()).unwrap();
-        assert_eq!(agent_of_checkout(&home, &checkout), Ok((root, id)));
+        assert_eq!(agent_of_checkout(&home, &checkout, None), Ok((root, id)));
     }
 
     #[test]
-    fn a_checkout_two_agents_share_keeps_no_review() {
+    fn a_checkout_two_agents_share_keeps_no_review_with_neither_in_front() {
         let (home, root, _, _) = two_agents("review-shared");
-        assert_eq!(agent_of_checkout(&home, &root), Err(NoReview::Shared(2)));
-        assert!(of_checkout(&home, &root).is_err());
-        assert!(update_checkout(&home, &root, |record| record.next_send = 1).is_err());
+        assert_eq!(
+            agent_of_checkout(&home, &root, None),
+            Err(NoReview::Shared(2))
+        );
+        assert!(of_checkout(&home, &root, None).is_err());
+        assert!(update_checkout(&home, &root, None, |record| record.next_send = 1).is_err());
+    }
+
+    /// The bug this guards: a shared checkout refused every review, so an
+    /// agent without a worktree could not be reviewed at all.
+    #[test]
+    fn agents_sharing_a_checkout_keep_a_review_each_for_the_one_in_front() {
+        let (home, root, first, second) = two_agents("review-shared-front");
+        update_checkout(&home, &root, Some(first.0.as_str()), |record| {
+            record.viewed.insert("first.rs".to_owned(), 1);
+        })
+        .unwrap();
+        let of =
+            |agent: &(AgentId, String)| of_checkout(&home, &root, Some(agent.0.as_str())).unwrap();
+        assert_eq!(of(&first).viewed.get("first.rs"), Some(&1));
+        assert!(
+            of(&second).viewed.is_empty(),
+            "the first's is not the second's"
+        );
+    }
+
+    /// An agent in front that does not work here is told so, never handed
+    /// the review of the one that does.
+    #[test]
+    fn an_agent_in_front_that_does_not_work_here_gets_no_ones_review() {
+        let (home, root, _, _) = two_agents("review-elsewhere");
+        assert_eq!(
+            agent_of_checkout(&home, &root, Some("elsewhere")),
+            Err(NoReview::NoAgent)
+        );
     }
 
     #[test]

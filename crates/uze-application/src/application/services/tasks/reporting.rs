@@ -35,21 +35,27 @@ impl Workspace<'_> {
 }
 
 impl Workspace<'_> {
-    /// The review the operator keeps for the agent working in `checkout`.
+    /// The review the operator keeps for the agent `in_front` in
+    /// `checkout`, or with none in front for the one agent working there.
     #[tracing::instrument(name = "workspace.review_of_checkout", level = "trace", skip_all, err)]
-    pub fn review_of_checkout(&self, checkout: &std::path::Path) -> Result<ReviewRecord> {
-        uze_workspace::review::of_checkout(&self.0.home, checkout)
+    pub fn review_of_checkout(
+        &self,
+        checkout: &std::path::Path,
+        in_front: Option<&str>,
+    ) -> Result<ReviewRecord> {
+        uze_workspace::review::of_checkout(&self.0.home, checkout, in_front)
     }
 
-    /// Edits the review of the agent working in `checkout` under the
-    /// review lock, answering what was written.
+    /// Edits that review under the review lock, answering what was
+    /// written.
     #[tracing::instrument(name = "workspace.update_review", skip_all, err)]
     pub fn update_review(
         &self,
         checkout: &std::path::Path,
+        in_front: Option<&str>,
         change: impl FnOnce(&mut ReviewRecord),
     ) -> Result<ReviewRecord> {
-        uze_workspace::review::update_checkout(&self.0.home, checkout, change)
+        uze_workspace::review::update_checkout(&self.0.home, checkout, in_front, change)
     }
 
     /// What `uze agent review show` prints for the agent a claim
