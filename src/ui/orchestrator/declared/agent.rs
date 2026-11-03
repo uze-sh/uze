@@ -187,7 +187,7 @@ impl WorkspaceModel {
         {
             return refuse(self, "extensions are paused (F8)");
         }
-        let Some(agent) = request.agent.clone().or_else(|| self.agent_in_front()) else {
+        let Some(agent) = request.agent.clone().or_else(|| self.agent_id_in_front()) else {
             return refuse(self, "no agent is in front");
         };
         let Some(seen) = self
@@ -297,12 +297,6 @@ impl WorkspaceModel {
             engine.agent_write(action, written);
             self.dirty = true;
         }
-    }
-
-    /// The agent of the tab in front, when it is one UZE launched.
-    fn agent_in_front(&self) -> Option<String> {
-        let tab = self.session.as_ref()?.selected_tab();
-        launched_agent_id(tab).map(str::to_owned)
     }
 
     /// Takes the answer off the question: allowing hands the write to the
