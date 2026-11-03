@@ -6,8 +6,8 @@ description: What the workspace shows beside your agents, the official ones, how
 An extension is something the workspace shows beside your agents: a line in
 the bar under the agent area, a drawer beside the agent, a block of the
 sidebar, a band over its pane, a full-frame view. Harnesses never see one.
-Three are built in ([Spec](/docs/workspace/spec), [Architect](/docs/workspace/architect)
-and [Code](/docs/workspace/code)), and a plugin can bring more.
+Four are built in ([Spec](/docs/workspace/spec), [Architect](/docs/workspace/architect),
+[Code](/docs/workspace/code) and [Review](/docs/workspace/review)), and a plugin can bring more.
 
 ## Official extensions
 
@@ -96,6 +96,15 @@ terminal, `uze config extension architect off` does the same, and
 ```toml
 [extensions]
 architect = false
+```
+
+An extension's own preferences are edited in the same place and kept beside
+that choice, under its id. They stay there when its plugin is removed, and a
+value the extension does not admit reads as its default.
+
+```toml
+[preferences.review]
+mark-viewed-automatically = false
 ```
 
 ## Writing an extension

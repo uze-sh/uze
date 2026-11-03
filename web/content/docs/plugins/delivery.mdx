@@ -8,10 +8,11 @@ to do per agent. This page explains how, and what keeps it safe.
 
 ## One copy, many deliveries
 
-An installed plugin's files live in one place, the **store** in `~/.uze`. No
-agent ever writes into it. Everything an agent reads is *delivered* from
-there: a link, a generated folder, an entry in the agent's config. A delivery can
-always be deleted and rebuilt from the store.
+An installed plugin's files live in one place, `~/.uze/sources`. No agent reads
+it. Everything an agent reads is *delivered* from there: a build in the agent's
+own directory of `~/.uze/store`, a link, an entry in the agent's config.
+Deleting a build uninstalls the plugin from that agent; `uze doctor` reports it,
+and the plugin's files are still in the sources to build from.
 
 ## The most native route wins
 

@@ -64,7 +64,7 @@ yourself, the workspace to run them, or both.
 - [x] Agent & hook portability · Native package delivery
 - [x] Environment maintenance · Terminal workspace with isolated agents
 - [x] Reproducible project environments · Theming · Linux releases · macOS releases · Windows releases
-- [x] Spec, Architect & Code extensions · Plugin freshness · Records that survive an upgrade
+- [x] Spec, Architect, Code & Review extensions · Plugin freshness · Records that survive an upgrade
 - [ ] Requirements & dependencies · Plugin versioning · Security & trust
 - [ ] Signed Windows binaries · Runtime context projection · Migration tooling · Ecosystem expansion
 
