@@ -1,7 +1,7 @@
 //! The flags an Antigravity CLI launch takes, as offered to an operator's
 //! overrides. This integration manages no variable of its own.
 //!
-//! Described from `help.txt`, the `--help` of agy 1.4.12; every flag it
+//! Described from `help.txt`, the `--help` of agy 1.5.0; every flag it
 //! defines is catalogued or left out for a reason the tests name, and only
 //! flags that act in print mode alone are left out.
 
@@ -15,6 +15,7 @@ use super::session::{FIRST_TURN_FLAG, RESUME_FLAG};
 
 const CONTINUITY: &str = "uze continues this agent's conversation itself";
 const INTERACTIVE: &str = "a workspace agent is interactive";
+const ON_THIS_MACHINE: &str = "uze finds the agent's conversation among this machine's sessions";
 
 /// Read as Go's `flag` package reads agy's command line ("Usage of agy:").
 pub(super) const CATALOG: FlagCatalog = FlagCatalog::new(FlagGrammar::GoFlag, FLAGS);
@@ -86,6 +87,12 @@ const FLAGS: &[FlagSpec] = &[
         FlagValue::None,
         "a remote connection for the session on startup",
         Operator,
+    ),
+    FlagSpec::new(
+        &["--remote-agent"],
+        FlagValue::None,
+        "the session's conversations on remote agents",
+        Uze(ON_THIS_MACHINE),
     ),
     FlagSpec::new(
         &["--dangerously-skip-permissions"],

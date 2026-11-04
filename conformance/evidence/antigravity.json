@@ -1,12 +1,12 @@
 {
  "harness": "antigravity",
- "harness_version": "1.4.12",
- "uze_version": "uze 1.0.0-beta.21",
- "fixture_revision": "7fc7124d308c7b4f",
- "recorded_at": "2026-10-30T23:03:49-0300",
+ "harness_version": "1.5.0",
+ "uze_version": "uze 1.0.0-beta.24",
+ "fixture_revision": "4daf54ca622e6895",
+ "recorded_at": "2026-11-04T05:30:53-0300",
  "gate": {
-  "passed": 198,
-  "total": 198,
+  "passed": 240,
+  "total": 240,
   "declared": 9,
   "retry": 0,
   "failures": []

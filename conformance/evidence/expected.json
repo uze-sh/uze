@@ -62,7 +62,8 @@
         "1.3.3",
         "1.4.4",
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-05"
     },
@@ -171,7 +172,8 @@
         "1.4.2",
         "1.4.4",
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-19"
     },
@@ -185,7 +187,8 @@
         "1.4.3",
         "1.4.4",
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-20"
     },
@@ -197,7 +200,8 @@
       "measurement": "the turn settled after the matching write returned, and no request carried the glob rule's body",
       "versions": [
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-27"
     },
@@ -209,7 +213,8 @@
       "measurement": "no glob rule reached the model at all, so its early arrival is unobservable while the rule is missing",
       "versions": [
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-27"
     },
@@ -221,7 +226,8 @@
       "measurement": "the plugin's glob rule is copied into the declaring checkout, and no request after the matching write carried it",
       "versions": [
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-27"
     },
@@ -233,7 +239,8 @@
       "measurement": "the plugin's glob rule never reached the model, so its count is unobservable while the rule is missing",
       "versions": [
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-27"
     },
@@ -245,7 +252,8 @@
       "measurement": "the plugin's glob rule never reached the model, so a leak into the undeclaring checkout is unobservable while the rule is missing",
       "versions": [
         "1.4.8",
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-27"
     },
@@ -256,7 +264,8 @@
       "reason": "Antigravity's `run_command` declares no working directory: every command runs in the workspace, and a call naming one is refused before any hook runs",
       "measurement": "the shell calls naming a directory (`Cwd`) reached no hook and left no trace of having run",
       "versions": [
-        "1.4.12"
+        "1.4.12",
+        "1.5.0"
       ],
       "observed_at": "2026-10-31"
     },
