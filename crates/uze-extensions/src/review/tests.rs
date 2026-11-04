@@ -2157,3 +2157,155 @@ fn a_file_read_while_only_the_commit_moved_is_still_marked() {
     view.step_file(ScrollDirection::Down);
     assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
 }
+
+fn scrolled_to_an_answered_comment(space: Size) -> ReviewView {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        space,
+    );
+    handle_command(&mut view, Command::Comment, space);
+    handle_command(&mut view, Command::Type('x'), space);
+    handle_command(&mut view, Command::AddComment, space);
+    view.record.comments[0].status = CommentStatus::Answered;
+    view.scroll = render::lines(&view).len() - 1;
+    view
+}
+
+/// A step to a thread scrolls to it, so a short file's whole diff can stand
+/// above the screen. The comment going must bring it back.
+#[test]
+fn resolving_the_comment_on_show_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    handle_command(&mut view, Command::Resolve, space);
+    let total = render::lines(&view).len();
+    let visible = usize::from(crate::view::text_height(space));
+    assert_eq!(view.scroll, total.saturating_sub(visible));
+    assert!(line_texts(&view).iter().any(|line| !line.trim().is_empty()));
+}
+
+#[test]
+fn deleting_the_comment_on_show_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    view.record.comments[0].status = CommentStatus::Draft;
+    let id = view.record.comments[0].id;
+    perform(&mut view, Act::Delete(id), space);
+    let total = render::lines(&view).len();
+    let visible = usize::from(crate::view::text_height(space));
+    assert_eq!(view.scroll, total.saturating_sub(visible));
+}
+
+/// Taking a comment away never moves a diff that still fills the screen.
+#[test]
+fn resolving_a_comment_keeps_the_scroll_while_lines_fill_the_screen() {
+    let space = Size {
+        width: 100,
+        height: 4,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    view.scroll = 0;
+    handle_command(&mut view, Command::Resolve, space);
+    assert_eq!(view.scroll, 0);
+}
+
+/// `r` with nothing to resolve takes no line away, so it moves nothing.
+#[test]
+fn resolving_nothing_keeps_the_scroll() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = reviewing();
+    view.scroll = render::lines(&view).len() - 1;
+    let scroll = view.scroll;
+    handle_command(&mut view, Command::Resolve, space);
+    assert_eq!(view.scroll, scroll);
+}
+
+fn scrolled_to_a_composer(space: Size) -> ReviewView {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        space,
+    );
+    handle_command(&mut view, Command::Comment, space);
+    view.scroll = render::lines(&view).len() - 1;
+    view
+}
+
+/// A composer put away takes as many lines with it as a comment does.
+#[test]
+fn closing_the_composer_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_a_composer(space);
+    handle_command(&mut view, Command::Close, space);
+    let total = render::lines(&view).len();
+    assert_eq!(
+        view.scroll,
+        total.saturating_sub(usize::from(crate::view::text_height(space)))
+    );
+}
+
+#[test]
+fn discarding_the_composer_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_a_composer(space);
+    perform(&mut view, Act::Discard, space);
+    let total = render::lines(&view).len();
+    assert_eq!(
+        view.scroll,
+        total.saturating_sub(usize::from(crate::view::text_height(space)))
+    );
+}
+
+/// A press arrives in cells and the composer's caret counts characters: a
+/// wide glyph is two of one and one of the other.
+#[test]
+fn a_press_in_the_composer_past_wide_glyphs_lands_on_its_character() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    for character in "日本語 ok".chars() {
+        handle_command(&mut view, Command::Type(character), SPACE);
+    }
+    let line = render::lines(&view)
+        .iter()
+        .position(|drawn| drawn.line == surface::Line::Composer(0))
+        .expect("the composer is drawn");
+    let cell = render::RULE.chars().count()
+        + "日本語 "
+            .chars()
+            .map(|c| if c == ' ' { 1 } else { 2 })
+            .sum::<usize>();
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell }, SPACE);
+    assert_eq!(view.composer.as_ref().unwrap().caret.column, 4, "on the o");
+}

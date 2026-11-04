@@ -58,7 +58,7 @@ it was asked, the `agents.yaml` settings of the checkout it works in, and its
 project's plugins, memory and worktrees.
 
 The right end of the tab strip counts the selected checkout's changes
-(`+12 -3`; click it to open [Code](/docs/workspace/code)). For an agent in your
+(`+12 -3`; click it to open the [Review](/docs/workspace/review)). For an agent in your
 own checkout it also shows what a pull would bring (`↓2`) and a push would send
 (`↑1`). Click the pull count to fast-forward.
 
@@ -91,18 +91,19 @@ uze config notification silent  # never
 
 ## Extensions
 
-An extension is something the workspace shows beside your agents. Three are
+An extension is something the workspace shows beside your agents. Four are
 built in, and a plugin can bring more.
 
 The built-in ones follow the order you read a change in: what it intends, how
-the project is shaped, and what the code now is. Each opens where the
-selected tab is and closes with the same key.
+the project is shaped, what the code now is, and what the branch changes. Each
+opens where the selected tab is and closes with the same key.
 
 | | Key | Shows |
 | --- | --- | --- |
 | [Spec](/docs/workspace/spec) | `Alt+X` | The change the agent works from: proposal, design, tasks |
 | [Architect](/docs/workspace/architect) | `Alt+A` | The project's diagrams |
-| [Code](/docs/workspace/code) | `Alt+G` | What the agent changed, its files and a map of the checkout |
+| [Code](/docs/workspace/code) | `Alt+E` | The checkout's files, a search over them and a map |
+| [Review](/docs/workspace/review) | `Alt+G` | What the agent's branch changes, commented line by line and sent back to the agent |
 
 A plugin can bring more, in the bar under the agent area, in the sidebar, in
 a drawer beside the agent or in a band over its pane. The official
@@ -114,7 +115,8 @@ allow and turn off each one and what the official ones show, and
 ## Management
 
 `Ctrl+O`, or the mark at the top right of the sidebar, opens management over
-the workspace and closes it again: your plugins and marketplaces
+the workspace and closes it again: what every agent carries on this machine
+and what it costs (**Overview**), your plugins and marketplaces
 (**Marketplace**), each agent's setup (**Integrations**), **Extensions**,
 **Shortcuts**, and appearance and notifications (**Settings**), all with the
 mouse.
@@ -122,6 +124,7 @@ mouse.
 <Cards>
   <Card title="Running agents" href="/docs/workspace/agents" />
   <Card title="Spec" href="/docs/workspace/spec" />
+  <Card title="Review" href="/docs/workspace/review" />
   <Card title="Extensions" href="/docs/workspace/extensions" />
   <Card title="Shortcuts" href="/docs/workspace/keys" />
 </Cards>

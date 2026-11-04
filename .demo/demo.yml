@@ -212,7 +212,7 @@ beats:
     pause: 3.0
   # By chord, straight across from the architect: its scope binds the code
   # surface's chords too, so no Escape has to unwind the level entered above.
-  - say: and what it is — that agent's uncommitted change, in its own checkout
+  - say: and what it changes — that agent's branch, in the review
     key: M-g
     expect: 'DIFF ·'
     expect_timeout: 10

@@ -124,31 +124,27 @@ list. Nothing that executes is updated without asking.
 
 ## Removing uze
 
-1. Take every plugin off your agents, while uze is still here:
+`uze uninstall` shows its plan and changes nothing until you confirm it.
 
-   ```bash
-   uze status -m          # the plugins on this machine
-   uze remove <plugin> -m # once per plugin
-   ```
+```bash
+uze uninstall           # remove the program; every plugin it delivered keeps working
+uze uninstall --purge   # also take back everything it delivered, and remove ~/.uze
+```
 
-2. Stop the workspace and every process in it: `uze workspace stop`.
-3. In each project, delete `agents.yaml`, `agents.lock` and `.worktrees/` if you
-   no longer want them, the plugin folders named `<plugin>@<market>` under
-   `.agents/rules/`, and their entries in `.agents/rules.json`. Nothing was written into `AGENTS.md`, so there is nothing to
-   take out of it.
-4. Delete the binary and uze's home:
+`--yes` skips the question. Do not delete `~/.uze` by hand: your agents read
+their plugins from it. On Windows, the installer does the same, and takes uze
+off your `Path`:
 
-   ```bash
-   rm "$(command -v uze)"
-   rm -rf ~/.uze
-   ```
+```powershell
+& ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall -Purge
+```
 
-   On Windows, the installer does it, and takes uze off your `Path`:
+Leave out `-Purge` to keep `~\.uze`.
 
-   ```powershell
-   & ([scriptblock]::Create((irm https://uze.sh/i))) -Uninstall -Purge
-   ```
-
-   Leave out `-Purge` to keep `~\.uze`.
+A project keeps what it declares. In each one, delete `agents.yaml`,
+`agents.lock` and `.worktrees/` if you no longer want them, the plugin folders
+named `<plugin>@<market>` under `.agents/rules/`, and their entries in
+`.agents/rules.json`. Nothing was written into `AGENTS.md`, so there is nothing
+to take out of it.
 
 The agents themselves stay installed; remove them the way their vendor says.

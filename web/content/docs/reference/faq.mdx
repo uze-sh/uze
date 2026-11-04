@@ -58,8 +58,9 @@ each harness, with the reason. It never drops a capability silently. See
 ## Can I delete `~/.uze/runtime` or `~/.uze/cache`?
 
 Yes, and `~/.uze/shims` too: all three are rebuilt the next time they are
-needed. `~/.uze/store` holds the plugins you installed, which come back only by
-installing them again. `~/.uze/state` is the one to keep: it records what uze
+needed. `~/.uze/sources` holds the plugins you installed, which come back only
+by installing them again. `~/.uze/store` is what your agents read, and deleting
+it uninstalls their plugins. `~/.uze/state` is the one to keep: it records what uze
 placed where, the marketplaces you registered, the commands you approved and
 your agents' history. `config.toml`, `keys.json` and
 `themes/` are files you wrote.

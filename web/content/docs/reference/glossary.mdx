@@ -17,8 +17,11 @@ servers, agents, hooks and rules. See [Creating a plugin](/docs/plugins/creating
 locally. Every plugin is resolved through one. `uze` ships inside the
 binary, and a project declares its plugins with no source.
 
-**Store.** Where uze keeps a plugin's bytes, under `~/.uze/store`. The single
-source of truth. No harness reads it directly.
+**Sources.** Where uze keeps a plugin's bytes, under `~/.uze/sources`. The
+single source of truth. No harness reads it directly.
+
+**Store.** What the harnesses read, under `~/.uze/store`: one directory per
+vendor, holding one build of each plugin. Deleting it uninstalls their plugins.
 
 **Capability.** One kind of thing a plugin declares: a skill, an MCP server, an
 agent or a hook. See [Plugin format](/docs/reference/plugin-format).

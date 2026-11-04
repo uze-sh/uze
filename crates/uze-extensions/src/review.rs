@@ -52,7 +52,7 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     name: "Review",
     description: "The selected agent's branch against its target, commented line by line and sent back to the agent.",
     surface: "Workspace TUI",
-    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), s to tell the agent its review waits, o to open a line in the code surface.",
+    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), o to open a line in the code surface. Send the drafts from the comment count in the bar beside the agent.",
     declares: preferences,
 };
 
@@ -122,8 +122,10 @@ pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Siz
             Command::CaretLineEnd => composer.line_end(),
             Command::SelectPrevious => composer.up(),
             Command::SelectNext => composer.down(),
-            Command::AddComment | Command::Save => view.add_comment(),
-            Command::Close => view.cancel_composer(),
+            Command::AddComment | Command::Save => {
+                taking_lines_away(view, space, ReviewView::add_comment);
+            }
+            Command::Close => taking_lines_away(view, space, ReviewView::cancel_composer),
             _ => {}
         }
         keep_composer_in_view(view, space);
@@ -179,7 +181,7 @@ pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Siz
         Command::OpenInCode => return Asked::OpenInCode,
         Command::NextThread => view.go_to_thread(true),
         Command::PreviousThread => view.go_to_thread(false),
-        Command::Resolve => resolve_near_cursor(view),
+        Command::Resolve => taking_lines_away(view, space, resolve_near_cursor),
         Command::OpenMenu => open_menu(view),
         Command::ScrollPageDown => {
             view.scroll = view.scroll.saturating_add(usize::from(space.height).max(1));
@@ -273,7 +275,7 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
                     // columns do not.
                     let prefix = render::RULE.chars().count();
                     if let Some(composer) = view.composer.as_mut() {
-                        composer.place(index, cell.saturating_sub(prefix));
+                        composer.place_at_cell(index, cell.saturating_sub(prefix));
                     }
                 }
                 (Some(Line::ComposerPad), None) => {
@@ -297,8 +299,12 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
 fn perform(view: &mut ReviewView, act: Act, space: Size) {
     match act {
         Act::Edit(id) => view.edit_comment(id),
-        Act::Delete(id) => view.change(change::Change::Delete(id)),
-        Act::Resolve(id) => view.change(change::Change::Resolve(id)),
+        Act::Delete(id) => taking_lines_away(view, space, |view| {
+            view.change(change::Change::Delete(id));
+        }),
+        Act::Resolve(id) => taking_lines_away(view, space, |view| {
+            view.change(change::Change::Resolve(id));
+        }),
         Act::Comment => {
             view.open_composer();
             keep_composer_in_view(view, space);
@@ -308,8 +314,8 @@ fn perform(view: &mut ReviewView, act: Act, space: Size) {
                 composer.insert_block();
             }
         }
-        Act::Save => view.add_comment(),
-        Act::Discard => view.cancel_composer(),
+        Act::Save => taking_lines_away(view, space, ReviewView::add_comment),
+        Act::Discard => taking_lines_away(view, space, ReviewView::cancel_composer),
     }
 }
 
@@ -456,6 +462,19 @@ fn keep_composer_in_view(view: &mut ReviewView, space: Size) {
 fn clamp_scroll(view: &mut ReviewView) {
     let total = render::lines(view).len();
     view.scroll = view.scroll.min(total.saturating_sub(1));
+}
+
+/// What `change` takes away shortens what is under the scroll, and a thread
+/// or a composer is shown scrolled to it: left where it was, the file reads
+/// as empty. A change that took no line away moves nothing.
+fn taking_lines_away(view: &mut ReviewView, space: Size, change: impl FnOnce(&mut ReviewView)) {
+    let before = render::lines(view).len();
+    change(view);
+    let total = render::lines(view).len();
+    let visible = usize::from(crate::view::text_height(space));
+    if total < before && view.scroll + visible > total {
+        view.scroll = total.saturating_sub(visible);
+    }
 }
 
 pub(crate) fn handle_scroll(view: &mut ReviewView, direction: ScrollDirection, at_end: bool) {

@@ -83,7 +83,7 @@ beats:
     pause: 1.6
   - say: back to the workspace, drawn in what was chosen
     key: C-o
-    refuse: manage\s+1 Marketplace\s+2 Integrations
+    refuse: manage\s+1 Overview\s+2 Marketplace
     pause: 2.6
   - say: and out
     end: C-q

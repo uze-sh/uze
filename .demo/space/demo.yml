@@ -106,9 +106,8 @@ beats:
   - say: agents.yaml's workspace section, as a form
     key: '2'
     # The agent in front works in a worktree, so its Settings edit that
-    # checkout's agents.yaml and say so; the project's own hint is the
-    # primary checkout's.
-    expect: this worktree's agents\.yaml
+    # checkout's copy, and the form's head says so.
+    expect: worktree copy
     expect_in: pane
     expect_timeout: 6
     pause: 1.6

@@ -3,13 +3,20 @@ title: Review
 description: "Read what an agent's branch changes, comment on its lines, and send the comments to the agent"
 ---
 
+<Demo
+  cast="/casts/review.cast"
+  posterAt={48}
+  alt="The review: files marked viewed, lines marked and commented with a code block, the drafts sent to the agent, its answers under each comment, and a viewed file marked changed once the agent rewrites it."
+  caption="Alt+G opens it, or the +N -M on the tab strip."
+/>
+
 Everything the selected agent's branch changes against its target, file by
 file. Comment on the lines you would change, send the comments to the agent,
 and read its answers under them.
 
 The `+N -M` on the tab strip opens it, as does `Alt+G`. It counts the lines the
-branch adds and removes against its target, committed or not. With nothing to
-review it reads `review`. The comments waiting on you are counted inside the
+branch adds and removes against its target, committed or not. A checkout with
+nothing changed has no count. The comments waiting on you are counted inside the
 review, beside `viewed`, where `‹` and `›` (or `n` and `p`) step through them.
 
 | Key | Does |
@@ -59,6 +66,10 @@ the lines it was about.
 `v` marks the file on show as read. The list shows a check beside it and counts
 how many are. When the agent changes a file after you viewed it, the check turns
 to the warning colour and stops counting, whether or not the file is on show.
+
+A file you read to its last line, on show for at least two seconds, is marked
+as you leave it. **Mark viewed once read**, under the review in management's
+**Extensions**, turns that off.
 
 `all` shows the branch against its target; `uncommitted` only what is not
 committed yet. Comments and viewed marks are kept for the agent across

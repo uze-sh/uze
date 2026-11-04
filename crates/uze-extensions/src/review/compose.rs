@@ -183,6 +183,12 @@ impl Composer {
         };
     }
 
+    /// [`Self::place`], from the cells a press counted.
+    pub(crate) fn place_at_cell(&mut self, line: usize, cell: usize) {
+        let line = line.min(self.lines.len() - 1);
+        self.place(line, crate::view::column_at_cell(&self.lines[line], cell));
+    }
+
     /// An empty fenced block in the file's language, on lines of its
     /// own, with the caret on its one empty line: what goes in it is the
     /// operator's to write.

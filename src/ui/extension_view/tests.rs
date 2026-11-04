@@ -3423,3 +3423,533 @@ fn a_chip_lifts_under_the_pointer() {
     );
     assert_eq!(pointed[at(1)].fg, rest[at(1)].fg, "the other stays");
 }
+
+fn card_line(text: &str) -> ContentLine {
+    ContentLine {
+        tone: LineTone::Card(Role::Success),
+        ..code_line(text)
+    }
+}
+
+fn row_text(buffer: &ratatui::buffer::Buffer, x: u16, y: u16, width: u16) -> String {
+    (x..x + width)
+        .map(|x| buffer[(x, y)].symbol().to_owned())
+        .collect()
+}
+
+/// The card's rule stands on each row's first cell, so a folded row starting
+/// there lost a character to it: `config::` read as `onfig::`.
+#[test]
+fn a_cards_folded_row_hangs_clear_of_its_rule() {
+    let line = card_line("    abcdefghijkl mnop");
+    let drawn = drawn_with_caret(&line, 12, 99);
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 0, 11), "   abcdefgh");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 11), "   ijkl    ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 11), "   mnop    ");
+    for y in 0..3 {
+        assert_eq!(
+            drawn[(GUTTER_WIDTH, y)].symbol(),
+            theme::glyph(Symbol::BarMedium)
+        );
+    }
+    assert_eq!(
+        lines::line_height(&line, GUTTER_WIDTH + 12, GUTTER_WIDTH),
+        3
+    );
+}
+
+/// Prose folds at words, which a window with no numbers on show asks for.
+#[test]
+fn a_cards_prose_folds_at_words_and_keeps_every_character() {
+    let line = card_line("    Renamed with config");
+    let rows: Vec<String> = folded_rows(&line, 14, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    Renamed ", "    with ", "    config"]);
+}
+
+/// A word as wide as the row breaks at the cell without a row left empty.
+#[test]
+fn a_word_wider_than_a_cards_row_never_leaves_an_empty_row() {
+    let line = card_line("    abcdefghijklmnop");
+    let rows: Vec<String> = folded_rows(&line, 10, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef", "    ghijkl", "    mnop"]);
+}
+
+/// The caret walks the same rows the text is drawn on, its end included.
+#[test]
+fn the_caret_on_a_cards_folded_row_stands_on_its_character() {
+    let line = card_line("    abcdefghij");
+    let drawn = drawn_with_caret(&line, 12, 13);
+    let caret = (GUTTER_WIDTH + 5, 1);
+    assert_eq!(drawn[caret].symbol(), "j");
+    assert_eq!(drawn[caret].bg, theme::color(Token::Accent));
+}
+
+/// A press on a folded row counts the cells the rows above really hold,
+/// words broken early included, or the caret lands past what was pressed.
+#[test]
+fn a_cards_rows_say_how_much_text_comes_before_them() {
+    let line = card_line("    Renamed with config");
+    assert_eq!(row_starts(&line, 14, Breaks::Words), [0, 12, 17]);
+    let row = Rect::new(0, 1, GUTTER_WIDTH + 14, 1);
+    let first_on_row = GUTTER_WIDTH + 4;
+    assert_eq!(
+        lines::caret_cell_at(row, 12 - 4, first_on_row, GUTTER_WIDTH),
+        12,
+        "the first cell of the second row is that far into the text"
+    );
+}
+
+/// A comment breaks between its words whether or not a numbered line is on
+/// screen beside it.
+#[test]
+fn a_card_folds_at_words_beside_numbered_lines() {
+    let line = card_line("    Renamed with config");
+    let drawn = drawn_with_caret(&line, 14, 99);
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 0, 13), "   Renamed   ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 13), "   with      ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 13), "   config    ");
+}
+
+/// Only a card's rows hang: a file's code wraps to the edge it starts from.
+#[test]
+fn a_neutral_line_folds_from_the_edge() {
+    let rows: Vec<String> = folded_rows(&code_line("    abcdefghij"), 10, Breaks::Cells)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef", "ghij"]);
+}
+
+/// A view of one card line, and what its frame recorded about it.
+fn drawn_card(spans: Vec<Span>) -> (Rendered, Vec<(Rect, ViewHit)>) {
+    let mut view = sample();
+    let Content::Lines { lines, total, .. } = &mut view.content else {
+        unreachable!("the sample is lines")
+    };
+    *lines = vec![ContentLine {
+        gutter: String::new(),
+        number: String::new(),
+        tone: LineTone::Card(Role::Warning),
+        spans,
+        marked: false,
+    }];
+    *total = 1;
+    let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+    let mut hits = Vec::new();
+    let mut rendered = None;
+    terminal
+        .draw(|frame| {
+            rendered = Some(render(
+                frame,
+                &view,
+                frame.area(),
+                NavigatorFrame {
+                    width: Some(24),
+                    scroll: NavigatorScroll::default(),
+                    resizing: false,
+                    sliding: None,
+                },
+                FooterKeys {
+                    scope: uze_keys::Scope::Review,
+                    hovered: None,
+                    host: &[],
+                },
+                None,
+                &mut hits,
+            ));
+        })
+        .unwrap();
+    (rendered.expect("drawn"), hits)
+}
+
+/// A card's first line with `words` filling its first row, so the action
+/// after them folds to the second.
+fn a_header_whose_action_folds() -> (Rendered, Vec<(Rect, ViewHit)>) {
+    let (rendered, _) = drawn_card(vec![Span::new("  measure", Role::Muted)]);
+    let room = usize::from(rendered.text_rows[0].area.width - rendered.content_gutter);
+    let words = format!("  {} ", "x".repeat(room - 6));
+    drawn_card(vec![
+        Span::new(words, Role::Muted),
+        Span::new("delete", Role::Faint).pressable(),
+    ])
+}
+
+/// What the workspace does with a press at `column` on `row` of the card.
+fn pressed_on(
+    rendered: &Rendered,
+    hits: &[(Rect, ViewHit)],
+    row: usize,
+    column: impl Fn(Rect) -> u16,
+) -> usize {
+    let area = rendered.text_rows[row].area;
+    let (rect, cell) = hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            ViewHit::PlaceCaret { line: 0, cell } if rect.y == area.y => Some((*rect, *cell)),
+            _ => None,
+        })
+        .expect("every row of the card takes a press");
+    pressed_cell(
+        &rendered.text_rows,
+        rect,
+        0,
+        cell,
+        column(rect),
+        rendered.content_gutter,
+    )
+}
+
+/// The word that acts stands on the row below. A press on the empty end of
+/// the row above is not a press on it: it deleted the draft unasked.
+#[test]
+fn a_press_past_a_cards_row_never_reaches_the_action_folded_below_it() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let on_action = rendered.text_rows[1].glyphs[0].index;
+    let cell = pressed_on(&rendered, &hits, 0, |rect| rect.right() - 1);
+    assert!(
+        cell < on_action,
+        "cell {cell} reaches the word at {on_action}"
+    );
+}
+
+/// The hang is not the row above: the press belongs to the row it is on.
+#[test]
+fn a_press_in_a_cards_hang_lands_at_its_rows_start() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let on_action = rendered.text_rows[1].glyphs[0].index;
+    let cell = pressed_on(&rendered, &hits, 1, |rect| rect.x);
+    assert_eq!(cell, on_action);
+}
+
+/// A word that acts is a target wherever it folded to, lifting under the
+/// pointer as it does on the first row.
+#[test]
+fn a_cards_action_is_a_target_on_the_row_it_folded_to() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let second = &rendered.text_rows[1];
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, ViewHit::Press { .. }))
+        .expect("the action is offered");
+    assert_eq!(rect.y, second.area.y);
+    assert_eq!(rect.x, second.glyphs[0].x);
+    assert_eq!(rect.width, 6);
+}
+
+/// The line in the height it really takes, as `render_lines` hands it over,
+/// with the caret at `column`.
+fn drawn_at_its_height(line: &ContentLine, width: u16, column: usize) -> ratatui::buffer::Buffer {
+    let total = GUTTER_WIDTH + width;
+    let area = Rect::new(0, 0, total, lines::line_height(line, total, GUTTER_WIDTH));
+    let mut terminal = Terminal::new(TestBackend::new(total, 4)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_line(
+                frame,
+                area,
+                line,
+                GUTTER_WIDTH,
+                true,
+                lines::LineLight::Rest,
+            );
+            render_caret(frame, area, line, column, GUTTER_WIDTH);
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+/// At the end of a full row the next character's cell is on a row the line
+/// does not have yet: the caret stands on the row's last cell until it does.
+#[test]
+fn the_caret_past_a_full_cards_row_stays_on_screen() {
+    let line = card_line("    abcdefghij");
+    let drawn = drawn_at_its_height(&line, 14, 14);
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 13, 0)].bg,
+        theme::color(Token::Accent)
+    );
+}
+
+/// A space that does not fit hangs past the edge, and the caret after it
+/// stays where it can be seen.
+#[test]
+fn the_caret_on_a_space_hung_past_a_cards_row_stays_on_screen() {
+    let line = card_line("    abcdefghij  ");
+    let drawn = drawn_at_its_height(&line, 14, 15);
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 13, 0)].bg,
+        theme::color(Token::Accent)
+    );
+}
+
+/// A line that folds past the content's foot is drawn as far as it fits, or
+/// the text being typed goes from the screen with its caret.
+#[test]
+fn a_line_folding_past_the_foot_draws_the_rows_that_fit() {
+    let (rendered, _) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(400)),
+        Role::Default,
+    )]);
+    assert!(rendered.text_rows.len() > 1, "the rows that fit are drawn");
+    assert!(!rendered.content_at_end);
+}
+
+/// What is cut stays cut: nothing is drawn or pressed past the foot.
+#[test]
+fn a_line_folding_past_the_foot_stops_at_it() {
+    let (rendered, hits) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(400)),
+        Role::Default,
+    )]);
+    let foot = rendered.text_rows.iter().map(|row| row.area.bottom()).max();
+    let pressed = hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, ViewHit::PlaceCaret { .. }))
+        .map(|(rect, _)| rect.bottom())
+        .max();
+    assert_eq!(
+        pressed, foot,
+        "a press answers only on rows that were drawn"
+    );
+    assert!(
+        foot.is_some_and(|foot| foot < 16),
+        "the footer keeps its row"
+    );
+}
+
+/// A line that only just fits has reached the end, and scrolling knows it.
+#[test]
+fn a_line_that_fits_reaches_the_end() {
+    let (rendered, _) = drawn_card(vec![Span::new("    a short comment", Role::Default)]);
+    assert!(rendered.content_at_end);
+}
+
+/// A minified file's only line is not folded whole on every frame just to
+/// show its first rows.
+#[test]
+fn a_line_many_screens_tall_is_not_drawn() {
+    let (rendered, _) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(5000)),
+        Role::Default,
+    )]);
+    assert!(rendered.text_rows.is_empty());
+    assert!(!rendered.content_at_end);
+}
+
+/// Words that act move to the next row as one, so a press on the empty end
+/// of the row above lands on nothing of theirs.
+#[test]
+fn words_that_act_fold_as_one() {
+    let line = ContentLine {
+        spans: vec![
+            Span::new("    abcdef ", Role::Muted),
+            Span::new("{ } code block", Role::Muted).pressable(),
+        ],
+        ..card_line("")
+    };
+    let rows: Vec<String> = folded_rows(&line, 20, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef ", "    { } code block"]);
+}
+
+/// A caret on a row the foot cut stands on the last cell drawn.
+#[test]
+fn the_caret_on_a_row_cut_by_the_foot_stays_on_screen() {
+    let line = card_line("    abcdefghijklmnopqrstuvwxyz");
+    let total = GUTTER_WIDTH + 14;
+    let area = Rect::new(0, 0, total, 1);
+    let mut terminal = Terminal::new(TestBackend::new(total, 4)).unwrap();
+    terminal
+        .draw(|frame| render_caret(frame, area, &line, 28, GUTTER_WIDTH))
+        .unwrap();
+    let drawn = terminal.backend().buffer();
+    assert_eq!(drawn[(total - 1, 0)].bg, theme::color(Token::Accent));
+}
+
+/// On a row too narrow for the lead, the line's first word still starts on
+/// its first row.
+#[test]
+fn a_cards_first_row_is_never_left_blank_on_a_narrow_row() {
+    let line = card_line("    abcdefghijklmnop");
+    let rows: Vec<String> = folded_rows(&line, 7, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows[0], "    abc");
+}
+
+/// Numbered lines drawn as a surface hands them over, with what the frame
+/// recorded and the screen it left.
+fn drawn_numbered(
+    lines: Vec<ContentLine>,
+    scroll: usize,
+    caret: Option<(usize, usize)>,
+) -> (Rendered, Vec<(Rect, ViewHit)>, ratatui::buffer::Buffer) {
+    let mut view = sample();
+    let Content::Lines {
+        lines: drawn,
+        total,
+        scroll: at,
+        first,
+        caret: placed,
+        editable,
+        ..
+    } = &mut view.content
+    else {
+        unreachable!("the sample is lines")
+    };
+    *total = lines.len();
+    *drawn = lines;
+    *at = scroll;
+    *first = 0;
+    *placed = caret.map(|(line, column)| Caret { line, column });
+    *editable = caret.is_some();
+    let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+    let mut hits = Vec::new();
+    let mut rendered = None;
+    terminal
+        .draw(|frame| {
+            rendered = Some(render(
+                frame,
+                &view,
+                frame.area(),
+                NavigatorFrame {
+                    width: Some(24),
+                    scroll: NavigatorScroll::default(),
+                    resizing: false,
+                    sliding: None,
+                },
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                    host: &[],
+                },
+                None,
+                &mut hits,
+            ));
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    (rendered.expect("drawn"), hits, buffer)
+}
+
+fn caret_on_screen(buffer: &ratatui::buffer::Buffer) -> Option<(u16, u16)> {
+    let area = *buffer.area();
+    (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| (x, y)))
+        .find(|&(x, y)| {
+            buffer[(x, y)].bg == theme::color(Token::Accent) && buffer[(x, y)].symbol() != " "
+        })
+}
+
+/// Lines that fold push the one being typed on under the foot while the
+/// surface, counting lines, is sure it is in view.
+#[test]
+fn the_caret_under_folded_lines_brings_its_row_on_screen() {
+    let long = "word ".repeat(30);
+    let mut lines: Vec<ContentLine> = (0..8).map(|_| code_line(&long)).collect();
+    lines.push(code_line("typed here"));
+    let (rendered, _, buffer) = drawn_numbered(lines, 0, Some((8, 3)));
+    assert!(rendered.text_rows.iter().any(|row| row.line == 8));
+    let (_, y) = caret_on_screen(&buffer).expect("the caret is drawn");
+    let row = rendered.text_rows.iter().find(|row| row.line == 8).unwrap();
+    assert_eq!(y, row.area.y, "on the row of its own line");
+    assert_eq!(buffer[caret_on_screen(&buffer).unwrap()].symbol(), "e");
+}
+
+/// The caret's row of a line that folds is on screen, not only the line's
+/// first row: this is the row cut by the foot.
+#[test]
+fn the_caret_on_a_later_row_of_a_folded_line_is_on_screen() {
+    let long = "word ".repeat(30);
+    let mut lines: Vec<ContentLine> = (0..6).map(|_| code_line(&long)).collect();
+    lines.push(code_line(&format!("{long}{long}END")));
+    let column = long.len() * 2 + 1;
+    let (_, _, buffer) = drawn_numbered(lines, 0, Some((6, column)));
+    let caret = caret_on_screen(&buffer).expect("the caret is drawn");
+    assert_eq!(buffer[caret].symbol(), "N");
+}
+
+/// The wheel scrolled up from the caret: the view stays where the wheel put
+/// it, and the caret is not dragged back into it.
+#[test]
+fn a_caret_scrolled_away_from_does_not_move_the_view() {
+    let lines: Vec<ContentLine> = (0..80).map(|_| code_line("short")).collect();
+    let (rendered, _, _) = drawn_numbered(lines, 2, Some((70, 0)));
+    assert_eq!(rendered.text_rows[0].line, 2);
+}
+
+/// No caret, nothing moves: folded lines read from where they were scrolled.
+#[test]
+fn without_a_caret_lines_start_at_the_scroll() {
+    let long = "word ".repeat(30);
+    let lines: Vec<ContentLine> = (0..8).map(|_| code_line(&long)).collect();
+    let (rendered, _, _) = drawn_numbered(lines, 0, None);
+    assert_eq!(rendered.text_rows[0].line, 0);
+}
+
+/// What the workspace does with a press at `column` on a numbered line, the
+/// path the code editor and the architect's source take.
+fn pressed_on_numbered(
+    rendered: &Rendered,
+    hits: &[(Rect, ViewHit)],
+    line: usize,
+    column: impl Fn(Rect) -> u16,
+) -> usize {
+    let (rect, cell) = hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            ViewHit::PlaceCaret { line: at, cell } if *at == line => Some((*rect, *cell)),
+            _ => None,
+        })
+        .expect("the line takes a press");
+    pressed_cell(
+        &rendered.text_rows,
+        rect,
+        line,
+        cell,
+        column(rect),
+        rendered.content_gutter,
+    )
+}
+
+/// In an editor a press past a line's end means its end, on the cell the
+/// next character would take.
+#[test]
+fn a_press_past_a_files_line_lands_at_its_end() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.right() - 1);
+    assert_eq!(cell, 4);
+}
+
+#[test]
+fn a_press_on_a_files_gutter_lands_at_its_start() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x);
+    assert_eq!(cell, 0);
+}
+
+#[test]
+fn a_press_on_a_files_text_lands_on_its_character() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let gutter = rendered.content_gutter;
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x + gutter + 2);
+    assert_eq!(cell, 2);
+}
+
+/// An empty line has no glyphs to bound a press by: it means its start.
+#[test]
+fn a_press_on_an_empty_line_lands_at_its_start() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("")], 0, None);
+    let gutter = rendered.content_gutter;
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x + gutter);
+    assert_eq!(cell, 0);
+}

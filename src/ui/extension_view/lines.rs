@@ -112,17 +112,35 @@ pub(super) fn render_lines(
     let text_width = text_width(content.width, gutter);
     let mut y = content.y;
     let mut at_end = true;
+    let start = first_drawn(
+        lines,
+        first,
+        scroll,
+        caret,
+        content.width,
+        gutter,
+        content.height,
+    );
     for (offset, line) in lines
         .iter()
         .enumerate()
         .map(|(offset, line)| (offset + first, line))
-        .skip(scroll.saturating_sub(first))
+        .skip(start.saturating_sub(first))
     {
-        let height = line_height(line, content.width, gutter);
-        if y.saturating_add(height) > content.bottom() {
+        // A line folding past the foot is drawn as far as it fits, or the
+        // text being typed on the last row goes from the screen with its
+        // caret. Scrolling counts lines, so nothing brings it back otherwise.
+        // One many screens tall is not: a minified file's only line would be
+        // folded whole, several times, on every frame.
+        let room = content.bottom().saturating_sub(y);
+        let whole = line_height(line, content.width, gutter);
+        if whole > room {
             at_end = false;
+        }
+        if room == 0 || (whole > room && whole > content.height.saturating_mul(TALLEST_CLIPPED)) {
             break;
         }
+        let height = whole.min(room);
         let row = Rect::new(content.x, y, content.width, height);
         let light = if caret.is_some_and(|caret| caret.line == offset) {
             LineLight::Caret
@@ -139,7 +157,7 @@ pub(super) fn render_lines(
                 row,
                 gutter,
                 text_width,
-                Breaks::for_gutter(gutter),
+                Breaks::for_line(line, gutter),
             );
             if let Some(marked) = &marked {
                 crate::ui::selection::invert(frame, &rows, marked);
@@ -172,12 +190,24 @@ pub(super) fn render_lines(
         // the text it landed. The cell offset here is the row's own
         // start; the caller adds the horizontal distance, which is the
         // only part of the answer that needs the pointer.
+        let hang = hanging(line, text_width);
+        let starts = match height {
+            1 => Vec::new(),
+            _ => row_starts(line, text_width, Breaks::for_line(line, gutter)),
+        };
         for wrapped in 0..height {
+            let start = starts.get(usize::from(wrapped)).copied().unwrap_or(0);
             hits.push((
                 Rect::new(row.x, row.y + wrapped, row.width, 1),
                 ViewHit::PlaceCaret {
                     line: offset,
-                    cell: wrapped as usize * text_width,
+                    // The caller adds how far along the row the pointer is,
+                    // which counts the hang too.
+                    cell: if wrapped == 0 {
+                        0
+                    } else {
+                        start.saturating_sub(hang)
+                    },
                 },
             ));
         }
@@ -193,10 +223,10 @@ pub(super) fn render_lines(
     (bar, at_end, drawn)
 }
 
-/// Where each pressable span of `line` stands on its first row, by its
-/// index among the line's spans. A span that would run past the first row
-/// is not offered there: the pressable words of a line are its few
-/// actions, drawn where they fit.
+/// Where each pressable span of `line` stands, by its index among the
+/// line's spans, on the row it folded to. A span the fold broke across rows
+/// is not offered: the pressable words of a line are its few actions, drawn
+/// where they fit.
 fn pressable_cells(
     line: &ContentLine,
     row: Rect,
@@ -204,17 +234,39 @@ fn pressable_cells(
     text_width: usize,
 ) -> Vec<(usize, Rect)> {
     use unicode_width::UnicodeWidthStr as _;
-    let mut at = 0usize;
-    let mut cells = Vec::new();
-    for (index, span) in line.spans.iter().enumerate() {
-        let width = span.text.width();
-        if span.pressable && width > 0 && at + width <= text_width {
-            let x = row.x.saturating_add(gutter).saturating_add(at as u16);
-            cells.push((index, Rect::new(x, row.y, width as u16, 1)));
-        }
-        at += width;
+    if !line.spans.iter().any(|span| span.pressable) {
+        return Vec::new();
     }
-    cells
+    let mut placed: Vec<Option<(usize, usize, bool)>> = vec![None; line.spans.len()];
+    fold(
+        line,
+        text_width,
+        Breaks::for_line(line, gutter),
+        |down, across, span, _| {
+            let index = line
+                .spans
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, span))
+                .expect("fold walks the line's own spans");
+            match &mut placed[index] {
+                Some((first, _, whole)) => *whole &= *first == down,
+                empty => *empty = Some((down, across, true)),
+            }
+        },
+    );
+    line.spans
+        .iter()
+        .zip(placed)
+        .enumerate()
+        .filter_map(|(index, (span, placed))| {
+            let (down, across, whole) = placed?;
+            let width = u16::try_from(span.text.width()).ok()?;
+            let x = row.x.saturating_add(gutter).saturating_add(across as u16);
+            let y = row.y.saturating_add(down as u16);
+            (span.pressable && whole && width > 0 && y < row.bottom() && x + width <= row.right())
+                .then(|| (index, Rect::new(x, y, width, 1)))
+        })
+        .collect()
 }
 
 /// The chip under the pointer, a mode of the content or a subject of the
@@ -466,6 +518,25 @@ pub(crate) fn caret_cell_at(row: Rect, cell: usize, column: u16, gutter: u16) ->
     cell + usize::from(column.saturating_sub(row.x.saturating_add(gutter)))
 }
 
+/// How many screens tall a line may be and still be drawn cut at the foot.
+const TALLEST_CLIPPED: u16 = 4;
+
+/// [`caret_cell_at`], for a press the frame's `rows` can answer.
+pub(crate) fn pressed_cell(
+    rows: &[TextRow],
+    row: Rect,
+    line: usize,
+    cell: usize,
+    column: u16,
+    gutter: u16,
+) -> usize {
+    let column = rows
+        .iter()
+        .find(|text| text.line == line && text.area.y == row.y)
+        .map_or(column, |text| text.nearest_column(column));
+    caret_cell_at(row, cell, column, gutter)
+}
+
 /// How many cells a line's text has, once the gutter has taken its share.
 pub(super) fn text_width(width: u16, gutter: u16) -> usize {
     usize::from(width.saturating_sub(gutter).max(1))
@@ -524,6 +595,80 @@ pub(super) const HEADING_INSET: u16 = 1;
 const MARKER_COLUMNS: u16 = 2;
 const MIN_NUMBER_COLUMNS: u16 = 3;
 
+/// Which row and cell of `line` the caret stands on, and how many characters
+/// the line has: found by the walk that drew them.
+fn caret_place(
+    line: &ContentLine,
+    column: usize,
+    width: usize,
+    gutter: u16,
+) -> (usize, usize, usize) {
+    let mut seen = 0usize;
+    let mut at = None;
+    let end = fold(
+        line,
+        width,
+        Breaks::for_line(line, gutter),
+        |row, cell, _, _| {
+            if seen == column {
+                at = Some((row, cell));
+            }
+            seen += 1;
+        },
+    );
+    // A caret past the last character sits one cell beyond it, which is
+    // where the next one will be typed — on the next row when this one is
+    // full.
+    let (down, across) = at.unwrap_or(match end {
+        (row, cell) if cell >= width => (row + 1, hanging(line, width)),
+        (row, cell) => (row, cell + column.saturating_sub(seen)),
+    });
+    (down, across, seen)
+}
+
+/// The line drawing starts from, so the caret's row is on screen.
+///
+/// A surface follows its caret in lines, the only thing it can count, and
+/// lines that fold take more rows than that: the row being typed on could
+/// stand under the foot, with the surface sure it was in view. Only while
+/// the caret is that close: one the wheel scrolled away from stays away.
+fn first_drawn(
+    lines: &[ContentLine],
+    first: usize,
+    scroll: usize,
+    caret: Option<Caret>,
+    width: u16,
+    gutter: u16,
+    rows: u16,
+) -> usize {
+    let Some(caret) = caret.filter(|caret| {
+        caret.line >= scroll && caret.line - scroll < usize::from(rows) && caret.line >= first
+    }) else {
+        return scroll;
+    };
+    let Some(window) = lines.get(scroll.saturating_sub(first)..=caret.line - first) else {
+        return scroll;
+    };
+    // Nothing above to give way, so nothing to count: this runs on every
+    // frame, and the caret's line can be a minified file's only one.
+    let Some((on_caret, above)) = window.split_last().filter(|(_, above)| !above.is_empty()) else {
+        return scroll;
+    };
+    let height = |line: &ContentLine| usize::from(line_height(line, width, gutter));
+    let (down, _, _) = caret_place(on_caret, caret.column, text_width(width, gutter), gutter);
+    let mut needed =
+        above.iter().map(height).sum::<usize>() + down.min(height(on_caret).saturating_sub(1)) + 1;
+    let mut start = scroll;
+    for line in above {
+        if needed <= usize::from(rows) {
+            break;
+        }
+        needed -= height(line);
+        start += 1;
+    }
+    start
+}
+
 /// The caret, drawn by inverting the cell it sits on rather than by
 /// drawing a mark into it.
 ///
@@ -545,31 +690,23 @@ pub(super) fn render_caret(
     gutter: u16,
 ) {
     let width = text_width(row.width, gutter);
-    let mut seen = 0usize;
-    let mut at = None;
-    let end = fold(
-        line,
-        width,
-        Breaks::for_gutter(gutter),
-        |row, cell, _, _| {
-            if seen == column {
-                at = Some((row, cell));
-            }
-            seen += 1;
-        },
-    );
-    // A caret past the last character sits one cell beyond it, which is
-    // where the next one will be typed — on the next row when this one is
-    // full.
-    let (down, across) = at.unwrap_or(match end {
-        (row, cell) if cell >= width => (row + 1, 0),
-        (row, cell) => (row, cell + column.saturating_sub(seen)),
-    });
-    let x = row.x + gutter + across as u16;
-    let y = row.y + down as u16;
-    if y >= row.bottom() || x >= row.right() {
+    let (down, across, seen) = caret_place(line, column, width, gutter);
+    if row.is_empty() {
         return;
     }
+    // The next character's cell can be on a row the line does not have yet,
+    // on a space hung past the edge, or on a row cut by the content's foot:
+    // the caret stands on the last cell there is rather than leave the screen.
+    let (last_x, last_y) = (row.right() - 1, row.bottom() - 1);
+    let y = row.y + down as u16;
+    let x = row.x + gutter + across as u16;
+    if column > seen && x > last_x {
+        return;
+    }
+    let (x, y) = match y > last_y {
+        true => (last_x, last_y),
+        false => (x.min(last_x), y),
+    };
     let cell = &mut frame.buffer_mut()[(x, y)];
     cell.set_bg(theme::color(Token::Accent));
     cell.set_fg(theme::color(Token::SurfaceBackground));
@@ -653,7 +790,7 @@ pub(super) fn line_height(line: &ContentLine, width: u16, gutter: u16) -> u16 {
     let (row, _) = fold(
         line,
         text_width(width, gutter),
-        Breaks::for_gutter(gutter),
+        Breaks::for_line(line, gutter),
         |_, _, _, _| {},
     );
     u16::try_from(row + 1).unwrap_or(u16::MAX)
@@ -778,7 +915,7 @@ pub(super) fn render_line(
         true => folded_rows(
             line,
             usize::from(columns[1].width),
-            Breaks::for_gutter(gutter),
+            Breaks::for_line(line, gutter),
         )
         .into_iter()
         .map(|mut row| {

@@ -18,6 +18,8 @@ uze agent memory remember <name>       # keep a fact for later agents, read from
 uze agent memory list [words]          # the facts kept here, or those holding any of the words
 uze agent memory show <name>           # one fact in full
 uze agent memory forget <name>         # remove a fact
+uze agent review show                  # the review comments sent to this agent and not yet answered
+uze agent review reply <send>/<n> "<answer>"  # answer one comment, by the number show printed
 uze agent rules check [path]           # validate every rule under .agents/rules, offline
 uze agent artifacts check [path]       # draw every declared diagram, fail on one that does not
 uze agent context inspect [path]       # what each agent currently sees of AGENTS.md
@@ -30,8 +32,9 @@ uze agent plugin check <path>               # validate a plugin offline, and run
 uze agent plugin lsp                        # completion, hover and diagnostics for extension files, over stdio
 ```
 
-Every command but `work split` and `work join` takes `--format json`; `split`
-prints a path alone.
+The commands above take `--format json`, except `work split`, `work join`,
+`memory forget`, `review show`, `review reply` and `plugin lsp`; `split` prints
+a path alone.
 
 ## Naming work
 

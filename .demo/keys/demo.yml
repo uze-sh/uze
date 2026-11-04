@@ -81,7 +81,7 @@ beats:
     pause: 2.4
   - say: back in the workspace, F4 opens a shell
     key: C-o
-    refuse: manage\s+1 Marketplace\s+2 Integrations
+    refuse: manage\s+1 Overview\s+2 Marketplace
     pause: 0.8
   - key: F4
     expect_in: strip

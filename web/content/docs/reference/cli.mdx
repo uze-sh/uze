@@ -106,8 +106,12 @@ uze setup list              # every agent and whether it is ready
 uze setup inspect <agent>
 uze setup --verbose         # stream each installer's output instead of keeping it in a log
 uze doctor                  # diagnose, repair what is safe, and check each plugin reached every agent
+uze doctor --repair         # put back what uze can of its own state, then check again
+uze doctor --repair --discard-leftovers  # also delete the records set aside and the versions a failed restore kept
 uze usage                   # the CPU, memory and disk uze and its agents use on this machine
 uze upgrade                 # replace uze with the latest release now (not plugins)
+uze uninstall               # remove the program, leaving every delivered plugin working (--yes)
+uze uninstall --purge       # also take back every delivered plugin and remove ~/.uze
 ```
 
 A uze placed by the install script keeps itself current. Commands check for a

@@ -173,7 +173,7 @@ beats:
   # is its own onboarding, which is the honest first frame here.
   - say: a new agent, with the one harness set up, in the project typed
     key: M-n
-    expect: 'harness\s+‹ Claude Code ›'
+    expect: 'new agent.*‹ Claude Code ›'
     expect_timeout: 6
     pause: 0.8
   - type: /tmp/uzeinstall/work/my-a

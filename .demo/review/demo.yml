@@ -1,0 +1,244 @@
+# The review surface, as a spec. This file is the source of truth: it says what
+# the video shows, in order, and everything needed to make it again.
+#
+#   tui-record beats  .demo/review   # the script, as prose
+#   tui-record seed   .demo/review   # build the sandbox (first run, or after a /tmp wipe)
+#   tui-record probe  .demo/review   # the app in its sandbox, to try a selector out
+#   tui-record run    .demo/review   # record → cut → leak-check → render → poster
+#
+# `tui-record` ships with the `tui` plugin: uze add -m tui@ai
+#
+# It records in the sandbox the agent demos share (.demo/_shared/agents.yml),
+# against the shared `demo-app` fixture.
+#
+# The agent's first pass is written by hand, so the take does not wait on it.
+# Its answer is not: the review's whole point is that the agent reads the
+# comments and answers them, so this take spends one real turn on the Claude
+# Code grant in agents.yml.
+
+extends:
+  - ../_shared/agents.yml
+  - ../_shared/macros.yml
+
+video:
+  title: uze — review
+  # Rendered beside its spec as the take's proof; the site plays the cast.
+  out: .demo/review/uze-review.gif
+  poster: .demo/review/uze-review-poster.png
+  publish:
+    - from: cast
+      to: web/public/casts/review.cast
+  cast: '{root}/uze-review.cast'
+  speed: 1.3                # read, not scanned, like the other surfaces
+  wait_collapse: 1.0        # what the agent's turn collapses to
+  # The frame that says what this surface is for: the agent's answer under
+  # the comment it answers, on the line it was left on.
+  poster_when: 'answered 1/\d'
+fixtures:
+  - include: ../_shared/demo-app.yml
+# What the video shows, in order. Edit this list first.
+#
+# Every `expect` reads what only the state being proved draws: the list's
+# `n/4 viewed`, the diff's heading, a comment card's state.
+beats:
+  - say: uze is open on a project
+    pause: 0.8
+  - use: launch-claude
+    with: {say: 'an agent, in a checkout of its own', menu_pause: 0.4, pause: 0.6,
+           typed: /tmp/demos/demo-app, completed: demo-app}
+  # A commit and an uncommitted edit, so the filter below has something to
+  # tell apart. The two comments are aimed at a line each that the agent has
+  # a reason to change (config.toml) and one it has a reason to leave
+  # (router.rs): the first shows a viewed file going stale, the second an
+  # answer standing under the line it was asked about.
+  - shell: |
+      cd {fixtures}/demo-app/.worktrees/*/ || exit 1
+      python3 -I - <<'EDIT'
+      import pathlib
+      router = pathlib.Path("src/router.rs")
+      router.write_text(router.read_text().replace(
+          'use crate::{config, health};\n',
+          'use crate::{config, health, limiter};\n').replace(
+          'pub fn route(path: &str) -> Response {\n    match path {\n',
+          'pub fn route(path: &str, client: IpAddr) -> Response {\n'
+          '    if !limiter::allow(client) {\n'
+          '        return Response::text(429, "too many requests");\n'
+          '    }\n'
+          '    match path {\n'))
+      pathlib.Path("src/limiter.rs").write_text(
+          '/// One token bucket per client address, refilled every second.\n'
+          'pub fn allow(client: IpAddr) -> bool {\n'
+          '    buckets().take(client, config::budget())\n'
+          '}\n')
+      config = pathlib.Path("config.toml")
+      config.write_text(config.read_text() + '\n[limits]\nbudget = 100\n')
+      doc = pathlib.Path("docs/lifecycle.md")
+      doc.write_text(doc.read_text().replace(
+          "A request arrives, the router looks its path up",
+          "A request arrives, the limiter spends a token, the router looks its path up"))
+      EDIT
+      git add -A && git commit -qm 'feat(api): limit requests per client'
+      printf '\n## Limits\n\nA client past its budget is answered `429`.\n' >> docs/lifecycle.md
+    pause: 0.2
+  # Read on a thread every two seconds, so the door is what proves it arrived.
+  - wait: screen
+    until: \+\d+ -\d+
+    timeout: 15
+    pause: 1.0
+  - say: the tab strip counts what the branch changes; that count is the door
+    click: '+'
+    in: strip
+    occurrence: last
+    expect: 0/4 viewed
+    expect_timeout: 8
+    pause: 2.0
+  - say: read a file and mark it viewed; the list moves on to the next
+    key: v
+    expect: 1/4 viewed
+    expect_timeout: 4
+    pause: 1.6
+  - say: mark it too, and go back to the first, which deserves a word
+    key: v
+    expect: 2/4 viewed
+    expect_timeout: 4
+    pause: 1.0
+  - click: config.toml
+    in: pane
+    expect: DIFF · config\.toml
+    expect_timeout: 4
+    pause: 0.8
+  - say: a line's number marks it
+    click: 5 [limits]
+    in: pane
+    expect: comment on 1 line
+    expect_timeout: 4
+    pause: 0.6
+  - say: shift and an arrow marks a run
+    key: S-Down
+    expect: comment on 2 lines
+    expect_timeout: 4
+    pause: 0.8
+  - say: a comment, in a card under the lines
+    key: c
+    expect: L5–6 · new comment
+    expect_timeout: 4
+    pause: 0.4
+  - type: 'A budget of what? Name the unit:'
+    submit: false
+    pause: 0.3
+  - say: with a code block in the file's own language
+    click: code block
+    in: pane
+    expect: '```'
+    expect_timeout: 4
+    pause: 0.3
+  - type: 'requests_per_second = 100'
+    submit: false
+    pause: 0.5
+  - say: kept as a draft, until you send it
+    key: C-s
+    expect: L5–6 · draft
+    expect_timeout: 4
+    pause: 2.0
+  - say: the last file, and one line of it
+    click: router.rs
+    in: pane
+    expect: DIFF · src/router\.rs
+    expect_timeout: 4
+    pause: 1.0
+  - click: 5     if !limiter
+    in: pane
+    expect: comment on 1 line
+    expect_timeout: 4
+    pause: 0.3
+  - key: c
+    expect: L5 · new comment
+    expect_timeout: 4
+    pause: 0.2
+  - type: 'Answer with `Retry-After`, as `proposal.md` says.'
+    submit: false
+    pause: 0.4
+  - key: C-s
+    expect: L5 · draft
+    expect_timeout: 4
+    pause: 1.4
+  - say: n and p step through the comments, in whichever file they are
+    key: n
+    expect: DIFF · config\.toml
+    expect_timeout: 4
+    pause: 1.6
+  - say: uncommitted shows only what is not committed yet
+    click: uncommitted
+    in: strip
+    expect: DIFF · docs/lifecycle\.md · uncommitted
+    expect_timeout: 6
+    pause: 1.8
+  - click: all
+    in: strip
+    expect: /4 viewed
+    expect_timeout: 6
+    pause: 0.8
+  - say: back with the agent, the bar counts the drafts
+    key: Escape
+    expect: 2 drafts
+    expect_timeout: 6
+    pause: 1.4
+  - say: the comments, by file, and the one way to send them
+    click: 2 drafts
+    in: screen
+    expect: send 2 drafts to the agent
+    expect_timeout: 6
+    pause: 1.8
+  - click: send 2 drafts to the agent
+    in: screen
+    expect: Send the review to agent
+    expect_timeout: 6
+    pause: 2.0
+  - say: uze asks first; once you allow it, the agent is told
+    key: [Right, Enter]
+    expect: 2 sent
+    expect_timeout: 15
+    pause: 0.8
+  - key: Escape
+    refuse: send 2 drafts
+    pause: 1.0
+  - say: the agent reads them, makes the changes and answers each one
+    wait: screen
+    until: 2 answered
+    timeout: 240
+    settle: 1.5
+    pause: 1.2
+  # The surface comes back on the file it was left on, which the filter left
+  # on the one uncommitted file: `n` is what reaches the comment from there.
+  # Any count: the agent decides what it touches, and may tick the change's
+  # tasks too, which adds a file to the list.
+  - key: M-g
+    expect: /\d+ viewed
+    expect_timeout: 8
+    pause: 0.6
+  - say: a file it changed after you viewed it says so, and stops counting; the comment stays, quoting the lines it was about
+    key: n
+    expect: these lines changed
+    expect_timeout: 6
+    pause: 3.6
+  - say: where the line is still there, the answer stands under it
+    key: n
+    expect: DIFF · src/router\.rs
+    refuse: these lines changed
+    expect_timeout: 6
+    pause: 3.4
+  # Resolved last, on the file the take stays on: the card leaving is the
+  # count stepping down to the one comment still open.
+  - say: which you resolve
+    key: r
+    expect: ‹\s+1/1\s+›
+    expect_timeout: 4
+    pause: 1.8
+  - say: and any line opens in the code surface
+    key: o
+    expect: files.+search.+map
+    expect_in: strip
+    expect_timeout: 6
+    pause: 2.2
+  - say: and out — the cut stops here, before the screen blanks
+    end: C-q

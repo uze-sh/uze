@@ -1309,6 +1309,27 @@ pub enum ScrollDirection {
 /// tab is almost always leading indentation, where the two agree.
 pub const TAB_WIDTH: usize = 4;
 
+/// The character `cell` display cells into `text`, clamped to its end: the
+/// extension's half of [`ViewHit::PlaceCaret`], since only it knows the text.
+pub(crate) fn column_at_cell(text: &str, cell: usize) -> usize {
+    let mut cells = 0usize;
+    for (column, character) in text.chars().enumerate() {
+        let width = match character {
+            '\t' => TAB_WIDTH,
+            _ => unicode_width::UnicodeWidthChar::width(character)
+                .unwrap_or(1)
+                .max(1),
+        };
+        // Landing anywhere inside a wide glyph means that glyph, not
+        // the one after it.
+        if cell < cells + width {
+            return column;
+        }
+        cells += width;
+    }
+    text.chars().count()
+}
+
 /// Margin on each side of unnumbered content.
 ///
 /// A numbered line already starts a gutter's width in, and ends well

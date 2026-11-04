@@ -293,6 +293,48 @@ impl Breaks {
             _ => Self::Cells,
         }
     }
+
+    /// As [`Self::for_gutter`], but a card is prose whatever stands beside
+    /// it: whether a comment broke mid-word would otherwise depend on
+    /// whether a numbered line happened to be on screen.
+    pub(super) fn for_line(line: &ContentLine, gutter: u16) -> Self {
+        match line.tone {
+            LineTone::Card(_) => Self::Words,
+            _ => Self::for_gutter(gutter),
+        }
+    }
+}
+
+/// The cells of a card's line before its text, which is what it is set in by.
+fn lead(line: &ContentLine) -> usize {
+    if !matches!(line.tone, LineTone::Card(_)) {
+        return 0;
+    }
+    line.spans
+        .iter()
+        .flat_map(|span| span.text.chars())
+        .take_while(|character| character.is_whitespace())
+        .map(cell_width)
+        .sum()
+}
+
+/// Where a card's folded rows start: under the line's own text, and never
+/// on the first cell of the row, which [`card_rule`](super::lines) draws
+/// over. A row that started there lost a character to the rule.
+pub(super) fn hanging(line: &ContentLine, width: usize) -> usize {
+    if !matches!(line.tone, LineTone::Card(_)) {
+        return 0;
+    }
+    lead(line).max(1).min(width / 2)
+}
+
+/// Whether the character at `index` follows another of its own span.
+fn within_span(characters: &[(&Span, char)], index: usize) -> bool {
+    index > 0 && std::ptr::eq(characters[index - 1].0, characters[index].0)
+}
+
+fn span_cells(span: &Span) -> usize {
+    span.text.chars().map(cell_width).sum()
 }
 
 /// Folds `line` at `width` cells, calling `visit` with the row and cell
@@ -306,7 +348,8 @@ impl Breaks {
 ///
 /// Prose breaks before a word that would not fit, and a space that would
 /// not fit hangs past the edge rather than opening the next row; a word
-/// wider than the whole row is broken at the cell, as code is.
+/// wider than the whole row is broken at the cell, as code is. Words that act
+/// fold as one, so a press on the row above never lands on half of them.
 pub(super) fn fold(
     line: &ContentLine,
     width: usize,
@@ -319,11 +362,18 @@ pub(super) fn fold(
         .iter()
         .flat_map(|span| span.text.chars().map(move |character| (span, character)))
         .collect();
+    let hang = hanging(line, width);
+    let set_in = lead(line).min(width - 1);
     let (mut row, mut cell) = (0usize, 0usize);
     for (index, &(span, character)) in characters.iter().enumerate() {
+        let start = if row == 0 { set_in } else { hang };
         let taken = cell_width(character);
         let overflows = match breaks {
             Breaks::Cells => cell + taken > width,
+            Breaks::Words if span.pressable && within_span(&characters, index) => {
+                cell + taken > width
+            }
+            Breaks::Words if span.pressable => cell + span_cells(span).min(width - start) > width,
             Breaks::Words if character.is_whitespace() => false,
             Breaks::Words => {
                 let starts_a_word = index == 0 || characters[index - 1].1.is_whitespace();
@@ -335,17 +385,31 @@ pub(super) fn fold(
                         .sum(),
                     false => taken,
                 };
-                cell + word.min(width) > width
+                cell + word.min(width - start) > width
             }
         };
-        if cell > 0 && overflows {
+        if cell > start && overflows {
             row += 1;
-            cell = 0;
+            cell = hang;
         }
         visit(row, cell, span, character);
         cell += taken;
     }
     (row, cell)
+}
+
+/// How many cells of `line`'s text come before each row [`fold`] puts it on,
+/// for a pointer to turn a place on a row back into a place in the text.
+pub(super) fn row_starts(line: &ContentLine, width: usize, breaks: Breaks) -> Vec<usize> {
+    let mut starts = vec![0];
+    let mut before = 0;
+    fold(line, width, breaks, |row, _, _, character| {
+        if row == starts.len() {
+            starts.push(before);
+        }
+        before += cell_width(character);
+    });
+    starts
 }
 
 /// `line`'s spans, styled and folded into the rows [`fold`] puts them on.
@@ -356,9 +420,12 @@ pub(super) fn folded_rows(
 ) -> Vec<Vec<TextSpan<'static>>> {
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut last: Option<*const Span> = None;
-    fold(line, width, breaks, |row, _, span, character| {
+    fold(line, width, breaks, |row, cell, span, character| {
         if rows.len() <= row {
-            rows.push(Vec::new());
+            rows.push(match cell {
+                0 => Vec::new(),
+                hang => vec![TextSpan::raw(" ".repeat(hang))],
+            });
             last = None;
         }
         let spans = rows.last_mut().expect("a row was pushed above");

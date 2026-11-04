@@ -5,7 +5,7 @@
 
 macros:
   # The new-agent control sits on the selected space's own sidebar row and
-  # opens one popup: the harness in a field at its top, a directory listing
+  # opens one popup: the harness at the end of its title, a directory listing
   # under a filter line. A space with no agent yet offers no directory in
   # particular (the home directory), so the first agent's project is typed,
   # with Tab completing it the way a shell would; the harness field starts
@@ -16,7 +16,7 @@ macros:
     - say: '{say}'
       click: new
       in: sidebar
-      expect: 'harness\s+‹ {harness} ›'
+      expect: 'new agent.*‹ {harness} ›'
       expect_timeout: 6
       pause: '{menu_pause}'
     - type: '{typed}'
@@ -43,7 +43,7 @@ macros:
       expect_timeout: 6
       pause: '{menu_pause}'
     - key: Right
-      expect: 'harness\s+‹ {harness} ›'
+      expect: 'new agent.*‹ {harness} ›'
       expect_timeout: 4
       pause: 0.5
     - key: Enter
@@ -74,7 +74,7 @@ macros:
   manage-open:
     - say: '{say}'
       key: C-o
-      expect: manage\s+1 Marketplace\s+2 Integrations
+      expect: manage\s+1 Overview\s+2 Marketplace
       expect_timeout: 8
       pause: '{pause}'
   # Aimed at across the whole screen: the modal spans the sidebar's columns
@@ -108,5 +108,5 @@ macros:
       expect: spec.+arch.+code
       expect_in: strip
       expect_timeout: 6
-      refuse: manage\s+1 Marketplace\s+2 Integrations
+      refuse: manage\s+1 Overview\s+2 Marketplace
       pause: '{pause}'
