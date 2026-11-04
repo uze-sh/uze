@@ -344,14 +344,6 @@ pub struct Identity {
 }
 
 impl Identity {
-    /// A theme identified only by the id it is selected with.
-    pub fn of(id: &str) -> Self {
-        Self {
-            id: id.to_owned(),
-            ..Self::default()
-        }
-    }
-
     /// The identity a theme file declares for itself, falling back to its id.
     pub fn from_file(id: &str, file: &ThemeFile) -> Self {
         Self {
@@ -1180,6 +1172,65 @@ mod tests {
             loaded.theme.color(Token::Accent),
             default_theme().color(Token::Accent)
         );
+    }
+
+    #[test]
+    fn text_exactly_at_the_minimum_contrast_is_readable() {
+        let loaded = load(
+            r##"{ "colors": {
+                   "surface.background": "#000000",
+                   "text.primary": "#33642c"
+                 } }"##,
+        );
+        assert!(
+            !loaded.warnings.iter().any(|warning| matches!(
+                warning,
+                Warning::LowContrast {
+                    token: Token::TextPrimary,
+                    ..
+                }
+            )),
+            "{:?}",
+            loaded.warnings
+        );
+    }
+
+    #[test]
+    fn a_theme_keeps_the_description_and_syntax_theme_it_declares() {
+        let contents = format!(
+            r#"{{ "description": "For long nights", "syntax": {{ "theme": "{}" }} }}"#,
+            BUNDLED_SYNTAX_THEMES[1]
+        );
+        let theme = load(&contents).theme;
+        assert_eq!(theme.description(), "For long nights");
+        assert_eq!(theme.syntax_theme(), BUNDLED_SYNTAX_THEMES[1]);
+    }
+
+    #[test]
+    fn only_a_name_someone_wrote_is_worth_a_warning() {
+        let written = BTreeMap::from([("future.token".to_owned(), ())]);
+        let mut warnings = Vec::new();
+
+        let known: BTreeMap<Token, ()> =
+            known_by_name(&written, &BTreeSet::new(), "colour token", &mut warnings);
+        assert!(known.is_empty());
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        let authored = BTreeSet::from(["future.token".to_owned()]);
+        let _: BTreeMap<Token, ()> =
+            known_by_name(&written, &authored, "colour token", &mut warnings);
+        assert!(matches!(
+            warnings.as_slice(),
+            [Warning::UnknownName { name, .. }] if name == "future.token"
+        ));
+    }
+
+    #[test]
+    fn a_theme_with_nothing_to_fall_back_on_is_told_what_it_lacks() {
+        let missing = missing_entries(&BTreeMap::new(), &BTreeMap::new());
+        assert!(missing.contains(&Token::ALL[0].name().to_owned()));
+        assert!(missing.contains(&Symbol::ALL[0].name().to_owned()));
+        assert_eq!(missing.len(), Token::ALL.len() + Symbol::ALL.len());
     }
 
     #[test]
