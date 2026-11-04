@@ -117,6 +117,31 @@ An extension whose named plugin is missing SHALL still install. UZE SHALL show t
 - **WHEN** `uze market remove ai` runs with a plugin and an extension installed from it
 - **THEN** both are gone, the plugin through its receipts, and then the registry entry
 
+### Requirement: The Marketplace screen holds one view per kind
+The manage modal's Marketplace screen SHALL offer a view per kind and one of the marketplaces themselves. Each kind's view SHALL group its entries by marketplace, with what ships in the build among them, marked Bundled. A filter SHALL narrow a view to what is installed or has an update.
+
+#### Scenario: Bundled and optional stand together
+- **WHEN** the operator opens the extensions view
+- **THEN** the built-in extensions stand in the `uze` group marked Bundled, beside what the marketplace offers
+
+#### Scenario: Asking what has an update
+- **WHEN** the operator chooses `updates` in the themes view
+- **THEN** only themes with a new revision are listed, and an empty result says everything is up to date
+
+### Requirement: An extension is managed where it is installed
+There SHALL be no Extensions screen. An extension's drawer in the Marketplace SHALL offer installing, allowing, enabling, disabling, its preferences and removing, each only where it applies. A bundled extension SHALL offer no removal, and SHALL say why.
+
+#### Scenario: From available to running in one place
+- **WHEN** the operator installs an extension from its drawer
+- **THEN** the same drawer offers allowing and enabling it, with no change of screen
+
+### Requirement: A theme is chosen from either place
+The Marketplace's themes view SHALL install a theme and offer using it. The Settings screen SHALL choose among installed themes and link to that view. Removing the theme in use SHALL say that uze goes back to `adaptive`.
+
+#### Scenario: Removing the theme in use
+- **WHEN** the operator confirms removing the active theme
+- **THEN** uze draws in `adaptive`, and the theme's status is `available`
+
 ### Requirement: An extension is authored through its own verbs
 `uze agent extension create <id> --market <name>`, `uze agent extension check <path>` and `uze agent extension lsp` SHALL scaffold, validate and serve an extension. The official authoring Skill SHALL cover every kind.
 

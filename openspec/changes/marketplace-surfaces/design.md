@@ -224,49 +224,158 @@ the edit.
 Rollback before release is a revert. After it, a machine keeps its
 `sources/extensions/` bytes as inert files, and consent is asked again.
 
-## Pending Discussion
+## Proposed Decisions
 
-Not decided, and each can change the specs above. `tasks.md` waits for these.
+Each item is a recommendation awaiting the operator's call, so nothing here is
+settled until it moves into the Decisions above. `tasks.md` waits for them.
 
-Raised with this draft:
+### P1. One `uze add` for every kind (confirms D2)
 
-1. D2: one `uze add` for every kind, or a noun per kind. The operator has not
-   answered; the draft assumes one verb.
-2. D5: whether the extension domain can leave `uze-core`, given what `doctor`
-   and `machine/mcp.rs` reach today.
-3. D6: dropping the single installable product. Depends on whether any
-   marketplace outside this repository mixes the two kinds; `ai` is unchecked.
-4. D8: themes staying out of `agents.yaml`.
-5. D9: the one rung that drops old-identity records.
-6. Whether the in-flight `extension-*` changes are archived first, as its own
-   piece of work.
+The catalogue already knows the kind, and `add` keeps one meaning. A noun per
+kind would repeat that on every verb. Only authoring gets a noun, because its
+inputs differ.
 
-Raised by the operator: a dedicated marketplace repository. The main repository
-keeps what the build bundles (the `dark` and `light` themes plus `adaptive`, the
-built-in extensions `code`, `architect`, `spec` and `review`, and the `uze`
-Skills), and the new repository holds everything optional, the declared
-extensions and the other themes included. Direction accepted, not yet specified:
+### P2. Do not move the extension domain in this change (revises D5)
 
-7. Compatibility, the main risk. Extension and binary stop sharing a commit, so
-   a marketplace's latest entry can need a `protocol` the installed binary lacks,
-   and today that entry is simply refused. How does a binary find a version it
-   can run: branches or tags per protocol, or a minimum version on the entry?
-8. Names. `uze` is the embedded marketplace and refuses a source, so the new one
-   needs another name, which every identity then shows (`gsd@market`). Repository
-   name too: `uze-sh/market` is the working option.
-9. Whether it is pre-registered, so `uze add gsd@market` works on a fresh
-   machine, reading the network only when asked.
-10. Themes become a kind in this work, no longer "later", which reverses a
-    non-goal above. They need bytes under `sources/` (`themes/` is the operator's
-    authored tier) and an answer for a selected theme that is not installed.
-11. Where `pingpong` goes: `Cargo.toml` builds its MCP server as a binary of the
-    root crate, and `tests/` and the `Makefile` reach it.
-12. Whether `uze:try` stays bundled, since all it sets up would be remote.
-13. Tests and proof: `every_plugin_of_the_repositorys_marketplace_checks_clean`,
-    the suites naming `plugins/` and the journeys need fixtures in this repository,
-    and the new repository needs CI that checks against a released `uze`.
-14. Whether this is one change or a second one after this, which is the current
-    recommendation: settle the catalogue here, then move the bytes.
+Only `package/authoring` reaches `capability::extension` inside `package/`,
+`delivery/` and `project/`, while 9 files outside `uze-core` name it. What the
+design needs is that the package manager stops calling it, which a layering test
+can prove. The physical move to `uze-workspace` is a behaviour-free refactor that
+can follow on its own, and it should not share a review with an identity change.
+
+### P3. No bundle; a need is one press away (confirms D6)
+
+Nothing mixes the two kinds today: `ai` has no `extension.kdl`, and on this
+machine only `workspace@uze` carries extensions. The gap in the extension's
+drawer offers `add <plugin>`, so the person still chooses. A need naming a
+marketplace that is not registered says to register it first, because a
+reference holds no URL.
+
+### P4. A theme is machine-scoped, whatever the directory (confirms D8)
+
+`uze add nord@uze` inside a project writes nothing to `agents.yaml`, and its
+report says `on this machine only`, as ADR-054 requires. A palette is a person's
+preference, and a team's would overwrite it on every clone.
+
+### P5. One rung, and no notice (confirms D9)
+
+A `state/extensions.json` rung drops old-identity records, `Lasts::Unbounded`
+since it only runs when the record is next written, and retired entries cover
+secrets and preferences. The extension is offered again on its own, so no
+migration message is needed. The release notes name the `agents.yaml` edit.
+
+### P6. Clear the in-flight changes first, in their own pull request
+
+20 `extension-*` and `audit-*` changes are complete and can be archived now,
+as #348 did. Two need a look: `extension-platform` has 8 open tasks in section
+26, follow-ups that belong in changes of their own, and
+`project-agent-environment` has 18 and carries the `agents-manifest` delta that
+D8 extends. Doing this first lets this change's deltas modify
+requirements that exist.
+
+### P7. The item says the minimum uze it needs; nothing searches for an older one
+
+Compatibility is the real cost of the split. `protocol` does not cover it: the
+check refuses unknown nodes, so any new catalog node breaks an older binary
+without a protocol bump.
+
+- `extension.kdl` gains `requires-uze "1.2.0"`, read from the item at the
+  catalogue's revision, as a plugin's listing already is.
+- A fresh install on an older binary is refused with `uze upgrade` as the next
+  step. An update it cannot run is held at the installed revision, and shown.
+- `uze agent market check` fails an entry using something newer than its
+  `requires-uze`, so the market's CI keeps the claim true.
+
+*Rejected:* tags or branches per protocol, and walking the mirror's history for
+the newest revision that fits. Both exist to serve old binaries, and upgrading
+is one command. Themes need none of this: a partial theme is completed from the
+default.
+
+### P8. The optional marketplace is also named `uze`: two origins, one name
+
+This replaces a new name such as `gsd@market`. The repository is
+`uze-sh/market`, and its `marketplace.json` says `"name": "uze"`.
+
+- Catalogue of `uze` = what the binary embeds (Bundled) + what the mirror offers
+  (Official). These are the two seals the design system already defines.
+- Identities stay `gsd@uze`, and a project keeps writing `uze:` with no source.
+  `agents.yaml` still refuses a source there, so nothing can shadow it.
+- A name the build bundles is refused in the market by `market check`, and the
+  embedded one wins if it ever happens.
+
+*Cost:* `uze` stops being purely embedded, and the code mentions the built-in
+marketplace or an embedded source on 57 lines. Each lock entry must say whether
+it pins a uze version or a commit. Working on a checkout of the market needs a
+way to link it under the reserved name.
+
+### P9. Nothing to pre-register
+
+This follows from P8: the source is a constant in the binary. Without a network
+the listing shows what is bundled plus the last catalogue it read. The first read
+happens when the Marketplace opens or a `uze add` asks, then on the hourly fetch
+an open workspace already runs.
+
+### P10. Themes become a kind here, reversing a non-goal above
+
+- Bytes go in `sources/themes/<marketplace>/<id>/`. `themes/` stays the operator's
+  authored tier, and its files appear in a `themes/` group marked as theirs.
+- `[appearance] theme` keeps a bare id for bundled and authored themes and takes
+  `<id>@<marketplace>` for the rest.
+- A selected theme that is not installed draws in `adaptive`, and `uze doctor`
+  and the Settings screen say so. No toast, since the first frame must be right.
+- The palette can be shown before installing, read from the catalogue's revision.
+- `ascii` and `nerd` stay in the build: they are glyph sets the chrome depends on.
+
+### P11. `pingpong` stays in this repository, outside any catalogue
+
+It is proof of delivery and an authoring example, not something a person would
+choose to install: the root crate builds its MCP server, and `tests/` and
+`make try` use it. It moves to `tests/_fixtures/`, is installed by path, and the
+market does not offer it.
+
+### P12. `uze:try` stays bundled
+
+It is the way in for someone with nothing installed, and it can be read offline.
+It says so plainly if the market cannot be reached. Moving it would hide the
+door behind what it exists to introduce.
+
+### P13. Proof on both sides
+
+- This repository: a small fixture extension and theme under `tests/_fixtures/`
+  replace what the suites read from `plugins/workspace`. A nightly journey installs
+  from the real market at a pinned commit, so a break is seen without blocking
+  a pull request.
+- The market: CI runs `uze agent market check` with the newest release, plus
+  each entry's `requires-uze` as stated.
+- History moves with `git filter-repo`. The market needs its own licence and CLA
+  check. The example GIFs move with their extensions.
+
+### P14. Two changes, in this order
+
+1. `marketplace-surfaces` (this one): catalogue, identity, the theme kind, the
+   Marketplace screen, all served from this repository.
+2. `market-repository`: create `uze-sh/market`, add the second origin, move the
+   bytes.
+
+The first can ship and be lived with. The second then moves bytes to a format
+that has already settled, and each can be reverted alone.
+
+### P15. The Marketplace screen (interactive prototype shared with the operator)
+
+- Tabs lose Extensions: `Overview · Marketplace · Integrations · Shortcuts ·
+  Settings`.
+- Views: `plugins · extensions · themes · sources`, keeping today's tree, columns
+  and drawer. A filter `all · installed · updates` stands beside them.
+- The screen answers both "what can I get" and "what runs", which replaces the
+  design system's "Marketplace says what a package brings; Extensions says what
+  runs". That rule existed because a package carried extensions. It and the
+  "a package that carries only extensions" wording change with this.
+- Settings keeps choosing among installed themes and links to more.
+
+*Rejected:* keeping the Extensions tab beside a new view, which leaves two places
+named the same; and marketplace-first (`uze > plugins, extensions, themes`), which
+is one tree holding three kinds of column, and makes "which themes can I get"
+a walk through every marketplace.
 
 ## Open Questions
 

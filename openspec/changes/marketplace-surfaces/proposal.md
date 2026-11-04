@@ -30,6 +30,10 @@ identity costs little now and much more later.
 - An extension may name the plugins it needs. The reference is flat and
   one-way: no versions, nothing transitive, nothing installed for it, and a
   gap the operator can read. An MCP grant always names its plugin.
+- The manage modal's Marketplace screen holds one view per kind (`plugins`,
+  `extensions`, `themes`) and `sources` for the marketplaces themselves. The
+  Extensions screen goes: allowing, enabling and preferences move to the
+  extension's drawer, where it is installed.
 - **BREAKING** Authoring gets its own noun: `uze agent extension
   create|check|lsp` replaces `uze agent plugin create --extension`, and the
   extension parts of `plugin check` and `plugin lsp`. The `uze:author` Skill
