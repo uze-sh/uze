@@ -3696,8 +3696,82 @@ fn a_line_folding_past_the_foot_draws_the_rows_that_fit() {
         format!("    {}", "word ".repeat(400)),
         Role::Default,
     )]);
-    assert!(!rendered.text_rows.is_empty());
+    assert!(rendered.text_rows.len() > 1, "the rows that fit are drawn");
     assert!(!rendered.content_at_end);
+}
+
+/// What is cut stays cut: nothing is drawn or pressed past the foot.
+#[test]
+fn a_line_folding_past_the_foot_stops_at_it() {
+    let (rendered, hits) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(400)),
+        Role::Default,
+    )]);
+    let foot = rendered.text_rows.iter().map(|row| row.area.bottom()).max();
+    let pressed = hits
+        .iter()
+        .filter(|(_, hit)| matches!(hit, ViewHit::PlaceCaret { .. }))
+        .map(|(rect, _)| rect.bottom())
+        .max();
+    assert_eq!(
+        pressed, foot,
+        "a press answers only on rows that were drawn"
+    );
+    assert!(
+        foot.is_some_and(|foot| foot < 16),
+        "the footer keeps its row"
+    );
+}
+
+/// A line that only just fits has reached the end, and scrolling knows it.
+#[test]
+fn a_line_that_fits_reaches_the_end() {
+    let (rendered, _) = drawn_card(vec![Span::new("    a short comment", Role::Default)]);
+    assert!(rendered.content_at_end);
+}
+
+/// A minified file's only line is not folded whole on every frame just to
+/// show its first rows.
+#[test]
+fn a_line_many_screens_tall_is_not_drawn() {
+    let (rendered, _) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(5000)),
+        Role::Default,
+    )]);
+    assert!(rendered.text_rows.is_empty());
+    assert!(!rendered.content_at_end);
+}
+
+/// Words that act move to the next row as one, so a press on the empty end
+/// of the row above lands on nothing of theirs.
+#[test]
+fn words_that_act_fold_as_one() {
+    let line = ContentLine {
+        spans: vec![
+            Span::new("    abcdef ", Role::Muted),
+            Span::new("{ } code block", Role::Muted).pressable(),
+        ],
+        ..card_line("")
+    };
+    let rows: Vec<String> = folded_rows(&line, 20, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef ", "    { } code block"]);
+}
+
+/// A caret on a row the foot cut stands on the last cell drawn.
+#[test]
+fn the_caret_on_a_row_cut_by_the_foot_stays_on_screen() {
+    let line = card_line("    abcdefghijklmnopqrstuvwxyz");
+    let total = GUTTER_WIDTH + 14;
+    let area = Rect::new(0, 0, total, 1);
+    let mut terminal = Terminal::new(TestBackend::new(total, 4)).unwrap();
+    terminal
+        .draw(|frame| render_caret(frame, area, &line, 28, GUTTER_WIDTH))
+        .unwrap();
+    let drawn = terminal.backend().buffer();
+    assert_eq!(drawn[(total - 1, 0)].bg, theme::color(Token::Accent));
 }
 
 /// On a row too narrow for the lead, the line's first word still starts on

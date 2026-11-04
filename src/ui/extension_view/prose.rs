@@ -328,6 +328,15 @@ pub(super) fn hanging(line: &ContentLine, width: usize) -> usize {
     lead(line).max(1).min(width / 2)
 }
 
+/// Whether the character at `index` follows another of its own span.
+fn within_span(characters: &[(&Span, char)], index: usize) -> bool {
+    index > 0 && std::ptr::eq(characters[index - 1].0, characters[index].0)
+}
+
+fn span_cells(span: &Span) -> usize {
+    span.text.chars().map(cell_width).sum()
+}
+
 /// Folds `line` at `width` cells, calling `visit` with the row and cell
 /// each character lands on, and answers where the next one would.
 ///
@@ -339,7 +348,8 @@ pub(super) fn hanging(line: &ContentLine, width: usize) -> usize {
 ///
 /// Prose breaks before a word that would not fit, and a space that would
 /// not fit hangs past the edge rather than opening the next row; a word
-/// wider than the whole row is broken at the cell, as code is.
+/// wider than the whole row is broken at the cell, as code is. Words that act
+/// fold as one, so a press on the row above never lands on half of them.
 pub(super) fn fold(
     line: &ContentLine,
     width: usize,
@@ -360,6 +370,10 @@ pub(super) fn fold(
         let taken = cell_width(character);
         let overflows = match breaks {
             Breaks::Cells => cell + taken > width,
+            Breaks::Words if span.pressable && within_span(&characters, index) => {
+                cell + taken > width
+            }
+            Breaks::Words if span.pressable => cell + span_cells(span).min(width - start) > width,
             Breaks::Words if character.is_whitespace() => false,
             Breaks::Words => {
                 let starts_a_word = index == 0 || characters[index - 1].1.is_whitespace();

@@ -515,4 +515,45 @@ mod tests {
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
     }
+
+    mod nearest_column {
+        use super::*;
+
+        fn row(glyphs: &[(u16, usize)], beyond: usize) -> TextRow {
+            TextRow {
+                area: Rect::new(0, 0, 40, 1),
+                line: 0,
+                glyphs: glyphs
+                    .iter()
+                    .map(|&(x, index)| Glyph { x, width: 1, index })
+                    .collect(),
+                beyond,
+            }
+        }
+
+        #[test]
+        fn past_the_line_end_is_the_cell_after_its_last_character() {
+            assert_eq!(row(&[(5, 0), (6, 1)], 2).nearest_column(30), 7);
+        }
+
+        #[test]
+        fn past_a_row_the_line_folded_from_is_its_last_character() {
+            assert_eq!(row(&[(5, 0), (6, 1)], 1).nearest_column(30), 6);
+        }
+
+        #[test]
+        fn before_the_text_is_its_first_character() {
+            assert_eq!(row(&[(5, 0)], 1).nearest_column(0), 5);
+        }
+
+        #[test]
+        fn a_row_with_no_text_keeps_the_column() {
+            assert_eq!(row(&[], 0).nearest_column(9), 9);
+        }
+
+        #[test]
+        fn on_the_text_is_where_it_landed() {
+            assert_eq!(row(&[(5, 0), (6, 1), (7, 2)], 3).nearest_column(6), 6);
+        }
+    }
 }

@@ -121,13 +121,17 @@ pub(super) fn render_lines(
         // A line folding past the foot is drawn as far as it fits, or the
         // text being typed on the last row goes from the screen with its
         // caret. Scrolling counts lines, so nothing brings it back otherwise.
+        // One many screens tall is not: a minified file's only line would be
+        // folded whole, several times, on every frame.
         let room = content.bottom().saturating_sub(y);
-        if room == 0 {
+        let whole = line_height(line, content.width, gutter);
+        if whole > room {
             at_end = false;
+        }
+        if room == 0 || (whole > room && whole > content.height.saturating_mul(TALLEST_CLIPPED)) {
             break;
         }
-        let height = line_height(line, content.width, gutter).min(room);
-        at_end &= line_height(line, content.width, gutter) <= room;
+        let height = whole.min(room);
         let row = Rect::new(content.x, y, content.width, height);
         let light = if caret.is_some_and(|caret| caret.line == offset) {
             LineLight::Caret
@@ -505,6 +509,9 @@ pub(crate) fn caret_cell_at(row: Rect, cell: usize, column: u16, gutter: u16) ->
     cell + usize::from(column.saturating_sub(row.x.saturating_add(gutter)))
 }
 
+/// How many screens tall a line may be and still be drawn cut at the foot.
+const TALLEST_CLIPPED: u16 = 4;
+
 /// [`caret_cell_at`], for a press the frame's `rows` can answer.
 pub(crate) fn pressed_cell(
     rows: &[TextRow],
@@ -624,8 +631,8 @@ pub(super) fn render_caret(
         return;
     }
     // The next character's cell can be on a row the line does not have yet,
-    // or on a space hung past the edge: the caret stands on the last cell
-    // there is rather than leave the screen.
+    // on a space hung past the edge, or on a row cut by the content's foot:
+    // the caret stands on the last cell there is rather than leave the screen.
     let (last_x, last_y) = (row.right() - 1, row.bottom() - 1);
     let y = row.y + down as u16;
     let x = row.x + gutter + across as u16;
