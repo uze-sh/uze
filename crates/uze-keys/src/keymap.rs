@@ -569,13 +569,21 @@ fn shares_a_keyboard(first: Scope, second: Scope) -> bool {
     if (first.seals() || second.seals()) && first != second {
         return false;
     }
-    first.mode().covers(second.mode()) || second.mode().covers(first.mode())
+    first.mode().covers(second.mode())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chord::Mods;
+
+    #[test]
+    fn what_a_chord_means_is_named_as_a_keymap_file_names_it() {
+        let action = crate::action::ALL_ACTIONS[0];
+        assert_eq!(Resolution::Act(action).action_name(), action.name());
+        assert_eq!(Resolution::Text.action_name(), "typing");
+        assert_eq!(Resolution::Fallthrough.action_name(), "free");
+    }
 
     fn bind(scope: Scope, chord: &str, action: Action) -> Binding {
         Binding {

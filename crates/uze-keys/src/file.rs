@@ -74,6 +74,7 @@ mod tests {
         let mut file = KeymapFile::default();
         assert!(file.is_empty());
         file.set("workspace", "new-shell-tab", vec!["f4".to_owned()]);
+        assert!(!file.is_empty());
         let json = serde_json::to_string(&file).expect("serializes");
         assert_eq!(
             json, r#"{"bindings":{"workspace":{"new-shell-tab":["f4"]}}}"#,
@@ -81,6 +82,9 @@ mod tests {
         );
         file.clear("workspace", "new-shell-tab");
         assert!(file.is_empty(), "clearing the last entry empties the scope");
+        file.unknown
+            .insert("newer".to_owned(), serde_json::Value::Bool(true));
+        assert!(!file.is_empty(), "what a newer build wrote is still held");
     }
 
     #[test]

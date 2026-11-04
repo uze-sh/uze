@@ -52,25 +52,6 @@ pub enum Key {
 }
 
 impl Key {
-    /// Navigation and editing keys: the register a terminal encodes as an
-    /// escape sequence with a modifier parameter, rather than as a
-    /// character.
-    fn is_navigation(self) -> bool {
-        matches!(
-            self,
-            Key::Up
-                | Key::Down
-                | Key::Left
-                | Key::Right
-                | Key::Home
-                | Key::End
-                | Key::PageUp
-                | Key::PageDown
-                | Key::Insert
-                | Key::Delete
-        )
-    }
-
     fn name(self) -> String {
         match self {
             Key::Char(' ') => "space".to_owned(),
@@ -419,7 +400,18 @@ impl Chord {
                     Tier::Universal
                 }
             }
-            key if key.is_navigation() => {
+            // Navigation and editing keys: an escape sequence with a
+            // modifier parameter, rather than a character.
+            Key::Up
+            | Key::Down
+            | Key::Left
+            | Key::Right
+            | Key::Home
+            | Key::End
+            | Key::PageUp
+            | Key::PageDown
+            | Key::Insert
+            | Key::Delete => {
                 if self.mods.is_empty() {
                     Tier::Universal
                 } else {
@@ -428,7 +420,6 @@ impl Chord {
                     Tier::HostConditional
                 }
             }
-            _ => Tier::Universal,
         }
     }
 
@@ -669,6 +660,15 @@ mod tests {
         assert_eq!(tier("alt+1"), Tier::HostConditional);
         assert_eq!(tier("ctrl+up"), Tier::HostConditional);
         assert_eq!(tier("ctrl+pageup"), Tier::HostConditional);
+        assert_eq!(tier("up"), Tier::Universal);
+        assert_eq!(tier("delete"), Tier::Universal);
+        assert_eq!(tier("alt+f5"), Tier::Universal);
+        assert_eq!(tier("space"), Tier::Universal);
+        assert_eq!(
+            Chord::new(Mods::CTRL, Key::Space).tier(),
+            Tier::EnhancementOnly,
+            "the parser refuses it as NUL; a terminal can still send it"
+        );
         // The chord this design retired: unbindable on a plain terminal.
         assert_eq!(tier("ctrl+1"), Tier::EnhancementOnly);
         assert_eq!(tier("ctrl+shift+w"), Tier::EnhancementOnly);
@@ -693,12 +693,41 @@ mod tests {
 
     #[test]
     fn a_chord_states_what_its_host_may_take_first() {
-        assert!(
-            Chord::parse("ctrl+pageup")
-                .unwrap()
+        let host_claims = |text: &str| {
+            Chord::parse(text)
+                .expect(text)
                 .caveats()
                 .iter()
                 .any(|caveat| caveat.kind == CaveatKind::HostClaims)
+        };
+        for claimed in ["ctrl+pageup", "alt+tab", "alt+enter", "ctrl+shift+x"] {
+            assert!(host_claims(claimed), "{claimed}");
+        }
+        for free in ["tab", "enter", "alt+x", "ctrl+x", "shift+x"] {
+            assert!(!host_claims(free), "{free}");
+        }
+    }
+
+    #[test]
+    fn a_tier_says_what_it_asks_of_a_terminal() {
+        assert_eq!(Tier::Universal.label(), "universal");
+        assert_eq!(Tier::HostConditional.label(), "depends on your terminal");
+        assert_eq!(
+            Tier::EnhancementOnly.label(),
+            "needs an enhanced keyboard protocol"
         );
+    }
+
+    #[test]
+    fn a_mnemonic_is_a_key_someone_memorizes_and_not_one_read_from_its_place() {
+        for mnemonic in ["a", "space", "f1"] {
+            assert!(Chord::parse(mnemonic).unwrap().is_mnemonic(), "{mnemonic}");
+        }
+        for structural in ["enter", "esc", "up"] {
+            assert!(
+                !Chord::parse(structural).unwrap().is_mnemonic(),
+                "{structural}"
+            );
+        }
     }
 }

@@ -223,6 +223,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_surface_of_both_keyboards_shares_either_and_the_two_share_nothing() {
+        assert!(Mode::Both.covers(Mode::Management));
+        assert!(Mode::Management.covers(Mode::Both));
+        assert!(Mode::Workspace.covers(Mode::Workspace));
+        assert!(!Mode::Workspace.covers(Mode::Management));
+    }
+
+    #[test]
     fn every_scope_names_itself_uniquely_and_reads_back() {
         for scope in ALL_SCOPES {
             assert_eq!(Scope::parse(scope.name()), Some(*scope));

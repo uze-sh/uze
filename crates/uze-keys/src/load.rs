@@ -685,6 +685,34 @@ mod tests {
         scope::{ALL_SCOPES, Scope},
     };
 
+    #[test]
+    fn no_file_is_no_keymap_and_an_unreadable_one_is_an_error() {
+        let directory = Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            read(&directory.join("no-such-keymap.json"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(read(directory).is_err());
+    }
+
+    #[test]
+    fn a_file_of_this_builds_version_warns_of_nothing() {
+        let file = KeymapFile {
+            version: Some(crate::file::CURRENT_VERSION),
+            ..KeymapFile::default()
+        };
+        assert_eq!(resolve(&file).expect("it loads").problems, []);
+    }
+
+    #[test]
+    fn saving_keeps_an_extensions_action_written_under_another_scope() {
+        let mut written = KeymapFile::default();
+        written.set("workspace", "ext.p@m/x.go", vec!["ctrl+g".to_owned()]);
+        let saved = saved_over(&written, default_keymap());
+        assert_eq!(saved.bindings["workspace"]["ext.p@m/x.go"], ["ctrl+g"]);
+    }
+
     /// The editor's own tests hand it characters directly, so only this
     /// can see the keymap drop them: a letter typed into an open file
     /// once resolved to nothing, and the file could be navigated but
