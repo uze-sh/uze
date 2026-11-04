@@ -73,7 +73,6 @@
           - Keep handlers total: every route returns a `Response`, never panics.
           - Document a new route in `docs/lifecycle.md` in the same change.
           - Conventional Commits for commit subjects.
-          - Answer a review comment in one short sentence, under 80 characters.
     # The policy belongs in the manifest, not the lock: `agents.lock` is
     # derived, and an agent reading a worktree policy from it would be
     # reading something UZE regenerates. `worktree: always` is what puts
