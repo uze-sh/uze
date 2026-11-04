@@ -196,7 +196,9 @@ on "cancel" must not save first.
   down its left in the hue of what waits on it (a draft `warning`, sent
   `info`, answered `success`, the one being written `accent`). The
   operator asked for that rule: read without it, a comment was lost among
-  the code. Its first line says where and what state
+  the code. A row that folds hangs under the line's own text, clear of that
+  rule (`prose::hanging`), since the rule is drawn over each row's first
+  cell. Its first line says where and what state
   (`◆ L52–56 · draft`), with its actions as words on that line
   (`edit`, `delete`, `resolve`). Words of a line that act are
   `Span::pressable`: the host makes each a target of its own and lifts it

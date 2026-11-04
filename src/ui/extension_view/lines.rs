@@ -172,12 +172,13 @@ pub(super) fn render_lines(
         // the text it landed. The cell offset here is the row's own
         // start; the caller adds the horizontal distance, which is the
         // only part of the answer that needs the pointer.
+        let row_cells = text_width - hanging(line, text_width);
         for wrapped in 0..height {
             hits.push((
                 Rect::new(row.x, row.y + wrapped, row.width, 1),
                 ViewHit::PlaceCaret {
                     line: offset,
-                    cell: wrapped as usize * text_width,
+                    cell: wrapped as usize * row_cells,
                 },
             ));
         }
@@ -562,7 +563,7 @@ pub(super) fn render_caret(
     // where the next one will be typed — on the next row when this one is
     // full.
     let (down, across) = at.unwrap_or(match end {
-        (row, cell) if cell >= width => (row + 1, 0),
+        (row, cell) if cell >= width => (row + 1, hanging(line, width)),
         (row, cell) => (row, cell + column.saturating_sub(seen)),
     });
     let x = row.x + gutter + across as u16;

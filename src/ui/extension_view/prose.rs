@@ -295,6 +295,23 @@ impl Breaks {
     }
 }
 
+/// Where a card's folded rows start: under the line's own text, and never
+/// on the first cell of the row, which [`card_rule`](super::lines) draws
+/// over. A row that started there lost a character to the rule.
+pub(super) fn hanging(line: &ContentLine, width: usize) -> usize {
+    if !matches!(line.tone, LineTone::Card(_)) {
+        return 0;
+    }
+    let lead: usize = line
+        .spans
+        .iter()
+        .flat_map(|span| span.text.chars())
+        .take_while(|character| character.is_whitespace())
+        .map(cell_width)
+        .sum();
+    lead.max(1).min(width / 2)
+}
+
 /// Folds `line` at `width` cells, calling `visit` with the row and cell
 /// each character lands on, and answers where the next one would.
 ///
@@ -319,6 +336,7 @@ pub(super) fn fold(
         .iter()
         .flat_map(|span| span.text.chars().map(move |character| (span, character)))
         .collect();
+    let hang = hanging(line, width);
     let (mut row, mut cell) = (0usize, 0usize);
     for (index, &(span, character)) in characters.iter().enumerate() {
         let taken = cell_width(character);
@@ -335,12 +353,12 @@ pub(super) fn fold(
                         .sum(),
                     false => taken,
                 };
-                cell + word.min(width) > width
+                cell + word.min(width - hang) > width
             }
         };
-        if cell > 0 && overflows {
+        if cell > hang && overflows {
             row += 1;
-            cell = 0;
+            cell = hang;
         }
         visit(row, cell, span, character);
         cell += taken;
@@ -356,9 +374,12 @@ pub(super) fn folded_rows(
 ) -> Vec<Vec<TextSpan<'static>>> {
     let mut rows: Vec<Vec<TextSpan<'static>>> = vec![Vec::new()];
     let mut last: Option<*const Span> = None;
-    fold(line, width, breaks, |row, _, span, character| {
+    fold(line, width, breaks, |row, cell, span, character| {
         if rows.len() <= row {
-            rows.push(Vec::new());
+            rows.push(match cell {
+                0 => Vec::new(),
+                hang => vec![TextSpan::raw(" ".repeat(hang))],
+            });
             last = None;
         }
         let spans = rows.last_mut().expect("a row was pushed above");

@@ -3423,3 +3423,95 @@ fn a_chip_lifts_under_the_pointer() {
     );
     assert_eq!(pointed[at(1)].fg, rest[at(1)].fg, "the other stays");
 }
+
+fn card_line(text: &str) -> ContentLine {
+    ContentLine {
+        tone: LineTone::Card(Role::Success),
+        ..code_line(text)
+    }
+}
+
+fn row_text(buffer: &ratatui::buffer::Buffer, x: u16, y: u16, width: u16) -> String {
+    (x..x + width)
+        .map(|x| buffer[(x, y)].symbol().to_owned())
+        .collect()
+}
+
+/// The card's rule stands on each row's first cell, so a folded row starting
+/// there lost a character to it: `config::` read as `onfig::`.
+#[test]
+fn a_cards_folded_row_hangs_clear_of_its_rule() {
+    let line = card_line("    abcdefghij klmnop");
+    let drawn = drawn_with_caret(&line, 12, 99);
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 0, 11), "   abcdefgh");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 11), "   ij klmno");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 11), "   p       ");
+    for y in 0..3 {
+        assert_eq!(
+            drawn[(GUTTER_WIDTH, y)].symbol(),
+            theme::glyph(Symbol::BarMedium)
+        );
+    }
+    assert_eq!(
+        lines::line_height(&line, GUTTER_WIDTH + 12, GUTTER_WIDTH),
+        3
+    );
+}
+
+/// Prose folds at words, which a window with no numbers on show asks for.
+#[test]
+fn a_cards_prose_folds_at_words_and_keeps_every_character() {
+    let line = card_line("    Renamed with config");
+    let rows: Vec<String> = folded_rows(&line, 14, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    Renamed ", "    with ", "    config"]);
+}
+
+/// A word as wide as the row breaks at the cell without a row left empty.
+#[test]
+fn a_word_wider_than_a_cards_row_never_leaves_an_empty_row() {
+    let line = card_line("    abcdefghijklmnop");
+    let rows: Vec<String> = folded_rows(&line, 10, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef", "    ghijkl", "    mnop"]);
+}
+
+/// The caret walks the same rows the text is drawn on, its end included.
+#[test]
+fn the_caret_on_a_cards_folded_row_stands_on_its_character() {
+    let line = card_line("    abcdefghij");
+    let drawn = drawn_with_caret(&line, 12, 13);
+    let caret = (GUTTER_WIDTH + 5, 1);
+    assert_eq!(drawn[caret].symbol(), "j");
+    assert_eq!(drawn[caret].bg, theme::color(Token::Accent));
+}
+
+/// A press on a folded row counts the cells the rows above really hold, or
+/// the caret lands further along than the character pressed.
+#[test]
+fn a_press_on_a_cards_folded_row_lands_on_its_character() {
+    let line = card_line("    abcdefghijkl");
+    let width = 12;
+    let hang = prose::hanging(&line, width);
+    let row = Rect::new(0, 1, GUTTER_WIDTH + width as u16, 1);
+    let first_on_row = GUTTER_WIDTH + hang as u16;
+    assert_eq!(
+        lines::caret_cell_at(row, width - hang, first_on_row, GUTTER_WIDTH),
+        width,
+        "the first cell of the second row is the row's width into the text"
+    );
+}
+
+/// Only a card's rows hang: a file's code wraps to the edge it starts from.
+#[test]
+fn a_neutral_line_folds_from_the_edge() {
+    let rows: Vec<String> = folded_rows(&code_line("    abcdefghij"), 10, Breaks::Cells)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows, ["    abcdef", "ghij"]);
+}
