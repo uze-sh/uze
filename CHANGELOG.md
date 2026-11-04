@@ -4,7 +4,18 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
-## [1.0.0-beta.23](https://github.com/uze-sh/uze/compare/v1.0.0-beta.22...v1.0.0-beta.23) - 2026-11-02
+## [1.0.0-beta.24](https://github.com/uze-sh/uze/compare/v1.0.0-beta.23...v1.0.0-beta.24) - 2026-11-04
+
+### Fixes
+
+- **review:** Resolve the review by the agent in front of a checkout ([#357](https://github.com/uze-sh/uze/pull/357)) ([ed3d05d](https://github.com/uze-sh/uze/commit/ed3d05d79888ca718ddb737c8c9a97166c76a1f8))
+- **shim:** Point reporter hooks at uze instead of the launcher ([#356](https://github.com/uze-sh/uze/pull/356)) ([d5d0221](https://github.com/uze-sh/uze/commit/d5d0221092f09881f17f9cf9ce7d26612f419a8b))
+
+### Tests
+
+- **contract:** Cover the paths mutants exposed in uze-contract ([#358](https://github.com/uze-sh/uze/pull/358)) ([b0ee375](https://github.com/uze-sh/uze/commit/b0ee3752c2e27b2f0f003c266a2a705bf1f3ffd0))
+
+## [1.0.0-beta.23](https://github.com/uze-sh/uze/compare/v1.0.0-beta.22...v1.0.0-beta.23) - 2026-11-03
 
 ### Features
 
@@ -22,6 +33,7 @@ pre-releases — see `docs/versioning.md`.
 - **review:** Hide the review door on a checkout with no changes ([#344](https://github.com/uze-sh/uze/pull/344)) ([0fb5ef3](https://github.com/uze-sh/uze/commit/0fb5ef375adc58002a715e4d592623290c70f055))
 - **code:** Keep unsaved work when a path is sent to a kept surface ([#350](https://github.com/uze-sh/uze/pull/350)) ([aefa20e](https://github.com/uze-sh/uze/commit/aefa20ef35c60e0c103ab57af6fd9d824198a250))
 - **overview:** Move the header's figures to a card under the section menu ([#351](https://github.com/uze-sh/uze/pull/351)) ([3c3fb03](https://github.com/uze-sh/uze/commit/3c3fb03b7dbf2cbeff2e3d1b360b466c6b6155ed))
+- **ui:** Call ask_project_labels after draining project_labels reads ([#355](https://github.com/uze-sh/uze/pull/355)) ([515d52b](https://github.com/uze-sh/uze/commit/515d52b0f6a14f85cea7231aa83ac1e001467400))
 
 ### Refactor
 
