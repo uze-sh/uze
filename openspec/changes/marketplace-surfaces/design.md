@@ -224,6 +224,50 @@ the edit.
 Rollback before release is a revert. After it, a machine keeps its
 `sources/extensions/` bytes as inert files, and consent is asked again.
 
+## Pending Discussion
+
+Not decided, and each can change the specs above. `tasks.md` waits for these.
+
+Raised with this draft:
+
+1. D2: one `uze add` for every kind, or a noun per kind. The operator has not
+   answered; the draft assumes one verb.
+2. D5: whether the extension domain can leave `uze-core`, given what `doctor`
+   and `machine/mcp.rs` reach today.
+3. D6: dropping the single installable product. Depends on whether any
+   marketplace outside this repository mixes the two kinds; `ai` is unchecked.
+4. D8: themes staying out of `agents.yaml`.
+5. D9: the one rung that drops old-identity records.
+6. Whether the in-flight `extension-*` changes are archived first, as its own
+   piece of work.
+
+Raised by the operator: a dedicated marketplace repository. The main repository
+keeps what the build bundles (the `dark` and `light` themes plus `adaptive`, the
+built-in extensions `code`, `architect`, `spec` and `review`, and the `uze`
+Skills), and the new repository holds everything optional, the declared
+extensions and the other themes included. Direction accepted, not yet specified:
+
+7. Compatibility, the main risk. Extension and binary stop sharing a commit, so
+   a marketplace's latest entry can need a `protocol` the installed binary lacks,
+   and today that entry is simply refused. How does a binary find a version it
+   can run: branches or tags per protocol, or a minimum version on the entry?
+8. Names. `uze` is the embedded marketplace and refuses a source, so the new one
+   needs another name, which every identity then shows (`gsd@market`). Repository
+   name too: `uze-sh/market` is the working option.
+9. Whether it is pre-registered, so `uze add gsd@market` works on a fresh
+   machine, reading the network only when asked.
+10. Themes become a kind in this work, no longer "later", which reverses a
+    non-goal above. They need bytes under `sources/` (`themes/` is the operator's
+    authored tier) and an answer for a selected theme that is not installed.
+11. Where `pingpong` goes: `Cargo.toml` builds its MCP server as a binary of the
+    root crate, and `tests/` and the `Makefile` reach it.
+12. Whether `uze:try` stays bundled, since all it sets up would be remote.
+13. Tests and proof: `every_plugin_of_the_repositorys_marketplace_checks_clean`,
+    the suites naming `plugins/` and the journeys need fixtures in this repository,
+    and the new repository needs CI that checks against a released `uze`.
+14. Whether this is one change or a second one after this, which is the current
+    recommendation: settle the catalogue here, then move the bytes.
+
 ## Open Questions
 
 - Should `uze status` group by kind, or keep one list with a kind column? The
