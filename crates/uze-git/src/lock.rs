@@ -47,10 +47,24 @@ pub(crate) fn acquire(root: &Path, timeout: Duration) -> Result<Held, SpawnError
         .write(true)
         .open(&path)
         .map_err(|error| SpawnError(format!("could not open {}: {error}", path.display())))?;
+    wait_for(&path, timeout, || try_lock(&file))?;
+    HELD.with(|held| held.borrow_mut().push(path.clone()));
+    Ok(Held {
+        owned: Some((path, file)),
+    })
+}
+
+/// Retries `attempt` while the lock is busy, up to `timeout`. Any other
+/// failure will not clear by waiting, so it is reported at once.
+fn wait_for(
+    path: &Path,
+    timeout: Duration,
+    mut attempt: impl FnMut() -> std::io::Result<()>,
+) -> Result<(), SpawnError> {
     let started = Instant::now();
     loop {
-        match try_lock(&file) {
-            Ok(()) => break,
+        match attempt() {
+            Ok(()) => return Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 if started.elapsed() >= timeout {
                     return Err(SpawnError(format!(
@@ -70,10 +84,6 @@ pub(crate) fn acquire(root: &Path, timeout: Duration) -> Result<Held, SpawnError
             }
         }
     }
-    HELD.with(|held| held.borrow_mut().push(path.clone()));
-    Ok(Held {
-        owned: Some((path, file)),
-    })
 }
 
 /// `<common dir>/uze-write.lock`, or `None` outside a repository.
@@ -89,4 +99,40 @@ fn lock_path(root: &Path) -> Option<PathBuf> {
 
 fn try_lock(file: &File) -> std::io::Result<()> {
     uze_platform::lock::try_lock(file, uze_platform::lock::Mode::Exclusive)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io;
+
+    #[test]
+    fn a_failure_that_waiting_cannot_clear_is_reported_as_itself() {
+        let refused = wait_for(Path::new("lock"), Duration::ZERO, || {
+            Err(io::ErrorKind::PermissionDenied.into())
+        });
+        assert!(refused.is_err_and(|error| error.0.contains("could not lock")));
+    }
+
+    #[test]
+    fn a_busy_lock_is_retried_until_it_frees() {
+        let mut busy = 2;
+        let taken = wait_for(Path::new("lock"), Duration::from_secs(60), || {
+            if busy == 0 {
+                return Ok(());
+            }
+            busy -= 1;
+            Err(io::ErrorKind::WouldBlock.into())
+        });
+        assert!(taken.is_ok());
+        assert_eq!(busy, 0);
+    }
+
+    #[test]
+    fn a_lock_still_busy_at_the_limit_says_so() {
+        let refused = wait_for(Path::new("lock"), Duration::ZERO, || {
+            Err(io::ErrorKind::WouldBlock.into())
+        });
+        assert!(refused.is_err_and(|error| error.0.contains("was busy")));
+    }
 }
