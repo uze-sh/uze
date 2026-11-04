@@ -52,7 +52,7 @@ pub const CATALOG: crate::registry::BuiltinExtension = crate::registry::BuiltinE
     name: "Review",
     description: "The selected agent's branch against its target, commented line by line and sent back to the agent.",
     surface: "Workspace TUI",
-    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), s to tell the agent its review waits, o to open a line in the code surface.",
+    usage: "Open it with Alt+G or the +N −M door on the tab strip. Mark lines by their numbers or with shift and an arrow, press c to comment, v to mark a file viewed (leaving one read to its end marks it too), o to open a line in the code surface. Send the drafts from the comment count in the bar beside the agent.",
     declares: preferences,
 };
 
@@ -179,7 +179,10 @@ pub(crate) fn handle_command(view: &mut ReviewView, command: Command, space: Siz
         Command::OpenInCode => return Asked::OpenInCode,
         Command::NextThread => view.go_to_thread(true),
         Command::PreviousThread => view.go_to_thread(false),
-        Command::Resolve => resolve_near_cursor(view),
+        Command::Resolve => {
+            resolve_near_cursor(view);
+            keep_lines_on_screen(view, space);
+        }
         Command::OpenMenu => open_menu(view),
         Command::ScrollPageDown => {
             view.scroll = view.scroll.saturating_add(usize::from(space.height).max(1));
@@ -297,8 +300,14 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
 fn perform(view: &mut ReviewView, act: Act, space: Size) {
     match act {
         Act::Edit(id) => view.edit_comment(id),
-        Act::Delete(id) => view.change(change::Change::Delete(id)),
-        Act::Resolve(id) => view.change(change::Change::Resolve(id)),
+        Act::Delete(id) => {
+            view.change(change::Change::Delete(id));
+            keep_lines_on_screen(view, space);
+        }
+        Act::Resolve(id) => {
+            view.change(change::Change::Resolve(id));
+            keep_lines_on_screen(view, space);
+        }
         Act::Comment => {
             view.open_composer();
             keep_composer_in_view(view, space);
@@ -456,6 +465,16 @@ fn keep_composer_in_view(view: &mut ReviewView, space: Size) {
 fn clamp_scroll(view: &mut ReviewView) {
     let total = render::lines(view).len();
     view.scroll = view.scroll.min(total.saturating_sub(1));
+}
+
+/// A comment taken away shortens what is under the scroll, and a thread is
+/// shown scrolled to it: left where it was, the file reads as empty.
+fn keep_lines_on_screen(view: &mut ReviewView, space: Size) {
+    let visible = usize::from(crate::view::text_height(space));
+    let total = render::lines(view).len();
+    if view.scroll + visible > total {
+        view.scroll = total.saturating_sub(visible);
+    }
 }
 
 pub(crate) fn handle_scroll(view: &mut ReviewView, direction: ScrollDirection, at_end: bool) {

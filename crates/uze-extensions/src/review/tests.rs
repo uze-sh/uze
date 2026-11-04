@@ -2157,3 +2157,64 @@ fn a_file_read_while_only_the_commit_moved_is_still_marked() {
     view.step_file(ScrollDirection::Down);
     assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
 }
+
+fn scrolled_to_an_answered_comment(space: Size) -> ReviewView {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        space,
+    );
+    handle_command(&mut view, Command::Comment, space);
+    handle_command(&mut view, Command::Type('x'), space);
+    handle_command(&mut view, Command::AddComment, space);
+    view.record.comments[0].status = CommentStatus::Answered;
+    view.scroll = render::lines(&view).len() - 1;
+    view
+}
+
+/// A step to a thread scrolls to it, so a short file's whole diff can stand
+/// above the screen. The comment going must bring it back.
+#[test]
+fn resolving_the_comment_on_show_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    handle_command(&mut view, Command::Resolve, space);
+    let total = render::lines(&view).len();
+    let visible = usize::from(crate::view::text_height(space));
+    assert_eq!(view.scroll, total.saturating_sub(visible));
+    assert!(line_texts(&view).iter().any(|line| !line.trim().is_empty()));
+}
+
+#[test]
+fn deleting_the_comment_on_show_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    let id = view.record.comments[0].id;
+    perform(&mut view, Act::Delete(id), space);
+    let total = render::lines(&view).len();
+    let visible = usize::from(crate::view::text_height(space));
+    assert_eq!(view.scroll, total.saturating_sub(visible));
+}
+
+/// Taking a comment away never moves a diff that still fills the screen.
+#[test]
+fn resolving_a_comment_keeps_the_scroll_while_lines_fill_the_screen() {
+    let space = Size {
+        width: 100,
+        height: 4,
+    };
+    let mut view = scrolled_to_an_answered_comment(space);
+    view.scroll = 0;
+    handle_command(&mut view, Command::Resolve, space);
+    assert_eq!(view.scroll, 0);
+}
