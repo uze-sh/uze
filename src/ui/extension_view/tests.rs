@@ -3641,3 +3641,73 @@ fn a_cards_action_is_a_target_on_the_row_it_folded_to() {
     assert_eq!(rect.x, second.glyphs[0].x);
     assert_eq!(rect.width, 6);
 }
+
+/// The line in the height it really takes, as `render_lines` hands it over,
+/// with the caret at `column`.
+fn drawn_at_its_height(line: &ContentLine, width: u16, column: usize) -> ratatui::buffer::Buffer {
+    let total = GUTTER_WIDTH + width;
+    let area = Rect::new(0, 0, total, lines::line_height(line, total, GUTTER_WIDTH));
+    let mut terminal = Terminal::new(TestBackend::new(total, 4)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_line(
+                frame,
+                area,
+                line,
+                GUTTER_WIDTH,
+                true,
+                lines::LineLight::Rest,
+            );
+            render_caret(frame, area, line, column, GUTTER_WIDTH);
+        })
+        .unwrap();
+    terminal.backend().buffer().clone()
+}
+
+/// At the end of a full row the next character's cell is on a row the line
+/// does not have yet: the caret stands on the row's last cell until it does.
+#[test]
+fn the_caret_past_a_full_cards_row_stays_on_screen() {
+    let line = card_line("    abcdefghij");
+    let drawn = drawn_at_its_height(&line, 14, 14);
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 13, 0)].bg,
+        theme::color(Token::Accent)
+    );
+}
+
+/// A space that does not fit hangs past the edge, and the caret after it
+/// stays where it can be seen.
+#[test]
+fn the_caret_on_a_space_hung_past_a_cards_row_stays_on_screen() {
+    let line = card_line("    abcdefghij  ");
+    let drawn = drawn_at_its_height(&line, 14, 15);
+    assert_eq!(
+        drawn[(GUTTER_WIDTH + 13, 0)].bg,
+        theme::color(Token::Accent)
+    );
+}
+
+/// A line that folds past the content's foot is drawn as far as it fits, or
+/// the text being typed goes from the screen with its caret.
+#[test]
+fn a_line_folding_past_the_foot_draws_the_rows_that_fit() {
+    let (rendered, _) = drawn_card(vec![Span::new(
+        format!("    {}", "word ".repeat(400)),
+        Role::Default,
+    )]);
+    assert!(!rendered.text_rows.is_empty());
+    assert!(!rendered.content_at_end);
+}
+
+/// On a row too narrow for the lead, the line's first word still starts on
+/// its first row.
+#[test]
+fn a_cards_first_row_is_never_left_blank_on_a_narrow_row() {
+    let line = card_line("    abcdefghijklmnop");
+    let rows: Vec<String> = folded_rows(&line, 7, Breaks::Words)
+        .iter()
+        .map(|row| row.iter().map(|span| span.content.as_ref()).collect())
+        .collect();
+    assert_eq!(rows[0], "    abc");
+}

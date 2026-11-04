@@ -305,6 +305,19 @@ impl Breaks {
     }
 }
 
+/// The cells of a card's line before its text, which is what it is set in by.
+fn lead(line: &ContentLine) -> usize {
+    if !matches!(line.tone, LineTone::Card(_)) {
+        return 0;
+    }
+    line.spans
+        .iter()
+        .flat_map(|span| span.text.chars())
+        .take_while(|character| character.is_whitespace())
+        .map(cell_width)
+        .sum()
+}
+
 /// Where a card's folded rows start: under the line's own text, and never
 /// on the first cell of the row, which [`card_rule`](super::lines) draws
 /// over. A row that started there lost a character to the rule.
@@ -312,14 +325,7 @@ pub(super) fn hanging(line: &ContentLine, width: usize) -> usize {
     if !matches!(line.tone, LineTone::Card(_)) {
         return 0;
     }
-    let lead: usize = line
-        .spans
-        .iter()
-        .flat_map(|span| span.text.chars())
-        .take_while(|character| character.is_whitespace())
-        .map(cell_width)
-        .sum();
-    lead.max(1).min(width / 2)
+    lead(line).max(1).min(width / 2)
 }
 
 /// Folds `line` at `width` cells, calling `visit` with the row and cell
@@ -347,8 +353,10 @@ pub(super) fn fold(
         .flat_map(|span| span.text.chars().map(move |character| (span, character)))
         .collect();
     let hang = hanging(line, width);
+    let set_in = lead(line).min(width - 1);
     let (mut row, mut cell) = (0usize, 0usize);
     for (index, &(span, character)) in characters.iter().enumerate() {
+        let start = if row == 0 { set_in } else { hang };
         let taken = cell_width(character);
         let overflows = match breaks {
             Breaks::Cells => cell + taken > width,
@@ -363,10 +371,10 @@ pub(super) fn fold(
                         .sum(),
                     false => taken,
                 };
-                cell + word.min(width - hang) > width
+                cell + word.min(width - start) > width
             }
         };
-        if cell > hang && overflows {
+        if cell > start && overflows {
             row += 1;
             cell = hang;
         }

@@ -118,11 +118,16 @@ pub(super) fn render_lines(
         .map(|(offset, line)| (offset + first, line))
         .skip(scroll.saturating_sub(first))
     {
-        let height = line_height(line, content.width, gutter);
-        if y.saturating_add(height) > content.bottom() {
+        // A line folding past the foot is drawn as far as it fits, or the
+        // text being typed on the last row goes from the screen with its
+        // caret. Scrolling counts lines, so nothing brings it back otherwise.
+        let room = content.bottom().saturating_sub(y);
+        if room == 0 {
             at_end = false;
             break;
         }
+        let height = line_height(line, content.width, gutter).min(room);
+        at_end &= line_height(line, content.width, gutter) <= room;
         let row = Rect::new(content.x, y, content.width, height);
         let light = if caret.is_some_and(|caret| caret.line == offset) {
             LineLight::Caret
@@ -173,7 +178,10 @@ pub(super) fn render_lines(
         // start; the caller adds the horizontal distance, which is the
         // only part of the answer that needs the pointer.
         let hang = hanging(line, text_width);
-        let starts = row_starts(line, text_width, Breaks::for_line(line, gutter));
+        let starts = match height {
+            1 => Vec::new(),
+            _ => row_starts(line, text_width, Breaks::for_line(line, gutter)),
+        };
         for wrapped in 0..height {
             let start = starts.get(usize::from(wrapped)).copied().unwrap_or(0);
             hits.push((
@@ -612,11 +620,22 @@ pub(super) fn render_caret(
         (row, cell) if cell >= width => (row + 1, hanging(line, width)),
         (row, cell) => (row, cell + column.saturating_sub(seen)),
     });
-    let x = row.x + gutter + across as u16;
-    let y = row.y + down as u16;
-    if y >= row.bottom() || x >= row.right() {
+    if row.is_empty() {
         return;
     }
+    // The next character's cell can be on a row the line does not have yet,
+    // or on a space hung past the edge: the caret stands on the last cell
+    // there is rather than leave the screen.
+    let (last_x, last_y) = (row.right() - 1, row.bottom() - 1);
+    let y = row.y + down as u16;
+    let x = row.x + gutter + across as u16;
+    if column > seen && x > last_x {
+        return;
+    }
+    let (x, y) = match y > last_y {
+        true => (last_x, last_y),
+        false => (x.min(last_x), y),
+    };
     let cell = &mut frame.buffer_mut()[(x, y)];
     cell.set_bg(theme::color(Token::Accent));
     cell.set_fg(theme::color(Token::SurfaceBackground));
