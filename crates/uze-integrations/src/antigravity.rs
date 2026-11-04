@@ -1042,7 +1042,7 @@ const FACTS: &[HarnessFact] = &[
     },
 ];
 /// The version the facts above were measured on.
-const VERSION: &str = "1.4.12";
+const VERSION: &str = "1.5.0";
 
 #[cfg(test)]
 mod detach_tests {

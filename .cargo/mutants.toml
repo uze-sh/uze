@@ -15,4 +15,6 @@ exclude_re = [
   'uze-document/src/lib\.rs.*replace > with >= in read$',
   # UnsupportedShape never carries found == expected: `read` returns first.
   'uze-document/src/lib\.rs.*replace < with <= in may_be_set_aside$',
+  # A binding paired with itself has its own action, so it conflicts with nothing.
+  'uze-keys/src/keymap\.rs.*replace \+ with \* in conflicts_in$',
 ]

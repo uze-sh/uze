@@ -355,6 +355,27 @@ mod tests {
     }
 
     #[test]
+    fn a_surfaces_key_is_not_answered_where_no_declared_surface_is_reached() {
+        let owner = "seen@m/x";
+        let keymap = default_keymap().with_extensions(vec![table(
+            owner,
+            vec![offered(owner, "refresh", "main", Some("ctrl+r"))],
+        )]);
+        assert_eq!(
+            keymap.resolve_for(chord("ctrl+r"), &OPEN, front(owner, "main")),
+            act(owner, "refresh")
+        );
+        assert_eq!(
+            keymap.resolve_for(
+                chord("ctrl+r"),
+                &[Scope::Global, Scope::Workspace, Scope::Pane],
+                front(owner, "main")
+            ),
+            Resolution::Fallthrough
+        );
+    }
+
+    #[test]
     fn a_suggestion_the_host_holds_is_not_bound_and_is_said() {
         let owner = "taken@m/x";
         let keymap = default_keymap().with_extensions(vec![table(
@@ -598,6 +619,8 @@ mod tests {
             assert!(!is_name(bad), "{bad}");
         }
         assert!(!is_name(&action_name("p@m/x", &"a".repeat(NAME_MAX))));
+        let room = NAME_MAX - action_name("p@m/x", "").len();
+        assert!(is_name(&action_name("p@m/x", &"a".repeat(room))));
     }
 
     #[test]

@@ -21,11 +21,13 @@ Usage of agy:
   --project                       Project ID or project name for the current CLI session
   --prompt                        Alias for --print
   --prompt-interactive            Run an initial prompt interactively and continue the session
+  --remote-agent                  Run this session's conversations using remote agents; --project then names a remote project by ID or name, otherwise they open in this machine's default remote project
   --remote-control                Create a remote connection for the CLI session on start up
   --sandbox                       Run in a sandbox with terminal restrictions enabled
   --settings                      Settings for this session only, never saved: a JSON object of settings.json keys, inline or as a file path
 
 Available subcommands:
+  acp             Start the Agent Client Protocol (ACP) stdio server
   agent           List available agents
   agents          List available agents
   changelog       Show changelog and release notes
