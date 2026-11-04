@@ -74,7 +74,7 @@ macros:
   manage-open:
     - say: '{say}'
       key: C-o
-      expect: manage\s+1 Marketplace\s+2 Integrations
+      expect: manage\s+1 Overview\s+2 Marketplace
       expect_timeout: 8
       pause: '{pause}'
   # Aimed at across the whole screen: the modal spans the sidebar's columns
@@ -108,5 +108,5 @@ macros:
       expect: spec.+arch.+code
       expect_in: strip
       expect_timeout: 6
-      refuse: manage\s+1 Marketplace\s+2 Integrations
+      refuse: manage\s+1 Overview\s+2 Marketplace
       pause: '{pause}'
