@@ -202,10 +202,10 @@ pub(super) fn render_lines(
     (bar, at_end, drawn)
 }
 
-/// Where each pressable span of `line` stands on its first row, by its
-/// index among the line's spans. A span that would run past the first row
-/// is not offered there: the pressable words of a line are its few
-/// actions, drawn where they fit.
+/// Where each pressable span of `line` stands, by its index among the
+/// line's spans, on the row it folded to. A span the fold broke across rows
+/// is not offered: the pressable words of a line are its few actions, drawn
+/// where they fit.
 fn pressable_cells(
     line: &ContentLine,
     row: Rect,
@@ -213,17 +213,39 @@ fn pressable_cells(
     text_width: usize,
 ) -> Vec<(usize, Rect)> {
     use unicode_width::UnicodeWidthStr as _;
-    let mut at = 0usize;
-    let mut cells = Vec::new();
-    for (index, span) in line.spans.iter().enumerate() {
-        let width = span.text.width();
-        if span.pressable && width > 0 && at + width <= text_width {
-            let x = row.x.saturating_add(gutter).saturating_add(at as u16);
-            cells.push((index, Rect::new(x, row.y, width as u16, 1)));
-        }
-        at += width;
+    if !line.spans.iter().any(|span| span.pressable) {
+        return Vec::new();
     }
-    cells
+    let mut placed: Vec<Option<(usize, usize, bool)>> = vec![None; line.spans.len()];
+    fold(
+        line,
+        text_width,
+        Breaks::for_line(line, gutter),
+        |down, across, span, _| {
+            let index = line
+                .spans
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, span))
+                .expect("fold walks the line's own spans");
+            match &mut placed[index] {
+                Some((first, _, whole)) => *whole &= *first == down,
+                empty => *empty = Some((down, across, true)),
+            }
+        },
+    );
+    line.spans
+        .iter()
+        .zip(placed)
+        .enumerate()
+        .filter_map(|(index, (span, placed))| {
+            let (down, across, whole) = placed?;
+            let width = u16::try_from(span.text.width()).ok()?;
+            let x = row.x.saturating_add(gutter).saturating_add(across as u16);
+            let y = row.y.saturating_add(down as u16);
+            (span.pressable && whole && width > 0 && y < row.bottom() && x + width <= row.right())
+                .then(|| (index, Rect::new(x, y, width, 1)))
+        })
+        .collect()
 }
 
 /// The chip under the pointer, a mode of the content or a subject of the
@@ -473,6 +495,22 @@ pub(super) fn render_chips(
 /// `row`, rather than in the event loop.
 pub(crate) fn caret_cell_at(row: Rect, cell: usize, column: u16, gutter: u16) -> usize {
     cell + usize::from(column.saturating_sub(row.x.saturating_add(gutter)))
+}
+
+/// [`caret_cell_at`], for a press the frame's `rows` can answer.
+pub(crate) fn pressed_cell(
+    rows: &[TextRow],
+    row: Rect,
+    line: usize,
+    cell: usize,
+    column: u16,
+    gutter: u16,
+) -> usize {
+    let column = rows
+        .iter()
+        .find(|text| text.line == line && text.area.y == row.y)
+        .map_or(column, |text| text.nearest_column(column));
+    caret_cell_at(row, cell, column, gutter)
 }
 
 /// How many cells a line's text has, once the gutter has taken its share.

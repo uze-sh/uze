@@ -135,6 +135,20 @@ pub(crate) struct Glyph {
 }
 
 impl TextRow {
+    /// The column a press at `column` means: on the row's own text, as
+    /// [`Self::index_at`] reads it. Past a row the line folded from, that is
+    /// its last character, since the cell after it is the next row's.
+    pub(crate) fn nearest_column(&self, column: u16) -> u16 {
+        let (Some(first), Some(last)) = (self.glyphs.first(), self.glyphs.last()) else {
+            return column;
+        };
+        let end = match self.beyond == last.index {
+            true => last.x,
+            false => last.x + last.width,
+        };
+        column.clamp(first.x, end)
+    }
+
     /// The character under `column`, or the nearest one on the row.
     fn index_at(&self, column: u16) -> usize {
         match self.glyphs.first() {

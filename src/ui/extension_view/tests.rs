@@ -3525,3 +3525,119 @@ fn a_neutral_line_folds_from_the_edge() {
         .collect();
     assert_eq!(rows, ["    abcdef", "ghij"]);
 }
+
+/// A view of one card line, and what its frame recorded about it.
+fn drawn_card(spans: Vec<Span>) -> (Rendered, Vec<(Rect, ViewHit)>) {
+    let mut view = sample();
+    let Content::Lines { lines, total, .. } = &mut view.content else {
+        unreachable!("the sample is lines")
+    };
+    *lines = vec![ContentLine {
+        gutter: String::new(),
+        number: String::new(),
+        tone: LineTone::Card(Role::Warning),
+        spans,
+        marked: false,
+    }];
+    *total = 1;
+    let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+    let mut hits = Vec::new();
+    let mut rendered = None;
+    terminal
+        .draw(|frame| {
+            rendered = Some(render(
+                frame,
+                &view,
+                frame.area(),
+                NavigatorFrame {
+                    width: Some(24),
+                    scroll: NavigatorScroll::default(),
+                    resizing: false,
+                    sliding: None,
+                },
+                FooterKeys {
+                    scope: uze_keys::Scope::Review,
+                    hovered: None,
+                    host: &[],
+                },
+                None,
+                &mut hits,
+            ));
+        })
+        .unwrap();
+    (rendered.expect("drawn"), hits)
+}
+
+/// A card's first line with `words` filling its first row, so the action
+/// after them folds to the second.
+fn a_header_whose_action_folds() -> (Rendered, Vec<(Rect, ViewHit)>) {
+    let (rendered, _) = drawn_card(vec![Span::new("  measure", Role::Muted)]);
+    let room = usize::from(rendered.text_rows[0].area.width - rendered.content_gutter);
+    let words = format!("  {} ", "x".repeat(room - 6));
+    drawn_card(vec![
+        Span::new(words, Role::Muted),
+        Span::new("delete", Role::Faint).pressable(),
+    ])
+}
+
+/// What the workspace does with a press at `column` on `row` of the card.
+fn pressed_on(
+    rendered: &Rendered,
+    hits: &[(Rect, ViewHit)],
+    row: usize,
+    column: impl Fn(Rect) -> u16,
+) -> usize {
+    let area = rendered.text_rows[row].area;
+    let (rect, cell) = hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            ViewHit::PlaceCaret { line: 0, cell } if rect.y == area.y => Some((*rect, *cell)),
+            _ => None,
+        })
+        .expect("every row of the card takes a press");
+    pressed_cell(
+        &rendered.text_rows,
+        rect,
+        0,
+        cell,
+        column(rect),
+        rendered.content_gutter,
+    )
+}
+
+/// The word that acts stands on the row below. A press on the empty end of
+/// the row above is not a press on it: it deleted the draft unasked.
+#[test]
+fn a_press_past_a_cards_row_never_reaches_the_action_folded_below_it() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let on_action = rendered.text_rows[1].glyphs[0].index;
+    let cell = pressed_on(&rendered, &hits, 0, |rect| rect.right() - 1);
+    assert!(
+        cell < on_action,
+        "cell {cell} reaches the word at {on_action}"
+    );
+}
+
+/// The hang is not the row above: the press belongs to the row it is on.
+#[test]
+fn a_press_in_a_cards_hang_lands_at_its_rows_start() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let on_action = rendered.text_rows[1].glyphs[0].index;
+    let cell = pressed_on(&rendered, &hits, 1, |rect| rect.x);
+    assert_eq!(cell, on_action);
+}
+
+/// A word that acts is a target wherever it folded to, lifting under the
+/// pointer as it does on the first row.
+#[test]
+fn a_cards_action_is_a_target_on_the_row_it_folded_to() {
+    let (rendered, hits) = a_header_whose_action_folds();
+    let second = &rendered.text_rows[1];
+    let (rect, _) = hits
+        .iter()
+        .find(|(_, hit)| matches!(hit, ViewHit::Press { .. }))
+        .expect("the action is offered");
+    assert_eq!(rect.y, second.area.y);
+    assert_eq!(rect.x, second.glyphs[0].x);
+    assert_eq!(rect.width, 6);
+}

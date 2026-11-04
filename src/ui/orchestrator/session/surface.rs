@@ -302,8 +302,10 @@ impl Attach<'_> {
         match hit {
             ViewHit::PlaceCaret { line, cell } => ViewHit::PlaceCaret {
                 line,
-                cell: crate::ui::extension_view::caret_cell_at(
+                cell: crate::ui::extension_view::pressed_cell(
+                    &self.model.surface_frame.text_rows,
                     rect,
+                    line,
                     cell,
                     column,
                     self.model.surface_frame.content_gutter,
