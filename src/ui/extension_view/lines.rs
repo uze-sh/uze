@@ -649,7 +649,9 @@ fn first_drawn(
     let Some(window) = lines.get(scroll.saturating_sub(first)..=caret.line - first) else {
         return scroll;
     };
-    let Some((on_caret, above)) = window.split_last() else {
+    // Nothing above to give way, so nothing to count: this runs on every
+    // frame, and the caret's line can be a minified file's only one.
+    let Some((on_caret, above)) = window.split_last().filter(|(_, above)| !above.is_empty()) else {
         return scroll;
     };
     let height = |line: &ContentLine| usize::from(line_height(line, width, gutter));
