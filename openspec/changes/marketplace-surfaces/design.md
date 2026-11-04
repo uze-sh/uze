@@ -364,18 +364,31 @@ that has already settled, and each can be reverted alone.
 
 - Tabs lose Extensions: `Overview · Marketplace · Integrations · Shortcuts ·
   Settings`.
-- Views: `plugins · extensions · themes · sources`, keeping today's tree, columns
-  and drawer. A filter `all · installed · updates` stands beside them.
+- Nothing folds. A menu column, the Overview's shape, lists the kinds
+  (`plugins`, `extensions`, `themes`) and, under `from`, `all` and each
+  marketplace. Choosing a marketplace narrows the grid and puts its source and
+  actions in the drawer, so it needs no view of its own. With `all`, a marketplace
+  is a section's heading.
+- Everything is a card from `view::catalog`, with today's anatomy, and each kind
+  says what it is. A plugin's foot counts what it brings. An extension's says
+  where it stands, and its drawer draws the workspace with those areas lit. A
+  theme's card stands on the theme's own colours, and `p` tries the theme on the
+  whole screen until the cursor moves.
+- A filter `all · installed · updates` stands over the grid.
 - The screen answers both "what can I get" and "what runs", which replaces the
   design system's "Marketplace says what a package brings; Extensions says what
   runs". That rule existed because a package carried extensions. It and the
   "a package that carries only extensions" wording change with this.
+- Below about 130 columns the menu lies across the top, and the drawer stays.
 - Settings keeps choosing among installed themes and links to more.
 
 *Rejected:* keeping the Extensions tab beside a new view, which leaves two places
-named the same; and marketplace-first (`uze > plugins, extensions, themes`), which
-is one tree holding three kinds of column, and makes "which themes can I get"
-a walk through every marketplace.
+named the same; a tree of marketplaces and kinds, which folds and makes "which
+themes can I get" a walk through every marketplace; and a plain list per kind,
+which loses what the current cards show at a glance.
+
+*Cost:* a plugin's resources stop being rows of their own. They are read in its
+drawer, so a single skill no longer has a detail panel.
 
 ## Open Questions
 

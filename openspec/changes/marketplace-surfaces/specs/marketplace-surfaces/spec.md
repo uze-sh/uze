@@ -117,16 +117,40 @@ An extension whose named plugin is missing SHALL still install. UZE SHALL show t
 - **WHEN** `uze market remove ai` runs with a plugin and an extension installed from it
 - **THEN** both are gone, the plugin through its receipts, and then the registry entry
 
-### Requirement: The Marketplace screen holds one view per kind
-The manage modal's Marketplace screen SHALL offer a view per kind and one of the marketplaces themselves. Each kind's view SHALL group its entries by marketplace, with what ships in the build among them, marked Bundled. A filter SHALL narrow a view to what is installed or has an update.
+### Requirement: The Marketplace screen is a menu of kinds and marketplaces
+The manage modal's Marketplace screen SHALL list each kind and each marketplace in a menu, and show the chosen kind's entries as cards. Nothing on it SHALL fold. With no marketplace chosen, each marketplace SHALL head its own section, and what ships in the build SHALL be marked Bundled.
 
 #### Scenario: Bundled and optional stand together
-- **WHEN** the operator opens the extensions view
-- **THEN** the built-in extensions stand in the `uze` group marked Bundled, beside what the marketplace offers
+- **WHEN** the operator opens extensions with `all` chosen
+- **THEN** the built-in extensions stand under the `uze` heading marked Bundled, beside what that marketplace offers
+
+### Requirement: Choosing a marketplace narrows every kind
+Choosing a marketplace in the menu SHALL narrow the cards to it, in whichever kind is in front, and the drawer SHALL show its source, when it was last read, what it offers and its actions.
+
+#### Scenario: Reading a marketplace
+- **WHEN** the operator chooses `ai` in the menu
+- **THEN** only its entries are listed, and the drawer offers fetching and removing it
+
+### Requirement: A filter narrows a kind to what needs looking at
+A filter SHALL narrow the cards to what is installed or has an update, and an empty result SHALL say why.
 
 #### Scenario: Asking what has an update
-- **WHEN** the operator chooses `updates` in the themes view
+- **WHEN** the operator chooses `updates` in themes
 - **THEN** only themes with a new revision are listed, and an empty result says everything is up to date
+
+### Requirement: A card says what its kind is
+A plugin's card SHALL count what it brings, an extension's SHALL name where it stands in the workspace, and a theme's SHALL be drawn in that theme's colours, whether or not it is installed.
+
+#### Scenario: A theme seen before installing
+- **WHEN** a theme the machine does not have is listed
+- **THEN** its card stands on its own colours, read from the catalogue
+
+### Requirement: A theme can be tried before it is chosen
+From a theme's card the operator SHALL be able to draw the whole screen in that theme without choosing it. Moving away or dismissing SHALL put the chosen theme back and SHALL write nothing.
+
+#### Scenario: Trying a theme
+- **WHEN** the operator previews `tokyo-night` and moves to another card
+- **THEN** the screen returns to the chosen theme, and `[appearance]` is unchanged
 
 ### Requirement: An extension is managed where it is installed
 There SHALL be no Extensions screen. An extension's drawer in the Marketplace SHALL offer installing, allowing, enabling, disabling, its preferences and removing, each only where it applies. A bundled extension SHALL offer no removal, and SHALL say why.
