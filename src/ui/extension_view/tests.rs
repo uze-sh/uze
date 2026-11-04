@@ -3785,3 +3785,171 @@ fn a_cards_first_row_is_never_left_blank_on_a_narrow_row() {
         .collect();
     assert_eq!(rows[0], "    abc");
 }
+
+/// Numbered lines drawn as a surface hands them over, with what the frame
+/// recorded and the screen it left.
+fn drawn_numbered(
+    lines: Vec<ContentLine>,
+    scroll: usize,
+    caret: Option<(usize, usize)>,
+) -> (Rendered, Vec<(Rect, ViewHit)>, ratatui::buffer::Buffer) {
+    let mut view = sample();
+    let Content::Lines {
+        lines: drawn,
+        total,
+        scroll: at,
+        first,
+        caret: placed,
+        editable,
+        ..
+    } = &mut view.content
+    else {
+        unreachable!("the sample is lines")
+    };
+    *total = lines.len();
+    *drawn = lines;
+    *at = scroll;
+    *first = 0;
+    *placed = caret.map(|(line, column)| Caret { line, column });
+    *editable = caret.is_some();
+    let mut terminal = Terminal::new(TestBackend::new(80, 16)).unwrap();
+    let mut hits = Vec::new();
+    let mut rendered = None;
+    terminal
+        .draw(|frame| {
+            rendered = Some(render(
+                frame,
+                &view,
+                frame.area(),
+                NavigatorFrame {
+                    width: Some(24),
+                    scroll: NavigatorScroll::default(),
+                    resizing: false,
+                    sliding: None,
+                },
+                FooterKeys {
+                    scope: uze_keys::Scope::Code,
+                    hovered: None,
+                    host: &[],
+                },
+                None,
+                &mut hits,
+            ));
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer().clone();
+    (rendered.expect("drawn"), hits, buffer)
+}
+
+fn caret_on_screen(buffer: &ratatui::buffer::Buffer) -> Option<(u16, u16)> {
+    let area = *buffer.area();
+    (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| (x, y)))
+        .find(|&(x, y)| {
+            buffer[(x, y)].bg == theme::color(Token::Accent) && buffer[(x, y)].symbol() != " "
+        })
+}
+
+/// Lines that fold push the one being typed on under the foot while the
+/// surface, counting lines, is sure it is in view.
+#[test]
+fn the_caret_under_folded_lines_brings_its_row_on_screen() {
+    let long = "word ".repeat(30);
+    let mut lines: Vec<ContentLine> = (0..8).map(|_| code_line(&long)).collect();
+    lines.push(code_line("typed here"));
+    let (rendered, _, buffer) = drawn_numbered(lines, 0, Some((8, 3)));
+    assert!(rendered.text_rows.iter().any(|row| row.line == 8));
+    let (_, y) = caret_on_screen(&buffer).expect("the caret is drawn");
+    let row = rendered.text_rows.iter().find(|row| row.line == 8).unwrap();
+    assert_eq!(y, row.area.y, "on the row of its own line");
+    assert_eq!(buffer[caret_on_screen(&buffer).unwrap()].symbol(), "e");
+}
+
+/// The caret's row of a line that folds is on screen, not only the line's
+/// first row: this is the row cut by the foot.
+#[test]
+fn the_caret_on_a_later_row_of_a_folded_line_is_on_screen() {
+    let long = "word ".repeat(30);
+    let mut lines: Vec<ContentLine> = (0..6).map(|_| code_line(&long)).collect();
+    lines.push(code_line(&format!("{long}{long}END")));
+    let column = long.len() * 2 + 1;
+    let (_, _, buffer) = drawn_numbered(lines, 0, Some((6, column)));
+    let caret = caret_on_screen(&buffer).expect("the caret is drawn");
+    assert_eq!(buffer[caret].symbol(), "N");
+}
+
+/// The wheel scrolled up from the caret: the view stays where the wheel put
+/// it, and the caret is not dragged back into it.
+#[test]
+fn a_caret_scrolled_away_from_does_not_move_the_view() {
+    let lines: Vec<ContentLine> = (0..80).map(|_| code_line("short")).collect();
+    let (rendered, _, _) = drawn_numbered(lines, 2, Some((70, 0)));
+    assert_eq!(rendered.text_rows[0].line, 2);
+}
+
+/// No caret, nothing moves: folded lines read from where they were scrolled.
+#[test]
+fn without_a_caret_lines_start_at_the_scroll() {
+    let long = "word ".repeat(30);
+    let lines: Vec<ContentLine> = (0..8).map(|_| code_line(&long)).collect();
+    let (rendered, _, _) = drawn_numbered(lines, 0, None);
+    assert_eq!(rendered.text_rows[0].line, 0);
+}
+
+/// What the workspace does with a press at `column` on a numbered line, the
+/// path the code editor and the architect's source take.
+fn pressed_on_numbered(
+    rendered: &Rendered,
+    hits: &[(Rect, ViewHit)],
+    line: usize,
+    column: impl Fn(Rect) -> u16,
+) -> usize {
+    let (rect, cell) = hits
+        .iter()
+        .find_map(|(rect, hit)| match hit {
+            ViewHit::PlaceCaret { line: at, cell } if *at == line => Some((*rect, *cell)),
+            _ => None,
+        })
+        .expect("the line takes a press");
+    pressed_cell(
+        &rendered.text_rows,
+        rect,
+        line,
+        cell,
+        column(rect),
+        rendered.content_gutter,
+    )
+}
+
+/// In an editor a press past a line's end means its end, on the cell the
+/// next character would take.
+#[test]
+fn a_press_past_a_files_line_lands_at_its_end() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.right() - 1);
+    assert_eq!(cell, 4);
+}
+
+#[test]
+fn a_press_on_a_files_gutter_lands_at_its_start() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x);
+    assert_eq!(cell, 0);
+}
+
+#[test]
+fn a_press_on_a_files_text_lands_on_its_character() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("abcd")], 0, None);
+    let gutter = rendered.content_gutter;
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x + gutter + 2);
+    assert_eq!(cell, 2);
+}
+
+/// An empty line has no glyphs to bound a press by: it means its start.
+#[test]
+fn a_press_on_an_empty_line_lands_at_its_start() {
+    let (rendered, hits, _) = drawn_numbered(vec![code_line("")], 0, None);
+    let gutter = rendered.content_gutter;
+    let cell = pressed_on_numbered(&rendered, &hits, 0, |rect| rect.x + gutter);
+    assert_eq!(cell, 0);
+}

@@ -112,11 +112,20 @@ pub(super) fn render_lines(
     let text_width = text_width(content.width, gutter);
     let mut y = content.y;
     let mut at_end = true;
+    let start = first_drawn(
+        lines,
+        first,
+        scroll,
+        caret,
+        content.width,
+        gutter,
+        content.height,
+    );
     for (offset, line) in lines
         .iter()
         .enumerate()
         .map(|(offset, line)| (offset + first, line))
-        .skip(scroll.saturating_sub(first))
+        .skip(start.saturating_sub(first))
     {
         // A line folding past the foot is drawn as far as it fits, or the
         // text being typed on the last row goes from the screen with its
@@ -586,6 +595,78 @@ pub(super) const HEADING_INSET: u16 = 1;
 const MARKER_COLUMNS: u16 = 2;
 const MIN_NUMBER_COLUMNS: u16 = 3;
 
+/// Which row and cell of `line` the caret stands on, and how many characters
+/// the line has: found by the walk that drew them.
+fn caret_place(
+    line: &ContentLine,
+    column: usize,
+    width: usize,
+    gutter: u16,
+) -> (usize, usize, usize) {
+    let mut seen = 0usize;
+    let mut at = None;
+    let end = fold(
+        line,
+        width,
+        Breaks::for_line(line, gutter),
+        |row, cell, _, _| {
+            if seen == column {
+                at = Some((row, cell));
+            }
+            seen += 1;
+        },
+    );
+    // A caret past the last character sits one cell beyond it, which is
+    // where the next one will be typed — on the next row when this one is
+    // full.
+    let (down, across) = at.unwrap_or(match end {
+        (row, cell) if cell >= width => (row + 1, hanging(line, width)),
+        (row, cell) => (row, cell + column.saturating_sub(seen)),
+    });
+    (down, across, seen)
+}
+
+/// The line drawing starts from, so the caret's row is on screen.
+///
+/// A surface follows its caret in lines, the only thing it can count, and
+/// lines that fold take more rows than that: the row being typed on could
+/// stand under the foot, with the surface sure it was in view. Only while
+/// the caret is that close: one the wheel scrolled away from stays away.
+fn first_drawn(
+    lines: &[ContentLine],
+    first: usize,
+    scroll: usize,
+    caret: Option<Caret>,
+    width: u16,
+    gutter: u16,
+    rows: u16,
+) -> usize {
+    let Some(caret) = caret.filter(|caret| {
+        caret.line >= scroll && caret.line - scroll < usize::from(rows) && caret.line >= first
+    }) else {
+        return scroll;
+    };
+    let Some(window) = lines.get(scroll.saturating_sub(first)..=caret.line - first) else {
+        return scroll;
+    };
+    let Some((on_caret, above)) = window.split_last() else {
+        return scroll;
+    };
+    let height = |line: &ContentLine| usize::from(line_height(line, width, gutter));
+    let (down, _, _) = caret_place(on_caret, caret.column, text_width(width, gutter), gutter);
+    let mut needed =
+        above.iter().map(height).sum::<usize>() + down.min(height(on_caret).saturating_sub(1)) + 1;
+    let mut start = scroll;
+    for line in above {
+        if needed <= usize::from(rows) {
+            break;
+        }
+        needed -= height(line);
+        start += 1;
+    }
+    start
+}
+
 /// The caret, drawn by inverting the cell it sits on rather than by
 /// drawing a mark into it.
 ///
@@ -607,26 +688,7 @@ pub(super) fn render_caret(
     gutter: u16,
 ) {
     let width = text_width(row.width, gutter);
-    let mut seen = 0usize;
-    let mut at = None;
-    let end = fold(
-        line,
-        width,
-        Breaks::for_line(line, gutter),
-        |row, cell, _, _| {
-            if seen == column {
-                at = Some((row, cell));
-            }
-            seen += 1;
-        },
-    );
-    // A caret past the last character sits one cell beyond it, which is
-    // where the next one will be typed — on the next row when this one is
-    // full.
-    let (down, across) = at.unwrap_or(match end {
-        (row, cell) if cell >= width => (row + 1, hanging(line, width)),
-        (row, cell) => (row, cell + column.saturating_sub(seen)),
-    });
+    let (down, across, seen) = caret_place(line, column, width, gutter);
     if row.is_empty() {
         return;
     }
