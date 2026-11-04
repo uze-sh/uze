@@ -146,7 +146,7 @@ the suite green in the box, as `cargo-mutants`' own baseline would try only the 
 '<pattern>'` to re-run one mutant. Read
 `$AUDIT/boxes/mutants/work/uze/mutants.out/missed.txt`; the file is what proves it.
 
-The box can mislead in three ways:
+The box can mislead or get in the way in four ways:
 
 - **A false `missed`.** Bun is absent, and the OpenCode tests that need it skip
   themselves. Before calling a survivor in that code a gap, confirm it on a CI run,
@@ -154,7 +154,12 @@ The box can mislead in three ways:
 - **A false `caught`.** A test that fails now and then there reads as catching the
   mutant, and `uze-terminal`'s `foreground_status_*` have failed in isolated
   environments. When a result surprises you, read that mutant's log under
-  `mutants.out/log/` to see which test failed.
+  `mutants.out/log/` to see which test failed. The timing budgets (`performance`,
+  `extension_storm`, `budget`) fail on a busy machine, so a workspace run leaves
+  them out; a mutant only they would catch reads as `missed`.
+- **The machine runs out.** The box limits neither memory nor CPU. A mutant of
+  `uze-script` can take a limit off the engine, and one test reached 33 GB.
+  Watch the available memory while that crate runs.
 - **No result.** A test that always fails there stops the run at the baseline.
   Find out why it fails: anything in a sandbox is refused an approval, for example,
   so those tests are filtered out for a workspace run in `scripts/lab`. A bare

@@ -80,6 +80,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_colour_writes_as_the_hex_a_theme_file_takes() {
+        assert_eq!(Rgb(26, 43, 255).to_string(), "#1a2bff");
+    }
+
+    #[test]
     fn compositing_reproduces_the_surfaces_the_design_derived_by_alpha() {
         // Most of UZE's surfaces are an `rgba(…)` over the backdrop, blended
         // by hand because a terminal has no alpha channel — their `src/ui.rs`

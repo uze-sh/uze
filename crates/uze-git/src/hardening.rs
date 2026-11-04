@@ -554,6 +554,69 @@ mod tests {
     }
 
     #[test]
+    fn a_setting_is_named_by_the_repository_only_in_full() {
+        let overrides = settings_for(
+            &[
+                ("local", "merge.renames\ntrue"),
+                ("local", "core.driver\nx"),
+                ("local", "http.postbuffer\n1"),
+                ("local", "core.savecookies\nx"),
+            ],
+            &["status"],
+            Side::Read,
+        );
+        assert!(overrides.settings.is_empty(), "{:?}", overrides.settings);
+    }
+
+    #[test]
+    fn only_the_operators_credential_helpers_are_given_again() {
+        let overrides = settings_for(
+            &[
+                ("global", "credential.username\nme"),
+                ("global", "sequence.helper\nx"),
+            ],
+            &["fetch", "origin"],
+            Side::Write,
+        );
+        assert!(
+            !overrides
+                .settings
+                .iter()
+                .any(|setting| setting.contains("username") || setting.contains("sequence")),
+            "{:?}",
+            overrides.settings
+        );
+    }
+
+    #[test]
+    fn options_are_placed_in_order_right_after_the_subcommand() {
+        let overrides = Overrides {
+            settings: Vec::new(),
+            options: vec!["--first".to_owned(), "--second".to_owned()],
+        };
+        assert_eq!(
+            overrides.placed(&["-c", "a=b", "fetch", "origin"]),
+            ["-c", "a=b", "fetch", "--first", "--second", "origin"]
+        );
+    }
+
+    #[test]
+    fn a_remote_is_spoken_to_only_by_an_add_that_fetches() {
+        assert_eq!(
+            reach_of(&["remote", "add", "-f", "x", "y"]),
+            Reach::Transport
+        );
+        assert_eq!(reach_of(&["remote", "add", "x", "y"]), Reach::Nothing);
+        assert_eq!(reach_of(&["remote", "rename", "-f"]), Reach::Nothing);
+    }
+
+    #[test]
+    fn listing_modified_files_reads_the_work_tree() {
+        assert_eq!(reach_of(&["ls-files", "-m"]), Reach::Content);
+        assert_eq!(reach_of(&["ls-files"]), Reach::Nothing);
+    }
+
+    #[test]
     fn only_commands_that_can_reach_a_program_ask_for_the_configuration() {
         assert_eq!(reach_of(&["status", "--porcelain"]), Reach::Content);
         assert_eq!(reach_of(&["ls-remote", "origin"]), Reach::Transport);

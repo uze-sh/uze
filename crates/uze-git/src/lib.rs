@@ -878,6 +878,21 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(10));
     }
 
+    /// Closing one pipe says nothing about the command still running.
+    /// Drives POSIX programs (`sh`, `sleep`) as stand-ins.
+    #[cfg(unix)]
+    #[test]
+    fn a_command_that_closed_its_error_output_is_still_held_to_its_limit() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exec 2>&-; sleep 30"]);
+        let started = Instant::now();
+
+        let outcome = run_within(command, Duration::from_millis(200));
+
+        assert!(outcome.is_err_and(|error| error.0.contains("did not finish")));
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
     /// A command that ends while something it started still holds its
     /// output is not waited on past the limit either. Drives POSIX
     /// programs (`sh`, `sleep`) as stand-ins.
@@ -1110,6 +1125,10 @@ mod tests {
             ["show", "--no-ext-diff", "--no-textconv", "HEAD:diff"]
         );
         assert_eq!(hardened_read(&["status", "diff"]), ["status", "diff"]);
+        assert_eq!(
+            hardened_read(&["--no-pager", "diff"]),
+            ["--no-pager", "diff", "--no-ext-diff", "--no-textconv"]
+        );
     }
 
     /// A program the fixture can arm Git with: it appends what ran it to
