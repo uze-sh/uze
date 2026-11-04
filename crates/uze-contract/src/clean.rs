@@ -247,6 +247,23 @@ mod tests {
     }
 
     #[test]
+    fn a_blank_line_and_a_lone_carriage_return_stay_breaks() {
+        assert_eq!(Clean::text("a\n\nb").as_str(), "a\n\nb");
+        assert_eq!(Clean::text("a\rb").as_str(), "a\nb");
+    }
+
+    #[test]
+    fn the_byte_bound_keeps_all_that_fits_and_nothing_past_it() {
+        // Four bytes and four marks of four: more than a cell's budget, so the
+        // bytes run out before the cells do, exactly on the bound.
+        let heavy = format!("\u{10000}{}", "\u{e01ef}".repeat(4)).repeat(LABEL_MAX);
+        assert_eq!(
+            Clean::label(&heavy).as_str().len(),
+            LABEL_MAX * BYTES_PER_CELL
+        );
+    }
+
+    #[test]
     fn stacked_combining_marks_are_capped_and_length_is_bounded() {
         let zalgo = format!("a{}", "\u{301}".repeat(20));
         assert_eq!(
@@ -314,6 +331,8 @@ mod tests {
             "👍🏽",
         ] {
             assert_eq!(Clean::label(text).as_str(), text);
+            assert_eq!(AsRef::<str>::as_ref(&Clean::label(text)), text);
+            assert_eq!(Clean::label(text).to_string(), text);
         }
     }
 }

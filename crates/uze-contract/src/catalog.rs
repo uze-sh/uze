@@ -903,6 +903,23 @@ pub fn prop_doc(prop: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_size_is_a_whole_number_of_cells_or_a_written_share() {
+        assert_eq!(Size::parse(&json!(12)), Some(Size::Cells(12)));
+        assert_eq!(Size::parse(&json!("12")), Some(Size::Cells(12)));
+        assert_eq!(Size::parse(&json!("20%")), Some(Size::Percent(20)));
+        for refused in [
+            json!(true),
+            json!(-1),
+            json!(1.5),
+            json!(70_000),
+            json!("101%"),
+        ] {
+            assert_eq!(Size::parse(&refused), None, "{refused}");
+        }
+    }
 
     #[test]
     fn every_node_has_one_catalog_entry_and_round_trips_its_name() {

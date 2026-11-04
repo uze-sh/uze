@@ -1217,6 +1217,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_drawers_side_and_a_bars_alignment_are_read_by_their_names() {
+        assert_eq!(DrawerSide::parse("right"), Some(DrawerSide::Right));
+        assert_eq!(DrawerSide::parse("left"), Some(DrawerSide::Left));
+        assert_eq!(DrawerSide::parse("bottom"), Some(DrawerSide::Bottom));
+        assert_eq!(DrawerSide::parse("top"), Some(DrawerSide::Top));
+        assert_eq!(DrawerSide::parse("middle"), None);
+        assert_eq!(BarAlign::parse("left"), Some(BarAlign::Left));
+        assert_eq!(BarAlign::parse("right"), Some(BarAlign::Right));
+        assert_eq!(BarAlign::parse("middle"), None);
+    }
+
+    #[test]
+    fn the_packaged_programs_are_what_sources_and_actions_run_from_the_package() {
+        let program = |name: &str| Program::new(vec![name.to_owned()]);
+        let manifest = Manifest {
+            protocol: 1,
+            id: "meter".into(),
+            name: "Meter".into(),
+            description: String::new(),
+            wants: Vec::new(),
+            surfaces: Vec::new(),
+            sources: vec![
+                SourceDecl::new("packaged", SourceKind::Run(program("./bin/meter"))),
+                SourceDecl::new("installed", SourceKind::Run(program("gh"))),
+            ],
+            actions: vec![
+                ActionDecl::new("sync", "Sync", "board", Does::Run(program("./bin/sync"))),
+                ActionDecl::new("view", "View", "board", Does::Run(program("gh"))),
+            ],
+            exec: Vec::new(),
+            preferences: Vec::new(),
+            sprites: Vec::new(),
+            icons: Vec::new(),
+            mcp: Vec::new(),
+        };
+        assert_eq!(
+            manifest.packaged_programs(),
+            BTreeSet::from(["bin/meter", "bin/sync"])
+        );
+    }
+
+    #[test]
+    fn a_host_name_may_hold_digits_and_inner_hyphens() {
+        assert!(is_host_name("api-2.example.com"));
+        assert!(is_host_name("1.example.com"));
+        assert!(!is_host_name("-api.example.com"));
+        assert!(!is_host_name("API.example.com"));
+    }
+
+    #[test]
     fn a_grant_is_one_this_build_enforces() {
         for grant in Grant::FIXED {
             assert_eq!(Grant::parse(&grant.name()), Some(grant.clone()));
@@ -1324,6 +1374,9 @@ mod tests {
         let script = SourceDecl::new("board", SourceKind::Script("board.uze".into()));
         assert_eq!(script.script(), Some("board.uze"));
         assert_eq!(script.fixture(), None);
+        assert_eq!(script.resident(), None);
+        let resident = SourceDecl::new("board", SourceKind::Resident("board.uze".into()));
+        assert_eq!(resident.resident(), Some("board.uze"));
     }
 
     #[test]

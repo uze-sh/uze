@@ -1015,3 +1015,19 @@ fn expect_names<'a>(what: &str, names: &[&str], documented: impl Iterator<Item =
         "every {what} the contract names needs its line in uze-contract's docs.rs, in order"
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_with_their_lines_in_order_pass() {
+        expect_names("slot", &["a", "b"], ["a", "b"].into_iter());
+    }
+
+    #[test]
+    #[should_panic(expected = "every slot the contract names needs its line")]
+    fn a_name_without_its_line_stops_the_reference() {
+        expect_names("slot", &["a", "b"], ["a"].into_iter());
+    }
+}

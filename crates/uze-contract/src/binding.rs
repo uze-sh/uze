@@ -258,6 +258,7 @@ mod tests {
         assert!(matches!(mixed, Binding::Text(parts) if parts.len() == 2));
         let plain = binding_of(parse_text("Fases").unwrap());
         assert_eq!(plain, Binding::Literal(json!("Fases")));
+        assert_eq!(binding_of(Vec::new()), Binding::Literal(json!("")));
     }
 
     #[test]

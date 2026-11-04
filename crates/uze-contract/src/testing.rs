@@ -162,3 +162,24 @@ pub fn step_doc(name: &str) -> Option<&'static str> {
         .find(|(step, _)| *step == name)
         .map(|(_, doc)| *doc)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_theme_is_read_by_its_name() {
+        assert_eq!(ThemeName::parse("dark"), Some(ThemeName::Dark));
+        assert_eq!(ThemeName::parse("light"), Some(ThemeName::Light));
+        assert_eq!(ThemeName::parse("sepia"), None);
+    }
+
+    #[test]
+    fn a_directive_has_its_own_line_and_nothing_else_has_one() {
+        assert_eq!(
+            step_doc("press"),
+            Some("Press a chord, as the keymap spells it.")
+        );
+        assert_eq!(step_doc("no-such-step"), None);
+    }
+}

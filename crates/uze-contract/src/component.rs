@@ -334,6 +334,45 @@ mod tests {
     }
 
     #[test]
+    fn a_component_is_a_named_file_with_the_suffix() {
+        assert!(is_component("panel.uze"));
+        assert!(!is_component(".uze"), "no name");
+        assert!(!is_component("abuze"), "no dot");
+        assert!(!is_component("panel.kdl"));
+    }
+
+    #[test]
+    fn a_block_measures_its_own_bytes_without_its_tags() {
+        let view = Component::read("<view>\nabc\n</view>\n")
+            .unwrap()
+            .view
+            .unwrap();
+        assert_eq!(view.len(), "abc\n".len());
+        assert!(!view.is_empty());
+        let empty = Component::read("<view>\n</view>\n").unwrap().view.unwrap();
+        assert_eq!(empty.len(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn a_tag_inside_a_block_is_answered_by_which_tag_it_is() {
+        let suggestion = |text: &str| Component::read(text).unwrap_err().remove(0).suggestion;
+        assert_eq!(
+            suggestion("<view>\n<view>\n</view>\n").as_deref(),
+            Some("a `<view>` block holds no other")
+        );
+        assert_eq!(
+            suggestion("<view>\n<script>\n</view>\n").as_deref(),
+            Some("close `<view>` with `</view>` first")
+        );
+    }
+
+    #[test]
+    fn indented_text_is_text_and_only_an_indented_tag_is_misplaced() {
+        assert_eq!(messages("  Text \"a\"\n"), ["text outside a block"]);
+    }
+
+    #[test]
     fn the_offset_of_an_error_is_the_start_of_its_line() {
         let errors = Component::read("<view>\n</view>\nstray\n").unwrap_err();
         assert_eq!(errors[0].offset, "<view>\n</view>\n".len());
