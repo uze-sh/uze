@@ -17,4 +17,10 @@ exclude_re = [
   'uze-document/src/lib\.rs.*replace < with <= in may_be_set_aside$',
   # A binding paired with itself has its own action, so it conflicts with nothing.
   'uze-keys/src/keymap\.rs.*replace \+ with \* in conflicts_in$',
+  # Only one colour in 16 million sits exactly on 0.18, and either side suits it.
+  'uze-theme/src/color\.rs.*replace > with >= in Rgb::is_light$',
+  # Only the exit code a debug span records, for a process with no exit code.
+  'uze-git/src/lib\.rs.*delete - in run_(to_completion|within)$',
+  # Only how often the wait looks, not what it finds or how long it may take.
+  'uze-git/src/lib\.rs.*replace \* with / in run_within$',
 ]
