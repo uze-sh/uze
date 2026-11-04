@@ -293,6 +293,16 @@ impl Breaks {
             _ => Self::Cells,
         }
     }
+
+    /// As [`Self::for_gutter`], but a card is prose whatever stands beside
+    /// it: whether a comment broke mid-word would otherwise depend on
+    /// whether a numbered line happened to be on screen.
+    pub(super) fn for_line(line: &ContentLine, gutter: u16) -> Self {
+        match line.tone {
+            LineTone::Card(_) => Self::Words,
+            _ => Self::for_gutter(gutter),
+        }
+    }
 }
 
 /// Where a card's folded rows start: under the line's own text, and never
@@ -364,6 +374,20 @@ pub(super) fn fold(
         cell += taken;
     }
     (row, cell)
+}
+
+/// How many cells of `line`'s text come before each row [`fold`] puts it on,
+/// for a pointer to turn a place on a row back into a place in the text.
+pub(super) fn row_starts(line: &ContentLine, width: usize, breaks: Breaks) -> Vec<usize> {
+    let mut starts = vec![0];
+    let mut before = 0;
+    fold(line, width, breaks, |row, _, _, character| {
+        if row == starts.len() {
+            starts.push(before);
+        }
+        before += cell_width(character);
+    });
+    starts
 }
 
 /// `line`'s spans, styled and folded into the rows [`fold`] puts them on.

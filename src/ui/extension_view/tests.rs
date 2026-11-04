@@ -3441,11 +3441,11 @@ fn row_text(buffer: &ratatui::buffer::Buffer, x: u16, y: u16, width: u16) -> Str
 /// there lost a character to it: `config::` read as `onfig::`.
 #[test]
 fn a_cards_folded_row_hangs_clear_of_its_rule() {
-    let line = card_line("    abcdefghij klmnop");
+    let line = card_line("    abcdefghijkl mnop");
     let drawn = drawn_with_caret(&line, 12, 99);
     assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 0, 11), "   abcdefgh");
-    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 11), "   ij klmno");
-    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 11), "   p       ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 11), "   ijkl    ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 11), "   mnop    ");
     for y in 0..3 {
         assert_eq!(
             drawn[(GUTTER_WIDTH, y)].symbol(),
@@ -3490,20 +3490,30 @@ fn the_caret_on_a_cards_folded_row_stands_on_its_character() {
     assert_eq!(drawn[caret].bg, theme::color(Token::Accent));
 }
 
-/// A press on a folded row counts the cells the rows above really hold, or
-/// the caret lands further along than the character pressed.
+/// A press on a folded row counts the cells the rows above really hold,
+/// words broken early included, or the caret lands past what was pressed.
 #[test]
-fn a_press_on_a_cards_folded_row_lands_on_its_character() {
-    let line = card_line("    abcdefghijkl");
-    let width = 12;
-    let hang = prose::hanging(&line, width);
-    let row = Rect::new(0, 1, GUTTER_WIDTH + width as u16, 1);
-    let first_on_row = GUTTER_WIDTH + hang as u16;
+fn a_cards_rows_say_how_much_text_comes_before_them() {
+    let line = card_line("    Renamed with config");
+    assert_eq!(row_starts(&line, 14, Breaks::Words), [0, 12, 17]);
+    let row = Rect::new(0, 1, GUTTER_WIDTH + 14, 1);
+    let first_on_row = GUTTER_WIDTH + 4;
     assert_eq!(
-        lines::caret_cell_at(row, width - hang, first_on_row, GUTTER_WIDTH),
-        width,
-        "the first cell of the second row is the row's width into the text"
+        lines::caret_cell_at(row, 12 - 4, first_on_row, GUTTER_WIDTH),
+        12,
+        "the first cell of the second row is that far into the text"
     );
+}
+
+/// A comment breaks between its words whether or not a numbered line is on
+/// screen beside it.
+#[test]
+fn a_card_folds_at_words_beside_numbered_lines() {
+    let line = card_line("    Renamed with config");
+    let drawn = drawn_with_caret(&line, 14, 99);
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 0, 13), "   Renamed   ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 1, 13), "   with      ");
+    assert_eq!(row_text(&drawn, GUTTER_WIDTH + 1, 2, 13), "   config    ");
 }
 
 /// Only a card's rows hang: a file's code wraps to the edge it starts from.

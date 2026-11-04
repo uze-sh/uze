@@ -139,7 +139,7 @@ pub(super) fn render_lines(
                 row,
                 gutter,
                 text_width,
-                Breaks::for_gutter(gutter),
+                Breaks::for_line(line, gutter),
             );
             if let Some(marked) = &marked {
                 crate::ui::selection::invert(frame, &rows, marked);
@@ -172,13 +172,21 @@ pub(super) fn render_lines(
         // the text it landed. The cell offset here is the row's own
         // start; the caller adds the horizontal distance, which is the
         // only part of the answer that needs the pointer.
-        let row_cells = text_width - hanging(line, text_width);
+        let hang = hanging(line, text_width);
+        let starts = row_starts(line, text_width, Breaks::for_line(line, gutter));
         for wrapped in 0..height {
+            let start = starts.get(usize::from(wrapped)).copied().unwrap_or(0);
             hits.push((
                 Rect::new(row.x, row.y + wrapped, row.width, 1),
                 ViewHit::PlaceCaret {
                     line: offset,
-                    cell: wrapped as usize * row_cells,
+                    // The caller adds how far along the row the pointer is,
+                    // which counts the hang too.
+                    cell: if wrapped == 0 {
+                        0
+                    } else {
+                        start.saturating_sub(hang)
+                    },
                 },
             ));
         }
@@ -551,7 +559,7 @@ pub(super) fn render_caret(
     let end = fold(
         line,
         width,
-        Breaks::for_gutter(gutter),
+        Breaks::for_line(line, gutter),
         |row, cell, _, _| {
             if seen == column {
                 at = Some((row, cell));
@@ -654,7 +662,7 @@ pub(super) fn line_height(line: &ContentLine, width: u16, gutter: u16) -> u16 {
     let (row, _) = fold(
         line,
         text_width(width, gutter),
-        Breaks::for_gutter(gutter),
+        Breaks::for_line(line, gutter),
         |_, _, _, _| {},
     );
     u16::try_from(row + 1).unwrap_or(u16::MAX)
@@ -779,7 +787,7 @@ pub(super) fn render_line(
         true => folded_rows(
             line,
             usize::from(columns[1].width),
-            Breaks::for_gutter(gutter),
+            Breaks::for_line(line, gutter),
         )
         .into_iter()
         .map(|mut row| {
