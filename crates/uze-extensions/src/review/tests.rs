@@ -2199,6 +2199,7 @@ fn deleting_the_comment_on_show_leaves_the_diff_on_screen() {
         height: 8,
     };
     let mut view = scrolled_to_an_answered_comment(space);
+    view.record.comments[0].status = CommentStatus::Draft;
     let id = view.record.comments[0].id;
     perform(&mut view, Act::Delete(id), space);
     let total = render::lines(&view).len();
@@ -2217,4 +2218,64 @@ fn resolving_a_comment_keeps_the_scroll_while_lines_fill_the_screen() {
     view.scroll = 0;
     handle_command(&mut view, Command::Resolve, space);
     assert_eq!(view.scroll, 0);
+}
+
+/// `r` with nothing to resolve takes no line away, so it moves nothing.
+#[test]
+fn resolving_nothing_keeps_the_scroll() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = reviewing();
+    view.scroll = render::lines(&view).len() - 1;
+    let scroll = view.scroll;
+    handle_command(&mut view, Command::Resolve, space);
+    assert_eq!(view.scroll, scroll);
+}
+
+fn scrolled_to_a_composer(space: Size) -> ReviewView {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        space,
+    );
+    handle_command(&mut view, Command::Comment, space);
+    view.scroll = render::lines(&view).len() - 1;
+    view
+}
+
+/// A composer put away takes as many lines with it as a comment does.
+#[test]
+fn closing_the_composer_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_a_composer(space);
+    handle_command(&mut view, Command::Close, space);
+    let total = render::lines(&view).len();
+    assert_eq!(
+        view.scroll,
+        total.saturating_sub(usize::from(crate::view::text_height(space)))
+    );
+}
+
+#[test]
+fn discarding_the_composer_leaves_the_diff_on_screen() {
+    let space = Size {
+        width: 100,
+        height: 8,
+    };
+    let mut view = scrolled_to_a_composer(space);
+    perform(&mut view, Act::Discard, space);
+    let total = render::lines(&view).len();
+    assert_eq!(
+        view.scroll,
+        total.saturating_sub(usize::from(crate::view::text_height(space)))
+    );
 }
