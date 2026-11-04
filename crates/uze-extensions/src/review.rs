@@ -275,7 +275,7 @@ pub(crate) fn handle_hit(view: &mut ReviewView, hit: ViewHit, space: Size) -> As
                     // columns do not.
                     let prefix = render::RULE.chars().count();
                     if let Some(composer) = view.composer.as_mut() {
-                        composer.place(index, cell.saturating_sub(prefix));
+                        composer.place_at_cell(index, cell.saturating_sub(prefix));
                     }
                 }
                 (Some(Line::ComposerPad), None) => {

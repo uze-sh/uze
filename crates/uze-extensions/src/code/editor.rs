@@ -9,6 +9,7 @@ use std::{cell::RefCell, collections::VecDeque, path::PathBuf};
 
 use super::request::LoadedFile;
 use crate::view::Command;
+use crate::view::column_at_cell;
 use crate::view::{Caret, ContentLine, Rgb, TAB_WIDTH};
 
 /// How the file terminated its lines when it was read.
@@ -68,27 +69,6 @@ fn split_lines(text: &str) -> (Vec<String>, LineEndings) {
             trailing,
         },
     )
-}
-
-/// The character `cell` display cells into `text`, clamped to its end —
-/// see [`OpenFile::column_at_cell`].
-pub(super) fn column_at_cell(text: &str, cell: usize) -> usize {
-    let mut cells = 0usize;
-    for (column, character) in text.chars().enumerate() {
-        let width = match character {
-            '\t' => TAB_WIDTH,
-            _ => unicode_width::UnicodeWidthChar::width(character)
-                .unwrap_or(1)
-                .max(1),
-        };
-        // Landing anywhere inside a wide glyph means that glyph, not
-        // the one after it.
-        if cell < cells + width {
-            return column;
-        }
-        cells += width;
-    }
-    text.chars().count()
 }
 
 /// The file being shown, and the state of editing it.

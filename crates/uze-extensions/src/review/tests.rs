@@ -2279,3 +2279,33 @@ fn discarding_the_composer_leaves_the_diff_on_screen() {
         total.saturating_sub(usize::from(crate::view::text_height(space)))
     );
 }
+
+/// A press arrives in cells and the composer's caret counts characters: a
+/// wide glyph is two of one and one of the other.
+#[test]
+fn a_press_in_the_composer_past_wide_glyphs_lands_on_its_character() {
+    let mut view = reviewing();
+    handle_hit(
+        &mut view,
+        ViewHit::LineNumber {
+            line: 2,
+            extend: false,
+        },
+        SPACE,
+    );
+    handle_command(&mut view, Command::Comment, SPACE);
+    for character in "日本語 ok".chars() {
+        handle_command(&mut view, Command::Type(character), SPACE);
+    }
+    let line = render::lines(&view)
+        .iter()
+        .position(|drawn| drawn.line == surface::Line::Composer(0))
+        .expect("the composer is drawn");
+    let cell = render::RULE.chars().count()
+        + "日本語 "
+            .chars()
+            .map(|c| if c == ' ' { 1 } else { 2 })
+            .sum::<usize>();
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell }, SPACE);
+    assert_eq!(view.composer.as_ref().unwrap().caret.column, 4, "on the o");
+}
