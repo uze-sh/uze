@@ -492,9 +492,14 @@ fn pad(
             "`pad` to {len} characters is past the string bound of {string_size} bytes"
         )));
     }
-    let mut padded = String::with_capacity(text.len() + (len - have) * padding.len());
+    let written = padding.chars().cycle().take(len - have);
+    let length = text.len() + written.clone().map(char::len_utf8).sum::<usize>();
+    if length > string_size {
+        return Err(too_large("Length of string"));
+    }
+    let mut padded = String::with_capacity(length);
     padded.push_str(text);
-    padded.extend(padding.chars().cycle().take(len - have));
+    padded.extend(written);
     *text = padded.into();
     Ok(())
 }
