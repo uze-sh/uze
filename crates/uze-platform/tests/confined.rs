@@ -4,7 +4,9 @@
 //! ([`uze_testkit::env::KERNEL_CONFINES`]).
 //!
 //! The helper a confinement is entered from is this test binary run again,
-//! alone on its main thread, as [`enter`] asks.
+//! alone on its main thread, as [`enter`] asks. Linux only: a shell's `ulimit`,
+//! a Landlock ABI and the rights each brings are what these name, and Windows
+//! and macOS have their own proof (`tests/cli/confine_windows.rs`).
 #![cfg(target_os = "linux")]
 
 use std::{

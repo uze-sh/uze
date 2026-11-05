@@ -1,7 +1,8 @@
 //! What this machine reports it can confine and seal, against what the kernel
 //! itself answers. `docs/architecture/invariants.md` holds both to the kernel,
 //! and every test that needs one skips where it reports none: a report that is
-//! wrong would pass quietly otherwise.
+//! wrong would pass quietly otherwise. Linux only: Landlock and seccomp are the
+//! kernel's answers asked here.
 #![cfg(target_os = "linux")]
 
 use uze_platform::{
@@ -35,6 +36,7 @@ fn kernel_filters_system_calls() -> bool {
 }
 
 fn architecture_has_a_filter() -> bool {
+    // The architectures Linux's system-call filter is written for here.
     cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
 }
 
