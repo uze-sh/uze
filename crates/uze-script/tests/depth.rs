@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{Value, json};
 use uze_script::{
     CheckoutPath, Entry, Grant, Grants, Limit, Reach, ReachError, Resident, ResidentScript, Script,
     ScriptError,
@@ -187,5 +187,144 @@ fn a_deep_value_built_in_one_resident_call_is_compared_on_the_session_stack() {
             ..
         }) => {}
         other => panic!("{other:?}"),
+    }
+}
+
+/// How deep a value may cross: 128 containers around what they hold.
+const CROSSING_DEPTH: usize = 128;
+
+/// One way of nesting: in JSON, and as the Rhai that wraps `v` once more.
+struct Shape {
+    wrap: fn(Value) -> Value,
+    wraps: &'static str,
+}
+
+const SHAPES: [Shape; 2] = [
+    Shape {
+        wrap: |value| json!([value]),
+        wraps: "[v]",
+    },
+    Shape {
+        wrap: |value| json!({ "x": value }),
+        wraps: "#{ x: v }",
+    },
+];
+
+impl Shape {
+    fn nested(&self, levels: usize) -> Value {
+        (0..levels).fold(json!(0), |value, _| (self.wrap)(value))
+    }
+
+    /// Rhai that leaves `v` nested `levels` deep.
+    fn building(&self, levels: usize) -> String {
+        format!(
+            "let v = 0; let n = 0; while n < {levels} {{ v = {wraps}; n += 1; }}",
+            wraps = self.wraps
+        )
+    }
+}
+
+fn answered(source: &str, input: &Value) -> Result<Value, ScriptError> {
+    Script::compile(source.as_bytes())?
+        .answer(input, &json!({}), &Grants::new(), Arc::new(NoCheckout))
+        .outcome
+        .map(|envelope| envelope.data)
+}
+
+#[test]
+fn a_value_as_deep_as_the_bound_crosses_in_and_out() {
+    for shape in &SHAPES {
+        let value = shape.nested(CROSSING_DEPTH);
+        let echoed = answered("fn answer(input, context) { #{ data: input } }", &value);
+        assert_eq!(echoed.unwrap(), value, "{}", shape.wraps);
+    }
+}
+
+#[test]
+fn a_value_one_level_past_the_bound_is_refused_on_its_way_in() {
+    for shape in &SHAPES {
+        let outcome = answered(
+            "fn answer(input, context) { #{ data: 1 } }",
+            &shape.nested(CROSSING_DEPTH + 1),
+        );
+        assert_eq!(
+            outcome,
+            Err(ScriptError::Question(
+                "the input is nested deeper than 128 levels".to_owned()
+            )),
+            "{}",
+            shape.wraps
+        );
+    }
+}
+
+#[test]
+fn a_value_a_script_built_as_deep_as_the_bound_crosses_out() {
+    for shape in &SHAPES {
+        let build = shape.building(CROSSING_DEPTH);
+        let source = format!("fn answer(input, context) {{ {build} #{{ data: v }} }}");
+        assert_eq!(
+            answered(&source, &json!({})).unwrap(),
+            shape.nested(CROSSING_DEPTH),
+            "{}",
+            shape.wraps
+        );
+    }
+}
+
+#[test]
+fn a_value_a_script_built_one_level_past_the_bound_is_refused_on_its_way_out() {
+    for shape in &SHAPES {
+        let build = shape.building(CROSSING_DEPTH + 1);
+        let source = format!("fn answer(input, context) {{ {build} #{{ data: v }} }}");
+        assert_eq!(
+            answered(&source, &json!({})),
+            Err(ScriptError::Envelope(
+                "`data` is nested deeper than 128 levels".to_owned()
+            )),
+            "{}",
+            shape.wraps
+        );
+    }
+}
+
+/// A resident that keeps `v` on `this` and draws what it kept.
+fn keeping(shape: &Shape, levels: usize) -> Resident {
+    let build = shape.building(levels);
+    resident(&format!(
+        "fn event(event) {{ {build} this.kept = v; true }}
+        fn render(size) {{ this.kept }}"
+    ))
+}
+
+/// The bound on `this` is the depth a value may cross, so nothing a session
+/// could render is refused (`audit-bounded-extensions`, SCRIPT-1).
+#[test]
+fn this_holding_what_may_cross_stays_and_can_be_rendered() {
+    for shape in &SHAPES {
+        let resident = keeping(shape, CROSSING_DEPTH);
+        let tick = resident.event(&json!({"name": "timer"})).outcome;
+        assert!(tick.is_ok(), "{}: {tick:?}", shape.wraps);
+        assert_eq!(resident.stopped(), None, "{}", shape.wraps);
+        assert_eq!(
+            resident.render(1, 1).outcome.unwrap().data,
+            shape.nested(CROSSING_DEPTH),
+            "{}",
+            shape.wraps
+        );
+    }
+}
+
+#[test]
+fn this_holding_one_level_more_than_may_cross_stops_the_session() {
+    for shape in &SHAPES {
+        let resident = keeping(shape, CROSSING_DEPTH + 1);
+        let nesting = ScriptError::Limit {
+            limit: Limit::Nesting,
+            at: None,
+        };
+        let tick = resident.event(&json!({"name": "timer"})).outcome;
+        assert_eq!(tick.unwrap_err(), nesting, "{}", shape.wraps);
+        assert_eq!(resident.stopped(), Some(nesting), "{}", shape.wraps);
     }
 }
