@@ -17,3 +17,7 @@ mod extensions;
 mod grammar;
 mod machine;
 mod portable_shell;
+// Unix only: what is ended is a process group, watched through a FIFO; Windows
+// ends a Job Object, proven in uze-platform.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod workspace_stop;
