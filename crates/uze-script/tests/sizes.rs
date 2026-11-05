@@ -235,3 +235,29 @@ fn a_callback_is_not_called_again_once_a_bound_is_passed() {
         }
     }
 }
+
+/// Trying the next way of calling is for a callback that takes other
+/// arguments, never for one that ran and failed.
+#[test]
+fn a_callback_s_own_error_reads_as_itself_for_every_way_of_calling_it() {
+    for call in [
+        r#"[1].map(Fn("thrower"))"#,
+        r#"[1].map(|x| throw "boom")"#,
+        r#"[1].map(|x, i| throw "boom")"#,
+        r#"[1].zip([2], |x, y| throw "boom")"#,
+        r#"[1].zip([2], |x, y, i| throw "boom")"#,
+    ] {
+        let source = format!(
+            r#"fn thrower() {{ throw "boom" }}
+            fn answer(input, context) {{ #{{ data: {call} }} }}"#
+        );
+        let outcome = Script::compile(source.as_bytes())
+            .unwrap()
+            .answer(&json!({}), &json!({}), &Grants::new(), Arc::new(NoCheckout))
+            .outcome;
+        assert!(
+            matches!(&outcome, Err(ScriptError::Runtime { message, .. }) if message == "boom"),
+            "{call}: {outcome:?}"
+        );
+    }
+}
