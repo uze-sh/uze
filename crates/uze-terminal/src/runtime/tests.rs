@@ -740,6 +740,7 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
 }
 
 /// Where the process [`stands_in_for_a_harness`] runs says it is running.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 const STAND_IN_RUNS: &str = "UZE_TERMINAL_TEST_STAND_IN_RUNS";
 
@@ -748,11 +749,13 @@ const STAND_IN_RUNS: &str = "UZE_TERMINAL_TEST_STAND_IN_RUNS";
 /// which `sleep` cannot be asked to: a multi-call coreutils dispatches on the
 /// name it is run under, and a copy named `claude` exits at once with
 /// `unknown program`.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 struct StandIn {
     runs: PathBuf,
 }
 
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 impl StandIn {
     fn in_directory(directory: &Path) -> Self {
@@ -803,6 +806,7 @@ impl StandIn {
 /// own, and guarded by [`STAND_IN_RUNS`] so `--include-ignored` waits for
 /// nothing. Parked rather than timed: it ends with the hangup of the pane
 /// that runs it.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 #[ignore = "stays alive in a pane, run by the tests that read a foreground process"]
