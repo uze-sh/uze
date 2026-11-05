@@ -500,3 +500,32 @@ fn store_global_is_a_store_and_grants_nothing_else() {
         );
     }
 }
+
+/// Asked on a thread of its own, as `padding_with_nothing_fails_instead_of_hanging`
+/// is: a matcher that never gets past its pattern fails here, not at a harness's
+/// timeout.
+#[test]
+fn a_glob_pattern_starting_with_two_stars_matches_any_run() {
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sent.send(answer(
+            r#"fn answer(input, context) {
+                #{ data: [
+                    glob_match("**", ""),
+                    glob_match("**", "a/b/c"),
+                    glob_match("**c", "c"),
+                    glob_match("**c", "a/b/c"),
+                    glob_match("**c", "a/b/d"),
+                ] }
+            }"#,
+            &Grants::new(),
+        ));
+    });
+    let outcome = received
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the matcher answers");
+    assert_eq!(
+        outcome.unwrap().data,
+        json!([true, true, true, true, false])
+    );
+}
