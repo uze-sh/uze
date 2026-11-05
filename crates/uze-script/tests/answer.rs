@@ -529,3 +529,29 @@ fn a_glob_pattern_starting_with_two_stars_matches_any_run() {
         json!([true, true, true, true, false])
     );
 }
+
+/// A host that does not offer one of these says so: an empty answer would
+/// read to the script as an empty store, a program that printed nothing, a
+/// tool with no result or a blank reply.
+#[test]
+fn what_a_host_does_not_answer_is_refused_by_default() {
+    let host = FakeCheckout {
+        read_delay: Duration::ZERO,
+    };
+    let store = host.store().unwrap_err();
+    assert!(store.0.contains("keeps no store"), "{store}");
+    let program = host.run_program("gh", &[]).unwrap_err();
+    assert!(program.0.contains("`gh`"), "{program}");
+    let tool = host.mcp("forge", "search", &json!({})).unwrap_err();
+    assert!(tool.0.contains("`forge/search`"), "{tool}");
+    let request = uze_script::FetchRequest {
+        url: "https://api.github.com/".to_owned(),
+        host: "api.github.com".to_owned(),
+        method: uze_script::FetchMethod::Get,
+        headers: Vec::new(),
+        body: None,
+        secret: None,
+    };
+    let fetch = host.fetch(&request).unwrap_err();
+    assert!(fetch.0.contains("`api.github.com`"), "{fetch}");
+}
