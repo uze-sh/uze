@@ -130,12 +130,12 @@ fn a_glob_pattern_one_byte_past_the_bound_is_refused_whatever_the_path() {
 #[test]
 fn a_glob_path_of_exactly_the_bound_is_matched() {
     assert_eq!(
-        glob_match("**", &"a".repeat(GLOB_PATH)).unwrap(),
+        glob_match("*", &"a".repeat(GLOB_PATH)).unwrap(),
         json!(true)
     );
 }
 
 #[test]
 fn a_glob_path_one_byte_past_the_bound_is_refused_whatever_the_pattern() {
-    refused_by_glob(glob_match("**", &"a".repeat(GLOB_PATH + 1)));
+    refused_by_glob(glob_match("*", &"a".repeat(GLOB_PATH + 1)));
 }
