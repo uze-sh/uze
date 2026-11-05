@@ -595,3 +595,24 @@ fn a_long_line_is_cut_at_a_character_boundary_within_the_byte_bound() {
     assert_eq!(printed("a".repeat(2000)), "a".repeat(1024));
     assert_eq!(printed("a".repeat(1024)), "a".repeat(1024));
 }
+
+#[test]
+fn front_matter_takes_quotes_off_only_as_a_matched_pair() {
+    let text =
+        "---\nsingle: 'kept'\ndouble: \"kept\"\nend: x\"\nstart: \"x\nlone: \"\nmixed: \"x'\n---\n";
+    let answered =
+        Script::compile(b"fn answer(input, context) { #{ data: front_matter(input).fields } }")
+            .unwrap()
+            .answer(&json!(text), &json!({}), &Grants::new(), checkout());
+    assert_eq!(
+        answered.outcome.unwrap().data,
+        json!({
+            "single": "kept",
+            "double": "kept",
+            "end": "x\"",
+            "start": "\"x",
+            "lone": "\"",
+            "mixed": "\"x'",
+        })
+    );
+}

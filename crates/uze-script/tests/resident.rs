@@ -176,3 +176,17 @@ fn after_a_failed_call_render_does_not_run_and_the_first_error_answers() {
     assert_eq!(rendered.outcome.unwrap_err(), first);
     assert!(rendered.trace.lines.is_empty(), "{:?}", rendered.trace);
 }
+
+#[test]
+fn a_script_with_no_event_or_input_answers_no_redraw() {
+    let (resident, _) = started("fn render(size) { #{ type: \"text\", args: [\"x\"] } }");
+    assert_eq!(
+        data(resident.event(&json!({"name": "timer"})).outcome),
+        json!(false)
+    );
+    assert_eq!(
+        data(resident.input(&json!({"key": "up"})).outcome),
+        json!(false)
+    );
+    assert_eq!(resident.stopped(), None);
+}
