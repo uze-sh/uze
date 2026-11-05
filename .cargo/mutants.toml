@@ -39,4 +39,12 @@ exclude_re = [
   'uze-platform/src/stdio\.rs.*replace \| with \^ in imp::ask_on$',
   # O_RDWR and O_NOCTTY share no bit, so `^` of them is `|`.
   'uze-platform/src/terminal\.rs.*replace \| with \^ in platform::Terminal::open$',
+  # Only how often the deadline clock is read; the deadline still fires at a later sample.
+  'uze-script/src/engine\.rs.*replace == with != in running$',
+  # A deadline met to the nanosecond at a sampled operation; the next sample fires.
+  'uze-script/src/engine\.rs.*replace > with >= in running$',
+  # Only how often the regex cache empties; every answer is the same.
+  'uze-script/src/primitives\.rs.*replace == with != in compiled$',
+  # Dropping the struct drops the sender right after, which ends the thread the same way.
+  'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
 ]
