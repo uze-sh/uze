@@ -668,9 +668,12 @@ mod tests {
                 ("'@/x'", format!("{value}/x")),
             ];
             // What a POSIX shell alone reads this way: a quote that closed
-            // before the placeholder, and a quote escaped so it never opened.
+            // before the placeholder, a quote escaped so it never opened, and
+            // a quote still open past another character.
             if cfg!(unix) {
                 templates.extend([
+                    ("\"x@\"", format!("x{value}")),
+                    ("'x@'", format!("x{value}")),
                     ("\"x\" @", format!("x|{value}")),
                     ("'x' @", format!("x|{value}")),
                     ("\"\\\"@\"", format!("\"{value}")),
