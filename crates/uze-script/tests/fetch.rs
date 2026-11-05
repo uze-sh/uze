@@ -141,3 +141,39 @@ fn a_scheme_of_letters_digits_and_hyphens_is_placed_as_asked() {
         Some("Be-ar3r")
     );
 }
+
+/// What `fetch` handed the host, for `options` written as Rhai text.
+fn asked_with(options: &str) -> FetchRequest {
+    let (envelope, forge) = run(
+        &format!(
+            r#"fn answer(input, context) {{
+                fetch("https://api.github.com/", {options});
+                #{{ data: () }}
+            }}"#
+        ),
+        &github(),
+    );
+    envelope.unwrap();
+    forge.asked.lock().unwrap().remove(0)
+}
+
+/// The name is what the host writes as the request's method, so it is the
+/// one HTTP reads.
+#[test]
+fn the_method_sent_is_the_one_asked() {
+    for (options, name) in [
+        ("#{}", "GET"),
+        (r#"#{ method: "GET" }"#, "GET"),
+        (r#"#{ method: "get" }"#, "GET"),
+        (r#"#{ method: "POST" }"#, "POST"),
+        (r#"#{ method: "post" }"#, "POST"),
+    ] {
+        assert_eq!(asked_with(options).method.name(), name, "{options}");
+    }
+}
+
+#[test]
+fn a_text_body_is_sent_as_given() {
+    let asked = asked_with(r#"#{ method: "POST", body: "not \"json\": {" }"#);
+    assert_eq!(asked.body.as_deref(), Some(r#"not "json": {"#));
+}
