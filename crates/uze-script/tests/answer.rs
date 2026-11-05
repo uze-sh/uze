@@ -555,3 +555,43 @@ fn what_a_host_does_not_answer_is_refused_by_default() {
     let fetch = host.fetch(&request).unwrap_err();
     assert!(fetch.0.contains("`api.github.com`"), "{fetch}");
 }
+
+#[test]
+fn lines_past_the_trace_bound_are_counted_not_kept() {
+    let script = Script::compile(
+        b"fn answer(input, context) { for i in 0..500 { print(`${i}`); } #{ data: () } }",
+    )
+    .unwrap();
+    let trace = script
+        .answer(&json!({}), &json!({}), &Grants::new(), checkout())
+        .trace;
+    assert_eq!(trace.lines.len(), 200);
+    assert_eq!(trace.dropped, 300);
+    assert_eq!(trace.lines[0].text, "0");
+    assert_eq!(trace.lines[199].text, "199");
+}
+
+/// What the script printed of `text`, asked on a thread of its own: a cut
+/// that never finds a boundary fails here, not at a harness's timeout.
+fn printed(text: String) -> String {
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let answered =
+            Script::compile(b"fn answer(input, context) { print(input); #{ data: () } }")
+                .unwrap()
+                .answer(&json!(text), &json!({}), &Grants::new(), checkout());
+        let _ = sent.send(answered.trace);
+    });
+    let trace = received
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the line is cut");
+    trace.lines[0].text.clone()
+}
+
+#[test]
+fn a_long_line_is_cut_at_a_character_boundary_within_the_byte_bound() {
+    // Three bytes a character: byte 1024 falls inside the 342nd.
+    assert_eq!(printed("€".repeat(500)), "€".repeat(341));
+    assert_eq!(printed("a".repeat(2000)), "a".repeat(1024));
+    assert_eq!(printed("a".repeat(1024)), "a".repeat(1024));
+}
