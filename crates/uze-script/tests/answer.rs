@@ -452,3 +452,167 @@ fn padding_still_pads() {
     .unwrap();
     assert_eq!(envelope.data, json!("abxyx"));
 }
+
+/// A host whose store holds one key, and which answers nothing else.
+struct Keeper;
+
+impl Reach for Keeper {
+    fn read_checkout(&self, _: &CheckoutPath) -> Result<String, ReachError> {
+        Err(ReachError("no checkout".to_owned()))
+    }
+
+    fn list_checkout(&self, _: &CheckoutPath) -> Result<Vec<Entry>, ReachError> {
+        Ok(Vec::new())
+    }
+
+    fn store(&self) -> Result<Value, ReachError> {
+        Ok(json!({"best": 3}))
+    }
+}
+
+fn asked_of_the_keeper(body: &str, grants: &Grants) -> Result<uze_script::Envelope, ScriptError> {
+    Script::compile(format!("fn answer(input, context) {{ #{{ data: {body} }} }}").as_bytes())?
+        .answer(&json!({}), &json!({}), grants, Arc::new(Keeper))
+        .outcome
+}
+
+#[test]
+fn store_without_its_grant_does_not_exist() {
+    let outcome = asked_of_the_keeper("store()", &Grants::new());
+    assert!(
+        matches!(&outcome, Err(ScriptError::MissingFunction { name, .. }) if name == "store"),
+        "{outcome:?}"
+    );
+}
+
+#[test]
+fn store_global_is_a_store_and_grants_nothing_else() {
+    for grant in [Grant::Store, Grant::StoreGlobal] {
+        let grants = Grants::from([grant]);
+        assert_eq!(
+            asked_of_the_keeper("store()", &grants).unwrap().data,
+            json!({"best": 3})
+        );
+        let outcome = asked_of_the_keeper(r#"read_checkout("plan.md")"#, &grants);
+        assert!(
+            matches!(&outcome, Err(ScriptError::MissingFunction { name, .. }) if name == "read_checkout"),
+            "{outcome:?}"
+        );
+    }
+}
+
+/// Asked on a thread of its own, as `padding_with_nothing_fails_instead_of_hanging`
+/// is: a matcher that never gets past its pattern fails here, not at a harness's
+/// timeout.
+#[test]
+fn a_glob_pattern_starting_with_two_stars_matches_any_run() {
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sent.send(answer(
+            r#"fn answer(input, context) {
+                #{ data: [
+                    glob_match("**", ""),
+                    glob_match("**", "a/b/c"),
+                    glob_match("**c", "c"),
+                    glob_match("**c", "a/b/c"),
+                    glob_match("**c", "a/b/d"),
+                ] }
+            }"#,
+            &Grants::new(),
+        ));
+    });
+    let outcome = received
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the matcher answers");
+    assert_eq!(
+        outcome.unwrap().data,
+        json!([true, true, true, true, false])
+    );
+}
+
+/// A host that does not offer one of these says so: an empty answer would
+/// read to the script as an empty store, a program that printed nothing, a
+/// tool with no result or a blank reply.
+#[test]
+fn what_a_host_does_not_answer_is_refused_by_default() {
+    let host = FakeCheckout {
+        read_delay: Duration::ZERO,
+    };
+    let store = host.store().unwrap_err();
+    assert!(store.0.contains("keeps no store"), "{store}");
+    let program = host.run_program("gh", &[]).unwrap_err();
+    assert!(program.0.contains("`gh`"), "{program}");
+    let tool = host.mcp("forge", "search", &json!({})).unwrap_err();
+    assert!(tool.0.contains("`forge/search`"), "{tool}");
+    let request = uze_script::FetchRequest {
+        url: "https://api.github.com/".to_owned(),
+        host: "api.github.com".to_owned(),
+        method: uze_script::FetchMethod::Get,
+        headers: Vec::new(),
+        body: None,
+        secret: None,
+    };
+    let fetch = host.fetch(&request).unwrap_err();
+    assert!(fetch.0.contains("`api.github.com`"), "{fetch}");
+}
+
+#[test]
+fn lines_past_the_trace_bound_are_counted_not_kept() {
+    let script = Script::compile(
+        b"fn answer(input, context) { for i in 0..500 { print(`${i}`); } #{ data: () } }",
+    )
+    .unwrap();
+    let trace = script
+        .answer(&json!({}), &json!({}), &Grants::new(), checkout())
+        .trace;
+    assert_eq!(trace.lines.len(), 200);
+    assert_eq!(trace.dropped, 300);
+    assert_eq!(trace.lines[0].text, "0");
+    assert_eq!(trace.lines[199].text, "199");
+}
+
+/// What the script printed of `text`, asked on a thread of its own: a cut
+/// that never finds a boundary fails here, not at a harness's timeout.
+fn printed(text: String) -> String {
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let answered =
+            Script::compile(b"fn answer(input, context) { print(input); #{ data: () } }")
+                .unwrap()
+                .answer(&json!(text), &json!({}), &Grants::new(), checkout());
+        let _ = sent.send(answered.trace);
+    });
+    let trace = received
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the line is cut");
+    trace.lines[0].text.clone()
+}
+
+#[test]
+fn a_long_line_is_cut_at_a_character_boundary_within_the_byte_bound() {
+    // Three bytes a character: byte 1024 falls inside the 342nd.
+    assert_eq!(printed("€".repeat(500)), "€".repeat(341));
+    assert_eq!(printed("a".repeat(2000)), "a".repeat(1024));
+    assert_eq!(printed("a".repeat(1024)), "a".repeat(1024));
+}
+
+#[test]
+fn front_matter_takes_quotes_off_only_as_a_matched_pair() {
+    let text =
+        "---\nsingle: 'kept'\ndouble: \"kept\"\nend: x\"\nstart: \"x\nlone: \"\nmixed: \"x'\n---\n";
+    let answered =
+        Script::compile(b"fn answer(input, context) { #{ data: front_matter(input).fields } }")
+            .unwrap()
+            .answer(&json!(text), &json!({}), &Grants::new(), checkout());
+    assert_eq!(
+        answered.outcome.unwrap().data,
+        json!({
+            "single": "kept",
+            "double": "kept",
+            "end": "x\"",
+            "start": "\"x",
+            "lone": "\"",
+            "mixed": "\"x'",
+        })
+    );
+}

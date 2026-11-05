@@ -151,3 +151,134 @@ fn padding_answers_up_to_the_string_bound_and_refuses_past_it() {
     assert_eq!(at_the_bound.unwrap(), json!(1048576));
     assert!(answer(r#"let t = "ab"; t.pad(1048577, "x"); #{ data: t.len }"#).is_err());
 }
+
+/// The engine's bounds: 1 MiB of string, 10 000 elements, 10 000 entries.
+const STRING_BOUND: usize = 1 << 20;
+const ARRAY_BOUND: usize = 10_000;
+const MAP_BOUND: usize = 10_000;
+
+/// `body` as an answer, with `big` read from the input.
+fn ask(body: &str, big: Value) -> uze_script::Answered {
+    let source = format!("fn answer(input, context) {{ let big = input.big; {body} }}");
+    Script::compile(source.as_bytes()).unwrap().answer(
+        &json!({ "big": big }),
+        &json!({}),
+        &Grants::new(),
+        Arc::new(NoCheckout),
+    )
+}
+
+fn data_of(body: &str, big: Value) -> Value {
+    ask(body, big).outcome.unwrap().data
+}
+
+fn text_of(size: usize, ending: &str) -> Value {
+    json!(format!("{}{ending}", "a".repeat(size - ending.len())))
+}
+
+fn elements(count: usize) -> Value {
+    json!(vec![0; count])
+}
+
+fn entries(count: usize) -> Value {
+    Value::Object((0..count).map(|key| (key.to_string(), json!(0))).collect())
+}
+
+#[test]
+fn replace_shrinking_a_string_of_the_bound_answers() {
+    let body = r#"big.replace("a", ""); #{ data: big.len }"#;
+    assert_eq!(data_of(body, text_of(STRING_BOUND, "")), json!(0));
+}
+
+#[test]
+fn replace_with_no_hit_leaves_the_text_alone() {
+    let body = r#"big.replace("z", "zz"); #{ data: big }"#;
+    assert_eq!(data_of(body, json!("abc")), json!("abc"));
+}
+
+#[test]
+fn replace_building_exactly_the_bound_answers() {
+    let body = r#"big.replace("b", "cc"); #{ data: [big.len, big.ends_with("acc")] }"#;
+    assert_eq!(
+        data_of(body, text_of(STRING_BOUND - 1, "b")),
+        json!([STRING_BOUND, true])
+    );
+}
+
+#[test]
+fn replace_building_one_byte_past_the_bound_is_refused() {
+    for body in [
+        r#"big.replace("b", "cc"); #{ data: big.len }"#,
+        r#"big.replace('b', "cc"); #{ data: big.len }"#,
+    ] {
+        match ask(body, text_of(STRING_BOUND, "b")).outcome {
+            Err(ScriptError::Limit { limit, .. }) => assert_eq!(limit, Limit::StringSize),
+            other => panic!("{body}: {other:?}"),
+        }
+    }
+}
+
+/// `map` and `zip` each returning `big` from one callback: an array of one
+/// element, and whatever `big` holds.
+const ONE_RESULT: [&str; 2] = [
+    "let r = [0].map(|x| big); #{ data: r.len }",
+    "let r = [0].zip([0], |x, y| big); #{ data: r.len }",
+];
+
+#[test]
+fn results_of_exactly_each_bound_answer() {
+    for body in ONE_RESULT {
+        assert_eq!(data_of(body, text_of(STRING_BOUND, "")), json!(1), "{body}");
+        assert_eq!(data_of(body, elements(ARRAY_BOUND - 1)), json!(1), "{body}");
+        assert_eq!(data_of(body, entries(MAP_BOUND)), json!(1), "{body}");
+    }
+}
+
+#[test]
+fn a_callback_is_not_called_again_once_a_bound_is_passed() {
+    let bodies = [
+        r#"let r = [0, 1, 2, 3].map(|x| { print("called"); big }); #{ data: r.len }"#,
+        r#"let r = [0, 1, 2, 3].zip([0, 1, 2, 3], |x, y| { print("called"); big }); #{ data: r.len }"#,
+    ];
+    for body in bodies {
+        for (big, bound) in [
+            (text_of(STRING_BOUND / 2 + 1, ""), Limit::StringSize),
+            (elements(ARRAY_BOUND / 2 + 1), Limit::ArraySize),
+            (entries(MAP_BOUND / 2 + 1), Limit::MapSize),
+        ] {
+            let answered = ask(body, big);
+            match answered.outcome {
+                Err(ScriptError::Limit { limit, .. }) => assert_eq!(limit, bound, "{body}"),
+                other => panic!("{body}: {other:?}"),
+            }
+            assert_eq!(answered.trace.lines.len(), 2, "{bound:?}: {body}");
+            assert_eq!(answered.trace.dropped, 0, "{bound:?}: {body}");
+        }
+    }
+}
+
+/// Trying the next way of calling is for a callback that takes other
+/// arguments, never for one that ran and failed.
+#[test]
+fn a_callback_s_own_error_reads_as_itself_for_every_way_of_calling_it() {
+    for call in [
+        r#"[1].map(Fn("thrower"))"#,
+        r#"[1].map(|x| throw "boom")"#,
+        r#"[1].map(|x, i| throw "boom")"#,
+        r#"[1].zip([2], |x, y| throw "boom")"#,
+        r#"[1].zip([2], |x, y, i| throw "boom")"#,
+    ] {
+        let source = format!(
+            r#"fn thrower() {{ throw "boom" }}
+            fn answer(input, context) {{ #{{ data: {call} }} }}"#
+        );
+        let outcome = Script::compile(source.as_bytes())
+            .unwrap()
+            .answer(&json!({}), &json!({}), &Grants::new(), Arc::new(NoCheckout))
+            .outcome;
+        assert!(
+            matches!(&outcome, Err(ScriptError::Runtime { message, .. }) if message == "boom"),
+            "{call}: {outcome:?}"
+        );
+    }
+}
