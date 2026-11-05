@@ -452,3 +452,51 @@ fn padding_still_pads() {
     .unwrap();
     assert_eq!(envelope.data, json!("abxyx"));
 }
+
+/// A host whose store holds one key, and which answers nothing else.
+struct Keeper;
+
+impl Reach for Keeper {
+    fn read_checkout(&self, _: &CheckoutPath) -> Result<String, ReachError> {
+        Err(ReachError("no checkout".to_owned()))
+    }
+
+    fn list_checkout(&self, _: &CheckoutPath) -> Result<Vec<Entry>, ReachError> {
+        Ok(Vec::new())
+    }
+
+    fn store(&self) -> Result<Value, ReachError> {
+        Ok(json!({"best": 3}))
+    }
+}
+
+fn asked_of_the_keeper(body: &str, grants: &Grants) -> Result<uze_script::Envelope, ScriptError> {
+    Script::compile(format!("fn answer(input, context) {{ #{{ data: {body} }} }}").as_bytes())?
+        .answer(&json!({}), &json!({}), grants, Arc::new(Keeper))
+        .outcome
+}
+
+#[test]
+fn store_without_its_grant_does_not_exist() {
+    let outcome = asked_of_the_keeper("store()", &Grants::new());
+    assert!(
+        matches!(&outcome, Err(ScriptError::MissingFunction { name, .. }) if name == "store"),
+        "{outcome:?}"
+    );
+}
+
+#[test]
+fn store_global_is_a_store_and_grants_nothing_else() {
+    for grant in [Grant::Store, Grant::StoreGlobal] {
+        let grants = Grants::from([grant]);
+        assert_eq!(
+            asked_of_the_keeper("store()", &grants).unwrap().data,
+            json!({"best": 3})
+        );
+        let outcome = asked_of_the_keeper(r#"read_checkout("plan.md")"#, &grants);
+        assert!(
+            matches!(&outcome, Err(ScriptError::MissingFunction { name, .. }) if name == "read_checkout"),
+            "{outcome:?}"
+        );
+    }
+}

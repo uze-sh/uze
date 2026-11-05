@@ -157,3 +157,22 @@ fn timer_is_a_function_only_the_resident_grant_names() {
     let refused = uze_script::ungranted_calls("fn render(size) { timer(5); }", &Grants::new());
     assert_eq!(refused, [("timer".to_owned(), Grant::Resident)]);
 }
+
+#[test]
+fn after_a_failed_call_render_does_not_run_and_the_first_error_answers() {
+    let (resident, _) = started(
+        r#"fn event(event) { throw "first" }
+           fn render(size) { print("rendered"); throw "second" }"#,
+    );
+    let first = resident
+        .event(&json!({"name": "timer"}))
+        .outcome
+        .unwrap_err();
+    assert!(
+        matches!(&first, ScriptError::Runtime { message, .. } if message == "first"),
+        "{first:?}"
+    );
+    let rendered = resident.render(10, 10);
+    assert_eq!(rendered.outcome.unwrap_err(), first);
+    assert!(rendered.trace.lines.is_empty(), "{:?}", rendered.trace);
+}
