@@ -23,4 +23,20 @@ exclude_re = [
   'uze-git/src/lib\.rs.*delete - in run_(to_completion|within)$',
   # Only how often the wait looks, not what it finds or how long it may take.
   'uze-git/src/lib\.rs.*replace \* with / in run_within$',
+  # Inverts which processes are signalled; outside a PID namespace that ends what the CI runner runs.
+  'uze-platform/src/probe\.rs.*replace == with != in platform::group_members$',
+  # Inverts which processes are signalled; outside a PID namespace that ends what the CI runner runs.
+  'uze-platform/src/process/unix\.rs.*replace == with != in end_strays$',
+  # Landlock's rights here share no bit, so `^` of two of them is `|`.
+  'uze-platform/src/confine/linux\.rs.*replace \| with \^ in (restrict_paths|writing)$',
+  # BPF opcodes, the errno action and its errno share no bit, so `^` of them is `|`.
+  'uze-platform/src/confine/linux/seccomp\.rs.*replace \| with \^( in (program|first_argument_one_of))?$',
+  # LOCK_EX, LOCK_SH and LOCK_NB share no bit, so `^` of them is `|`.
+  'uze-platform/src/lock\.rs.*replace \| with \^ in platform::try_lock$',
+  # WEXITED, WNOWAIT and WNOHANG share no bit, so `^` of them is `|`.
+  'uze-platform/src/process/unix\.rs.*replace \| with \^ in (wait_without_reaping|has_exited)$',
+  # ICANON and ECHO share no bit, so `^` of them is `|`.
+  'uze-platform/src/stdio\.rs.*replace \| with \^ in imp::ask_on$',
+  # O_RDWR and O_NOCTTY share no bit, so `^` of them is `|`.
+  'uze-platform/src/terminal\.rs.*replace \| with \^ in platform::Terminal::open$',
 ]
