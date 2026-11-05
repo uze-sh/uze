@@ -590,7 +590,27 @@ pub fn stop() -> Result<bool, RuntimeError> {
         Err(error) => return Err(error.into()),
     };
     match ask_to_stop(stream) {
-        Ok(Some(ClientEvent::Stopped)) => Ok(true),
+        Ok(Some(ClientEvent::Stopped)) => {
+            // The answer comes before the panes are ended. Returning on it
+            // leaves whoever opens the workspace next meeting a server that
+            // has hung up on it, and told it replaced an older release.
+            // The endpoint as well as the claim: a server's accept loops end
+            // moments before it clears what they listened on, and so refusal
+            // does not mean it is gone.
+            let holds_on = || {
+                workspace_is_claimed()
+                    && (transport::lingers(&socket) || transport::connect(&socket).is_ok())
+            };
+            let deadline = Instant::now() + STOPS_WITHIN;
+            while holds_on() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(25));
+            }
+            if holds_on() {
+                tracing::warn!(socket = %socket.display(), "the server did not let go after a stop; retiring it");
+                return stop_the_claimant(&socket);
+            }
+            Ok(true)
+        }
         Ok(Some(ClientEvent::Error { message } | ClientEvent::Refused { message })) => {
             Err(RuntimeError::Protocol(message))
         }
@@ -607,8 +627,10 @@ pub fn stop() -> Result<bool, RuntimeError> {
     }
 }
 
-/// How long a server has to acknowledge a stop. It answers before it does
-/// anything else, so this only runs out on a server that cannot answer.
+/// How long a server has to acknowledge a stop, and then to let go. It
+/// answers before it does anything else and a pane's grace is a fraction of
+/// this, so this only runs out on a server that cannot answer, or a pane
+/// the kernel holds in a wait it cannot interrupt.
 pub(super) const STOPS_WITHIN: Duration = Duration::from_secs(10);
 
 /// How long a server has to open a space: it starts the space's shell
@@ -729,10 +751,11 @@ pub fn serve(seat: SpaceSeat, palette: Palette) -> Result<(), RuntimeError> {
 
     // Waited on rather than joined: after a rebind the first listener
     // blocks on an inode nothing can reach, so its loop never returns.
-    // `shut_down` has already stopped every pane. The endpoint is cleared
-    // under the same flag [`spawn_endpoint_watch`] holds while it decides
-    // whether to rebind, so the watch cannot put it back, and a rebind in
-    // progress finishes before the clearing.
+    // `await_stop` returns once `shut_down` has stopped every pane: what a
+    // reaper has yet to do when this process exits is never done. The
+    // endpoint is cleared under the same flag [`spawn_endpoint_watch`] holds
+    // while it decides whether to rebind, so the watch cannot put it back,
+    // and a rebind in progress finishes before the clearing.
     let _stopped = state.await_stop();
     transport::clear(&socket);
     let _ = fs::remove_file(operator_path());

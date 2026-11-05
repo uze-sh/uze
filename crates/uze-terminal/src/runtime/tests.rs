@@ -4463,6 +4463,9 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
 // Unix only: Unix socket files and their directory; the named pipe has neither.
 #[cfg(unix)]
 mod socket_files;
+// Unix only: counts what a pane's program is sent, on a program the tests start with `/bin/sh`.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod stopping;
 
 /// A Windows pane, driven as a person at the keyboard drives it: its
 /// text as one string, and a wait for some to appear.
