@@ -152,8 +152,7 @@ The box can mislead or get in the way in four ways:
   themselves. Before calling a survivor in that code a gap, confirm it on a CI run,
   which installs Bun.
 - **A false `caught`.** A test that fails now and then there reads as catching the
-  mutant, and `uze-terminal`'s `foreground_status_*` have failed in isolated
-  environments. When a result surprises you, read that mutant's log under
+  mutant. When a result surprises you, read that mutant's log under
   `mutants.out/log/` to see which test failed. The timing budgets (`performance`,
   `extension_storm`, `budget`) fail on a busy machine, so a workspace run leaves
   them out; a mutant only they would catch reads as `missed`.

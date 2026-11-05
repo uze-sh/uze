@@ -131,6 +131,27 @@ fn the_shadows_answer_as_rhai_does_inside_the_bounds() {
     );
 }
 
+#[test]
+fn a_padding_is_counted_by_what_it_writes_not_by_how_long_it_is() {
+    let padded = answer(r#"let t = "ab"; t.pad(1048576, s); #{ data: t.len }"#);
+    assert_eq!(padded.unwrap(), json!(1048576));
+}
+
+#[test]
+fn padding_refuses_a_result_past_the_string_bound_before_building_it() {
+    assert_eq!(
+        refused_at_once(r#"let t = "ab"; t.pad(1048576, "é"); #{ data: t.len }"#),
+        Limit::StringSize
+    );
+}
+
+#[test]
+fn padding_answers_up_to_the_string_bound_and_refuses_past_it() {
+    let at_the_bound = answer(r#"let t = "ab"; t.pad(1048576, "x"); #{ data: t.len }"#);
+    assert_eq!(at_the_bound.unwrap(), json!(1048576));
+    assert!(answer(r#"let t = "ab"; t.pad(1048577, "x"); #{ data: t.len }"#).is_err());
+}
+
 /// The engine's bounds: 1 MiB of string, 10 000 elements, 10 000 entries.
 const STRING_BOUND: usize = 1 << 20;
 const ARRAY_BOUND: usize = 10_000;
