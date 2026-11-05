@@ -130,6 +130,180 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
+    /// Makes a directory this test owns open to others, answering its mode.
+    #[cfg(unix)]
+    fn open_directory(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(path).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        mode(path)
+    }
+
+    #[cfg(unix)]
+    fn mode(path: &std::path::Path) -> u32 {
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(path).unwrap().permissions())
+            & 0o7777
+    }
+
+    /// Where a shared runtime name is looked for, with the session's runtime
+    /// directory and the temp dir both set to `scratch`.
+    #[cfg(unix)]
+    fn shared_names(scratch: &std::path::Path, name: &str) -> [std::path::PathBuf; 2] {
+        [scratch.join(name), std::path::Path::new("/tmp").join(name)]
+    }
+
+    /// A link is not a directory of this user's, whatever it reaches: the
+    /// socket directory is not there, and what the link reaches is left
+    /// exactly as it was.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_at_a_socket_directory_name_is_refused_and_what_it_reaches_keeps_its_mode() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-link-socket");
+        let reached = scratch.join("reached");
+        assert_eq!(open_directory(&reached), 0o755);
+        let mut env = uze_testkit::env::scope();
+        env.set("XDG_RUNTIME_DIR", &scratch);
+        env.set("TMPDIR", &scratch);
+        let label = format!("uze-link-socket-{}", std::process::id());
+        // SAFETY: no arguments, and it cannot fail.
+        let uid = unsafe { libc::getuid() };
+        let links = shared_names(&scratch, &format!("{label}-{uid}"));
+        for link in &links {
+            std::os::unix::fs::symlink(&reached, link).unwrap();
+        }
+
+        let answered = crate::fs::user_socket_directory(&label, 10);
+        let after = mode(&reached);
+
+        for link in &links {
+            let _ = std::fs::remove_file(link);
+        }
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(answered, None);
+        assert_eq!(after, 0o755);
+    }
+
+    /// An endpoint's own directory being a link sends it elsewhere, without
+    /// changing what the link reaches.
+    #[cfg(unix)]
+    #[test]
+    fn an_endpoint_directory_that_is_a_link_is_refused_and_what_it_reaches_keeps_its_mode() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-link-own");
+        let reached = scratch.join("reached");
+        assert_eq!(open_directory(&reached), 0o755);
+        let link = scratch.join("link");
+        std::os::unix::fs::symlink(&reached, &link).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("XDG_RUNTIME_DIR", &scratch);
+        env.set("TMPDIR", &scratch);
+        let namespace = format!("uze-link-own-{}", std::process::id());
+
+        let chosen = super::endpoint(super::Address {
+            directory: &link,
+            namespace: &namespace,
+            name: "w",
+        })
+        .expect("the next directory is used");
+        let after = mode(&reached);
+
+        let directory = chosen.parent().unwrap().to_path_buf();
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_ne!(directory, link);
+        assert_eq!(after, 0o755);
+    }
+
+    /// Past every shared name, an address whose directory is a link has no
+    /// place to remember what it chose: it is refused, with nothing written
+    /// through the link and what the link reaches left as it was.
+    #[cfg(unix)]
+    #[test]
+    fn an_address_that_can_only_be_remembered_through_a_link_is_refused() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-link-record");
+        let reached = scratch.join("reached");
+        assert_eq!(open_directory(&reached), 0o755);
+        let link = scratch.join("a".repeat(120));
+        std::os::unix::fs::symlink(&reached, &link).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("XDG_RUNTIME_DIR", &scratch);
+        env.set("TMPDIR", &scratch);
+        let namespace = format!("uze-link-record-{}", std::process::id());
+        // SAFETY: no arguments, and it cannot fail.
+        let uid = unsafe { libc::getuid() };
+        let taken = shared_names(&scratch, &format!("{namespace}-runtime-{uid}"));
+        for path in &taken {
+            std::fs::write(path, b"").unwrap();
+        }
+
+        let answered = super::endpoint(super::Address {
+            directory: &link,
+            namespace: &namespace,
+            name: "w",
+        });
+        let after = mode(&reached);
+        let written = std::fs::read_dir(&reached).unwrap().count();
+
+        for path in &taken {
+            let _ = std::fs::remove_file(path);
+        }
+        if let Ok(chosen) = &answered {
+            let _ = std::fs::remove_dir_all(chosen.parent().unwrap());
+        }
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(answered.is_err(), "{answered:?}");
+        assert_eq!(after, 0o755);
+        assert_eq!(written, 0);
+    }
+
+    /// A directory put back after a cleaner took it is held to the same
+    /// demand as the first time: a link in its place is refused unchanged.
+    #[cfg(unix)]
+    #[test]
+    fn restoring_over_a_link_is_refused_and_what_it_reaches_keeps_its_mode() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-link-restore");
+        let reached = scratch.join("reached");
+        assert_eq!(open_directory(&reached), 0o755);
+        let link = scratch.join("link");
+        std::os::unix::fs::symlink(&reached, &link).unwrap();
+
+        let restored = super::restore(&link.join("w.sock"));
+        let after = mode(&reached);
+
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert!(restored.is_err(), "{restored:?}");
+        assert_eq!(after, 0o755);
+    }
+
+    /// This user's own directory at a runtime name is still adopted and
+    /// narrowed: the first run under a permissive umask depends on it.
+    #[cfg(unix)]
+    #[test]
+    fn this_users_own_directory_at_a_runtime_name_is_narrowed_and_used() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-own-open");
+        let own = scratch.join("own");
+        assert_eq!(open_directory(&own), 0o755);
+
+        super::restore(&own.join("w.sock")).expect("this user's own directory is usable");
+        let after = mode(&own);
+
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(after, 0o700);
+    }
+
+    /// A runtime directory that is not there yet is made private, along
+    /// with whatever leads to it.
+    #[cfg(unix)]
+    #[test]
+    fn a_runtime_directory_not_there_yet_is_made_private_with_its_parents() {
+        let scratch = uze_testkit::temp::socket_scratch("endpoint-absent");
+        let deep = scratch.join("one").join("two");
+
+        super::restore(&deep.join("w.sock")).expect("made");
+        let after = (mode(&scratch.join("one")), mode(&deep));
+
+        let _ = std::fs::remove_dir_all(&scratch);
+        assert_eq!(after, (0o700, 0o700));
+    }
+
     #[test]
     fn a_connection_read_and_written_at_once_carries_every_byte() {
         const FRAMES: usize = 2_000;

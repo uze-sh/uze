@@ -3,7 +3,7 @@
 
 use std::{
     env, fs, io,
-    os::unix::fs::{MetadataExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -57,9 +57,9 @@ pub fn endpoint(address: super::Address<'_>) -> io::Result<PathBuf> {
         Ok(candidate) => return Ok(named(&candidate)),
         Err(error) => refused = error.or(refused),
     }
+    usable(address.directory, owner)?;
     let fresh =
         unpredictable_directory(&private, &fits).map_err(|error| refused.unwrap_or(error))?;
-    crate::fs::create_private_dir_all(address.directory)?;
     let mut record = crate::fs::private_file(
         fs::OpenOptions::new()
             .write(true)
@@ -105,8 +105,21 @@ pub(crate) fn shared_private_directory(
 }
 
 /// `candidate`, made if it is not there, and proven `owner`'s alone.
+///
+/// Asks about the entry itself before anything else, because the general
+/// [`crate::fs::create_private_dir_all`] follows a link to narrow what it
+/// reaches, and a home a person linked on purpose relies on that. `mkdir`
+/// does not follow a link at its last component, so one that appears after
+/// the question fails it or reaches [`private_directory`], and neither
+/// changes what the link reaches.
 fn usable(candidate: &Path, owner: libc::uid_t) -> io::Result<()> {
-    crate::fs::create_private_dir_all(candidate)?;
+    match fs::symlink_metadata(candidate) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(candidate)?,
+        _ => {}
+    }
     private_directory(candidate, owner)
 }
 
@@ -236,9 +249,27 @@ pub(crate) fn private_directory(candidate: &Path, owner: libc::uid_t) -> io::Res
     // than to refuse — this is the ordinary first-run path when the umask
     // is permissive.
     if metadata.mode() & 0o077 != 0 {
-        fs::set_permissions(candidate, fs::Permissions::from_mode(0o700))?;
+        narrow(candidate, &metadata)?;
     }
     Ok(())
+}
+
+/// Takes what others may do from the directory `judged` describes, through
+/// a descriptor: `chmod` by path follows whatever stands at `candidate` by
+/// then, and only the descriptor's own identity says it is what was judged.
+fn narrow(candidate: &Path, judged: &fs::Metadata) -> io::Result<()> {
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(candidate)?;
+    let opened = directory.metadata()?;
+    if (opened.dev(), opened.ino()) != (judged.dev(), judged.ino()) {
+        return Err(io::Error::other(format!(
+            "{} changed while it was being checked",
+            candidate.display()
+        )));
+    }
+    directory.set_permissions(fs::Permissions::from_mode(0o700))
 }
 
 /// Two connected ends of one connection, with no endpoint anybody else
