@@ -17,7 +17,10 @@
 //!
 //! Within a repository, a path is only ever reused by a checkout of that
 //! same repository (a slot handed to the next agent), so a reused path
-//! answers with what it answered before.
+//! answers its root and common directory with what it answered before. Its
+//! own Git directory is the exception: a moved worktree keeps the
+//! administrative directory it was first given, so a remembered one is
+//! checked against the worktree it serves now before it is answered.
 
 use std::{
     collections::HashMap,
@@ -70,10 +73,14 @@ pub fn git_dir(cwd: &Path) -> Result<PathBuf, String> {
 
 fn answer(question: Question, cwd: &Path, args: &[&str]) -> Result<PathBuf, String> {
     let key = (question, cwd.to_path_buf());
-    if let Ok(memo) = remembered().lock()
-        && let Some(known) = memo.get(&key)
+    let known = remembered()
+        .lock()
+        .ok()
+        .and_then(|memo| memo.get(&key).cloned());
+    if let Some(known) = known
+        && (question != Question::GitDir || still_serves(&known, cwd))
     {
-        return Ok(known.clone());
+        return Ok(known);
     }
     let stdout = crate::read(cwd, args)
         .map_err(|error| error.to_string())?
@@ -86,6 +93,35 @@ fn answer(question: Question, cwd: &Path, args: &[&str]) -> Result<PathBuf, Stri
         memo.insert(key, resolved.clone());
     }
     Ok(resolved)
+}
+
+/// Whether a remembered Git directory still belongs to the checkout `cwd`
+/// is in. A linked worktree's administrative directory keeps its first name
+/// when the worktree moves, and another worktree can move onto the path it
+/// left, possibly in another process; its `gitdir` file names the worktree
+/// it serves now, and reading it costs no process. A repository's own
+/// `.git` has no such file and never moves.
+fn still_serves(git_dir: &Path, cwd: &Path) -> bool {
+    if !git_dir.is_dir() {
+        return false;
+    }
+    let named = match std::fs::read_to_string(git_dir.join("gitdir")) {
+        Ok(named) => named,
+        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+    };
+    // Absolute, or relative to the administrative directory under
+    // `worktree.useRelativePaths`.
+    let dot_git = git_dir.join(crate::native_path(named.trim()));
+    let Some(worktree) = dot_git.parent() else {
+        return false;
+    };
+    match (
+        uze_platform::path::canonical(worktree),
+        uze_platform::path::canonical(cwd),
+    ) {
+        (Ok(worktree), Ok(cwd)) => uze_platform::path::is_within(&cwd, &worktree),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +180,38 @@ mod tests {
             common.display()
         );
         assert_eq!(common, common_dir(&path).unwrap());
+    }
+
+    /// Git renames a worktree's directory and keeps its administrative one,
+    /// so after one worktree leaves a path and another moves onto it, the
+    /// path's Git directory is the second worktree's: where its index, its
+    /// `HEAD` and any operation paused in it live.
+    #[test]
+    fn a_path_another_worktree_moved_onto_answers_with_that_worktrees_git_dir() {
+        let repository = uze_testkit::git::Repository::new("git-memo-moved");
+        repository.commit_file("f.txt", "one\n");
+        let [first, second, elsewhere] =
+            ["first", "second", "elsewhere"].map(|name| repository.root().join(name));
+        for (path, branch) in [(&first, "a"), (&second, "b")] {
+            repository.git(&[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                branch,
+                path.to_str().unwrap(),
+            ]);
+        }
+        let first_admin = git_dir(&first).unwrap();
+        let second_admin = git_dir(&second).unwrap();
+        assert_ne!(first_admin, second_admin);
+
+        let path = |path: &Path| path.to_str().unwrap().to_owned();
+        repository.git(&["worktree", "move", &path(&first), &path(&elsewhere)]);
+        repository.git(&["worktree", "move", &path(&second), &path(&first)]);
+
+        assert_eq!(git_dir(&first).unwrap(), second_admin);
+        assert_eq!(git_dir(&elsewhere).unwrap(), first_admin);
+        assert!(git_dir(&second).is_err(), "nothing stands at the path left");
     }
 }
