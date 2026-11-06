@@ -342,7 +342,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
 | `rhai` | 1.27.0 | MIT OR Apache-2.0 |
 | `rhai_codegen` | 3.3.0 | MIT OR Apache-2.0 |
-| `rmcp` | 3.7.0 | Apache-2.0 |
+| `rmcp` | 3.8.0 | Apache-2.0 |
 | `rmcp-macros` | 3.8.0 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
@@ -419,7 +419,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 |
 | `unicode-truncate` | 2.0.1 | MIT OR Apache-2.0 |
 | `unicode-width` | 0.1.14 | MIT OR Apache-2.0 |
-| `unicode-width` | 0.2.2 | MIT OR Apache-2.0 |
+| `unicode-width` | 0.2.3 | MIT OR Apache-2.0 |
 | `unit-prefix` | 0.5.2 | MIT |
 | `url` | 2.5.8 | MIT OR Apache-2.0 |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT |
