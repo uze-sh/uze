@@ -10,6 +10,9 @@ pub(super) struct PaneRuntime {
     pub(super) writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// Shared with the thread that reaps it once the pane is stopped.
     pub(super) child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    /// Whether `child` was reaped, read and written under its lock: from
+    /// then on its pid may be somebody else's, and nothing signals it.
+    pub(super) reaped: Arc<AtomicBool>,
     /// The pane's program and everything it starts, ended together. Read
     /// while the leader is alive: once a finished leader is reaped, what it
     /// left running is still in it. See [`PaneRuntime::finished_agent`].
@@ -277,6 +280,7 @@ impl PaneRuntime {
             master: Mutex::new(Some(master)),
             writer,
             child: Arc::new(Mutex::new(child)),
+            reaped: Arc::new(AtomicBool::new(false)),
             leader,
             group,
             terminal,
@@ -359,10 +363,14 @@ impl PaneRuntime {
     /// the life of the server.
     pub(super) fn stop(&self) -> thread::JoinHandle<()> {
         let child = Arc::clone(&self.child);
+        let reaped = Arc::clone(&self.reaped);
         let group = self.group.clone();
         let leader = self.leader;
         thread::spawn(move || {
             let mut child = child.lock().expect("child poisoned");
+            if reaped.load(Ordering::Relaxed) {
+                return;
+            }
             // What the leader started and left behind: a harness's workers
             // that ignore the hangup would otherwise outlive the pane, and
             // hold its terminal open so its reader never ends either. Ended
@@ -378,6 +386,7 @@ impl PaneRuntime {
             // already exited is exactly the zombie this is here to reap.
             let _ = child.kill();
             let _ = child.wait();
+            reaped.store(true, Ordering::Relaxed);
         })
     }
 

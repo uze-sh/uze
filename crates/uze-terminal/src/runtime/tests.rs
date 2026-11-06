@@ -739,12 +739,92 @@ fn foreground_status_reports_the_spawned_shell_and_its_cwd() {
     assert_eq!(process, expected_name);
 }
 
+/// Where the process [`stands_in_for_a_harness`] runs says it is running.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const STAND_IN_RUNS: &str = "UZE_TERMINAL_TEST_STAND_IN_RUNS";
+
+/// A program a test copies under any name to stand for a harness: this test
+/// binary, running only the test below. It stays until its pane is stopped,
+/// which `sleep` cannot be asked to: a multi-call coreutils dispatches on the
+/// name it is run under, and a copy named `claude` exits at once with
+/// `unknown program`.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+struct StandIn {
+    runs: PathBuf,
+}
+
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+impl StandIn {
+    fn in_directory(directory: &Path) -> Self {
+        let runs = directory.join("stand-in-runs");
+        let path = std::ffi::CString::new(runs.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: `path` is a NUL-terminated string that outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        Self { runs }
+    }
+
+    fn install_as(path: &Path) {
+        uze_testkit::process::install_executable(
+            path,
+            &std::fs::read(std::env::current_exe().unwrap()).unwrap(),
+        );
+    }
+
+    /// What it is run with, after whatever name it was given.
+    const ARGUMENTS: [&str; 3] = [
+        "--ignored",
+        "--exact",
+        "runtime::tests::stands_in_for_a_harness",
+    ];
+
+    fn environment(&self) -> Vec<(String, String)> {
+        vec![(STAND_IN_RUNS.to_owned(), self.runs.display().to_string())]
+    }
+
+    /// Returns once the program has `exec`ed: its name, its image and its
+    /// environment are final, so one reading of them is the answer and no
+    /// reading can catch the process it forked from. Opening the FIFO waits
+    /// for the program to open its end; on a thread, so one that never runs
+    /// fails the test instead of hanging it.
+    fn wait_until_running(&self) {
+        let runs = self.runs.clone();
+        let (opened, heard) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = opened.send(std::fs::File::open(runs).map(drop));
+        });
+        heard
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the stand-in never ran")
+            .expect("the stand-in's FIFO opens");
+    }
+}
+
+/// The process side of [`StandIn`]. Ignored so the suite never runs it on its
+/// own, and guarded by [`STAND_IN_RUNS`] so `--include-ignored` waits for
+/// nothing. Parked rather than timed: it ends with the hangup of the pane
+/// that runs it.
+// Linux and macOS: the stand-in reports through a FIFO, and only their panes are read for a foreground process.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+#[ignore = "stays alive in a pane, run by the tests that read a foreground process"]
+fn stands_in_for_a_harness() {
+    if let Some(runs) = std::env::var_os(STAND_IN_RUNS) {
+        std::fs::write(runs, b"").unwrap();
+        loop {
+            thread::park();
+        }
+    }
+}
+
 /// The kernel derives `comm` from the executed *file's own basename*,
 /// not from anything a person typed — which is exactly why a real
 /// Claude Code session reports its version number there instead of
 /// `claude`: it runs from `~/.local/share/claude/versions/<version>`.
-/// A copy of `sleep` under a version-number filename reproduces that
-/// same shape without depending on Claude Code being installed.
+/// A program under a version-number filename reproduces that same shape
+/// without depending on Claude Code being installed.
 /// `UZE_SHIM_NAME`, set by `src/shim.rs` right before it `exec`s into
 /// the real binary, must survive that and still be what
 /// `foreground_status` reports.
@@ -755,10 +835,8 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
     let bin_dir = uze_testkit::temp::scratch("shim-identity-test");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let versioned_binary = bin_dir.join("2.1.251");
-    uze_testkit::process::install_executable(
-        &versioned_binary,
-        &std::fs::read("/bin/sleep").unwrap(),
-    );
+    StandIn::install_as(&versioned_binary);
+    let stand_in = StandIn::in_directory(&bin_dir);
 
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
@@ -776,41 +854,24 @@ fn foreground_status_prefers_the_shim_identity_over_a_version_named_comm() {
                 // replaces itself with, which is what makes the stamp
                 // belong to the process that carries it.
                 format!(
-                    "export UZE_SHIM_NAME=claude UZE_SHIM_PID=$$; exec {} 5",
-                    versioned_binary.display()
+                    "export UZE_SHIM_NAME=claude UZE_SHIM_PID=$$; exec {} {}",
+                    versioned_binary.display(),
+                    StandIn::ARGUMENTS.join(" ")
                 ),
             ],
-            env: Vec::new(),
+            env: stand_in.environment(),
         },
         Arc::new(Mutex::new(Palette::default())),
         false,
     )
     .unwrap();
 
-    // Five seconds, and only a matching reading is kept — the same two
-    // properties as the sibling test above, and for the same two
-    // reasons: what is being waited on is another process reaching
-    // `exec`, and a reading taken before it does names the process this
-    // one forked from.
-    let mut status = None;
-    let mut last_seen = None;
-    for _ in 0..500 {
-        let reading = pane.reading().and_then(|reading| reading.status);
-        if let Some((_, process)) = &reading
-            && process == "claude"
-        {
-            status = reading;
-            break;
-        }
-        last_seen = reading.or(last_seen);
-        thread::sleep(Duration::from_millis(10));
-    }
-    pane.stop();
+    stand_in.wait_until_running();
+    let status = pane.reading().and_then(|reading| reading.status);
+    pane.stop().join().expect("the reaper finished");
     let _ = std::fs::remove_dir_all(&bin_dir);
 
-    let (_, process) = status.unwrap_or_else(|| {
-        panic!("the shim identity must reach the foreground; last saw {last_seen:?}")
-    });
+    let (_, process) = status.expect("the stand-in is in the foreground");
     assert_eq!(process, "claude");
 }
 
@@ -827,7 +888,8 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
     let bin_dir = uze_testkit::temp::scratch("shim-in-flight-test");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let uze = bin_dir.join("uze");
-    uze_testkit::process::install_executable(&uze, &std::fs::read("/bin/sleep").unwrap());
+    StandIn::install_as(&uze);
+    let stand_in = StandIn::in_directory(&bin_dir);
     let shim = bin_dir.join("claude");
     std::os::unix::fs::symlink(&uze, &shim).unwrap();
 
@@ -839,34 +901,29 @@ fn the_shim_caught_before_its_exec_counts_as_the_launcher() {
         24,
         damage,
         Launch::Program {
-            argv: vec![shim.display().to_string(), "5".to_owned()],
-            env: Vec::new(),
+            argv: std::iter::once(shim.display().to_string())
+                .chain(StandIn::ARGUMENTS.map(str::to_owned))
+                .collect(),
+            env: stand_in.environment(),
         },
         Arc::new(Mutex::new(Palette::default())),
         false,
     )
     .unwrap();
 
-    let mut through = None;
-    let mut last_seen = None;
-    for _ in 0..500 {
-        let reading = pane.reading().and_then(|reading| reading.status);
-        if let Some((_, process)) = &reading
-            && (process == "claude" || process == "uze")
-        {
-            through = pane.reading().map(|reading| reading.through_launcher);
-            break;
-        }
-        last_seen = reading.or(last_seen);
-        thread::sleep(Duration::from_millis(10));
-    }
-    pane.stop();
+    stand_in.wait_until_running();
+    let reading = pane.reading().expect("the shim is in the foreground");
+    pane.stop().join().expect("the reaper finished");
     let _ = std::fs::remove_dir_all(&bin_dir);
 
-    assert_eq!(
-        through,
-        Some(true),
-        "the shim in flight is the launcher; last saw {last_seen:?}"
+    let (_, process) = reading.status.expect("the shim's status reads");
+    assert!(
+        process == "claude" || process == "uze",
+        "the foreground is the shim, not {process:?}"
+    );
+    assert!(
+        reading.through_launcher,
+        "the shim in flight is the launcher"
     );
 }
 
@@ -3019,10 +3076,8 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
     let bin_dir = uze_testkit::temp::scratch("shim-inherited-test");
     std::fs::create_dir_all(&bin_dir).unwrap();
     let versioned_binary = bin_dir.join("2.1.251");
-    uze_testkit::process::install_executable(
-        &versioned_binary,
-        &std::fs::read("/bin/sleep").unwrap(),
-    );
+    StandIn::install_as(&versioned_binary);
+    let stand_in = StandIn::in_directory(&bin_dir);
 
     let (damage, _damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
@@ -3036,40 +3091,28 @@ fn foreground_status_ignores_a_shim_identity_stamped_for_another_process() {
                 "/bin/sh".to_owned(),
                 "-c".to_owned(),
                 format!(
-                    "export UZE_SHIM_NAME=claude UZE_SHIM_PID=1; exec {} 5",
-                    versioned_binary.display()
+                    "export UZE_SHIM_NAME=claude UZE_SHIM_PID=1; exec {} {}",
+                    versioned_binary.display(),
+                    StandIn::ARGUMENTS.join(" ")
                 ),
             ],
-            env: Vec::new(),
+            env: stand_in.environment(),
         },
         Arc::new(Mutex::new(Palette::default())),
         false,
     )
     .unwrap();
 
-    let mut reported = None;
-    let mut last_seen = None;
-    for _ in 0..500 {
-        let reading = pane.reading().and_then(|reading| reading.status);
-        if let Some((_, process)) = &reading
-            && process == "2.1.251"
-        {
-            reported = reading;
-            break;
-        }
-        assert!(
-            !matches!(&reading, Some((_, process)) if process == "claude"),
-            "a stamp made for another process must never be read as this one's identity"
-        );
-        last_seen = reading.or(last_seen);
-        thread::sleep(Duration::from_millis(10));
-    }
-    pane.stop();
+    stand_in.wait_until_running();
+    let status = pane.reading().and_then(|reading| reading.status);
+    pane.stop().join().expect("the reaper finished");
     let _ = std::fs::remove_dir_all(&bin_dir);
 
-    assert!(
-        reported.is_some(),
-        "the kernel's own name for the process is what is left; last saw {last_seen:?}"
+    let (_, process) = status.expect("the stand-in is in the foreground");
+    assert_eq!(
+        process, "2.1.251",
+        "a stamp made for another process is never this one's identity; \
+         the kernel's own name for it is what is left"
     );
 }
 
@@ -4463,6 +4506,9 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
 // Unix only: Unix socket files and their directory; the named pipe has neither.
 #[cfg(unix)]
 mod socket_files;
+// Unix only: counts what a pane's program is sent, on a program the tests start with `/bin/sh`.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod stopping;
 
 /// A Windows pane, driven as a person at the keyboard drives it: its
 /// text as one string, and a wait for some to appear.

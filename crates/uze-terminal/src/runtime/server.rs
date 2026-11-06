@@ -62,6 +62,10 @@ pub(super) struct Server {
     pub(super) next_client: std::sync::atomic::AtomicU64,
     pub(super) stopped: Mutex<bool>,
     pub(super) stop_requested: Condvar,
+    /// Completed once every pane is stopped, which is what [`serve`] waits
+    /// for: `stopped` only says that no new work is taken. Run once, so a
+    /// second stop waits for the first and signals nothing again.
+    pub(super) taken_down: std::sync::Once,
     pub(super) socket: PathBuf,
     /// Held for as long as this server exists — see [`WorkspaceLock`].
     pub(super) workspace: WorkspaceLock,
@@ -160,6 +164,7 @@ impl Server {
             next_client: std::sync::atomic::AtomicU64::new(1),
             stopped: Mutex::new(false),
             stop_requested: Condvar::new(),
+            taken_down: std::sync::Once::new(),
             socket,
             workspace: workspace_lock,
             persisting: Mutex::new(None),
@@ -1002,6 +1007,9 @@ impl Server {
             .cloned()
             .ok_or_else(|| RuntimeError::Protocol("unknown pane".into()))?;
         let registering = self.registering.write().expect("registering poisoned");
+        if *self.stopped.lock().expect("stop state poisoned") {
+            return Err(RuntimeError::Protocol("the server is stopping".into()));
+        }
         // A program's pane is sealed from the person's endpoint: it is what
         // an agent runs in. A shell the person opens is not, so `sudo`
         // keeps working in it; `no_new_privs` would refuse it.
@@ -1316,8 +1324,10 @@ impl Server {
     /// Ends every pane, and returns once each has been reaped: the server
     /// exits right after, and a reaper still running when it does would
     /// leave the pane's process group behind. All at once, so shutdown
-    /// waits for the slowest pane rather than for their sum.
+    /// waits for the slowest pane rather than for their sum. A pane still
+    /// being started is waited for rather than missed.
     pub(super) fn stop_panes(&self) {
+        let settled = self.registering.read().expect("registering poisoned");
         let reapers: Vec<_> = self
             .panes
             .lock()
@@ -1325,34 +1335,38 @@ impl Server {
             .values()
             .map(|pane| pane.stop())
             .collect();
+        drop(settled);
         for reaper in reapers {
             let _ = reaper.join();
         }
     }
 
-    /// Takes the server down: no new work, no live panes, [`serve`]
-    /// released, and one connection of its own so [`accept_connections`]
+    /// Takes the server down: no new work from the first instant, then no
+    /// live panes, then one connection of its own so [`accept_connections`]
     /// wakes from `accept` and reads the flag instead of blocking until
-    /// somebody happens to attach.
+    /// somebody happens to attach, and only then [`serve`] released. A
+    /// second call waits for the first and does nothing more.
     pub(super) fn shut_down(&self) {
         *self.stopped.lock().expect("stop state poisoned") = true;
         self.stop_requested.notify_all();
-        self.stop_panes();
-        let _ = transport::connect(&self.socket);
-        if let Some(door) = self.person.get() {
-            let _ = uze_platform::seal::connect(door.name());
-        }
+        self.taken_down.call_once(|| {
+            self.stop_panes();
+            let _ = transport::connect(&self.socket);
+            if let Some(door) = self.person.get() {
+                let _ = uze_platform::seal::connect(door.name());
+            }
+        });
     }
 
-    /// Blocks until [`Server::shut_down`] runs, and returns holding the
-    /// stop flag.
+    /// Blocks until [`Server::shut_down`] has stopped every pane, and
+    /// returns holding the stop flag. Forced past a poisoned [`Once`]: a stop
+    /// that panicked has nothing further to do, and the process must still
+    /// let go of the workspace.
+    ///
+    /// [`Once`]: std::sync::Once
     pub(super) fn await_stop(&self) -> std::sync::MutexGuard<'_, bool> {
-        self.stop_requested
-            .wait_while(
-                self.stopped.lock().expect("stop state poisoned"),
-                |stopped| !*stopped,
-            )
-            .expect("stop state poisoned")
+        self.taken_down.wait_force();
+        self.stopped.lock().expect("stop state poisoned")
     }
 }
 

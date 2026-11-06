@@ -107,3 +107,73 @@ fn an_answer_asks_the_host_a_bounded_number_of_times() {
     assert!(refused.contains("16 calls"), "{refused}");
     assert_eq!(forge.asked.lock().unwrap().len(), 16);
 }
+
+/// What `fetch` makes of `scheme`, written into the script as Rhai text.
+fn with_scheme(scheme: &str) -> (Result<uze_script::Envelope, String>, Arc<Forge>) {
+    run(
+        &format!(
+            r#"fn answer(input, context) {{
+                fetch("https://api.github.com/", #{{ secret: "token", scheme: "{scheme}" }});
+                #{{ data: () }}
+            }}"#
+        ),
+        &github(),
+    )
+}
+
+#[test]
+fn a_scheme_that_is_not_one_word_is_refused_before_anything_is_asked() {
+    for scheme in ["", "Bearer token", r"Bearer\r\nHost: example.com"] {
+        let (envelope, forge) = with_scheme(scheme);
+        let refused = envelope.unwrap_err();
+        assert!(refused.contains("is not a scheme"), "{scheme}: {refused}");
+        assert!(forge.asked.lock().unwrap().is_empty(), "{scheme}");
+    }
+}
+
+#[test]
+fn a_scheme_of_letters_digits_and_hyphens_is_placed_as_asked() {
+    let (envelope, forge) = with_scheme("Be-ar3r");
+    envelope.unwrap();
+    let asked = forge.asked.lock().unwrap();
+    assert_eq!(
+        asked[0].secret.as_ref().unwrap().scheme.as_deref(),
+        Some("Be-ar3r")
+    );
+}
+
+/// What `fetch` handed the host, for `options` written as Rhai text.
+fn asked_with(options: &str) -> FetchRequest {
+    let (envelope, forge) = run(
+        &format!(
+            r#"fn answer(input, context) {{
+                fetch("https://api.github.com/", {options});
+                #{{ data: () }}
+            }}"#
+        ),
+        &github(),
+    );
+    envelope.unwrap();
+    forge.asked.lock().unwrap().remove(0)
+}
+
+/// The name is what the host writes as the request's method, so it is the
+/// one HTTP reads.
+#[test]
+fn the_method_sent_is_the_one_asked() {
+    for (options, name) in [
+        ("#{}", "GET"),
+        (r#"#{ method: "GET" }"#, "GET"),
+        (r#"#{ method: "get" }"#, "GET"),
+        (r#"#{ method: "POST" }"#, "POST"),
+        (r#"#{ method: "post" }"#, "POST"),
+    ] {
+        assert_eq!(asked_with(options).method.name(), name, "{options}");
+    }
+}
+
+#[test]
+fn a_text_body_is_sent_as_given() {
+    let asked = asked_with(r#"#{ method: "POST", body: "not \"json\": {" }"#);
+    assert_eq!(asked.body.as_deref(), Some(r#"not "json": {"#));
+}
