@@ -54,10 +54,14 @@ fn with_key<T>(
 }
 
 /// Keeps `value` as the secret `name` of extension `id` of
-/// `plugin@marketplace`, and says it is set.
+/// `plugin@marketplace`, and says it is set. A secret its record cannot
+/// say is set is taken back out: forgetting the plugin finds a secret only
+/// through that record, and would leave it behind.
 pub fn store(home: &UzeHome, plugin: &str, id: &str, name: &str, value: &str) -> Result<()> {
     with_key(home, plugin, id, name, |key| secrets::store(key, value))?;
-    mark(home, plugin, id, name, true)
+    mark(home, plugin, id, name, true).inspect_err(|_| {
+        let _ = with_key(home, plugin, id, name, secrets::delete);
+    })
 }
 
 /// Forgets the secret `name`, and says it is not set.
@@ -126,14 +130,42 @@ pub fn read(home: &UzeHome, plugin: &str, id: &str, name: &str) -> Result<Option
 
 /// Forgets every secret the plugin `plugin@marketplace`'s extensions keep,
 /// as it leaves the machine: each one its record says is set, from the
-/// keychain, and the directory of their files and records.
+/// keychain, and the directory of their files and records. A secret the
+/// keychain keeps stays recorded as set, with that directory, so the next
+/// forgetting tries it again, and the error names it: without its record
+/// nothing would ever find it.
 pub fn forget_plugin(home: &UzeHome, plugin: &str) -> Result<()> {
+    forget_plugin_with(home, plugin, secrets::delete)
+}
+
+fn forget_plugin_with(
+    home: &UzeHome,
+    plugin: &str,
+    delete: impl Fn(&SecretKey<'_>) -> std::io::Result<()>,
+) -> Result<()> {
+    let mut kept = Vec::new();
     for id in recorded_ids(home, plugin) {
         for name in set_names(home, plugin, &id) {
-            let _ = with_key(home, plugin, &id, &name, secrets::delete);
+            match with_key(home, plugin, &id, &name, &delete) {
+                Ok(()) => mark(home, plugin, &id, &name, false)?,
+                Err(UzeError::Write { source, .. }) => {
+                    kept.push(format!("`{id}/{name}` ({source})"))
+                }
+                Err(error) => kept.push(format!("`{id}/{name}` ({error})")),
+            }
         }
     }
     let dir = home.extension_plugin_secrets_dir(plugin);
+    if !kept.is_empty() {
+        return Err(UzeError::Write {
+            path: dir,
+            source: std::io::Error::other(format!(
+                "{} could not be removed from {}; their record is kept",
+                kept.join(", "),
+                kept_in()
+            )),
+        });
+    }
     match std::fs::remove_dir_all(&dir) {
         Err(source) if source.kind() != std::io::ErrorKind::NotFound => {
             Err(UzeError::Write { path: dir, source })
@@ -177,6 +209,59 @@ mod tests {
         assert_eq!(
             read(&home, "ci@studio", "ci-status", "token").unwrap(),
             None
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A secret the keychain would not let go of stays recorded as set, so
+    /// forgetting the plugin again tries it again, and the removal says so;
+    /// the ones it did let go of are no longer recorded.
+    #[test]
+    fn a_secret_the_keychain_kept_stays_recorded_and_is_reported() {
+        let root = uze_testkit::temp::scratch("workspace-secrets-kept");
+        let home = UzeHome::at(root.join("uze"));
+        mark(&home, "ci@studio", "ci-status", "token", true).unwrap();
+        mark(&home, "ci@studio", "ci-status", "other", true).unwrap();
+        mark(&home, "ci@studio", "deploy", "key", true).unwrap();
+
+        let error = forget_plugin_with(&home, "ci@studio", |key| {
+            if key.account == "ci@studio/ci-status/token" {
+                Err(std::io::Error::other("the keychain is locked"))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("ci-status/token"), "{error}");
+        assert!(error.contains("the keychain is locked"), "{error}");
+        assert_eq!(
+            set_names(&home, "ci@studio", "ci-status"),
+            BTreeSet::from(["token".to_owned()])
+        );
+        assert!(set_names(&home, "ci@studio", "deploy").is_empty());
+
+        forget_plugin_with(&home, "ci@studio", |_| Ok(())).unwrap();
+        assert!(!home.extension_plugin_secrets_dir("ci@studio").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Only where secrets are kept in a file: on macOS and Windows this
+    // would write to the operator's own Keychain or Credential Manager.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_secret_that_cannot_be_recorded_as_set_is_not_kept() {
+        let root = uze_testkit::temp::scratch("workspace-secrets-unrecorded");
+        let home = UzeHome::at(root.join("uze"));
+        std::fs::create_dir_all(home.extension_secrets_set_path("ci@studio", "ci-status")).unwrap();
+
+        assert!(store(&home, "ci@studio", "ci-status", "token", "ghp_value").is_err());
+
+        assert_eq!(
+            read(&home, "ci@studio", "ci-status", "token").unwrap(),
+            None,
+            "a secret nothing records as set is never forgotten"
         );
         let _ = std::fs::remove_dir_all(root);
     }

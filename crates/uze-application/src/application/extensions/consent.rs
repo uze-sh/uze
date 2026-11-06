@@ -620,17 +620,19 @@ impl Extensions<'_> {
     /// Forgets what was accepted for every extension of the plugin
     /// `plugin@marketplace`, and what they kept, as it leaves the machine.
     /// Their preferences stay: the operator's text in `config.toml`, found
-    /// again when the plugin is.
+    /// again when the plugin is. A secret the keychain keeps does not keep
+    /// the consents: it is reported once they are forgotten.
     pub(crate) fn forget_plugin(&self, plugin: &str, marketplace: &str) -> Result<Vec<String>> {
         uze_workspace::extensions::store::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
         )?;
-        uze_workspace::extensions::secrets::forget_plugin(
+        let secrets = uze_workspace::extensions::secrets::forget_plugin(
             &self.0.home,
             &format!("{plugin}@{marketplace}"),
-        )?;
-        consent::forget_plugin(&self.0.home, plugin, marketplace)
+        );
+        let forgotten = consent::forget_plugin(&self.0.home, plugin, marketplace)?;
+        secrets.map(|()| forgotten)
     }
 
     fn load_identity(&self, identity: &Identity) -> Result<ExtensionLoad> {
