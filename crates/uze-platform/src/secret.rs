@@ -65,4 +65,11 @@ mod tests {
         assert!(!super::matches(b"ab", b"abc"));
         assert!(!super::matches(b"", b"abc"));
     }
+
+    /// Differences do not cancel out: two bytes off by the same bit are two
+    /// differences, not none.
+    #[test]
+    fn two_differences_of_the_same_kind_do_not_match() {
+        assert!(!super::matches(&[0b01, 0b01], &[0b00, 0b00]));
+    }
 }

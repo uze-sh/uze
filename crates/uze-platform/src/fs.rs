@@ -676,4 +676,54 @@ mod tests {
         assert!(target.join("f.txt").is_file());
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// Narrowed by its mode: reading it back as this user would pass whether
+    /// or not anyone else still could.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_restricted_to_its_owner_has_the_owner_s_mode_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = uze_testkit::temp::scratch("restrict-mode");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("open");
+        std::fs::write(&file, "x").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        restrict_to_owner(&file).unwrap();
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+
+        let _ = std::fs::remove_dir_all(root);
+        assert_eq!(mode, 0o600);
+    }
+
+    /// The administrator's is trusted, another user's is not. Skipped for
+    /// whichever owner nothing visible here has.
+    #[cfg(unix)]
+    #[test]
+    fn only_this_user_and_the_administrator_are_owners_to_trust() {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: `getuid` takes no arguments and cannot fail.
+        let me = unsafe { libc::getuid() };
+        let visible: Vec<std::path::PathBuf> = ["/", "/proc", "/etc", "/usr", "/var/lib", "/run"]
+            .iter()
+            .flat_map(|root| {
+                let listed = std::fs::read_dir(root).into_iter().flatten().flatten();
+                std::iter::once(std::path::PathBuf::from(root)).chain(listed.map(|e| e.path()))
+            })
+            .collect();
+        let owned_by = |wanted: &dyn Fn(u32) -> bool| {
+            visible
+                .iter()
+                .find(|path| std::fs::metadata(path).is_ok_and(|found| wanted(found.uid())))
+        };
+
+        match owned_by(&|owner| owner == 0) {
+            Some(path) => assert!(owned_by_user_or_administrator(path).unwrap(), "{path:?}"),
+            None => eprintln!("skipped: nothing visible here belongs to the administrator"),
+        }
+        match owned_by(&|owner| owner != 0 && owner != me) {
+            Some(path) => assert!(!owned_by_user_or_administrator(path).unwrap(), "{path:?}"),
+            None => eprintln!("skipped: nothing visible here belongs to another user"),
+        }
+    }
 }
