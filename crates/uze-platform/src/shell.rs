@@ -661,12 +661,26 @@ mod tests {
             "/a b/it's \"$HOME\" `x` ;",
             "C:\\Users\\D’Angelo x",
         ] {
-            for (template, expected) in [
+            let mut templates = vec![
                 ("@", value.to_owned()),
                 ("@/x", format!("{value}/x")),
                 ("\"@/x\"", format!("{value}/x")),
                 ("'@/x'", format!("{value}/x")),
-            ] {
+            ];
+            // What a POSIX shell alone reads this way: a quote that closed
+            // before the placeholder, a quote escaped so it never opened, and
+            // a quote still open past another character.
+            if cfg!(unix) {
+                templates.extend([
+                    ("\"x@\"", format!("x{value}")),
+                    ("'x@'", format!("x{value}")),
+                    ("\"x\" @", format!("x|{value}")),
+                    ("'x' @", format!("x|{value}")),
+                    ("\"\\\"@\"", format!("\"{value}")),
+                    ("\\\"@", format!("\"{value}")),
+                ]);
+            }
+            for (template, expected) in templates {
                 let line = format!("{echo}{}", substitute(template, "@", value));
                 let output = command(&line).output().unwrap();
                 let read = String::from_utf8_lossy(&output.stdout);

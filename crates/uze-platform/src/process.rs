@@ -212,7 +212,13 @@ mod tests {
         use std::io::BufRead;
         let mut command = Command::new("/bin/sh");
         command
-            .args(["-c", "sleep 30 & echo $!; setsid sleep 30 & echo $!; wait"])
+            // Said by the stray itself, once it is in a session of its own:
+            // `$!` is known before `setsid` runs, when it still is in the
+            // leader's session and proves nothing about having left.
+            .args([
+                "-c",
+                "sleep 30 & echo $!; setsid sh -c 'echo $$; exec sleep 30' & wait",
+            ])
             .stdout(std::process::Stdio::piped());
         let (mut leader, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
         let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
@@ -268,6 +274,82 @@ mod tests {
         let _ = leader.wait();
         let _ = other.kill();
         let _ = other.wait();
+    }
+
+    /// Ending a unit reaches what is in its group even without its mark:
+    /// a member that cleared its environment is ended all the same, and the
+    /// unit lists it until then.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ending_a_pane_ends_a_member_of_its_group_with_no_mark() {
+        use std::io::BufRead;
+        let grouped = pane::grouped(Vec::new(), None, "UZE_TEST_PANE_UNIT").unwrap();
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "env -i sh -c 'echo $$; exec sleep 30' & wait"])
+            .stdout(std::process::Stdio::piped());
+        let (mut leader, _tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
+        let member: u32 = said.next().unwrap().unwrap().trim().parse().unwrap();
+        let exited = exit_of(member);
+        let group = pane::Group::adopt(leader.id(), &grouped.mark).unwrap();
+        let listed = group.members();
+
+        group.end();
+
+        let ended = exited();
+        if !ended {
+            terminate(member);
+        }
+        let _ = leader.wait();
+        assert!(ended, "a member with no mark outlived the pane");
+        assert!(listed.contains(&member), "{listed:?} lacks {member}");
+        assert!(listed.contains(&leader.id()), "{listed:?}");
+    }
+
+    /// A process that does not lead a group of its own is not adopted, so a
+    /// group signal never overreaches through it. Only ever asked: nothing
+    /// here ends what `adopt` answered about the member.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_process_not_leading_its_group_is_not_adopted() {
+        use std::io::BufRead;
+        let grouped = pane::grouped(Vec::new(), None, "UZE_TEST_PANE_UNIT").unwrap();
+        let mut command = Command::new("/bin/sh");
+        command
+            .args(["-c", "sleep 30 & echo $!; wait"])
+            .stdout(std::process::Stdio::piped());
+        let (mut leader, tree) = spawn_tree(&mut command, Seat::NoTerminal).unwrap();
+        let mut said = std::io::BufReader::new(leader.stdout.take().unwrap()).lines();
+        let member: u32 = said.next().unwrap().unwrap().trim().parse().unwrap();
+
+        let adopted = pane::Group::adopt(member, &grouped.mark).is_some();
+
+        tree.end();
+        let _ = leader.wait();
+        assert!(!adopted, "a member of another's group was adopted");
+    }
+
+    /// A cleared environment is `PATH` and, on Unix, nothing more.
+    #[cfg(unix)]
+    #[test]
+    fn a_cleared_environment_is_down_to_path() {
+        let mut env = uze_testkit::env::scope();
+        env.set("UZE_TEST_CLEARED", "not passed on");
+        let mut command = Command::new("env");
+
+        clear_environment(&mut command);
+        let output = command.output().unwrap();
+
+        // A coverage build's profiling runtime sets its own variable as `env`
+        // starts; it is the instrumentation's, never the caller's.
+        let environment: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| !line.starts_with("__LLVM_PROFILE_"))
+            .map(str::to_owned)
+            .collect();
+        let path = std::env::var("PATH").unwrap();
+        assert_eq!(environment, [format!("PATH={path}")]);
     }
 
     /// A census finds a pane's processes as `belongs` would: a job of the

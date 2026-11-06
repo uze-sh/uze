@@ -352,6 +352,24 @@ mod platform {
             Some(self.field(4)?.parse::<i64>().ok()? != 0)
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        /// The group is the field after the parent, and a command name
+        /// holding spaces and a parenthesis does not move it.
+        #[test]
+        fn a_stat_line_says_its_group_past_a_name_of_any_shape() {
+            let process = uze_testkit::temp::scratch("probe-stat");
+            std::fs::create_dir_all(&process).unwrap();
+            std::fs::write(process.join("stat"), "42 (a b) c) S 7 77 777 0 -1\n").unwrap();
+
+            let stat = super::stat_of(&process).unwrap();
+            let read = (stat.parent(), stat.group());
+
+            let _ = std::fs::remove_dir_all(&process);
+            assert_eq!(read, (Some(7), Some(77)));
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1122,6 +1140,43 @@ mod platform {
 
 #[cfg(test)]
 mod tests {
+    /// This process is in its own group and a child that took a group of
+    /// its own is not; that child's group holds the child. Only read: nothing
+    /// here signals what it lists.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_process_group_holds_its_members_and_no_others() {
+        use std::os::unix::process::CommandExt;
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        // SAFETY: `getpgrp` takes no arguments and cannot fail.
+        let ours = unsafe { libc::getpgrp() } as u32;
+
+        let our_group = super::group_members(ours);
+        let its_group = super::group_members(child.id());
+
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(our_group.contains(&std::process::id()), "{our_group:?}");
+        assert!(!our_group.contains(&child.id()), "{our_group:?}");
+        assert!(its_group.contains(&child.id()), "{its_group:?}");
+        assert!(!its_group.contains(&std::process::id()), "{its_group:?}");
+    }
+
+    /// The kernel stamps a connection with who made it: on a pair made here,
+    /// this user.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_peer_of_a_pair_made_here_is_this_user() {
+        let (end, _other) = std::os::unix::net::UnixStream::pair().unwrap();
+        // SAFETY: `geteuid` takes no arguments and cannot fail.
+        let me = unsafe { libc::geteuid() };
+        assert_eq!(super::socket_peer_uid(&end), Some(me));
+    }
+
     /// A process keeps one start stamp for its life, and two processes
     /// alive at once never share one with the same pid.
     #[cfg(any(target_os = "linux", target_os = "macos", windows))]

@@ -16,6 +16,25 @@
 use std::ffi::OsString;
 use std::sync::{Mutex, MutexGuard};
 
+/// Set to `1` by a run that declares its kernel seals and confines, so that a
+/// test needing either fails there rather than skips.
+pub const KERNEL_CONFINES: &str = "UZE_TEST_KERNEL_CONFINES";
+
+/// Whether a test needing `feature` of the kernel may go on, `has` being what
+/// this kernel answered. Where it lacks the feature the test skips, saying why,
+/// unless this run declared [`KERNEL_CONFINES`]: a suite that quietly proves
+/// nothing is what that declaration exists to rule out.
+pub fn kernel_has(has: bool, feature: &str) -> bool {
+    if !has {
+        assert!(
+            std::env::var_os(KERNEL_CONFINES).is_none_or(|declared| declared != "1"),
+            "{KERNEL_CONFINES}=1, and this kernel lacks {feature}"
+        );
+        eprintln!("skipped: this kernel lacks {feature}");
+    }
+    has
+}
+
 /// Serializes every process-env mutation in the current test binary.
 pub static PROCESS_ENV_LOCK: Mutex<()> = Mutex::new(());
 
