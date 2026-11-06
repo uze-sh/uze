@@ -1282,6 +1282,99 @@ fn a_linked_file_reaches_the_primarys_and_a_missing_target_only_warns() {
     );
 }
 
+/// A link's missing directories are made inside the checkout, the way a
+/// project whose linked file sits in an ignored directory needs them.
+#[test]
+fn a_declared_link_makes_its_missing_directories_inside_the_checkout() {
+    let repository = repository("slots-link-nested");
+    let primary = repository.root();
+    repository.commit_file(".gitignore", "local/\n");
+    fs::create_dir_all(primary.join("local/config")).unwrap();
+    fs::write(primary.join("local/config/.env"), "SECRET=1\n").unwrap();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "nested");
+    assert!(!slot.path.join("local").exists());
+
+    let warnings = prepared(primary, &slot.path, &linking(&["local/config/.env"]));
+
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(
+        fs::symlink_metadata(slot.path.join("local/config"))
+            .unwrap()
+            .is_dir()
+    );
+    assert_eq!(
+        fs::read_to_string(slot.path.join("local/config/.env")).unwrap(),
+        "SECRET=1\n"
+    );
+}
+
+/// The checkout's own tree decides nothing about where a declared link
+/// lands: a directory on its path that the target holds as a link is
+/// refused with a warning, rather than followed out of the checkout.
+// A committed symbolic link, which Windows checks out as a file by default.
+#[cfg(unix)]
+#[test]
+fn a_declared_link_is_made_only_inside_its_checkout() {
+    let repository = repository("slots-link-parent");
+    let primary = repository.root();
+    repository.commit_file(".gitignore", "target/\n.env\n");
+    repository.commit_file("config/app.toml", "a = 1\n");
+    fs::write(primary.join("config/.env"), "SECRET=1\n").unwrap();
+    fs::create_dir_all(primary.join("config/sub")).unwrap();
+    fs::write(primary.join("config/sub/.env"), "SECRET=2\n").unwrap();
+    let elsewhere = uze_testkit::temp::scratch("slots-link-parent-elsewhere");
+
+    repository.with_origin(TARGET);
+    let other = repository.clone_origin();
+    fs::remove_dir_all(other.join("config")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, other.join("config")).unwrap();
+    repository.git_in(&other, &["add", "-A"]);
+    repository.git_in(&other, &["commit", "-qm", "tree change"]);
+    repository.git_in(&other, &["push", "--quiet"]);
+    repository.git(&["fetch", "--quiet", "origin"]);
+    let reach = target_reach(primary, TARGET, None).unwrap();
+    assert_eq!(
+        reach,
+        tip_of(primary, &format!("refs/remotes/{REMOTE}/{TARGET}"))
+    );
+
+    let mut store = AgentStore::default();
+    let (_, slot) = launch_at(&repository, &mut store, "link-parent", &reach);
+    assert!(
+        fs::symlink_metadata(slot.path.join("config"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    for link in ["config/.env", "config/sub/.env"] {
+        assert!(
+            repository
+                .try_git_in(primary, &["check-ignore", "--quiet", "--", link])
+                .is_ok(),
+            "{link} is ignored in the primary, as a declared link must be"
+        );
+    }
+
+    let warnings = prepared(
+        primary,
+        &slot.path,
+        &linking(&["config/.env", "config/sub/.env"]),
+    );
+
+    let made: Vec<_> = fs::read_dir(&elsewhere)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(made.is_empty(), "made outside the checkout: {made:?}");
+    for link in ["config/.env", "config/sub/.env"] {
+        assert!(
+            warnings.iter().any(|warning| warning.contains(link)),
+            "{link} not reported: {warnings:?}"
+        );
+    }
+}
+
 #[test]
 fn a_failing_setup_warns_with_its_last_line_and_a_passing_one_is_silent() {
     let repository = repository("slots-setup");
@@ -1584,6 +1677,50 @@ fn instructions_committed_as_a_link_out_of_the_checkout_are_never_written_throug
     let _ = carry_changes(primary, &acquired.path);
 
     assert_eq!(fs::read_to_string(&outside).unwrap(), through_the_link);
+}
+
+/// Placement carries changes only into a slot cut from the primary's own
+/// `HEAD`, whose tree is the primary's; the copy holds without that
+/// guarantee too. Where the slot's tree holds a link, at a directory on an
+/// untracked file's path or at the file itself, nothing is written through.
+// A committed symbolic link, which Windows checks out as a file by default.
+#[cfg(unix)]
+#[test]
+fn an_untracked_file_is_carried_only_inside_the_checkout() {
+    let repository = repository("carry-inside");
+    let primary = repository.root();
+    repository.commit_file("config/app.toml", "a = 1\n");
+    let elsewhere = uze_testkit::temp::scratch("carry-inside-elsewhere");
+    repository.with_origin(TARGET);
+    let other = repository.clone_origin();
+    fs::remove_dir_all(other.join("config")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, other.join("config")).unwrap();
+    std::os::unix::fs::symlink(elsewhere.join("notes.txt"), other.join("notes.txt")).unwrap();
+    repository.git_in(&other, &["add", "-A"]);
+    repository.git_in(&other, &["commit", "-qm", "tree change"]);
+    repository.git_in(&other, &["push", "--quiet"]);
+    repository.git(&["fetch", "--quiet", "origin"]);
+    let reach = target_reach(primary, TARGET, None).unwrap();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch_at(&repository, &mut store, "carry-inside", &reach);
+    fs::write(primary.join("config/new.txt"), "mine\n").unwrap();
+    fs::write(primary.join("notes.txt"), "mine\n").unwrap();
+    fs::write(primary.join("kept.txt"), "kept\n").unwrap();
+
+    let carried = carry_changes(primary, &slot.path);
+
+    let made: Vec<_> = fs::read_dir(&elsewhere)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(made.is_empty(), "written outside the checkout: {made:?}");
+    let reported = carried.unwrap_err();
+    assert!(reported.contains("config/new.txt"), "{reported}");
+    assert!(reported.contains("notes.txt"), "{reported}");
+    assert_eq!(
+        fs::read_to_string(slot.path.join("kept.txt")).unwrap(),
+        "kept\n"
+    );
 }
 
 /// `taken` is the slot that stood at `before`, renamed to its new agent's
