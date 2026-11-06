@@ -83,9 +83,13 @@ fn carry_untracked(primary: &Path, slot: &Path, relative: &str) -> Result<(), St
     }
     let from = primary.join(relative);
     let to = slot.join(relative);
-    if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("the checkout could not take `{relative}`: {error}"))?;
+    super::pool::directories_within(slot, Path::new(relative))
+        .map_err(|reason| format!("the checkout could not take `{relative}`: {reason}"))?;
+    if std::fs::symlink_metadata(&to).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err(format!(
+            "the checkout could not take `{relative}`: it is a link in the checkout, and \
+             nothing is written through it"
+        ));
     }
     let is_link = std::fs::symlink_metadata(&from)
         .map_err(|error| format!("`{relative}` could not be read: {error}"))?

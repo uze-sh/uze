@@ -605,13 +605,11 @@ pub fn materialize(
             ));
             continue;
         }
-        if destination.exists() || fs::symlink_metadata(&destination).is_ok() {
+        if let Err(reason) = directories_within(slot, link) {
+            warnings.push(format!("could not prepare `{}`: {reason}", link.display()));
             continue;
         }
-        if let Some(parent) = destination.parent()
-            && let Err(error) = fs::create_dir_all(parent)
-        {
-            warnings.push(format!("could not prepare `{}`: {error}", link.display()));
+        if fs::symlink_metadata(&destination).is_ok() {
             continue;
         }
         if let Err(error) = uze_platform::fs::link_entry(&source, &destination) {
@@ -658,6 +656,50 @@ pub fn materialize(
             }),
     );
     warnings
+}
+
+/// Makes the directories `relative` sits in under `slot`, one level at a
+/// time, and refuses once one of them is anything but a real directory
+/// there. The slot's tree is the target's, not the operator's: a directory
+/// the target holds as a link would carry whatever is made through it out
+/// of the checkout, and `create_dir_all` follows one.
+pub(super) fn directories_within(slot: &Path, relative: &Path) -> Result<(), String> {
+    let mut walked = PathBuf::new();
+    for component in relative.parent().into_iter().flat_map(Path::components) {
+        let std::path::Component::Normal(name) = component else {
+            return Err(format!(
+                "`{}` is not a path inside the checkout",
+                relative.display()
+            ));
+        };
+        walked.push(name);
+        let directory = slot.join(&walked);
+        match fs::symlink_metadata(&directory) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(format!(
+                    "`{}` is a link in the checkout, and nothing is made through it",
+                    walked.display()
+                ));
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(format!(
+                    "`{}` is not a directory in the checkout",
+                    walked.display()
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&directory).map_err(|error| error.to_string())?;
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    let parent = slot.join(&walked);
+    match uze_platform::path::resolves_within(&parent, slot) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(format!("`{}` leads outside the checkout", walked.display())),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// Why a project's command does not run here, as a clause after its name.
