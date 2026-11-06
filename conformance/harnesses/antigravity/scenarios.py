@@ -443,9 +443,15 @@ HOOK_DENIAL_MARKERS = ("blocked by protect-env", "Denied by UZE hook")
 #: is on the header above them all rather than on any one question.
 #: What agy shows when it asks before a call: every permission menu —
 #: a command's, an edit's, an MCP tool's ("Allow calling this tool?") —
-#: carries the same navigation line under it, with "Yes" preselected; the
-#: headers above differ.
-PERMISSION_PROMPTS = ("Navigate · tab Amend", "Do you want to proceed")
+#: carries a navigation line under it, with "Yes" preselected; the headers
+#: above differ. The line is not the same everywhere: by 1.5.2 the
+#: file-creation menu ("Allow creation of this file?") reads
+#: "↑/↓ Navigate · f full diff esc to cancel", with no "tab Amend".
+PERMISSION_PROMPTS = (
+    "Navigate · tab Amend",
+    "Navigate · f full diff",
+    "Do you want to proceed",
+)
 
 
 def hook_turn(cfg, prov_ip, tag, args, plugins, prelude="", auth="consumer"):
