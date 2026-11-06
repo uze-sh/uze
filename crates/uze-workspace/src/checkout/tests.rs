@@ -1979,3 +1979,93 @@ fn a_command_that_does_not_run_here_says_why_in_one_clause() {
         "{clause}"
     );
 }
+
+/// Git keeps a moved worktree's administrative directory under its first
+/// name, so a slot moved onto a path another slot left holds its index, its
+/// `HEAD` and any paused operation somewhere else than the slot that stood
+/// there before. What is asked about the path afterwards answers for the
+/// checkout standing there now.
+#[test]
+fn a_path_another_slot_moved_to_answers_for_that_slot() {
+    let repository = repository("moved-git-dir");
+    let primary = repository.root();
+    let store = AgentStore::default();
+    let base = tip_of(primary, TARGET);
+    let branching = Start::Branching { base_tip: &base };
+    let [a, b, c] = ["moved-a", "moved-b", "moved-c"].map(CheckoutId::adopted);
+    let inside = |path: PathBuf| {
+        move || {
+            Presence::Known(vec![Occupant {
+                path: path.clone(),
+                attended: true,
+            }])
+        }
+    };
+    let first = take(primary, &store, "agent/a", branching, None, &nobody, &a).unwrap();
+    let second = take(
+        primary,
+        &store,
+        "agent/b",
+        branching,
+        None,
+        &inside(first.path.clone()),
+        &b,
+    )
+    .unwrap();
+    assert!(second.created && first.path.exists());
+    // Asked once while slot `a` stands at its first path.
+    assert_eq!(paused_operation(&first.path), None);
+
+    let third = take(
+        primary,
+        &store,
+        "agent/c",
+        branching,
+        None,
+        &inside(second.path.clone()),
+        &c,
+    )
+    .unwrap();
+    assert!(!third.created, "slot a moved to c");
+    assert!(!first.path.exists());
+    let again = take(
+        primary,
+        &store,
+        "agent/a2",
+        branching,
+        None,
+        &inside(third.path.clone()),
+        &a,
+    )
+    .unwrap();
+    assert!(!again.created, "slot b moved to a");
+    assert_eq!(again.path, first.path);
+
+    // A rebase paused in the checkout now standing at the reused path.
+    fs::write(again.path.join("README.md"), "mine\n").unwrap();
+    repository.git_in(&again.path, &["commit", "-qam", "mine"]);
+    repository.git_in(&again.path, &["switch", "-qc", "other", &base]);
+    fs::write(again.path.join("README.md"), "theirs\n").unwrap();
+    repository.git_in(&again.path, &["commit", "-qam", "theirs"]);
+    repository.git_in(&again.path, &["switch", "-q", "agent/a2"]);
+    assert!(
+        repository
+            .try_git_in(&again.path, &["rebase", "other"])
+            .is_err()
+    );
+    let fresh = repository.git_in(&again.path, &["rev-parse", "--absolute-git-dir"]);
+    assert!(
+        PathBuf::from(&fresh).join("rebase-merge").exists(),
+        "the rebase is paused in {fresh}"
+    );
+
+    assert_eq!(
+        paused_operation(&again.path),
+        Some("a rebase"),
+        "Git answers {fresh}, remembered {}",
+        uze_git::repository::git_dir(&again.path).unwrap().display(),
+    );
+    assert!(subagent::operation_in_progress(&again.path));
+    assert_eq!(paused_operation(&third.path), None);
+    assert!(!subagent::operation_in_progress(&third.path));
+}
