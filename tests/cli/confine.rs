@@ -15,11 +15,7 @@ fn uze() -> &'static Path {
 }
 
 fn confinable() -> bool {
-    let availability = availability();
-    if !availability.is_available() {
-        eprintln!("skipped: {}", availability.summary());
-    }
-    availability.is_available()
+    uze_testkit::env::kernel_has(availability().is_available(), "confinement")
 }
 
 /// What any program needs to start: the system prefixes, to read and

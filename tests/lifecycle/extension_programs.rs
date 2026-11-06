@@ -187,11 +187,7 @@ impl Drop for World {
 /// confines; `None`, with the reason printed, when it does not.
 fn confining() -> Option<ExtensionRunner> {
     let availability = uze_application::confinement();
-    if !availability.is_available() {
-        eprintln!(
-            "skipped: this machine does not confine programs ({})",
-            availability.summary()
-        );
+    if !uze_testkit::env::kernel_has(availability.is_available(), "confinement") {
         return None;
     }
     Some(ExtensionRunner::confining_through(Some(PathBuf::from(

@@ -162,6 +162,42 @@ mod imp {
 mod tests {
     use super::*;
 
+    /// What `curl` runs without is what is set of its own settings; the
+    /// proxy and the CA a machine behind an inspecting proxy needs stay.
+    #[test]
+    fn curl_runs_without_its_settings_and_with_the_proxy_and_the_ca() {
+        let mut env = uze_testkit::env::scope();
+        for name in [
+            "CURL_HOME",
+            "SSLKEYLOGFILE",
+            "CURL_CA_BUNDLE",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "NO_PROXY",
+        ] {
+            env.set(name, "set");
+        }
+
+        let removed = curl_environment_to_remove();
+
+        assert!(removed.contains(&"CURL_HOME".to_owned()), "{removed:?}");
+        assert!(removed.contains(&"SSLKEYLOGFILE".to_owned()), "{removed:?}");
+        for kept in [
+            "CURL_CA_BUNDLE",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "ALL_PROXY",
+            "NO_PROXY",
+        ] {
+            assert!(!removed.contains(&kept.to_owned()), "{kept}: {removed:?}");
+        }
+    }
+
     #[test]
     fn a_system_tool_is_named_by_its_path_never_looked_up_on_path() {
         for name in ["curl", "tar", "ssh-keygen", "no-such-tool-anywhere"] {

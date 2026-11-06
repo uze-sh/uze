@@ -113,8 +113,7 @@ mod tests {
     /// the scope, where [`available`] says so.
     #[test]
     fn a_sealed_process_cannot_reach_the_endpoint_however_it_leaves() {
-        if !available() {
-            eprintln!("skipped: this kernel cannot seal");
+        if !uze_testkit::env::kernel_has(available(), "a seal") {
             return;
         }
         let confined_before = this_process_runs_confined();
@@ -160,7 +159,7 @@ mod tests {
 
     #[test]
     fn a_sealed_thread_marks_what_it_starts_as_confined() {
-        if !available() {
+        if !uze_testkit::env::kernel_has(available(), "a seal") {
             return;
         }
         let mut child = sealed(|| {

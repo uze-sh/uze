@@ -262,6 +262,36 @@ mod imp {
             }
         }
 
+        /// The question, as a terminal emulator waits for it, and given up on
+        /// soon: a program that never asks then fails the test rather than
+        /// leaving it to hang on a read nobody answers.
+        fn read_the_question(terminal: &mut std::fs::File) -> Vec<u8> {
+            let fd = terminal.as_raw_fd();
+            // Safety: `fd` is open for the life of `terminal`; these calls
+            // read and set its flags and touch no memory of ours.
+            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+            assert_eq!(
+                unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) },
+                0
+            );
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut asked = vec![0u8; QUESTION.len()];
+            let mut filled = 0;
+            while filled < asked.len() {
+                match terminal.read(&mut asked[filled..]) {
+                    Ok(read) if read > 0 => filled += read,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "the question never came");
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    other => panic!("the question: {other:?}"),
+                }
+            }
+            // Safety: as above.
+            assert_eq!(unsafe { libc::fcntl(fd, libc::F_SETFL, flags) }, 0);
+            asked
+        }
+
         fn ends_with_device_attributes(reply: &[u8]) -> bool {
             reply.ends_with(b"c")
         }
@@ -280,8 +310,7 @@ mod imp {
         fn the_reply_is_read_until_it_is_whole_and_the_question_reaches_the_terminal() {
             let (mut terminal, mut program) = pseudoterminal();
             let emulator = thread::spawn(move || {
-                let mut asked = vec![0u8; QUESTION.len()];
-                terminal.read_exact(&mut asked).expect("the question");
+                let asked = read_the_question(&mut terminal);
                 // In two writes, as a reply crossing a connection arrives.
                 terminal.write_all(b"\x1b]11;rgb:ffff/").expect("reply");
                 thread::sleep(Duration::from_millis(20));
@@ -308,8 +337,7 @@ mod imp {
         fn a_reply_that_never_ends_is_given_up_on_before_the_deadline() {
             let (mut terminal, mut program) = pseudoterminal();
             let emulator = thread::spawn(move || {
-                let mut asked = vec![0u8; QUESTION.len()];
-                terminal.read_exact(&mut asked).expect("the question");
+                let _asked = read_the_question(&mut terminal);
                 // One byte past what a reply may take, and no more: the
                 // reader stops at the cap, and anything beyond it would sit
                 // in macOS's small pty input queue with `write_all` blocked
