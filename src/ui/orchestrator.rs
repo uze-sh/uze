@@ -660,6 +660,11 @@ pub(crate) fn attach_workspace(
                 viewport.rows,
             );
         }
+        // The copy reaches the terminal before the frame that says it was
+        // made, so nobody reading "copied" can find the clipboard unwritten.
+        if let Some(text) = attach.model.clipboard.take() {
+            terminal.emit(&selection::osc52(&text));
+        }
         if attach.model.dirty {
             let mut hits = Vec::new();
             let mut metrics = render::FrameMetrics::default();
@@ -707,9 +712,6 @@ pub(crate) fn attach_workspace(
             | super::chime::take_preview()
         {
             terminal.ring();
-        }
-        if let Some(text) = attach.model.clipboard.take() {
-            terminal.emit(&selection::osc52(&text));
         }
         attach.follow_review();
         for outgoing in attach.model.take_notifications() {
