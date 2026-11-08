@@ -606,6 +606,9 @@ impl Session {
             .tabs
             .iter()
             .any(|candidate| candidate.id == space.selected_tab && leaving(candidate));
+        let beside_its_agent = (space.selected_tab == tab)
+            .then(|| neighbor_beside_agent(&space.tabs, index))
+            .flatten();
         let mut removed = Vec::new();
         space.tabs.retain(|candidate| {
             let goes = leaving(candidate);
@@ -614,7 +617,9 @@ impl Session {
             }
             !goes
         });
-        if selected_leaves {
+        if let Some(neighbor) = beside_its_agent {
+            space.selected_tab = neighbor;
+        } else if selected_leaves {
             let next = index.min(space.tabs.len() - 1);
             space.selected_tab = space.tabs[next].id;
         }
@@ -757,6 +762,25 @@ fn space_containing_tab_mut(spaces: &mut [Space], tab: TabId) -> Option<&mut Spa
     spaces
         .iter_mut()
         .find(|space| space.tabs.iter().any(|t| t.id == tab))
+}
+
+/// Where focus goes when the shell at `closing` closes while in front:
+/// the next shell opened beside the same agent, else the one before it,
+/// else that agent itself. `None` for a tab opened beside no agent.
+///
+/// A space's `tabs` interleave every agent with every agent's shells, so
+/// the tab next to a closing shell in that list can be another agent
+/// entirely: closing an agent's last shell used to land on whichever
+/// agent was created after it.
+fn neighbor_beside_agent(tabs: &[Tab], closing: usize) -> Option<TabId> {
+    let agent = tabs[closing].agent?;
+    let beside = |candidate: &&Tab| candidate.agent == Some(agent);
+    tabs[closing + 1..]
+        .iter()
+        .find(beside)
+        .or_else(|| tabs[..closing].iter().rev().find(beside))
+        .map(|tab| tab.id)
+        .or_else(|| tabs.iter().any(|tab| tab.id == agent).then_some(agent))
 }
 
 #[cfg(test)]
