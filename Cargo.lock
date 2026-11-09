@@ -3523,7 +3523,7 @@ dependencies = [
 
 [[package]]
 name = "uze"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "anstyle",
  "bincode",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "uze-application"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3584,7 +3584,7 @@ dependencies = [
 
 [[package]]
 name = "uze-contract"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "schemars",
  "serde",
@@ -3594,7 +3594,7 @@ dependencies = [
 
 [[package]]
 name = "uze-core"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "deno_task_shell",
  "kdl",
@@ -3617,7 +3617,7 @@ dependencies = [
 
 [[package]]
 name = "uze-document"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3627,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "uze-extensions"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "gif",
  "image-webp",
@@ -3646,7 +3646,7 @@ dependencies = [
 
 [[package]]
 name = "uze-git"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "libc",
  "tracing",
@@ -3657,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "uze-integrations"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde_json",
  "sha2 0.11.1",
@@ -3671,7 +3671,7 @@ dependencies = [
 
 [[package]]
 name = "uze-keys"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3679,7 +3679,7 @@ dependencies = [
 
 [[package]]
 name = "uze-platform"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "landlock",
  "libc",
@@ -3691,7 +3691,7 @@ dependencies = [
 
 [[package]]
 name = "uze-script"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "regex",
  "rhai",
@@ -3703,7 +3703,7 @@ dependencies = [
 
 [[package]]
 name = "uze-terminal"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "alacritty_terminal",
  "bincode",
@@ -3720,7 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "uze-testkit"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3731,7 +3731,7 @@ dependencies = [
 
 [[package]]
 name = "uze-theme"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
@@ -3742,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "uze-workspace"
-version = "1.0.0-beta.24"
+version = "1.0.0-beta.25"
 dependencies = [
  "serde",
  "serde_json",
