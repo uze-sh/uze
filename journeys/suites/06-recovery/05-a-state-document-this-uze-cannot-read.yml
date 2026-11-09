@@ -79,11 +79,30 @@ scenes:
       # build reads a version it does not know, and before the fix it
       # failed on a missing field instead — a parse error about a file
       # nobody authored.
+      # The workspace records the branch the work was named after a moment
+      # after Git has it; a pass that read the document before the shell
+      # below wrote it would save over the older state with a readable one,
+      # and nothing would be left to set aside.
+      - wait: shell
+        until: grep -q 'feat/work-nobody-wants' {uze_home}/state/projects/*/tasks.json
+        timeout: 30
+        say: the workspace has recorded the named work
+      # Written again until it holds for a moment, so no write already in
+      # flight replaces it before the next gesture reads it. A workspace
+      # pass that sets it aside meanwhile is the outcome under test, not a
+      # reason to write it again.
       - shell: |
-          set -e
-          for document in {uze_home}/state/projects/*/tasks.json; do
-            printf '{"schema_version": 1, "tasks": []}' > "$document"
+          for attempt in 1 2 3 4 5; do
+            for document in {uze_home}/state/projects/*/tasks.json; do
+              printf '{"schema_version": 1, "tasks": []}' > "$document"
+            done
+            sleep 2
+            if grep -q '"schema_version": 1' {uze_home}/state/projects/*/tasks.json \
+              || ls {uze_home}/state/projects/*/tasks.json.unreadable-* >/dev/null 2>&1; then
+              exit 0
+            fi
           done
+          exit 1
         say: the machine is left holding the state an older uze wrote
       - click: "new"
         say: open the picker again
