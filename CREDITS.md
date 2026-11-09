@@ -138,7 +138,7 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 229 |
+| Apache License 2.0 (`Apache-2.0`) | 235 |
 | MIT License (`MIT`) | 82 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | Creative Commons Zero v1.0 Universal (`CC0-1.0`) | 1 |
@@ -246,6 +246,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `futures-task` | 0.3.34 | MIT OR Apache-2.0 |
 | `futures-util` | 0.3.34 | MIT OR Apache-2.0 |
 | `getrandom` | 0.2.17 | MIT OR Apache-2.0 |
+| `getrandom` | 0.3.4 | MIT OR Apache-2.0 |
 | `getrandom` | 0.4.3 | MIT OR Apache-2.0 |
 | `gif` | 0.14.2 | MIT OR Apache-2.0 |
 | `glob` | 0.3.4 | MIT OR Apache-2.0 |
@@ -328,6 +329,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `quick-error` | 2.0.1 | MIT OR Apache-2.0 |
 | `quick-xml` | 0.41.0 | MIT |
 | `quote` | 1.0.47 | MIT OR Apache-2.0 |
+| `r-efi` | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | `r-efi` | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | `ratatui` | 0.30.2 | MIT |
 | `ratatui-core` | 0.1.2 | MIT |
@@ -342,8 +344,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
 | `rhai` | 1.27.0 | MIT OR Apache-2.0 |
 | `rhai_codegen` | 3.3.0 | MIT OR Apache-2.0 |
-| `rmcp` | 3.8.0 | Apache-2.0 |
-| `rmcp-macros` | 3.8.0 | Apache-2.0 |
+| `rmcp` | 3.9.0 | Apache-2.0 |
+| `rmcp-macros` | 3.9.0 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -429,6 +431,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `vte` | 0.15.0 | Apache-2.0 OR MIT |
 | `walkdir` | 2.5.0 | Unlicense OR MIT |
 | `wasi` | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| `wasip2` | 1.0.4+wasi-0.2.12 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `wasm-bindgen` | 0.2.128 | MIT OR Apache-2.0 |
 | `wasm-bindgen-macro` | 0.2.128 | MIT OR Apache-2.0 |
 | `wasm-bindgen-macro-support` | 0.2.128 | MIT OR Apache-2.0 |
@@ -460,6 +463,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `winnow` | 0.7.15 | MIT |
 | `winnow` | 1.0.4 | MIT |
 | `winreg` | 0.10.1 | MIT |
+| `wit-bindgen` | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | `writeable` | 0.6.4 | Unicode-3.0 |
 | `yaml-rust` | 0.4.5 | MIT OR Apache-2.0 |
 | `yoke` | 0.8.3 | Unicode-3.0 |
