@@ -789,3 +789,77 @@ fn a_restored_space_keeps_its_id_and_a_closed_ones_is_not_reused() {
     let NewSpace { space, .. } = session.create_space(None, PathBuf::from("/tmp"), 80, 24);
     assert_eq!(space, SpaceId(6), "space 5 was closed before the restart");
 }
+
+/// Three agents, then shells beside the first: what a space's `tabs` hold
+/// after the ordinary way of working, agents and shells interleaved.
+fn agents_with_shells_beside_the_first() -> (Session, TabId, [TabId; 3]) {
+    let mut session = Session::new(seat("/tmp/a"), 80, 24);
+    let space = session.workspace.selected_space;
+    let open = |session: &mut Session, label: &str, agent| {
+        session.add_tab(space, label.into(), agent, 80, 24, PathBuf::from("/tmp/a"));
+        session.selected_space().selected_tab
+    };
+    let first = open(&mut session, "agent 1", None);
+    open(&mut session, "agent 2", None);
+    open(&mut session, "agent 3", None);
+    let shells = [
+        open(&mut session, "shell 1", Some(first)),
+        open(&mut session, "shell 2", Some(first)),
+        open(&mut session, "shell 3", Some(first)),
+    ];
+    (session, first, shells)
+}
+
+#[test]
+fn closing_an_agents_last_shell_returns_to_that_agent() {
+    let (mut session, first, [one, two, three]) = agents_with_shells_beside_the_first();
+    session.remove_tab(three).expect("shell 3 closes");
+    session.remove_tab(two).expect("shell 2 closes");
+    assert_eq!(session.selected_space().selected_tab, one);
+
+    session.remove_tab(one).expect("shell 1 closes");
+    assert_eq!(
+        session.selected_space().selected_tab,
+        first,
+        "focus left the agent its last shell belonged to"
+    );
+}
+
+#[test]
+fn closing_a_shell_lands_on_a_shell_of_the_same_agent_never_another_agent() {
+    let mut session = Session::new(seat("/tmp/a"), 80, 24);
+    let space = session.workspace.selected_space;
+    let open = |session: &mut Session, label: &str, agent| {
+        session.add_tab(space, label.into(), agent, 80, 24, PathBuf::from("/tmp/a"));
+        session.selected_space().selected_tab
+    };
+    let first = open(&mut session, "agent 1", None);
+    let earlier = open(&mut session, "shell 1", Some(first));
+    let closing = open(&mut session, "shell 2", Some(first));
+    let second = open(&mut session, "agent 2", None);
+    let later = open(&mut session, "shell 3", Some(first));
+    open(&mut session, "shell of agent 2", Some(second));
+
+    session.select_tab(closing);
+    session.remove_tab(closing).expect("shell 2 closes");
+    assert_eq!(
+        session.selected_space().selected_tab,
+        later,
+        "the next one beside it"
+    );
+
+    session.remove_tab(later).expect("shell 3 closes");
+    assert_eq!(
+        session.selected_space().selected_tab,
+        earlier,
+        "the one before it"
+    );
+}
+
+#[test]
+fn closing_a_shell_in_the_background_leaves_the_selection_alone() {
+    let (mut session, _, [one, _, three]) = agents_with_shells_beside_the_first();
+    assert_eq!(session.selected_space().selected_tab, three);
+    session.remove_tab(one).expect("shell 1 closes");
+    assert_eq!(session.selected_space().selected_tab, three);
+}
