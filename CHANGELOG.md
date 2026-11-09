@@ -4,6 +4,35 @@ All notable changes to UZE are documented here, generated from Conventional
 Commits by `git-cliff` (`make changelog`). Until v1, UZE ships only SemVer
 pre-releases — see `docs/versioning.md`.
 
+## [1.0.0-beta.25](https://github.com/uze-sh/uze/compare/v1.0.0-beta.24...v1.0.0-beta.25) - 2026-11-09
+
+### Fixes
+
+- **review:** Fold comment cards at words without losing characters ([#359](https://github.com/uze-sh/uze/pull/359)) ([4ff786f](https://github.com/uze-sh/uze/commit/4ff786fe8b5d5ba1da60be6722e5b36517422b49))
+- **script:** Count what pad writes before it allocates ([#364](https://github.com/uze-sh/uze/pull/364)) ([a5f3dbb](https://github.com/uze-sh/uze/commit/a5f3dbba1d42a4b300871d22ba151ab242426c66))
+- **terminal:** Stop every pane before serve returns ([#366](https://github.com/uze-sh/uze/pull/366)) ([2f2bd6d](https://github.com/uze-sh/uze/commit/2f2bd6dd72db42aa3a0c9c8525ce5d1ca5df1002))
+- **platform:** Refuse a symlink before narrowing a runtime directory ([#370](https://github.com/uze-sh/uze/pull/370)) ([2ae1562](https://github.com/uze-sh/uze/commit/2ae15624cc09a6e2b77b65ecdc68e5262aa49297))
+- **git:** Check a remembered git dir against the worktree at its path ([#373](https://github.com/uze-sh/uze/pull/373)) ([1d61762](https://github.com/uze-sh/uze/commit/1d6176289ffeb9608c82d56670d6ffc763d9c352))
+- **workspace:** Make a declared link only inside its checkout ([#372](https://github.com/uze-sh/uze/pull/372)) ([115b76b](https://github.com/uze-sh/uze/commit/115b76b85bf7ac52bf90c1a2c815e14c2e87f83e))
+- **conformance:** Answer agy's file-creation menu by its new footer ([#375](https://github.com/uze-sh/uze/pull/375)) ([5086dc7](https://github.com/uze-sh/uze/commit/5086dc70e4b556438d91c703bee4e92f6d91f853))
+- **workspace:** Keep the record of a plugin secret the keychain kept ([#374](https://github.com/uze-sh/uze/pull/374)) ([e778b79](https://github.com/uze-sh/uze/commit/e778b7936ab8e6e440463f0cf42701148f17ef15))
+- **ui:** Emit the OSC 52 clipboard write before drawing the frame ([#376](https://github.com/uze-sh/uze/pull/376)) ([08fdd09](https://github.com/uze-sh/uze/commit/08fdd098def77517849d59ebda27f03f2f1e4933))
+- **terminal:** Keep focus on a closed shell's agent in remove_tab ([#377](https://github.com/uze-sh/uze/pull/377)) ([a57905a](https://github.com/uze-sh/uze/commit/a57905a7d00c70d73dbaa3bc82a5f9d55a2e1242))
+- **deps:** Bump rmcp to 3.9.0 for RUSTSEC-2026-0462 ([#378](https://github.com/uze-sh/uze/pull/378)) ([e534928](https://github.com/uze-sh/uze/commit/e534928e169080d6357e47e0afc99b8021babb89))
+
+### Tests
+
+- **keys:** Cover the paths mutants exposed in uze-keys ([#361](https://github.com/uze-sh/uze/pull/361)) ([7b8138a](https://github.com/uze-sh/uze/commit/7b8138a677f7d44bd2e68bb907223014385fe4d8))
+- **theme,git:** Cover the paths mutants exposed in uze-theme and uze-git ([#362](https://github.com/uze-sh/uze/pull/362)) ([617abf7](https://github.com/uze-sh/uze/commit/617abf717f258811f01ebc864f518fce0c1250b3))
+- **terminal:** Stop relying on sleep surviving a rename ([#367](https://github.com/uze-sh/uze/pull/367)) ([6f32ffe](https://github.com/uze-sh/uze/commit/6f32ffe0d507fee2493fdd68976932efbe9af3ad))
+- **script:** Cover the paths mutants exposed in uze-script ([#365](https://github.com/uze-sh/uze/pull/365)) ([1bb345c](https://github.com/uze-sh/uze/commit/1bb345c0f3225874f7adb2740e2e486b2598457c))
+- **platform:** Cover the paths mutants exposed in uze-platform ([#371](https://github.com/uze-sh/uze/pull/371)) ([304b0e5](https://github.com/uze-sh/uze/commit/304b0e5cef90537341a3f789e738e03e37a0c33a))
+
+### Dependencies
+
+- **deps:** Bump taiki-e/install-action from 2.87.32 to 2.89.1 ([#368](https://github.com/uze-sh/uze/pull/368)) ([88274db](https://github.com/uze-sh/uze/commit/88274db3eba64215e24721816a698e9948413b09))
+- **deps:** Bump the cargo-dependencies group with 2 updates ([#369](https://github.com/uze-sh/uze/pull/369)) ([9197713](https://github.com/uze-sh/uze/commit/9197713c40bdc2eb1982d1a3d83806454070f763))
+
 ## [1.0.0-beta.24](https://github.com/uze-sh/uze/compare/v1.0.0-beta.23...v1.0.0-beta.24) - 2026-11-04
 
 ### Fixes
