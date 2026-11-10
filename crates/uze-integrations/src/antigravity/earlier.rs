@@ -16,3 +16,18 @@ pub(crate) fn earlier() -> Vec<Earlier> {
         site: file!(),
     }]
 }
+
+#[cfg(test)]
+mod tests {
+    /// Replacing a plugin an earlier build installed straight from the Store
+    /// (`package_receipt_serves`) is support for an earlier release, which
+    /// the release-floor suite sees only through the crate's declarations.
+    #[test]
+    fn replacing_a_store_installed_plugin_is_declared() {
+        assert!(
+            crate::earlier::earlier()
+                .iter()
+                .any(|entry| entry.site == file!())
+        );
+    }
+}

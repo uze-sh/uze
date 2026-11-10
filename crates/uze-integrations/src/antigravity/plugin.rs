@@ -776,6 +776,82 @@ mod plugin_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// A stand-in `agy` that lists one `flow` plugin and logs every call it
+    /// is given; anything but the listing succeeds.
+    // It is a POSIX shell script.
+    #[cfg(unix)]
+    fn agy_logging(home: &Path) -> (String, PathBuf) {
+        let agy = home.join("agy");
+        let log = home.join("agy.log");
+        fs::create_dir_all(home).unwrap();
+        uze_testkit::process::install_executable(
+            &agy,
+            format!(
+                "#!/bin/sh\necho \"$*\" >> '{log}'\nif [ \"$1 $2\" = 'plugin list' ]; then\n  echo '[{{\"name\":\"flow\",\"source\":\"antigravity\",\"path\":\"/h/flow\"}}]'\nfi\n",
+                log = log.display()
+            )
+            .as_bytes(),
+        );
+        (agy.to_string_lossy().into_owned(), log)
+    }
+
+    // Only the tests driving a POSIX shell stand-in `agy` call it.
+    #[cfg(unix)]
+    fn plugin_receipt(package: &StoredPackage, integration: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: package.id.as_str().to_owned(),
+            resource_identity: None,
+            integration: integration.to_owned(),
+            artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
+                kind: GENERATED_PLUGIN_KIND.to_owned(),
+                selector: "flow".to_owned(),
+                detail: Default::default(),
+            },
+        }
+    }
+
+    /// The copy of an earlier build UZE installed, which its receipt names,
+    /// is replaced by installing the new build over it: an update, not a
+    /// name held by somebody else. A receipt another harness recorded is
+    /// no proof for this one.
+    // Its stand-in `agy` is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_uzes_receipt_names_is_reinstalled_with_the_new_build() {
+        let (root, pkg) = make_package("agy-reinstall", r#"{"name":"flow","description":"d"}"#);
+        let integration =
+            AntigravityIntegration::new(root.join("agents"), UzeHome::at(root.join("uze")));
+        let (agy, log) = agy_logging(&root);
+        let build = publish(&integration, &pkg);
+        let staged = integration.plugins_dir.join("flow");
+        fs::create_dir_all(&staged).unwrap();
+        fs::write(
+            staged.join("plugin.json"),
+            r#"{"name":"flow","description":"the earlier build"}"#,
+        )
+        .unwrap();
+
+        uze_core::state::record_receipt(&integration.uze_home, plugin_receipt(&pkg, "codex"))
+            .unwrap();
+        let refused = attach_generated_plugin(&agy, &integration, &pkg).unwrap_err();
+        assert!(refused.to_string().contains("did not install"), "{refused}");
+
+        uze_core::state::record_receipt(
+            &integration.uze_home,
+            plugin_receipt(&pkg, integration.id()),
+        )
+        .unwrap();
+        attach_generated_plugin(&agy, &integration, &pkg).unwrap();
+        let calls = fs::read_to_string(&log).unwrap();
+        assert!(
+            calls
+                .lines()
+                .any(|call| call == format!("plugin install {}", build.display())),
+            "{calls}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     /// With UZE's plugin gone and another one in its folder, inspection says
     /// the name is taken rather than that nothing is there.
     #[test]
@@ -863,6 +939,31 @@ mod plugin_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// The length of a file is in the digest too, so only an edit that
+    /// keeps it proves the bytes themselves are read.
+    #[test]
+    fn fingerprint_tells_apart_files_of_the_same_length() {
+        let root = temp_root("fingerprint-same-length");
+        for (tree, body) in [("a", "abcd"), ("b", "abce")] {
+            fs::create_dir_all(root.join(tree).join("skills/x")).unwrap();
+            fs::write(root.join(tree).join("skills/x/SKILL.md"), body).unwrap();
+        }
+        assert_ne!(
+            fingerprint_dir(&root.join("a")).unwrap(),
+            fingerprint_dir(&root.join("b")).unwrap()
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Receipts outlive releases, so the digest is FNV-1a 64 exactly: the
+    /// algorithm's published test vectors pin it.
+    #[test]
+    fn the_content_digest_is_fnv1a_64() {
+        assert_eq!(fnv1a64(b""), "cbf29ce484222325");
+        assert_eq!(fnv1a64(b"a"), "af63dc4c8601ec8c");
+        assert_eq!(fnv1a64(b"foobar"), "85944171f73967e8");
+    }
+
     #[test]
     fn fingerprint_is_order_independent() {
         let root = temp_root("fingerprint-order");
@@ -896,6 +997,11 @@ mod plugin_tests {
         let inspection =
             inspect_installed_plugin(&listing, "flow", Path::new("/nope/flow"), "fingerprint");
         assert_eq!(inspection.state, AttachmentState::Missing);
+        assert!(
+            !inspection.reason.contains("another plugin"),
+            "with nothing under the name, no other plugin is blamed: {}",
+            inspection.reason
+        );
     }
 
     #[test]
