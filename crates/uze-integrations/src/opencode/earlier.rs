@@ -59,3 +59,21 @@ pub(crate) fn hook_bridge_path(config_root: &Path, package_id: &str) -> PathBuf 
         .join("plugins")
         .join(format!("hooks-{package_id}.ts"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every file setup retires is one an entry names, so the release that
+    /// bounds the entry knows which files it takes with it.
+    #[test]
+    fn every_retired_plugin_file_is_named_by_an_entry() {
+        let entries = earlier();
+        for (name, _) in RETIRED_PLUGIN_FILES {
+            assert!(
+                entries.iter().any(|entry| entry.spelled.contains(name)),
+                "`{name}` is retired by setup but named by no entry"
+            );
+        }
+    }
+}

@@ -202,3 +202,94 @@ fn the_listing_keeps_the_sessions_updated_in_the_period() {
         Stamp::of(0, UNIX_EPOCH + Duration::from_millis(2_000_000))
     );
 }
+
+/// A server's tool is `<server><separator><tool>`: the separator must
+/// follow the server's name, and a tool must follow the separator.
+#[test]
+fn a_tool_belongs_to_a_server_only_past_its_separator() {
+    let servers = vec!["github".to_owned()];
+    assert_eq!(
+        server_of("github_search", '_', &servers).as_deref(),
+        Some("github")
+    );
+    assert_eq!(server_of("githubsearch", '_', &servers), None);
+    assert_eq!(server_of("github_", '_', &servers), None);
+}
+
+/// A stand-in for `opencode` answering the listing and one session's
+/// export, and failing whatever else it is asked; `code` is the exit of
+/// every answer.
+#[cfg(unix)]
+fn harness(root: &std::path::Path, name: &str, code: i32) -> std::path::PathBuf {
+    let listing = root.join("listing.json");
+    std::fs::write(
+        &listing,
+        json!({"data": [
+            {"id": "ses_new", "time": {"updated": 2_000_000_u64}},
+            {"id": "ses_old", "time": {"updated": 1_000_u64}},
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let exported = root.join("export.json");
+    std::fs::write(
+        &exported,
+        export(vec![assistant(
+            1,
+            vec![tool(
+                "execute",
+                "completed",
+                json!({"input": {}, "metadata": {"toolCalls": [
+                    {"tool": "direct.search", "status": "completed"},
+                ]}}),
+            )],
+        )])
+        .to_string(),
+    )
+    .unwrap();
+    let executable = root.join(name);
+    uze_testkit::process::install_executable(
+        &executable,
+        format!(
+            "#!/bin/sh\ncase \"$*\" in\n  'api session.list '*) cat '{}' ;;\n  'session export ses_new') cat '{}' ;;\n  *) exit 2 ;;\nesac\nexit {code}\n",
+            listing.display(),
+            exported.display(),
+        )
+        .as_bytes(),
+    );
+    executable
+}
+
+/// The sessions are what the harness lists, and a use is what the
+/// harness's own export of one records.
+#[cfg(unix)]
+#[test]
+fn the_uses_counted_are_the_ones_the_harness_answers() {
+    let root = uze_testkit::temp::scratch("opencode-usage-harness");
+    let executable = harness(&root, "opencode", 0);
+    let since = UNIX_EPOCH + Duration::from_secs(1_000);
+
+    let records = records(&executable, &root, since).unwrap();
+    assert_eq!(
+        records.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["ses_new"]
+    );
+    let read = read(&executable, &root, "ses_new", &servers()).unwrap();
+    assert_eq!(
+        names(&read.uses),
+        [(ResourceKind::Mcp, "direct".into(), Invoker::Model)]
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// An answer the harness gave with a failure is no answer.
+#[cfg(unix)]
+#[test]
+fn an_answer_given_with_a_failure_is_unknown() {
+    let root = uze_testkit::temp::scratch("opencode-usage-failing");
+    let executable = harness(&root, "opencode", 1);
+
+    assert!(records(&executable, &root, UNIX_EPOCH).is_none());
+    assert!(read(&executable, &root, "ses_new", &servers()).is_none());
+    let _ = std::fs::remove_dir_all(root);
+}
