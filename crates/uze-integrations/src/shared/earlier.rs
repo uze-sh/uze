@@ -207,6 +207,8 @@ mod cleanup_unused_wrapper_tests {
 
     /// Only a UZE-owned wrapper inside the managed root that no skill link
     /// still points at goes.
+    // Skill links are symbolic links, which Windows lets an ordinary
+    // account make only in developer mode.
     #[cfg(unix)]
     #[test]
     fn only_an_unreferenced_owned_wrapper_inside_the_root_goes() {

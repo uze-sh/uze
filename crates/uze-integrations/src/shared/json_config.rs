@@ -160,6 +160,7 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
     }
 
+    // Permission bits that refuse a read or a removal are Unix file modes.
     #[cfg(unix)]
     #[test]
     fn a_config_without_read_permission_is_refused() {
@@ -177,6 +178,7 @@ mod tests {
 
     /// An emptied config that cannot be removed is a failed write, never a
     /// silent success: the file still holds what it held.
+    // Permission bits that refuse a read or a removal are Unix file modes.
     #[cfg(unix)]
     #[test]
     fn an_emptied_config_that_cannot_be_removed_is_an_error() {

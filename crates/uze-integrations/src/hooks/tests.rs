@@ -1047,6 +1047,7 @@ fn a_package_without_hooks_needs_nothing_for_the_wrapper() {
 
 /// A bridge that could not be removed is an error, never a success: it
 /// stays, and would keep running a removed package's hooks.
+// A directory that refuses a removal is a Unix file mode.
 #[cfg(unix)]
 #[test]
 fn a_bridge_that_cannot_be_removed_is_an_error() {

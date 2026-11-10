@@ -1615,6 +1615,7 @@ mod catalogue_tests {
     }
 
     /// A vendor that records every command it is asked to run.
+    // It is a POSIX shell script.
     #[cfg(unix)]
     fn recording_vendor(root: &Path) -> (PathBuf, PathBuf) {
         let log = root.join("asked.log");
@@ -1626,6 +1627,7 @@ mod catalogue_tests {
         (program, log)
     }
 
+    // Read only by the test below, whose vendor is a POSIX shell script.
     #[cfg(unix)]
     fn plugin_receipt(selector: &str) -> uze_core::integration::AttachmentReceipt {
         uze_core::integration::AttachmentReceipt {
@@ -1642,6 +1644,7 @@ mod catalogue_tests {
 
     /// Removing a plugin never unregisters the marketplace it came from,
     /// except the retired one, once nothing else was installed through it.
+    // The recording vendor is a POSIX shell script.
     #[cfg(unix)]
     #[test]
     fn only_the_last_plugin_through_the_retired_marketplace_unregisters_it() {

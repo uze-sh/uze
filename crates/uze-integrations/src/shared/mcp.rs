@@ -624,6 +624,7 @@ mod tests {
 
     /// A vendor whose `mcp remove` exits with `remove`, and whose `mcp get`
     /// exits with `get`.
+    // The stand-in vendor is a POSIX shell script.
     #[cfg(unix)]
     fn vendor(label: &str, remove: u8, get: u8) -> (uze_testkit::temp::TempDir, PathBuf) {
         let scratch = uze_testkit::temp::TempDir::new(label);
@@ -641,6 +642,7 @@ mod tests {
     /// Removal is idempotent: an entry already gone is no error. A removal
     /// that failed while the vendor still knows the entry is one, or the
     /// server would keep running after the package left.
+    // The stand-in vendor is a POSIX shell script.
     #[cfg(unix)]
     #[test]
     fn a_failed_removal_is_an_error_only_while_the_entry_remains() {
