@@ -761,6 +761,129 @@ fn an_envelope_s_own_commands_cross_the_trust_boundary() {
     assert!(antigravity.contains("./bin/agy-server"), "{antigravity}");
 }
 
+/// A Claude envelope that carries metadata only, beside what `layout`
+/// adds to the package.
+fn claude_envelope(manifest: &str, layout: impl FnOnce(&Path)) -> impl FnOnce(&Path) {
+    let manifest = manifest.to_owned();
+    move |root: &Path| {
+        fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+        fs::write(root.join(".claude-plugin/plugin.json"), manifest).unwrap();
+        layout(root);
+    }
+}
+
+fn write_file(root: &Path, relative: &str, body: &str) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, body).unwrap();
+}
+
+/// What the harness discovers beside an envelope and UZE does not
+/// interpret is asked about, each named with what it is: executables put
+/// on the shell path, monitors that run commands.
+#[test]
+fn a_package_whose_envelope_ships_components_asks_for_trust_before_installing() {
+    let metadata = r#"{"name":"envelope-fixture"}"#;
+    let executables = refused_detail(
+        "envelope-bin",
+        claude_envelope(metadata, |root| {
+            write_file(root, "bin/tool", "#!/bin/sh\n");
+        }),
+    );
+    assert!(
+        executables.contains("bin -> executables put on the shell path"),
+        "{executables}"
+    );
+
+    let monitors = refused_detail(
+        "envelope-monitors",
+        claude_envelope(metadata, |root| {
+            write_file(root, "monitors/watch.json", "{}");
+        }),
+    );
+    assert!(
+        monitors.contains("monitors -> monitors, which run commands"),
+        "{monitors}"
+    );
+}
+
+/// Skills or agents an envelope declares outside the directories UZE reads
+/// are loaded by the harness all the same, so they are asked about, in
+/// either form the field takes: one path, or a list.
+#[test]
+fn a_package_whose_envelope_declares_skills_or_agents_elsewhere_asks_for_trust() {
+    let skills = refused_detail(
+        "envelope-skills-elsewhere",
+        claude_envelope(
+            r#"{"name":"envelope-fixture","skills":"./extra"}"#,
+            |root| {
+                write_file(root, "extra/x/SKILL.md", "---\nname: x\n---\n");
+            },
+        ),
+    );
+    assert!(
+        skills.contains("extra -> skills UZE does not read"),
+        "{skills}"
+    );
+
+    let agents = refused_detail(
+        "envelope-agents-elsewhere",
+        claude_envelope(
+            r#"{"name":"envelope-fixture","agents":["./more"]}"#,
+            |root| {
+                write_file(root, "more/a.md", "---\nname: a\n---\n");
+            },
+        ),
+    );
+    assert!(
+        agents.contains("more -> agents UZE does not read"),
+        "{agents}"
+    );
+}
+
+/// A language server is a command the harness starts, so a package whose
+/// envelope declares one asks for trust before installing: inline in the
+/// manifest, in a file the manifest names, or in a `.lsp.json` the harness
+/// discovers. The question names the command.
+#[test]
+fn a_package_whose_envelope_declares_language_servers_asks_for_trust_before_installing() {
+    let inline = refused_detail(
+        "envelope-lsp-inline",
+        claude_envelope(
+            r#"{"name":"envelope-fixture","lspServers":{"x":{"command":"./bin/lsp-inline"}}}"#,
+            |_| {},
+        ),
+    );
+    assert!(inline.contains("./bin/lsp-inline"), "{inline}");
+
+    let named = refused_detail(
+        "envelope-lsp-named",
+        claude_envelope(
+            r#"{"name":"envelope-fixture","lspServers":"./lsp.json"}"#,
+            |root| {
+                write_file(
+                    root,
+                    "lsp.json",
+                    r#"{"lspServers":{"y":{"command":"./bin/lsp-named"}}}"#,
+                );
+            },
+        ),
+    );
+    assert!(named.contains("./bin/lsp-named"), "{named}");
+
+    let discovered = refused_detail(
+        "envelope-lsp-discovered",
+        claude_envelope(r#"{"name":"envelope-fixture"}"#, |root| {
+            write_file(
+                root,
+                ".lsp.json",
+                r#"{"lspServers":{"z":{"command":"./bin/lsp-found"}}}"#,
+            );
+        }),
+    );
+    assert!(discovered.contains("./bin/lsp-found"), "{discovered}");
+}
+
 /// An envelope key nobody taught UZE to read is asked about, never passed
 /// over as inert; one with metadata only asks nothing.
 #[test]
