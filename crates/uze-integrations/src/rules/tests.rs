@@ -346,6 +346,24 @@ fn opencode_receives_a_section_of_the_runtime_plugin_and_no_config_entry() {
         "export default {};\n",
         "the operator's own plugin is untouched"
     );
+
+    // A runtime plugin without the section starts nothing; one that cannot
+    // be read proves nothing either way.
+    fs::write(
+        machine.opencode_plugin(),
+        "// a plugin without the rules section\n",
+    )
+    .unwrap();
+    assert_eq!(
+        machine.opencode.inspect_receipt(&receipts[0]).state,
+        AttachmentState::Missing
+    );
+    fs::remove_file(machine.opencode_plugin()).unwrap();
+    fs::create_dir_all(machine.opencode_plugin()).unwrap();
+    assert_eq!(
+        machine.opencode.inspect_receipt(&receipts[0]).state,
+        AttachmentState::Blocked
+    );
 }
 
 // The engine is a POSIX `sh` script: a PowerShell platform is delivered
@@ -539,6 +557,72 @@ fn removal_takes_only_the_engines_entries_and_refuses_an_edited_one() {
         foreign_claude_settings(),
         "only the engine's entries were ever removed"
     );
+}
+
+/// An engine an earlier release kept on its own, outside every build,
+/// stays while an entry still starts it and goes with the last one. Its
+/// path here holds a character JSON escapes, as an entry spells it.
+// The engine is a POSIX `sh` script, run with Unix file modes.
+#[cfg(unix)]
+#[test]
+fn an_engine_an_earlier_release_kept_goes_with_the_last_entry_starting_it() {
+    let machine = Machine::new("rules-retired-engine");
+    let receipts = machine.attach(&machine.claude);
+    let engine = crate::claude::RULES.engine_path(&machine.home);
+    let retired = machine
+        .root
+        .join("earlier \"runtime\"")
+        .join(crate::shared::earlier::RETIRED_ENGINE_PATH);
+    fs::create_dir_all(retired.parent().unwrap()).unwrap();
+    fs::copy(&engine, &retired).unwrap();
+    let spelled = |path: &Path| path_value(path).to_string().trim_matches('"').to_owned();
+    let (current, earlier) = (spelled(&engine), spelled(&retired));
+    let settings = fs::read_to_string(machine.claude_settings()).unwrap();
+    assert!(settings.contains(&current), "{settings}");
+    fs::write(
+        machine.claude_settings(),
+        settings.replace(&current, &earlier),
+    )
+    .unwrap();
+    let delivered_earlier: Vec<AttachmentReceipt> = receipts
+        .iter()
+        .map(|receipt| {
+            let mut receipt = receipt.clone();
+            if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
+                let expected = detail["expected"]
+                    .as_str()
+                    .unwrap()
+                    .replace(&current, &earlier);
+                detail.insert("expected".to_owned(), serde_json::json!(expected));
+                detail.insert("engine".to_owned(), path_value(&retired));
+            }
+            receipt
+        })
+        .collect();
+    let (start, post) = (&delivered_earlier[0], &delivered_earlier[1]);
+    assert_eq!(
+        machine.claude.inspect_receipt(start).state,
+        AttachmentState::Matched
+    );
+
+    assert_eq!(
+        machine.claude.detach_receipt(start).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(
+        retired.is_file(),
+        "the engine went while an entry still starts it"
+    );
+    assert_eq!(
+        machine.claude.detach_receipt(post).unwrap().state,
+        AttachmentState::Missing
+    );
+    assert!(
+        !retired.exists(),
+        "nothing starts the earlier engine any more"
+    );
+    assert!(!retired.parent().unwrap().exists(), "its directory stayed");
+    assert!(engine.is_file(), "the build's engine is the build's");
 }
 
 // The executable bit an unrunnable engine loses is a Unix file mode.
