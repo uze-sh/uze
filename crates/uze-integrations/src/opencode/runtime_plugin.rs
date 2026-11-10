@@ -466,6 +466,7 @@ mod tests {
 
     /// A file that cannot be read at all is not proven UZE's, so it is
     /// never written over.
+    // Unix: mode bits are what make the file unreadable or unremovable here.
     #[cfg(unix)]
     #[test]
     fn a_plugin_that_cannot_be_read_is_never_written_over() {
@@ -515,9 +516,11 @@ mod tests {
                 Some((key, rest)) if !key.starts_with('"') => format!("{indent}\"{key}\": {rest}"),
                 _ => (*line).to_owned(),
             };
+            // `\u{7d}` is the closing brace: a bare one would unbalance the
+            // braces the architecture suite counts to find this module's end.
             let closes = lines
                 .get(index + 1)
-                .is_some_and(|next| next.trim_start().starts_with(['}', ']']));
+                .is_some_and(|next| next.trim_start().starts_with(['\u{7d}', ']']));
             if closes && line.ends_with(',') {
                 line.pop();
             }

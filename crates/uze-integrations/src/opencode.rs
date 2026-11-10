@@ -1478,6 +1478,7 @@ mod lifecycle_tests {
 
     /// Removing the last group's document can fail, and then the detach
     /// fails: a document left behind still runs the package's hooks.
+    // Unix: mode bits are what make the file unreadable or unremovable here.
     #[cfg(unix)]
     #[test]
     fn a_hook_document_that_cannot_be_removed_fails_the_detach() {
@@ -1922,6 +1923,7 @@ mod lifecycle_tests {
 
     /// A stand-in for the installed `opencode`, answering what UZE asks it
     /// as 2.2.5 does.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     fn installed_harness(root: &Path) -> PathBuf {
         let bin = root.join("bin");
@@ -1982,6 +1984,7 @@ mod lifecycle_tests {
 
     /// Conversations, session counts and uses are what the installed
     /// harness answers, found on `PATH`.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn what_the_installed_harness_answers_reaches_the_workspace_and_the_overview() {
@@ -2046,6 +2049,7 @@ mod lifecycle_tests {
 
     /// With no harness to ask, a recorded conversation is kept: an
     /// uninstalled harness is not evidence that it is gone.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn an_uninstalled_harness_keeps_every_recorded_conversation() {
@@ -2065,6 +2069,7 @@ mod lifecycle_tests {
 
     /// Detection may resolve either name OpenCode installs as, and each is
     /// a name the detection cache watches.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn every_name_opencode_is_detected_as_is_a_detection_candidate() {

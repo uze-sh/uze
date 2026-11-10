@@ -369,6 +369,7 @@ mod tests {
 
     /// A link whose target is gone still names a skill, and reads as
     /// broken; a link to a directory that holds no `SKILL.md` names none.
+    // Unix: a symlink is made without privilege.
     #[cfg(unix)]
     #[test]
     fn a_linked_skill_is_listed_only_when_it_names_one() {
@@ -410,6 +411,7 @@ mod tests {
 
     /// A stand-in for `opencode` that prints `stdout` and exits with
     /// `code`, whatever it is asked.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     fn stand_in(root: &Path, name: &str, stdout: &str, code: i32) -> PathBuf {
         let answer = root.join(format!("{name}.answer"));
@@ -424,6 +426,7 @@ mod tests {
 
     /// The count is what the harness's own statistics answer, and an
     /// answer it gave with a failure is no count at all.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn the_sessions_counted_are_the_ones_the_harness_reports() {

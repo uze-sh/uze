@@ -484,7 +484,7 @@ mod tests {
         fs::remove_dir_all(&gone).unwrap();
         fs::remove_file(project.join(".agents/agents/reviewer.md")).unwrap();
 
-        let codex = super::super::CodexIntegration::new(root.join(".agents"), home.clone());
+        let codex = crate::codex::CodexIntegration::new(root.join(".agents"), home.clone());
         let collected = uze_core::integration::IntegrationPort::collect_runtime(&codex, &home);
 
         assert_eq!(collected, std::slice::from_ref(&reviewer));

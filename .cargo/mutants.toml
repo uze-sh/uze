@@ -47,6 +47,7 @@ exclude_re = [
   'uze-script/src/primitives\.rs.*replace == with != in compiled$',
   # Dropping the struct drops the sender right after, which ends the thread the same way.
   'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
+<<<<<<< HEAD
   # Nothing calls IntegrationPort::hook_capabilities: entry plans read HOOKS directly.
   'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::hook_capabilities -> .* with Default::default\(\)$',
   # Nothing calls IntegrationPort::context_accumulates.
@@ -141,4 +142,24 @@ exclude_re = [
   'uze-integrations/src/rules\.rs.*replace == with != in inspect_engine$',
   # Noise: only the exit code a tracing span records.
   'uze-integrations/src/shared/process\.rs.*delete - in run_captured$',
+=======
+  # Nothing in the workspace asks a harness for these; hook delivery reads `HOOKS` itself.
+  'uze-integrations/src/claude\.rs.*replace <impl IntegrationPort for ClaudeIntegration>::(hook_capabilities|reported_events|context_accumulates) -> ',
+  # Only a package-level receipt reaches these, and Claude's only package-level IntegrationOwned receipts are its plugin kinds.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::(unreadable|switched_off|switch_off)$',
+  # Rules and build receipts match earlier arms; any other IntegrationOwned kind reads Blocked either way.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::inspect_receipt$',
+  # Reached only once inspect_receipt said Matched, which an unknown IntegrationOwned kind never is.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::detach_receipt$',
+  # Presentation text for the doctor; a test catching it would copy the literal.
+  'uze-integrations/src/claude\.rs.*replace <impl IntegrationPort for ClaudeIntegration>::description -> .* with "xyzzy"$',
+  # One level past DEEPEST, which no plugin layout reaches; the walk stays bounded either way.
+  'uze-integrations/src/claude/plugin\.rs.*replace < with <= in collect_files$',
+  # NotFound only when a concurrent projection takes the link out between the check and the removal.
+  'uze-integrations/src/claude/runtime\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in project_resource_projection$',
+  # Reached only when the link's rename fails, which an atomic rename in one directory does not on Unix.
+  'uze-integrations/src/claude/runtime\.rs.*delete ! in project_resource_projection$',
+  # Between transcripts modified in the same second the pick is the listing's order either way.
+  'uze-integrations/src/claude/session\.rs.*replace > with >= in observe$',
+>>>>>>> a2c49e06 (chore(mutants): set aside Claude's equivalent and noise mutants)
 ]

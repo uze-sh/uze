@@ -1688,6 +1688,7 @@ mod port_tests {
 
     /// An earlier build linked a Skill entry to a wrapper of its own; the
     /// wrapper leaves with the last link to it.
+    // Unix: a symlink is made without privilege.
     #[cfg(unix)]
     #[test]
     fn detaching_the_last_link_to_an_earlier_wrapper_removes_the_wrapper() {
@@ -1789,6 +1790,7 @@ mod port_tests {
 
     /// An MCP server is registered, inspected and removed through Codex's
     /// own CLI.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn an_mcp_server_is_registered_inspected_and_removed_through_codex() {
@@ -1844,6 +1846,7 @@ mod port_tests {
 
     /// A receipt of a kind this build does not know, written by another
     /// build, is never read as one of Codex's plugins.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn a_receipt_of_an_unknown_kind_stays_blocked_without_asking_codex() {

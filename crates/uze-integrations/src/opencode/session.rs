@@ -268,6 +268,7 @@ mod tests {
 
     /// A stand-in for the `opencode` binary that prints `stdout` and exits
     /// with `code`, whatever it is asked.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     fn stand_in(root: &Path, name: &str, stdout: &[u8], code: i32) -> PathBuf {
         std::fs::create_dir_all(root).unwrap();
@@ -283,6 +284,7 @@ mod tests {
 
     /// The harness is asked by id, and only its own "no such session"
     /// makes a conversation gone: a harness that cannot answer keeps it.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn a_conversation_is_gone_only_when_the_harness_answers_so() {
@@ -305,6 +307,7 @@ mod tests {
 
     /// The listing the harness answers is where an observed conversation
     /// comes from, and a listing it answered with a failure is none.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn the_conversation_observed_is_the_newest_the_harness_lists() {

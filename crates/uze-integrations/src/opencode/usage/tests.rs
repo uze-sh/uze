@@ -219,6 +219,7 @@ fn a_tool_belongs_to_a_server_only_past_its_separator() {
 /// A stand-in for `opencode` answering the listing and one session's
 /// export, and failing whatever else it is asked; `code` is the exit of
 /// every answer.
+// Unix: the stand-in harness is a `#!/bin/sh` script.
 #[cfg(unix)]
 fn harness(root: &std::path::Path, name: &str, code: i32) -> std::path::PathBuf {
     let listing = root.join("listing.json");
@@ -262,6 +263,7 @@ fn harness(root: &std::path::Path, name: &str, code: i32) -> std::path::PathBuf 
 
 /// The sessions are what the harness lists, and a use is what the
 /// harness's own export of one records.
+// Unix: the stand-in harness is a `#!/bin/sh` script.
 #[cfg(unix)]
 #[test]
 fn the_uses_counted_are_the_ones_the_harness_answers() {
@@ -283,6 +285,7 @@ fn the_uses_counted_are_the_ones_the_harness_answers() {
 }
 
 /// An answer the harness gave with a failure is no answer.
+// Unix: the stand-in harness is a `#!/bin/sh` script.
 #[cfg(unix)]
 #[test]
 fn an_answer_given_with_a_failure_is_unknown() {

@@ -287,6 +287,7 @@ mod mcp_tests {
     /// named" diagnostic naming it. Nothing else is evidence of absence, so
     /// any other failure stays Blocked and a removal never drops a receipt
     /// whose server may still be registered.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn only_codexs_own_absence_answer_reads_as_missing() {
@@ -321,6 +322,7 @@ mod mcp_tests {
         }
     }
 
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
     #[cfg(unix)]
     #[test]
     fn a_server_codex_does_not_know_is_added_with_its_command() {
