@@ -243,11 +243,149 @@ pub fn detach_mcp_entry(executable: &Path, command_home: &Path, entry_name: &str
 
 #[cfg(test)]
 mod mcp_tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use uze_core::integration::AttachmentState;
 
-    use super::{McpEntry, inspect_codex_mcp_value};
+    use super::{McpEntry, attach_mcp_entry, inspect_codex_mcp, inspect_codex_mcp_value};
+
+    /// A `codex` that logs every invocation under its `HOME` and answers
+    /// `mcp get` with `stdout`, `stderr` and `code`.
+    fn fake_codex(label: &str, stdout: &str, stderr: &str, code: u8) -> (PathBuf, PathBuf) {
+        let home = uze_testkit::temp::scratch(label);
+        std::fs::create_dir_all(&home).unwrap();
+        let codex = home.join("codex");
+        uze_testkit::process::install_executable(
+            &codex,
+            format!(
+                "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/codex.log\"\nif [ \"$1 $2\" = \"mcp get\" ]; then\n  printf '%s' '{stdout}'\n  printf '%s' '{stderr}' >&2\n  exit {code}\nfi\nexit 0\n"
+            )
+            .as_bytes(),
+        );
+        (codex, home)
+    }
+
+    fn invocations(home: &Path) -> Vec<String> {
+        std::fs::read_to_string(home.join("codex.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn inspected(label: &str, stdout: &str, stderr: &str, code: u8) -> AttachmentState {
+        let (codex, home) = fake_codex(label, stdout, stderr, code);
+        let command = PathBuf::from("/bin/serve");
+        let args = vec!["--x".to_owned()];
+        let state =
+            inspect_codex_mcp(&codex, &home, &McpEntry::planned("uze-x", &command, &args)).state;
+        let _ = std::fs::remove_dir_all(home);
+        state
+    }
+
+    /// Codex says a name is absent with exit 1 and its "No MCP server
+    /// named" diagnostic naming it. Nothing else is evidence of absence, so
+    /// any other failure stays Blocked and a removal never drops a receipt
+    /// whose server may still be registered.
+    #[cfg(unix)]
+    #[test]
+    fn only_codexs_own_absence_answer_reads_as_missing() {
+        let planned = r#"{"name":"uze-x","command":"/bin/serve","args":["--x"]}"#;
+        assert_eq!(
+            inspected("codex-mcp-get-match", planned, "", 0),
+            AttachmentState::Matched
+        );
+        assert_eq!(
+            inspected(
+                "codex-mcp-get-absent",
+                "",
+                "Error: No MCP server named 'uze-x' found.",
+                1
+            ),
+            AttachmentState::Missing
+        );
+        for (label, stderr, code) in [
+            ("codex-mcp-get-invalid", "error: config.toml invalid", 1),
+            ("codex-mcp-get-names-it", "error: could not parse uze-x", 1),
+            (
+                "codex-mcp-get-other-code",
+                "Error: No MCP server named 'uze-x' found.",
+                2,
+            ),
+        ] {
+            assert_eq!(
+                inspected(label, "", stderr, code),
+                AttachmentState::Blocked,
+                "{stderr} (exit {code})"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_server_codex_does_not_know_is_added_with_its_command() {
+        let (codex, home) = fake_codex(
+            "codex-mcp-attach",
+            "",
+            "Error: No MCP server named 'uze-x' found.",
+            1,
+        );
+        attach_mcp_entry(
+            &codex,
+            &home,
+            "uze-x",
+            Path::new("/bin/serve"),
+            &["--x".to_owned()],
+        )
+        .unwrap();
+        assert!(
+            invocations(&home).contains(&"mcp add uze-x -- /bin/serve --x".to_owned()),
+            "{:?}",
+            invocations(&home)
+        );
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// A receipt that records whether the server is enabled, where it runs
+    /// and which environment it names matches only the entry carrying the
+    /// same, and drifts from one that differs in any of them.
+    #[test]
+    fn a_recorded_enabled_state_cwd_and_environment_decide_the_match() {
+        let command = PathBuf::from("/bin/example");
+        let args = vec!["--serve".to_owned()];
+        let cwd = PathBuf::from("/srv/example");
+        let environment = [uze_core::exposure::McpEnvironmentReference {
+            name: "TOKEN".to_owned(),
+        }];
+        let entry = McpEntry {
+            cwd: Some(&cwd),
+            environment: &environment,
+            enabled: Some(true),
+            ..McpEntry::planned("uze-example", &command, &args)
+        };
+        let exact = serde_json::json!({
+            "name": "uze-example", "enabled": true,
+            "transport": {"type": "stdio", "command": "/bin/example", "args": ["--serve"],
+                          "cwd": "/srv/example", "env_vars": ["TOKEN"]}
+        });
+        assert_eq!(
+            inspect_codex_mcp_value(&exact, &entry).state,
+            AttachmentState::Matched
+        );
+        for (pointer, value) in [
+            ("/enabled", serde_json::json!(false)),
+            ("/transport/cwd", serde_json::json!("/elsewhere")),
+            ("/transport/env_vars", serde_json::json!(["OTHER"])),
+        ] {
+            let mut differing = exact.clone();
+            *differing.pointer_mut(pointer).unwrap() = value;
+            assert_eq!(
+                inspect_codex_mcp_value(&differing, &entry).state,
+                AttachmentState::Drifted,
+                "{pointer}"
+            );
+        }
+    }
 
     #[test]
     fn structured_mcp_inspection_distinguishes_match_drift_and_conflict() {

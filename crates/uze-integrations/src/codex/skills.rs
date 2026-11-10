@@ -220,6 +220,51 @@ mod tests {
         );
     }
 
+    /// Each policy's evidence says what Codex does with it: nothing to
+    /// translate for a default Skill, the sidecar for a user-only one, and
+    /// the loss first for a model-only one.
+    #[test]
+    fn the_route_evidence_tells_each_policy_as_it_is() {
+        let root = uze_testkit::temp::scratch("codex-skill-evidence");
+        let home = UzeHome::at(root.join("uze"));
+        let codex = CodexIntegration::new(root.join(".agents"), home.clone());
+        state::record(
+            &home,
+            codex.id(),
+            state::IntegrationRecord {
+                version: Some("0.166.0".to_owned()),
+                strategy: "managed-user-scope-skills-dir".to_owned(),
+            },
+        )
+        .unwrap();
+        let evidence = |invoke: &str| {
+            let resource = skill_resource(
+                "flow",
+                "/store/packages/flow/skills/review/SKILL.md",
+                format!("---\nname: review\ndescription: Review code\n{invoke}---\nReview.\n")
+                    .as_bytes(),
+            );
+            codex.skill_exposure_plan(&resource).evidence
+        };
+
+        let default = evidence("");
+        assert!(
+            !default.contains("DEGRADED") && !default.contains("openai.yaml"),
+            "{default}"
+        );
+        let user_only = evidence("invoke:\n  model: false\n  user: true\n");
+        assert!(
+            user_only.contains("allow_implicit_invocation: false"),
+            "{user_only}"
+        );
+        let model_only = evidence("invoke:\n  model: true\n  user: false\n");
+        assert!(
+            model_only.starts_with("A user can still invoke it"),
+            "{model_only}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn rendering_is_deterministic() {
         let home = UzeHome::at(uze_testkit::temp::scratch("codex-skill-det").join("uze"));

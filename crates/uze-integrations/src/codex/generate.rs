@@ -449,6 +449,34 @@ mod generated_native_tests {
         found
     }
 
+    /// A model-only Skill would lose its `user: false` on Codex and an
+    /// invalid one is invocable by nobody, so the envelope carries neither,
+    /// beside the Skill it does carry.
+    #[test]
+    fn the_envelope_carries_no_model_only_or_invalid_skill() {
+        let (_root, pkg) = make_plain_package("envelope-policies", false);
+        for (name, invoke) in [
+            ("legacy", "invoke:\n  model: true\n  user: false\n"),
+            ("dead", "invoke:\n  model: false\n  user: false\n"),
+        ] {
+            fs::create_dir_all(pkg.root.join("skills").join(name)).unwrap();
+            fs::write(
+                pkg.root.join("skills").join(name).join("SKILL.md"),
+                format!("---\nname: {name}\n{invoke}---\nBody.\n"),
+            )
+            .unwrap();
+        }
+        let uze_home = UzeHome::at(_root.join("uze"));
+        materialize_generated_package(&uze_home, &pkg).unwrap();
+        let skills = generated_root(&uze_home)
+            .join(pkg.id.as_str())
+            .join("skills");
+        assert!(skills.join("commit/SKILL.md").is_file());
+        assert!(!skills.join("legacy").exists());
+        assert!(!skills.join("dead").exists());
+        let _ = fs::remove_dir_all(_root);
+    }
+
     #[test]
     fn materialize_generated_package_is_deterministic_across_rebuilds() {
         let (_root, pkg) = make_plain_package("deterministic", true);
