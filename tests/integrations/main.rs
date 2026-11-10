@@ -18,6 +18,7 @@ mod runtime_boundary;
 mod runtime_projection;
 mod subjects;
 mod vendor_neutral;
+mod worktrees;
 
 pub(crate) mod harness {
     //! Per-harness semantic conformance (invocation policy routing and

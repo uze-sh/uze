@@ -260,6 +260,38 @@ fn an_override_of_what_uze_composes_never_reaches_any_harness() {
     }
 }
 
+/// What Claude needs set to deliver is not the operator's to unset: the
+/// variable that makes an added directory's `CLAUDE.md` load, and the one
+/// that says where its plugins are.
+#[test]
+fn an_override_of_the_environment_claude_is_delivered_by_is_left_out() {
+    let registry = registry("overrides-claude-environment");
+    let claude = harness(&registry, "claude-code");
+    for variable in [
+        "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD",
+        "CLAUDE_CONFIG_DIR",
+    ] {
+        let overrides = overrides::compose(
+            &[format!("{variable}=0")],
+            claude.flag_catalog(),
+            claude.managed_environment(),
+            &[],
+        );
+        assert!(
+            overrides.env.iter().all(|(key, _)| key != variable),
+            "{variable} reaches the launch"
+        );
+        assert!(
+            overrides
+                .left_out
+                .iter()
+                .any(|reason| reason.contains(variable)),
+            "{variable}: {:?}",
+            overrides.left_out
+        );
+    }
+}
+
 /// Every spelling a harness would read as one of its owned flags: a short
 /// one inside a cluster of switches (`-zc` as `-z -c`) where the harness's
 /// grammar has clusters, and a long one written with one dash
