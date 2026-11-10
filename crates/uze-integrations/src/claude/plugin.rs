@@ -1470,6 +1470,216 @@ mod explicit_marketplace_tests {
 }
 
 #[cfg(test)]
+mod catalogue_tests {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
+    use uze_core::{home::UzeHome, integration::PublicationStatus, store::StoredPackage};
+
+    use super::ClaudeMarketplace;
+    use crate::shared::marketplace::{self, MarketplaceDialect};
+
+    /// A package of one Skill and no envelope of its own, named `name`.
+    fn package(root: &Path, name: &str) -> StoredPackage {
+        let package_root = root.join("store/plugins/local").join(name);
+        fs::create_dir_all(package_root.join("skills/commit")).unwrap();
+        fs::write(
+            package_root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: Commit.\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            package_root.join("plugin.json"),
+            format!(r#"{{"name":"{name}"}}"#),
+        )
+        .unwrap();
+        crate::shared::test_support::stored_at(&package_root, name)
+    }
+
+    fn catalogue_path(home: &UzeHome) -> PathBuf {
+        marketplace::marketplace_root::<ClaudeMarketplace>(home)
+            .join(ClaudeMarketplace::CATALOGUE_PATH)
+    }
+
+    fn listed(home: &UzeHome) -> Vec<String> {
+        let catalogue: serde_json::Value =
+            serde_json::from_slice(&fs::read(catalogue_path(home)).unwrap()).unwrap();
+        catalogue["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["name"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    fn republish(root: &Path, home: &UzeHome, packages: &[StoredPackage]) {
+        marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            root,
+            home,
+            "claude",
+            packages,
+        )
+        .unwrap();
+    }
+
+    fn publication(home: &UzeHome, packages: &[StoredPackage]) -> PublicationStatus {
+        marketplace::publication::<ClaudeMarketplace>(home, "claude", packages)
+    }
+
+    fn unpublished(status: PublicationStatus) -> String {
+        match status {
+            PublicationStatus::Unpublished(reason) => reason,
+            other => panic!("expected Unpublished, got {other:?}"),
+        }
+    }
+
+    /// The catalogue lists the builds of the packages it is handed and no
+    /// other, down to none: a package being removed leaves it.
+    #[test]
+    fn the_catalogue_lists_exactly_the_packages_it_is_handed() {
+        let scratch = uze_testkit::temp::TempDir::new("catalogue-set");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        let (kept, leaving) = (package(root, "kept"), package(root, "leaving"));
+        for package in [&kept, &leaving] {
+            marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", package);
+        }
+        republish(root, &home, &[kept.clone(), leaving.clone()]);
+        assert_eq!(listed(&home), ["kept", "leaving"]);
+
+        republish(root, &home, std::slice::from_ref(&kept));
+        assert_eq!(listed(&home), ["kept"]);
+        assert_eq!(
+            publication(&home, std::slice::from_ref(&kept)),
+            PublicationStatus::Published
+        );
+
+        republish(root, &home, &[]);
+        assert!(listed(&home).is_empty(), "the last package stayed listed");
+    }
+
+    /// Published means the catalogue lists exactly the installed set and
+    /// every build it lists is there; anything else names what is off.
+    #[test]
+    fn publication_holds_the_catalogue_to_the_installed_set() {
+        let scratch = uze_testkit::temp::TempDir::new("catalogue-publication");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        assert_eq!(publication(&home, &[]), PublicationStatus::Published);
+        fs::create_dir_all(catalogue_path(&home)).unwrap();
+        assert!(matches!(
+            publication(&home, &[]),
+            PublicationStatus::Unpublished(_)
+        ));
+        fs::remove_dir(catalogue_path(&home)).unwrap();
+
+        // Its own envelope, of metadata only: the catalogue entry reads the
+        // same with the build's manifest gone, so only the build is off.
+        let kit = package(root, "kit");
+        fs::create_dir_all(kit.root.join(".claude-plugin")).unwrap();
+        fs::write(
+            kit.root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"kit"}"#,
+        )
+        .unwrap();
+        let receipt = marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", &kit);
+        let installed = std::slice::from_ref(&kit);
+        assert!(
+            unpublished(publication(&home, installed)).contains("has been written"),
+            "a build with no catalogue yet"
+        );
+        republish(root, &home, installed);
+        assert_eq!(publication(&home, installed), PublicationStatus::Published);
+
+        let written = fs::read(catalogue_path(&home)).unwrap();
+        let mut catalogue: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        catalogue["plugins"].as_array_mut().unwrap().clear();
+        fs::write(catalogue_path(&home), catalogue.to_string()).unwrap();
+        assert!(unpublished(publication(&home, installed)).contains("does not match"));
+        fs::write(catalogue_path(&home), &written).unwrap();
+
+        let build = crate::shared::build::RecordedBuild::of(&receipt)
+            .unwrap()
+            .root;
+        fs::remove_file(
+            build
+                .join(ClaudeMarketplace::ENVELOPE_DIR)
+                .join("plugin.json"),
+        )
+        .unwrap();
+        let reason = unpublished(publication(&home, installed));
+        assert!(reason.contains("whose build is gone"), "{reason}");
+    }
+
+    /// A vendor that records every command it is asked to run.
+    #[cfg(unix)]
+    fn recording_vendor(root: &Path) -> (PathBuf, PathBuf) {
+        let log = root.join("asked.log");
+        let program = root.join("claude");
+        uze_testkit::process::install_executable(
+            &program,
+            format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display()).as_bytes(),
+        );
+        (program, log)
+    }
+
+    #[cfg(unix)]
+    fn plugin_receipt(selector: &str) -> uze_core::integration::AttachmentReceipt {
+        uze_core::integration::AttachmentReceipt {
+            package_id: "kit@local".to_owned(),
+            resource_identity: None,
+            integration: "claude".to_owned(),
+            artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
+                kind: ClaudeMarketplace::EXPLICIT_KIND.to_owned(),
+                selector: selector.to_owned(),
+                detail: Default::default(),
+            },
+        }
+    }
+
+    /// Removing a plugin never unregisters the marketplace it came from,
+    /// except the retired one, once nothing else was installed through it.
+    #[cfg(unix)]
+    #[test]
+    fn only_the_last_plugin_through_the_retired_marketplace_unregisters_it() {
+        let scratch = uze_testkit::temp::TempDir::new("detach-retired");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        let (program, log) = recording_vendor(root);
+        let asked = || fs::read_to_string(&log).unwrap_or_default();
+
+        let current = plugin_receipt("kit@uze-store");
+        marketplace::detach_package::<ClaudeMarketplace>(
+            &program,
+            root,
+            &home,
+            &current,
+            "kit@uze-store",
+        )
+        .unwrap();
+        assert_eq!(asked(), "plugin uninstall kit@uze-store\n");
+
+        fs::remove_file(&log).unwrap();
+        let retired = plugin_receipt("kit@uze-local");
+        marketplace::detach_package::<ClaudeMarketplace>(
+            &program,
+            root,
+            &home,
+            &retired,
+            "kit@uze-local",
+        )
+        .unwrap();
+        assert_eq!(
+            asked(),
+            "plugin uninstall kit@uze-local\nplugin marketplace remove uze-local\n"
+        );
+    }
+}
+
+#[cfg(test)]
 mod recorded_state_tests {
     use std::{fs, path::Path};
 
