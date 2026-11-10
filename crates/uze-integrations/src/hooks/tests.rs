@@ -1013,6 +1013,38 @@ fn bridge_file_cleanup_removes_only_uzes_files() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// Only a delivered hook asks the machine for the wrapper's programs: a
+/// package whose delivered resources hold no hook needs nothing.
+#[test]
+fn a_package_without_hooks_needs_nothing_for_the_wrapper() {
+    let scratch = uze_testkit::temp::TempDir::new("hooks-requirements-skill");
+    let package = scratch.path().join("pkg");
+    fs::create_dir_all(package.join("skills/commit")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+    let skill = "---\nname: commit\ndescription: Commit.\n---\nBody.\n";
+    fs::write(package.join("skills/commit/SKILL.md"), skill).unwrap();
+    let stored = crate::shared::test_support::stored_at(&package, "flow");
+    let mut resource = crate::shared::test_support::skill_resource(&stored);
+    resource.capability.payload = skill.as_bytes().to_vec();
+    let home = UzeHome::at(scratch.path().join("uze"));
+    let claude = crate::claude::ClaudeIntegration::new(scratch.path().join("claude"), home.clone());
+    // Setup has run, so the Skill is delivered rather than held back.
+    uze_core::state::record(
+        &home,
+        uze_core::integration::IntegrationPort::id(&claude),
+        uze_core::state::IntegrationRecord::default(),
+    )
+    .unwrap();
+    assert!(
+        !matches!(
+            uze_core::integration::IntegrationPort::exposure_plan(&claude, &resource).mechanism,
+            ExposureMechanism::Unsupported { .. }
+        ),
+        "the Skill is delivered"
+    );
+    assert!(generated_requirements(&claude, crate::claude::HOOKS, &[&resource]).is_empty());
+}
+
 /// A bridge that could not be removed is an error, never a success: it
 /// stays, and would keep running a removed package's hooks.
 #[cfg(unix)]
