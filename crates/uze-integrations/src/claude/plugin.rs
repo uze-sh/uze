@@ -948,6 +948,21 @@ mod claude_native_coverage_tests {
         let _ = fs::remove_dir_all(_root);
     }
 
+    /// A path field may name one path as a string rather than a list.
+    #[test]
+    fn a_skills_field_written_as_one_path_adds_that_directory() {
+        let (_root, pkg) =
+            make_package_with_plugin("single-path", r#"{"name":"test-pkg","skills":"./extra"}"#);
+        let declared = skill_at(
+            &pkg,
+            pkg.root.join("extra/deep/SKILL.md"),
+            "---\nname: deep\n---\n",
+        );
+        let covered = claude_exact_coverage(&pkg, &[&declared]);
+        assert_eq!(covered, BTreeSet::from([declared.identity()]));
+        let _ = fs::remove_dir_all(_root);
+    }
+
     #[test]
     fn a_nested_skill_is_loaded_only_when_its_directory_is_declared() {
         let (_root, pkg) = make_package_with_plugin(
@@ -1307,7 +1322,7 @@ mod explicit_marketplace_tests {
 
     use uze_core::{
         home::UzeHome,
-        integration::{AttachmentReceipt, ManagedArtifact},
+        integration::{AttachmentReceipt, IntegrationPort, ManagedArtifact},
         store::{PackageId, StoredPackage},
     };
 
@@ -1407,6 +1422,12 @@ mod explicit_marketplace_tests {
         }
         assert!(!marketplace::receipt_serves::<ClaudeMarketplace>(&retired));
         assert!(marketplace::receipt_serves::<ClaudeMarketplace>(&moved));
+        let claude = crate::claude::ClaudeIntegration::new(
+            root.join("claude"),
+            UzeHome::at(root.join("uze")),
+        );
+        assert!(!claude.package_receipt_serves(&retired));
+        assert!(claude.package_receipt_serves(&moved));
     }
 
     /// A package with its own envelope and one without are two plugins of
@@ -1852,6 +1873,63 @@ mod recorded_state_tests {
         let _ = fs::remove_dir_all(home);
     }
 
+    /// A plugin Claude's CLI lists as enabled is matched without a word
+    /// about being switched off.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_claudes_cli_lists_as_enabled_is_not_called_switched_off() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let home = home_with("claude-cli-enabled", &[]);
+        let claude = home.join("claude");
+        uze_testkit::process::install_executable(
+            &claude,
+            b"#!/bin/sh\ncase \"$2\" in\n  marketplace) echo '[{\"name\":\"uze-store\",\"path\":\"/uze/generated\"}]' ;;\n  list) echo '[{\"id\":\"git@uze-store\",\"enabled\":true}]' ;;\nesac\n",
+        );
+
+        let inspection = super::inspect_claude_plugin(
+            &claude,
+            &home,
+            "git@uze-store",
+            Path::new("/uze/generated"),
+        );
+
+        assert_eq!(
+            inspection.state,
+            uze_core::integration::AttachmentState::Matched
+        );
+        assert!(
+            !inspection.reason.contains("switched off"),
+            "{}",
+            inspection.reason
+        );
+        assert!(!super::plugin_switched_off(&claude, &home, "git@uze-store"));
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// Switching a plugin off is Claude's own `plugin disable`.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
+    #[cfg(unix)]
+    #[test]
+    fn switching_a_plugin_off_asks_claude_to_disable_it() {
+        let home = home_with("claude-cli-disable", &[]);
+        let claude = home.join("claude");
+        let log = home.join("argv.log");
+        uze_testkit::process::install_executable(
+            &claude,
+            format!("#!/bin/sh\necho \"$@\" >> '{}'\n", log.display()).as_bytes(),
+        );
+
+        super::switch_off_plugin(&claude, &home, "git@uze-store").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&log).unwrap().trim(),
+            "plugin disable git@uze-store"
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
     /// A record in a shape this does not know answers nothing, so the CLI
     /// is asked as before.
     #[test]
@@ -1868,5 +1946,191 @@ mod recorded_state_tests {
         assert!(recorded_marketplaces(&home).is_none());
         assert!(recorded_user_install(&home, "git@uze-store").is_none());
         let _ = fs::remove_dir_all(home);
+    }
+}
+
+#[cfg(test)]
+mod unreadable_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use uze_core::capability::{Capability, CapabilityKind, Resource};
+
+    use super::plugin_unreadable;
+
+    struct Fixture {
+        root: PathBuf,
+        home: PathBuf,
+        source: PathBuf,
+        cache: PathBuf,
+        skill: Resource,
+        agent: Resource,
+    }
+
+    /// Claude records `kit@uze-store` installed at user scope with its
+    /// cached copy at `cache`; the plugin UZE delivered serves the skill
+    /// `review` and the agent `reviewer`.
+    fn fixture(label: &str) -> Fixture {
+        let root = uze_testkit::temp::scratch(label);
+        let home = root.join("home");
+        let cache = root.join("cache/kit");
+        let source = root.join("source/kit");
+        fs::create_dir_all(home.join(".claude/plugins")).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(source.join(".claude-plugin")).unwrap();
+        fs::write(
+            source.join(".claude-plugin/plugin.json"),
+            r#"{"name":"kit"}"#,
+        )
+        .unwrap();
+        fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            serde_json::json!({
+                "version": 2,
+                "plugins": {"kit@uze-store": [{"scope": "user", "installPath": cache}]},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let package = crate::shared::test_support::stored_at(&source, "kit");
+        let resource = |kind, relative: &str| {
+            Resource::from_package(
+                package.id.clone(),
+                package.root.clone(),
+                Capability {
+                    kind,
+                    path: package.root.join(relative),
+                    payload: Vec::new(),
+                },
+            )
+        };
+        let skill = resource(CapabilityKind::AgentSkill, "skills/review/SKILL.md");
+        let agent = resource(CapabilityKind::Agent, "agents/reviewer.md");
+        Fixture {
+            root,
+            home,
+            source,
+            cache,
+            skill,
+            agent,
+        }
+    }
+
+    impl Fixture {
+        fn cached(&self, relative: &str) {
+            let path = self.cache.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "cached").unwrap();
+        }
+
+        fn unreadable(&self) -> Vec<String> {
+            let mut flagged: Vec<String> = plugin_unreadable(
+                &self.home,
+                self.source.clone(),
+                "kit@uze-store",
+                &[&self.skill, &self.agent],
+            )
+            .into_iter()
+            .map(|finding| finding.capability)
+            .collect();
+            flagged.sort();
+            flagged
+        }
+
+        fn both(&self) -> Vec<String> {
+            let mut both = vec![self.skill.identity(), self.agent.identity()];
+            both.sort();
+            both
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn a_cached_copy_holding_every_served_resource_is_readable() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-whole");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+    }
+
+    /// A skill is its `SKILL.md` in a directory of its name, and an agent
+    /// its file under `agents/`: a neighbour's or a stray file of the same
+    /// name is not them.
+    #[test]
+    fn a_cached_copy_missing_what_was_served_flags_it() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-hollow");
+        fixture.cached("skills/other/SKILL.md");
+        fixture.cached("review/notes.txt");
+        fixture.cached("agents/other.md");
+
+        assert_eq!(fixture.unreadable(), fixture.both());
+    }
+
+    #[test]
+    fn an_agent_file_outside_agents_is_not_the_agent() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-stray-agent");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("reviewer.md");
+
+        assert_eq!(fixture.unreadable(), vec![fixture.agent.identity()]);
+    }
+
+    /// Without Claude's record of an install there is no cached copy to
+    /// judge, so nothing is said.
+    #[test]
+    fn no_record_of_the_install_says_nothing() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-unrecorded");
+        fs::remove_file(fixture.home.join(".claude/plugins/installed_plugins.json")).unwrap();
+
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_plugin_gone_from_its_source_flags_everything_it_served() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-gone");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+        fs::remove_file(fixture.source.join(".claude-plugin/plugin.json")).unwrap();
+
+        assert_eq!(fixture.unreadable(), fixture.both());
+    }
+
+    /// The cached copy is the plugin author's content, and links in it may
+    /// lead back into itself: the walk still ends, and soon.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn links_looping_back_into_the_cached_copy_still_end_the_walk() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-loop");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+        std::os::unix::fs::symlink(".", fixture.cache.join("again")).unwrap();
+        std::os::unix::fs::symlink(".", fixture.cache.join("and-again")).unwrap();
+
+        let started = std::time::Instant::now();
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the walk took {:?}",
+            started.elapsed()
+        );
     }
 }
