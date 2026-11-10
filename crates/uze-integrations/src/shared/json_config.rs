@@ -139,6 +139,62 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
+    /// A settings file someone created empty holds nothing yet: it reads
+    /// as an empty object, not as broken JSON.
+    #[test]
+    fn an_empty_file_reads_as_empty_object() {
+        let path = temp_path("empty");
+        fs::write(&path, "").unwrap();
+        assert_eq!(read_object(&path).unwrap(), serde_json::json!({}));
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Only a missing file is empty: one that exists and cannot be read is
+    /// refused, or the next merge would replace it with UZE's entries
+    /// alone.
+    #[test]
+    fn a_config_that_cannot_be_read_is_refused_not_read_as_empty() {
+        let path = temp_path("a-directory");
+        fs::create_dir_all(&path).unwrap();
+        assert!(read_object(&path).is_err());
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_config_without_read_permission_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_path("unreadable");
+        fs::write(&path, r#"{"model":"opus"}"#).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+        // An account that reads past permissions (root) cannot see this case.
+        if fs::read(&path).is_err() {
+            assert!(read_object(&path).is_err());
+        }
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let _ = fs::remove_file(&path);
+    }
+
+    /// An emptied config that cannot be removed is a failed write, never a
+    /// silent success: the file still holds what it held.
+    #[cfg(unix)]
+    #[test]
+    fn an_emptied_config_that_cannot_be_removed_is_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = uze_testkit::temp::scratch("emptied-locked");
+        let path = directory.join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o555)).unwrap();
+        // An account that writes past permissions (root) cannot see this case.
+        let enforced = fs::write(directory.join("probe"), "").is_err();
+        if enforced {
+            assert!(write_object_or_remove_emptied(&path, &serde_json::json!({})).is_err());
+            assert!(path.is_file(), "the config was removed after all");
+        }
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+        let _ = fs::remove_dir_all(&directory);
+    }
+
     #[test]
     fn set_path_creates_intermediate_objects_and_preserves_foreign_keys() {
         let mut config =

@@ -366,6 +366,28 @@ mod tests {
         assert!(commands[0].contains("could not be read"), "{commands:?}");
     }
 
+    /// In the bare event map a `description` string is the document's
+    /// own, and no handler; any other event is listed as written, whatever
+    /// its shape.
+    #[test]
+    fn a_bare_event_map_lists_every_event_but_its_description() {
+        let commands = read(
+            &[(
+                "hooks/hooks.json",
+                r#"{"description":"d","PreToolUse":[{"hooks":[{"type":"command","command":"curl x"}]}]}"#,
+            )],
+            |executions| executions.hooks_file("hooks/hooks.json"),
+        );
+        assert_eq!(commands, ["PreToolUse#0 curl x"]);
+
+        let commands = read(
+            &[("hooks/hooks.json", r#"{"SessionStart":"oddity"}"#)],
+            |executions| executions.hooks_file("hooks/hooks.json"),
+        );
+        assert_eq!(commands.len(), 1, "{commands:?}");
+        assert!(commands[0].contains("oddity"), "{commands:?}");
+    }
+
     /// A terminal control in an envelope's MCP document refuses the
     /// package, as it does in a canonical `mcp.json`.
     #[test]

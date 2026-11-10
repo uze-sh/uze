@@ -204,6 +204,113 @@ mod cleanup_unused_wrapper_tests {
         );
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// Only a UZE-owned wrapper inside the managed root that no skill link
+    /// still points at goes.
+    #[cfg(unix)]
+    #[test]
+    fn only_an_unreferenced_owned_wrapper_inside_the_root_goes() {
+        let scratch = uze_testkit::temp::TempDir::new("cleanup-guards");
+        let root = scratch.path();
+        let managed = root.join("managed");
+        let skills = root.join("skills");
+        let outside = root.join("elsewhere/build");
+        for dir in [&managed, &skills, &outside] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let owned = |_: &Path| true;
+
+        cleanup_unused_wrapper(&outside, &managed, &skills, &managed, &owned).unwrap();
+        assert!(
+            outside.is_dir(),
+            "a directory outside the managed root went"
+        );
+
+        let referenced = managed.join("pkg/referenced");
+        let unrelated = managed.join("pkg/unreferenced");
+        let foreign = managed.join("pkg/foreign");
+        for dir in [&referenced, &unrelated, &foreign] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::os::unix::fs::symlink(&referenced, skills.join("linked")).unwrap();
+        std::os::unix::fs::symlink(&outside, skills.join("another")).unwrap();
+
+        cleanup_unused_wrapper(&referenced, &managed, &skills, &managed, &owned).unwrap();
+        assert!(referenced.is_dir(), "a wrapper a skill link points at went");
+
+        cleanup_unused_wrapper(&foreign, &managed, &skills, &managed, &|_| false).unwrap();
+        assert!(
+            foreign.is_dir(),
+            "a directory without the harness's proof went"
+        );
+
+        cleanup_unused_wrapper(&unrelated, &managed, &skills, &managed, &owned).unwrap();
+        assert!(
+            !unrelated.exists(),
+            "an unreferenced wrapper stayed beside unrelated links"
+        );
+    }
+}
+
+#[cfg(test)]
+mod runtime_leftover_tests {
+    use uze_core::{
+        home::UzeHome,
+        integration::{AttachmentReceipt, ManagedArtifact},
+    };
+
+    use super::{names_retired_marketplace, remove_runtime_leftover};
+
+    /// What an earlier release generated under the runtime tree goes; a
+    /// directory anywhere else is a build, and stays.
+    #[test]
+    fn only_a_leftover_under_the_runtime_tree_is_removed() {
+        let scratch = uze_testkit::temp::TempDir::new("runtime-leftover");
+        let home = UzeHome::at(scratch.path().join("uze"));
+        let leftover = home.runtime_attachments_dir().join("claude/plugins/kit");
+        let build = home.store_dir().join("kit");
+        for dir in [&leftover, &build] {
+            std::fs::create_dir_all(dir.join("inner")).unwrap();
+        }
+        remove_runtime_leftover(&home, &leftover).unwrap();
+        remove_runtime_leftover(&home, &build).unwrap();
+        assert!(!leftover.exists(), "the runtime leftover stayed");
+        assert!(
+            build.join("inner").is_dir(),
+            "a build outside the runtime tree went"
+        );
+    }
+
+    fn plugin(integration: &str, package: &str, selector: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: package.to_owned(),
+            resource_identity: None,
+            integration: integration.to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: "plugin".to_owned(),
+                selector: selector.to_owned(),
+                detail: Default::default(),
+            },
+        }
+    }
+
+    /// The retired marketplace is still in use only while another package
+    /// of the same harness was installed through it.
+    #[test]
+    fn the_retired_marketplace_is_named_only_by_a_sibling_on_the_same_harness() {
+        let scratch = uze_testkit::temp::TempDir::new("retired-marketplace");
+        let home = UzeHome::at(scratch.path().join("uze"));
+        let leaving = plugin("claude", "a@local", "a@uze-local");
+        uze_core::state::record_receipt(&home, leaving.clone()).unwrap();
+        assert!(!names_retired_marketplace(&home, &leaving).unwrap());
+
+        uze_core::state::record_receipt(&home, plugin("codex", "b@local", "b@uze-local")).unwrap();
+        uze_core::state::record_receipt(&home, plugin("claude", "c@local", "c@uze-store")).unwrap();
+        assert!(!names_retired_marketplace(&home, &leaving).unwrap());
+
+        uze_core::state::record_receipt(&home, plugin("claude", "b@local", "b@uze-local")).unwrap();
+        assert!(names_retired_marketplace(&home, &leaving).unwrap());
+    }
 }
 
 #[cfg(test)]
