@@ -47,4 +47,17 @@ exclude_re = [
   'uze-script/src/primitives\.rs.*replace == with != in compiled$',
   # Dropping the struct drops the sender right after, which ends the thread the same way.
   'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
+  # Nothing calls IntegrationPort::hook_capabilities: entry plans read HOOKS directly.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::hook_capabilities -> .* with Default::default\(\)$',
+  # Nothing calls IntegrationPort::context_accumulates.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::context_accumulates -> bool with false$',
+  # Every IntegrationOwned receipt antigravity records is a build, matched first, or one of the two plugin kinds.
+  'uze-integrations/src/antigravity\.rs.*replace match guard kind == PLUGIN_KIND \|\| kind == GENERATED_PLUGIN_KIND with true in <impl IntegrationPort for AntigravityIntegration>::(inspect|detach)_receipt$',
+  # agent_exposure_plan's route comes from projection_route, which is only Native or Degraded.
+  'uze-integrations/src/antigravity\.rs.*replace match guard plan\.route != CompatibilityRoute::Unsupported with true in AntigravityIntegration::plugin_agent_file$',
+  # Text for the doctor read model only.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::description -> .* with (""|"xyzzy")$',
+  # Read only by src/bin/uze-harness-matrix.rs for the docs table: an icon and a link.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::icon_path -> .* with (None|Some\(""\)|Some\("xyzzy"\))$',
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::homepage -> .* with None$',
 ]
