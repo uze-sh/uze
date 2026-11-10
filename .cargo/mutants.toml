@@ -73,4 +73,29 @@ exclude_re = [
   'uze-integrations/src/codex\.rs.*replace match guard marketplace::receipt_origin::<CodexMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for CodexIntegration>::detach_receipt$',
   # Two rollouts for one checkout in the same second: either is the newest, and read_dir order is unspecified.
   'uze-integrations/src/codex/session\.rs.*replace > with >= in observe$',
+  # --- uze-integrations: OpenCode ---
+  # No caller asks for hook capabilities through the port; the trait default stands in.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::hook_capabilities -> uze_core::hook::HookCapabilities with Default::default\(\)$',
+  # Rules and build receipts are dispatched first; the plugin is OpenCode's only other IntegrationOwned receipt.
+  'uze-integrations/src/opencode\.rs.*replace match guard kind == runtime_plugin::KIND with true in runtime_plugin_path$',
+  # Detach reaches the removal only after inspection read the file; NotFound there is only a race.
+  'uze-integrations/src/opencode\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in OpenCodeIntegration::detach_hook_bridge$',
+  # A test helper: without Bun it already answers None, and CI asserts Bun is there.
+  'uze-integrations/src/opencode\.rs.*(replace bun_for_tests -> Option<&.static str> with None|delete ! in bun_for_tests)$',
+  # Unix always takes the official installer; only Windows reaches the distribution target.
+  'uze-integrations/src/opencode/distribution\.rs.*delete match arm "linux" in target_for$',
+  # The three shifted bytes share no bit, so `^` of them is `|`.
+  'uze-integrations/src/opencode/distribution\.rs.*replace \| with \^ in base64$',
+  # An empty object then renders `{  }`, the same JavaScript value as `{}`.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace match guard entries\.is_empty\(\) with false in inline_literal$',
+  # Either one quotes every key, and a quoted identifier key is the same JavaScript object.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace \|\| with && in key_literal$',
+  # The doctor and TUI blurb only.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::description -> &.static str with ',
+  # Read only by the harness-matrix docs tool, which `uze-harness-matrix --check` guards.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::(icon_path|homepage) -> Option<&.static str> with ',
+  # The label of the provisioning method in the setup report.
+  'uze-integrations/src/opencode/provision\.rs.*replace Route::method -> &.static str with ',
+  # Only the line width and indentation of the generated JavaScript; the value is the same.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace (\+ with -|\* with \+|\* with /|\+ with \*) in literal$',
 ]
