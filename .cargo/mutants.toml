@@ -98,4 +98,47 @@ exclude_re = [
   'uze-integrations/src/opencode/provision\.rs.*replace Route::method -> &.static str with ',
   # Only the line width and indentation of the generated JavaScript; the value is the same.
   'uze-integrations/src/opencode/runtime_plugin\.rs.*replace (\+ with -|\* with \+|\* with /|\+ with \*) in literal$',
+  # --- uze-integrations: shared ---
+  # (posix) PosixWrapper::source is None only for a bridge target, and only wrapper targets plan a wrapper.
+  'uze-integrations/src/hooks\.rs.*replace HookTarget::deliverable -> bool with true$',
+  # Every wrapper dialect declares a transform for both shells; a bridge answers before.
+  'uze-integrations/src/hooks/wrapper\.rs.*replace transforms_here -> bool with true$',
+  # (posix) shell::script names the script itself, so the wrapper is already the first word.
+  'uze-integrations/src/hooks/event_entry\.rs.*replace wrapper_position -> usize with 0$',
+  # No caller uses IntegrationRegistry::all(); iter(), get() and into_inner() are used instead.
+  'uze-integrations/src/registry\.rs.*replace IntegrationRegistry::all -> &\[Box<dyn IntegrationPort>\] with Vec::leak\(Vec::new\(\)\)$',
+  # (posix) the shell family here is Posix, so the answer is already true.
+  'uze-integrations/src/rules\.rs.*replace deliverable_here -> bool with true$',
+  # Setup-owned receipts of one integration are the engine's or OpenCode's plugin; another event's entry never sits in this event's array.
+  'uze-integrations/src/rules\.rs.*replace match guard kind == KIND && recorded_selector == selector with true in RulesTarget::attach$',
+  'uze-integrations/src/rules\.rs.*replace && with \|\| in RulesTarget::attach$',
+  # Only skips hashing: with the key unchanged (it holds the root) inspect keeps the build on Matched and Drifted alike. Anchored on the column, as the key's own `==` in publish are caught.
+  'uze-integrations/src/shared/build\.rs:\d+:45: replace == with != in publish$',
+  'uze-integrations/src/shared/build\.rs:\d+:56: delete ! in publish$',
+  # With the same key the early return has already answered every build with files; one with none is Blocked, not Matched.
+  'uze-integrations/src/shared/build\.rs.*replace match guard same_key with false in publish$',
+  # Only the prune bound: remove_dir takes an empty directory inside the retired tree, which retire_unnamed_attachments sweeps anyway.
+  'uze-integrations/src/shared/earlier\.rs.*replace skill_wrapper_root -> PathBuf with Default::default\(\)$',
+  # The file was just seen as a regular file; NotFound needs a race with another remover.
+  'uze-integrations/src/shared/json_config\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in write_object_or_remove_emptied$',
+  # Both callers read the bridge just before removing it; NotFound needs a race.
+  'uze-integrations/src/hooks/bridge\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in remove_bridge_file$',
+  # Both dialects override recorded_root; the trait default is never called.
+  'uze-integrations/src/shared/marketplace\.rs.*replace MarketplaceDialect::recorded_root -> Option<Option<PathBuf>> with Some\(',
+  # Callers hand repoint only what registration() yields: the uze-store marketplace registration.
+  'uze-integrations/src/shared/marketplace\.rs.*replace \|\| with && in repoint$',
+  # A fast path: with nothing carried or no token the loop rewrites nothing either.
+  'uze-integrations/src/shared/package_root\.rs.*replace \|\| with && in PluginRoot::carry_references$',
+  # An answer exactly as old as the window, to the nanosecond, is not observable.
+  'uze-integrations/src/shared/process\.rs.*replace < with <= in json$',
+  # Test helper: -1 only marks a signal death, which no test expects.
+  'uze-integrations/src/hooks/wrapper_tests\.rs.*delete - in run$',
+  # Test helper: only removes a scratch checkout.
+  'uze-integrations/src/rules/engine_tests\.rs.*replace <impl Drop for Checkout>::drop with \(\)$',
+  # Test helper: it is the assertion, so emptying it always passes; its callers assert through it.
+  'uze-integrations/src/rules/engine_tests\.rs.*replace engine_answers_the_glob_table with \(\)$',
+  # Noise: swaps the two reasons only; the state is Matched either way.
+  'uze-integrations/src/rules\.rs.*replace == with != in inspect_engine$',
+  # Noise: only the exit code a tracing span records.
+  'uze-integrations/src/shared/process\.rs.*delete - in run_captured$',
 ]
