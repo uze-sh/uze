@@ -60,4 +60,17 @@ exclude_re = [
   # Read only by src/bin/uze-harness-matrix.rs for the docs table: an icon and a link.
   'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::icon_path -> .* with (None|Some\(""\)|Some\("xyzzy"\))$',
   'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::homepage -> .* with None$',
+  # --- uze-integrations: Codex ---
+  # Docs-site text and links, read only by the harness matrix generator.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::(description|icon_path|homepage) -> .* with .*$',
+  # Nothing in the workspace reads IntegrationPort::reported_events yet.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::reported_events -> .* with .*$',
+  # Nothing reads IntegrationPort::hook_capabilities; Codex hands HOOKS to generated_requirements itself.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::hook_capabilities -> .* with Default::default\(\)$',
+  # Nothing reads IntegrationPort::context_accumulates.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::context_accumulates -> bool with false$',
+  # inspect_receipt answers Blocked for a kind this guard refuses, so detach has returned before it.
+  'uze-integrations/src/codex\.rs.*replace match guard marketplace::receipt_origin::<CodexMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for CodexIntegration>::detach_receipt$',
+  # Two rollouts for one checkout in the same second: either is the newest, and read_dir order is unspecified.
+  'uze-integrations/src/codex/session\.rs.*replace > with >= in observe$',
 ]
