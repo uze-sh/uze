@@ -1371,3 +1371,22 @@ fn a_test_file_is_read_from_the_extension_or_the_editor_holding_it() {
     let read = compile_test(scratch.path(), "tests/panel.test.kdl", &held).expect("decodes");
     assert_eq!(read.tests[0].name, "held by the editor");
 }
+
+#[test]
+fn a_program_an_action_runs_must_exist() {
+    let manifest = MANIFEST.replace(
+        "source \"board\"",
+        "action \"go\" label=\"Go\" on=\"board\" { run \"./bin/go\"; }\nsource \"board\"",
+    );
+    let dir = plugin(
+        "extension-action-program",
+        &[("gsd-band", &gsd_files(&manifest, BOARD))],
+    );
+    let missing = compile_in(dir.path(), "gsd-band").unwrap_err();
+    assert!(
+        missing
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("the program `bin/go`")),
+        "{missing:?}"
+    );
+}
