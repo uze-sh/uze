@@ -973,6 +973,149 @@ mod tests {
         assert!(!refs.contains("refs/pull/"), "{refs}");
         fs::remove_dir_all(&root).unwrap();
     }
+
+    const IDENTITY: &str = "https://example.invalid/acme/market";
+
+    #[test]
+    fn a_mirror_is_kept_when_its_repository_is_fetched_from_another_checkout() {
+        let (root, _first, second) = origin("mirror-other-checkout");
+        let origin_dir = root.join("origin");
+        let elsewhere = root.join("elsewhere");
+        run(
+            &[
+                "clone",
+                "--quiet",
+                &origin_dir.to_string_lossy(),
+                &elsewhere.to_string_lossy(),
+            ],
+            None,
+        )
+        .unwrap();
+        let mirror = root.join("mirror");
+        ensure(&origin_dir.to_string_lossy(), IDENTITY, &mirror).unwrap();
+        fs::write(mirror.join("kept"), "").unwrap();
+
+        ensure(&elsewhere.to_string_lossy(), IDENTITY, &mirror).unwrap();
+
+        assert!(
+            mirror.join("kept").exists(),
+            "the mirror of the same repository was replaced instead of fetched into"
+        );
+        assert_eq!(resolve(&mirror, Some("main")).unwrap(), second);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_fetch_that_answers_with_no_repository_leaves_the_mirror_as_it_was() {
+        let (root, _first, second) = origin("mirror-empty-answer");
+        let origin_dir = root.join("origin");
+        let mirror = root.join("mirror");
+        ensure(&origin_dir.to_string_lossy(), IDENTITY, &mirror).unwrap();
+        let origin_url = run(&["remote", "get-url", "origin"], Some(&mirror)).unwrap();
+        let empty = root.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        run(&["init", "--quiet"], Some(&empty)).unwrap();
+
+        assert!(ensure(&empty.to_string_lossy(), IDENTITY, &mirror).is_err());
+
+        assert_eq!(resolve(&mirror, Some("main")).unwrap(), second);
+        assert_eq!(
+            run(&["remote", "get-url", "origin"], Some(&mirror)).unwrap(),
+            origin_url
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_mirror_reached_moments_ago_answers_without_asking_again() {
+        let (root, _first, second) = origin("mirror-recent");
+        let fetch = root.join("origin").to_string_lossy().into_owned();
+        let mirror = root.join("mirror");
+        ensure(&fetch, &fetch, &mirror).unwrap();
+        fs::remove_dir_all(root.join("origin")).unwrap();
+
+        let hour = Some(std::time::Duration::from_secs(3600));
+        ensure_for(&fetch, &fetch, &mirror, Some("main"), hour).unwrap();
+        assert_eq!(resolve(&mirror, Some("main")).unwrap(), second);
+        assert!(
+            ensure_for(&fetch, &fetch, &mirror, Some("main"), None).is_err(),
+            "with no recent answer accepted, the remote is asked"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_mirror_reached_long_ago_is_brought_up_to_date() {
+        let (root, _first, _second) = origin("mirror-stale");
+        let origin_dir = root.join("origin");
+        let fetch = origin_dir.to_string_lossy().into_owned();
+        let mirror = root.join("mirror");
+        ensure(&fetch, &fetch, &mirror).unwrap();
+        fs::write(origin_dir.join("README.md"), "third").unwrap();
+        run(&["add", "-A"], Some(&origin_dir)).unwrap();
+        run(&["commit", "-m", "third"], Some(&origin_dir)).unwrap();
+        let third = resolve(&origin_dir, Some("main")).unwrap();
+        let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600);
+        uze_platform::fs::set_modified(&mirror.join(TRANSPORT_FILE), two_hours_ago).unwrap();
+
+        let hour = Some(std::time::Duration::from_secs(3600));
+        ensure_for(&fetch, &fetch, &mirror, Some("main"), hour).unwrap();
+        assert_eq!(resolve(&mirror, Some("main")).unwrap(), third);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_mirror_is_reached_again_the_way_it_was_last_reached() {
+        let root = uze_testkit::temp::scratch("mirror-reach");
+        let (first, second) = (root.join("first"), root.join("second"));
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let reached = |access| Transport {
+            url: IDENTITY.to_owned(),
+            access,
+        };
+        let credentialed = reached(forge::Access::Credentialed);
+        let anonymous = reached(forge::Access::Anonymous);
+
+        remember(&first, IDENTITY, credentialed.clone()).unwrap();
+        remember(&second, IDENTITY, anonymous.clone()).unwrap();
+        assert_eq!(reach_of(&first), Reach::of(&credentialed));
+        assert_eq!(reach_of(&second), Reach::of(&anonymous));
+
+        remember(&first, IDENTITY, anonymous.clone()).unwrap();
+        assert_eq!(reach_of(&first), Reach::of(&anonymous));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn only_a_full_commit_id_cannot_come_to_mean_something_else() {
+        assert!(is_full_commit_id(&"0a".repeat(20)));
+        assert!(!is_full_commit_id("0a1b2c3"));
+        assert!(!is_full_commit_id(&"g".repeat(40)));
+    }
+
+    #[test]
+    fn two_commits_each_holding_what_the_other_lacks_have_diverged() {
+        let (root, first, second) = origin("mirror-diverged");
+        let origin_dir = root.join("origin");
+        run(&["checkout", "-q", "-b", "side", &first], Some(&origin_dir)).unwrap();
+        fs::write(origin_dir.join("side.txt"), "side").unwrap();
+        run(&["add", "-A"], Some(&origin_dir)).unwrap();
+        run(&["commit", "-m", "side"], Some(&origin_dir)).unwrap();
+        let side = resolve(&origin_dir, Some("side")).unwrap();
+        run(&["checkout", "-q", "main"], Some(&origin_dir)).unwrap();
+        let mirror = root.join("mirror");
+        ensure(
+            &origin_dir.to_string_lossy(),
+            &origin_dir.to_string_lossy(),
+            &mirror,
+        )
+        .unwrap();
+
+        assert_eq!(lineage(&mirror, &side, &second), Some(Lineage::Diverged));
+        assert_eq!(lineage(&mirror, &second, &side), Some(Lineage::Diverged));
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
 
 /// What a checkout's `subdirectory` holds, as package content: the files
@@ -1113,6 +1256,29 @@ mod linked_tests {
         assert!(out.join("plugins/flow/plugin.json").is_file());
         assert!(out.join("plugins/flow/new.md").is_file());
         assert!(!out.join("plugins/flow/.SKILL.md.swp").exists());
+        fs::remove_dir_all(at.parent().unwrap()).unwrap();
+    }
+
+    /// A file Git lists that was deleted before the copy is content the
+    /// author has just removed; one that cannot be read is a failure.
+    #[test]
+    fn a_file_removed_since_it_was_listed_is_skipped_and_an_unreadable_one_is_not() {
+        let at = checkout("linked-removed");
+        fs::remove_file(at.join("plugins/flow/plugin.json")).unwrap();
+        fs::write(at.join("plugins/flow/new.md"), "just written").unwrap();
+        let out = at.parent().unwrap().join("out");
+
+        materialize_linked(&at, Some("plugins/flow"), &out).unwrap();
+        assert!(out.join("plugins/flow/new.md").is_file());
+        assert!(!out.join("plugins/flow/plugin.json").exists());
+
+        fs::create_dir_all(at.join("plugins/flow/plugin.json")).unwrap();
+        let refused = materialize_linked(
+            &at,
+            Some("plugins/flow"),
+            &at.parent().unwrap().join("out-unreadable"),
+        );
+        assert!(matches!(refused, Err(UzeError::Read { .. })), "{refused:?}");
         fs::remove_dir_all(at.parent().unwrap()).unwrap();
     }
 }
