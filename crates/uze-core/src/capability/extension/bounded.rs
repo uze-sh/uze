@@ -635,6 +635,13 @@ mod tests {
             "{}",
             after.message
         );
+        // Text that opens with a hash is the raw string's own, not its close.
+        let after = refused("a #\"#x\"# }");
+        assert!(
+            after.message.contains("closes no block"),
+            "{}",
+            after.message
+        );
     }
 
     #[test]
