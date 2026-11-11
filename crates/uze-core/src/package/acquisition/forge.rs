@@ -776,4 +776,79 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn an_identity_is_shown_without_its_scheme() {
+        assert_eq!(
+            shown("https://github.com/hiukky/ai"),
+            "github.com/hiukky/ai"
+        );
+        assert_eq!(shown("/srv/market"), "/srv/market");
+    }
+
+    #[test]
+    fn plain_http_is_never_spoken_over_https_even_to_this_machine() {
+        for url in [
+            "https://127.0.0.1:8080/team/plugins",
+            "https://github.com/hiukky/ai",
+        ] {
+            let attempts = transports(url).unwrap();
+            assert!(
+                attempts.iter().all(|attempt| !attempt.plain_http()),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_ssh_spelling_is_reached_over_ssh() {
+        for over_ssh in [
+            "ssh://git@github.com/hiukky/ai",
+            "git@github.com:hiukky/ai.git",
+        ] {
+            assert!(reached_over_ssh(over_ssh), "{over_ssh}");
+        }
+        for not_ssh in [
+            "https://github.com/hiukky/ai",
+            "/srv/market",
+            "@github.com:hiukky/ai",
+            "git@:hiukky/ai",
+            "git@github.com:",
+        ] {
+            assert!(!reached_over_ssh(not_ssh), "{not_ssh}");
+        }
+    }
+
+    #[test]
+    fn a_reference_holding_a_slash_follows_a_short_url() {
+        assert_eq!(
+            parse("https://h.io/a@feature/x").unwrap(),
+            Locator::Remote {
+                url: "https://h.io/a".to_owned(),
+                reference: Some("feature/x".to_owned()),
+                subdirectory: None,
+                short: false
+            }
+        );
+    }
+
+    #[test]
+    fn userinfo_in_a_url_is_never_read_as_a_reference() {
+        assert_eq!(
+            parse("https://deploy@git.internal/team/plugins").unwrap(),
+            remote("https://deploy@git.internal/team/plugins")
+        );
+    }
+
+    #[test]
+    fn a_path_under_the_home_directory_is_expanded() {
+        let Some(home) = crate::user_home() else {
+            return;
+        };
+        assert_eq!(parse("~").unwrap(), Locator::Path(home.clone()));
+        assert_eq!(
+            parse("~/market").unwrap(),
+            Locator::Path(home.join("market"))
+        );
+    }
 }
