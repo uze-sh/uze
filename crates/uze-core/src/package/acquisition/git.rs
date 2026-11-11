@@ -2380,4 +2380,46 @@ mod tests {
         );
         let _ = fs::remove_dir_all(root);
     }
+
+    /// The links a checkout lists name their targets from where they sit,
+    /// `./` included.
+    #[test]
+    fn an_unmade_link_spelled_from_the_current_directory_is_replaced() {
+        let root = checkout_with("stand-in-dot", &[("a/f", "body"), ("b", "./a")]);
+        stand_in_for_links(&root, &links(&[("b", "./a")]), u64::MAX).unwrap();
+        assert_eq!(fs::read_to_string(root.join("b/f")).unwrap(), "body");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The output cap is a backstop against a hostile remote, far past
+    /// anything an ordinary invocation prints.
+    #[test]
+    fn output_of_a_few_megabytes_is_read_whole() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("output-within-cap");
+        let length = 2 * 1024 * 1024;
+        fs::write(root.join("large"), vec![b'x'; length]).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let blob = run(&["hash-object", "-w", "large"], Some(&root)).unwrap();
+        assert_eq!(
+            run(&["cat-file", "-p", blob.trim()], Some(&root))
+                .unwrap()
+                .len(),
+            length
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The byte budget keeps a repository from filling the disk; it is no
+    /// package-size policy, so a package of a few megabytes is within it.
+    #[test]
+    fn a_tree_of_a_few_megabytes_is_within_the_budget() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes-few");
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let tree = repeated_tree(&root, 1024 * 1024, 4, 8);
+        let accepted = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(accepted.is_ok(), "{accepted:?}");
+        let _ = fs::remove_dir_all(root);
+    }
 }
