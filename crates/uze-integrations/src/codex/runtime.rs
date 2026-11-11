@@ -501,7 +501,7 @@ mod tests {
     /// when Codex's `config.toml` trusts only `trusted`.
     fn agents_in_trusted(root: &Path, checkout: &Path, trusted: &Path) -> bool {
         agent(checkout, "reviewer");
-        let canonical = fs::canonicalize(trusted).unwrap();
+        let canonical = uze_platform::path::canonical(trusted).unwrap();
         let config = codex_config(root, &canonical, "trusted");
         let home = UzeHome::at(root.join("uze-home"));
         let ctx = RuntimeContext {

@@ -1357,9 +1357,13 @@ fn an_entry_that_no_longer_starts_the_wrapper_is_missing_not_drift() {
         let mut document: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
         let handler = &mut document["hooks"]["PreToolUse"][0]["hooks"][0];
-        let command = handler["command"].as_str().unwrap().to_owned();
-        assert!(command.contains("/state/hooks/exec"), "{target}: {command}");
-        handler["command"] = serde_json::json!(command.replace("/state/hooks/exec", "/bin/true"));
+        // The wrapper sits in the command line or among its arguments,
+        // depending on how this platform's shell starts a script.
+        let spelled = handler.to_string();
+        assert!(spelled.contains("/state/hooks/exec"), "{target}: {spelled}");
+        *handler =
+            serde_json::from_str(&spelled.replace("/state/hooks/exec", "/state/hooks/other"))
+                .unwrap();
         fs::write(&config, document.to_string()).unwrap();
 
         assert_eq!(
