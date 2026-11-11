@@ -1910,4 +1910,13 @@ mod tests {
         ));
         fs::remove_dir_all(scratch).ok();
     }
+
+    /// The registry is read in a shape an earlier release wrote, so the
+    /// release-floor check has to see that rung.
+    #[test]
+    fn the_registrys_earlier_shape_is_listed_for_the_release_floor() {
+        let listed = rungs();
+        assert!(!listed.is_empty());
+        assert!(listed.iter().all(|rung| rung.name == "packages"));
+    }
 }
