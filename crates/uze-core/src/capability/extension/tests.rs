@@ -1390,3 +1390,186 @@ fn a_program_an_action_runs_must_exist() {
         "{missing:?}"
     );
 }
+
+/// A failing test or step is reported where it is written.
+#[test]
+fn a_test_and_its_steps_point_back_at_the_file() {
+    let file = super::decode_test("tests/panel.test.kdl", A_TEST).expect("decodes");
+    let test = &file.tests[0];
+    assert_eq!(test.span.offset, 0);
+    assert_eq!(test.span.len, "test".len());
+    let step = &test.steps[0];
+    assert_eq!(step.span.offset, A_TEST.find("expect-text").unwrap());
+    assert!(
+        step.span.len >= "expect-text \"Fases\"".len(),
+        "{:?}",
+        step.span
+    );
+}
+
+#[test]
+fn a_snapshot_is_named_by_letters_digits_hyphens_and_underscores() {
+    let with = |name: &str| A_TEST.replace("snapshot \"panel\"", &format!("snapshot \"{name}\""));
+    let file = super::decode_test("tests/panel.test.kdl", &with("panel-2_dark")).expect("decodes");
+    assert_eq!(
+        file.tests[0].steps.last().map(|step| step.kind.clone()),
+        Some(uze_contract::StepKind::Snapshot("panel-2_dark".into()))
+    );
+    for name in ["", "a/b", "a.b"] {
+        let refused = super::decode_test("tests/panel.test.kdl", &with(name)).expect_err(name);
+        assert!(
+            refused
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("becomes a file name")),
+            "{name:?}: {refused:?}"
+        );
+    }
+}
+
+#[test]
+fn a_lookups_locale_is_two_or_three_lowercase_letters() {
+    for locale in ["english", "p"] {
+        let said = the_one(&format!(
+            "lookup \"t\" locale=\"{locale}\" {{ next \"x\"; }}\nText \"{{t::next}}\""
+        ));
+        assert!(
+            said.message.contains("is not a language"),
+            "{locale}: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_view_of_declarations_alone_draws_nothing() {
+    let said = the_one(r#"template "t" { Text "a"; }"#);
+    assert!(said.message.contains("draws nothing"), "{said:?}");
+}
+
+#[test]
+fn a_block_on_a_leaf_without_a_string_is_not_read_as_a_pasted_string() {
+    let said = the_one(r#"Pips done=1 total=2 { Text "a"; }"#);
+    assert!(
+        said.message.contains("`Pips` holds no other nodes"),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_block_holding_more_than_a_bare_name_is_not_suggested_as_a_reference() {
+    let said = the_one(r#"Text { id 1; }"#);
+    assert!(said.message.contains("takes a string"), "{said:?}");
+    assert_eq!(said.suggestion.as_deref(), Some("write `Text \"…\"`"));
+}
+
+#[test]
+fn when_and_unless_are_told_apart() {
+    for (prop, expected) in [
+        ("when", Condition::When(path(Scope::Item, &["done"]))),
+        ("unless", Condition::Unless(path(Scope::Item, &["done"]))),
+    ] {
+        let parsed = view(&format!("Text \"a\" {prop}=\"done\"")).unwrap();
+        assert_eq!(first_node(&parsed).condition, Some(expected), "{prop}");
+    }
+}
+
+#[test]
+fn every_pair_a_show_any_names_is_a_declared_choice() {
+    let refused = the_one(
+        r#"Tabs id="tab" { Tab "a" value="phases"; Tab "b" value="log"; }
+Text "a" show-any="ui.tab=phases,ui.tab=notes""#,
+    );
+    assert!(refused.message.contains("no choice `notes`"), "{refused:?}");
+}
+
+#[test]
+fn a_size_or_number_that_is_neither_is_said_in_its_own_words() {
+    let size = the_one(r#"Box width="wide" { Text "a"; }"#);
+    assert!(
+        size.message.contains("a number of cells or `N%`"),
+        "{size:?}"
+    );
+    assert!(!size.message.contains("not a percentage"), "{size:?}");
+    let number = the_one(r#"Progress ratio="half""#);
+    assert!(number.message.contains("is a number:"), "{number:?}");
+}
+
+#[test]
+fn a_flag_is_told_how_to_be_written() {
+    assert_eq!(
+        the_one(r#"Text "a" strong=1"#).suggestion.as_deref(),
+        Some("write `#true`, `#false` or a lone reference")
+    );
+    assert_eq!(
+        the_one(r#"Text "a" strong="yes""#).suggestion.as_deref(),
+        Some("write `#true` or \"{field}\"")
+    );
+}
+
+/// A tab whose label is bound to data names no choice that can be checked.
+#[test]
+fn a_tab_labelled_from_data_leaves_the_choices_open() {
+    assert!(
+        view(
+            r#"Tabs id="tab" { Tab "{name}"; }
+Text "a" show="ui.tab=phases""#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_template_is_named_like_a_field() {
+    let said = the_one(
+        r#"template "Bad Name" { Text "a"; }
+Text "b""#,
+    );
+    assert!(said.message.contains("is not a template name"), "{said:?}");
+}
+
+#[test]
+fn each_may_nest_exactly_twice_through_a_template() {
+    assert!(
+        view(
+            r#"template "inner" { List each="b" { Text "x"; }; }
+List each="a" { use "inner"; }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_view_expanding_to_exactly_the_bound_compiles() {
+    let mut source = "template \"t0\" {\n    Text \"a\"\n}\ntemplate \"t1\" {\n".to_owned();
+    source.push_str(&"    use \"t0\"\n".repeat(100));
+    source.push_str("}\ntemplate \"t2\" {\n");
+    source.push_str(&"    use \"t1\"\n".repeat(99));
+    source.push_str("}\nRow {\n    use \"t2\"\n}\n");
+    source.push_str(&"Text \"a\"\n".repeat(99));
+    let compiled = view(&source).expect("at the bound");
+    assert_eq!(compiled.expansion(), uze_contract::EXPANSION_MAX);
+}
+
+/// A template used inside another is placed where the outer one is used.
+#[test]
+fn a_part_reached_through_two_templates_is_judged_where_it_lands() {
+    assert!(
+        view(
+            r#"template "seg" { Segment weight=1; }
+template "parts" { use "seg"; }
+Progress { use "parts"; }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_show_compares_with_a_value() {
+    let said = the_one(
+        r#"Tabs id="tab" { Tab "a" value="phases"; }
+Text "a" show="ui.tab=""#,
+    );
+    assert!(
+        said.message.contains("does not compare a UI value"),
+        "{said:?}"
+    );
+}
