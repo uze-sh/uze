@@ -47,7 +47,6 @@ exclude_re = [
   'uze-script/src/primitives\.rs.*replace == with != in compiled$',
   # Dropping the struct drops the sender right after, which ends the thread the same way.
   'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
-<<<<<<< HEAD
   # Nothing calls IntegrationPort::hook_capabilities: entry plans read HOOKS directly.
   'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::hook_capabilities -> .* with Default::default\(\)$',
   # Nothing calls IntegrationPort::context_accumulates.
@@ -142,7 +141,6 @@ exclude_re = [
   'uze-integrations/src/rules\.rs.*replace == with != in inspect_engine$',
   # Noise: only the exit code a tracing span records.
   'uze-integrations/src/shared/process\.rs.*delete - in run_captured$',
-=======
   # Nothing in the workspace asks a harness for these; hook delivery reads `HOOKS` itself.
   'uze-integrations/src/claude\.rs.*replace <impl IntegrationPort for ClaudeIntegration>::(hook_capabilities|reported_events|context_accumulates) -> ',
   # Only a package-level receipt reaches these, and Claude's only package-level IntegrationOwned receipts are its plugin kinds.
@@ -161,5 +159,4 @@ exclude_re = [
   'uze-integrations/src/claude/runtime\.rs.*delete ! in project_resource_projection$',
   # Between transcripts modified in the same second the pick is the listing's order either way.
   'uze-integrations/src/claude/session\.rs.*replace > with >= in observe$',
->>>>>>> a2c49e06 (chore(mutants): set aside Claude's equivalent and noise mutants)
 ]
