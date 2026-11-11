@@ -221,6 +221,39 @@ mod discovery_tests {
     use Path;
     use std::fs;
 
+    /// An installed package contributes what its bytes in the Store hold.
+    #[test]
+    fn an_installed_package_contributes_what_its_bytes_hold() {
+        let scratch = uze_testkit::temp::scratch("installed-resources");
+        let source = scratch.join("flow");
+        fs::create_dir_all(source.join("skills").join("review")).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("skills").join("review").join("SKILL.md"),
+            "# Review\n",
+        )
+        .unwrap();
+        let stored = crate::UzeStore::new(crate::UzeHome::at(scratch.join("home")))
+            .ingest(
+                &crate::MaterializedPackage::borrowed(
+                    source.clone(),
+                    crate::Provenance::of_local_path(&source),
+                ),
+                "market",
+                None,
+            )
+            .unwrap();
+
+        let resources = package_resources(&stored).unwrap();
+        assert_eq!(resources.len(), 1, "{resources:?}");
+        assert_eq!(resources[0].capability.kind, CapabilityKind::AgentSkill);
+        assert_eq!(resources[0].package_id, stored.id);
+    }
+
     #[test]
     fn a_root_agents_md_is_not_a_capability() {
         // A plugin speaks to every agent of a declaring project through an

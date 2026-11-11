@@ -247,6 +247,33 @@ mod tests {
     }
 
     #[test]
+    fn a_switch_takes_no_value_and_only_a_required_value_takes_the_next_word() {
+        let free = FlagValue::Free("model");
+        let one_of = FlagValue::OneOf(&["a", "b"]);
+        let optional = FlagValue::Optional("filter");
+
+        assert!(!FlagValue::None.takes_a_value());
+        assert!(free.takes_a_value());
+        assert!(one_of.takes_a_value());
+        assert!(optional.takes_a_value());
+
+        assert!(!FlagValue::None.needs_a_value());
+        assert!(free.needs_a_value());
+        assert!(one_of.needs_a_value());
+        assert!(
+            !optional.needs_a_value(),
+            "the word after it is never taken"
+        );
+    }
+
+    #[test]
+    fn a_catalog_reads_as_its_flags() {
+        let catalog = FlagCatalog::new(FlagGrammar::GoFlag, &[MODEL]);
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].name(), "--model");
+    }
+
+    #[test]
     fn a_flag_is_shown_by_its_first_spelling() {
         assert_eq!(MODEL.name(), "--model");
     }

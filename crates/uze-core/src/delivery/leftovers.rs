@@ -128,6 +128,12 @@ mod tests {
     }
 
     #[test]
+    fn only_a_name_set_aside_reads_as_a_leftover() {
+        assert!(is_set_aside("packages.json.unreadable-20"));
+        assert!(!is_set_aside("packages.json"));
+    }
+
+    #[test]
     fn a_home_with_nothing_left_over_answers_with_nothing() {
         let root = uze_testkit::temp::scratch("leftovers-none");
         let home = UzeHome::at(&root);
@@ -299,6 +305,25 @@ mod dangling_tests {
         .unwrap();
 
         assert!(dangling_references(&home, &[discovery], &BTreeSet::new()).is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A target this user may not traverse is still there: only absence
+    /// makes a reference dangle.
+    #[test]
+    fn a_reference_whose_target_cannot_be_read_is_never_reported() {
+        use std::os::unix::fs::PermissionsExt;
+        let (root, home, discovery) = world("dangling-unreadable");
+        let vault = home.root().join("vault");
+        let target = vault.join("skill");
+        fs::create_dir_all(&target).unwrap();
+        crate::persistence::create_symlink(&target, &discovery.join("skill")).unwrap();
+        fs::set_permissions(&vault, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let found = dangling_references(&home, std::slice::from_ref(&discovery), &BTreeSet::new());
+
+        fs::set_permissions(&vault, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(found.is_empty(), "{found:?}");
         fs::remove_dir_all(&root).unwrap();
     }
 

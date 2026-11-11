@@ -1648,4 +1648,596 @@ mod tests {
             std::path::Path::new("/tmp")
         ));
     }
+
+    /// What a harness nobody has looked into says about itself: its id
+    /// where a name is asked for, and nothing it would have to have been
+    /// measured to claim.
+    #[test]
+    fn an_integration_that_declares_nothing_claims_nothing_about_its_harness() {
+        let integration = UndeclaredIntegration;
+
+        assert_eq!(integration.display_name(), "undeclared");
+        assert_eq!(integration.description(), "");
+        assert_eq!(integration.minimum_version(), None);
+        assert_eq!(integration.invocation_prefix(), "");
+        assert_eq!(integration.icon_path(), None);
+        assert_eq!(integration.homepage(), None);
+        assert!(integration.aliases().is_empty());
+        assert_eq!(integration.harness_keys(), ["undeclared"]);
+        assert_eq!(integration.shim_name(), "undeclared");
+        assert_eq!(integration.detection_program_candidates(), ["undeclared"]);
+        assert!(integration.runtime_executable_aliases().is_empty());
+        assert!(integration.install_locations().is_empty());
+        assert!(integration.reported_events().is_empty());
+        assert!(!integration.runtime_projects_project_context());
+        assert!(integration.supports_runtime_integration());
+        assert_eq!(integration.skill_discovery_root(), None);
+    }
+
+    /// A harness nobody has measured is told nothing it would show and
+    /// given nothing it would have to be able to read.
+    #[test]
+    fn an_integration_that_declares_nothing_carries_nothing_into_a_launch() {
+        let integration = UndeclaredIntegration;
+        let home = UzeHome::at(uze_testkit::temp::scratch("undeclared-launch"));
+        let session = SessionId::parse("s").unwrap();
+        let dir = home.root().join("context");
+        let file = dir.join("context.md");
+        let reporter = ReporterContext {
+            uze: Path::new("uze"),
+            dir: &dir,
+        };
+
+        assert!(integration.first_turn_args("continue").is_empty());
+        assert!(integration.context_channel().is_degraded());
+        assert!(!integration.context_accumulates());
+        assert_eq!(integration.context_channel_unavailable(), None);
+        assert_eq!(integration.reporter(&reporter), None);
+        assert!(!integration.writes_own_memory());
+        assert_eq!(integration.memory_off(), None);
+        assert!(integration.collect_runtime(&home).is_empty());
+        assert_eq!(
+            integration.conversation_digest(&session, home.root(), None),
+            None
+        );
+        assert_eq!(
+            integration.usage_records(std::time::SystemTime::UNIX_EPOCH),
+            None
+        );
+        assert_eq!(integration.context_unread(home.root(), &file), None);
+        let record = crate::usage::UsageRecord {
+            id: "record".to_owned(),
+            stamp: crate::usage::Stamp::default(),
+        };
+        assert_eq!(
+            integration.read_usage(&record, crate::usage::Resume::Start),
+            None
+        );
+        assert!(integration.withdraw_registrations().unwrap().is_empty());
+        assert!(
+            !integration.runtime_contribution_would_activate(&RuntimeContext {
+                cwd: home.root(),
+                home: &home,
+            })
+        );
+    }
+
+    /// Nothing a person switched off in the harness is assumed, and a
+    /// package-level receipt this build did not replace still serves.
+    #[test]
+    fn an_integration_that_declares_nothing_leaves_every_receipt_as_delivered() {
+        let receipt = receipt_for(ManagedArtifact::IntegrationOwned {
+            kind: "kind".to_owned(),
+            selector: "selector".to_owned(),
+            detail: std::collections::BTreeMap::new(),
+        });
+
+        assert!(!UndeclaredIntegration.switched_off(&receipt));
+        assert!(UndeclaredIntegration.package_receipt_serves(&receipt));
+        assert!(
+            !UndeclaredIntegration
+                .repair_missing_receipt(&receipt)
+                .unwrap()
+        );
+    }
+
+    /// A harness that keeps no registration for UZE has none to move.
+    #[test]
+    fn a_registration_the_harness_does_not_keep_is_never_repointed() {
+        let registration = VendorRegistration {
+            kind: VendorRegistrationKind::Marketplace,
+            name: "market".to_owned(),
+            expected: std::path::PathBuf::from("expected"),
+            registered: None,
+        };
+        assert!(
+            UndeclaredIntegration
+                .repoint_registration(&registration)
+                .is_err()
+        );
+    }
+
+    /// A harness with an alias is named by it on the command line and in a
+    /// `harness:` block, beside its id.
+    #[test]
+    fn a_harness_is_named_by_its_id_and_every_alias() {
+        let integration = Planned {
+            artifact: None,
+            aliases: &["alias-one", "alias-two"],
+        };
+        assert_eq!(
+            integration.harness_keys(),
+            ["planned", "alias-one", "alias-two"]
+        );
+        assert_eq!(integration.shim_name(), "alias-one");
+    }
+
+    /// Whether a launch would project anything follows what the
+    /// contribution itself would carry.
+    #[test]
+    fn a_contribution_that_carries_something_would_activate() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("contributing-launch"));
+        let ctx = RuntimeContext {
+            cwd: home.root(),
+            home: &home,
+        };
+        assert!(Contributing.runtime_contribution_would_activate(&ctx));
+    }
+
+    #[test]
+    fn doctor_reads_whether_setup_ran_and_whether_it_was_verified() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("integration-status"));
+        assert_eq!(
+            UndeclaredIntegration.status(&home),
+            IntegrationStatus::NotConfigured
+        );
+
+        state::record(
+            &home,
+            "undeclared",
+            state::IntegrationRecord {
+                version: None,
+                strategy: "test".to_owned(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            UndeclaredIntegration.status(&home),
+            IntegrationStatus::InstalledUnverified
+        );
+
+        state::record_provisioning(
+            &home,
+            "undeclared",
+            &crate::provisioning::ProvisioningResult::blocked("no route"),
+        )
+        .unwrap();
+        assert_eq!(
+            UndeclaredIntegration.status(&home),
+            IntegrationStatus::InstalledUnverified
+        );
+
+        state::record_provisioning(
+            &home,
+            "undeclared",
+            &crate::provisioning::ProvisioningResult::verified(
+                crate::provisioning::ProvisionAction::None,
+                "existing-executable",
+                HarnessDetection {
+                    present: true,
+                    version: None,
+                },
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            UndeclaredIntegration.status(&home),
+            IntegrationStatus::InstalledVerified
+        );
+    }
+
+    /// The default attach handles only what carries its whole desired state
+    /// and reaches a harness through no schema: a text region here.
+    #[test]
+    fn a_planned_text_region_is_attached_and_receipted_for_its_resource() {
+        let root = uze_testkit::temp::scratch("planned-region");
+        let target = root.join("NOTES.md");
+        let integration = Planned {
+            artifact: Some(ManagedArtifact::ManagedTextRegion {
+                target_file: target.clone(),
+                region_identity: "uze-test".to_owned(),
+                expected_content: "delivered".to_owned(),
+            }),
+            aliases: &[],
+        };
+        let resource = skill(&root, "review");
+
+        let receipt = integration.attach_receipt(&resource).unwrap().unwrap();
+
+        assert_eq!(receipt.package_id, resource.package_id.as_str());
+        assert_eq!(receipt.resource_identity, Some(resource.identity()));
+        assert_eq!(receipt.integration, "planned");
+        assert_eq!(
+            receipt.artifact.inspect_standard().state,
+            AttachmentState::Matched
+        );
+        assert!(
+            std::fs::read_to_string(&target)
+                .unwrap()
+                .contains("delivered")
+        );
+    }
+
+    /// A generated file is the owning integration's to attach: the default
+    /// leaves it alone.
+    #[test]
+    fn a_planned_generated_file_is_not_attached_by_the_default() {
+        let root = uze_testkit::temp::scratch("planned-file");
+        let path = root.join("agents").join("reviewer.md");
+        let integration = Planned {
+            artifact: Some(ManagedArtifact::GeneratedFile {
+                path: path.clone(),
+                content: "reviewer".to_owned(),
+            }),
+            aliases: &[],
+        };
+
+        assert_eq!(integration.attach(&skill(&root, "review")).unwrap(), None);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_resource_with_no_managed_plan_is_not_attached() {
+        let root = uze_testkit::temp::scratch("planned-nothing");
+        let integration = Planned {
+            artifact: None,
+            aliases: &[],
+        };
+        assert_eq!(integration.attach(&skill(&root, "review")).unwrap(), None);
+        assert_eq!(
+            integration.attach_receipt(&skill(&root, "review")).unwrap(),
+            None
+        );
+    }
+
+    /// A missing text region carries its whole desired state in the
+    /// receipt, so the default restores it.
+    #[test]
+    fn a_missing_standard_receipt_is_restored_from_the_receipt_alone() {
+        let root = uze_testkit::temp::scratch("repair-region");
+        let target = root.join("NOTES.md");
+        let receipt = receipt_for(ManagedArtifact::ManagedTextRegion {
+            target_file: target.clone(),
+            region_identity: "uze-test".to_owned(),
+            expected_content: "restored".to_owned(),
+        });
+        assert_eq!(
+            receipt.artifact.inspect_standard().state,
+            AttachmentState::Missing
+        );
+
+        assert!(
+            UndeclaredIntegration
+                .repair_missing_receipt(&receipt)
+                .unwrap()
+        );
+        assert_eq!(
+            receipt.artifact.inspect_standard().state,
+            AttachmentState::Matched
+        );
+    }
+
+    #[test]
+    fn a_build_receipt_is_told_apart_by_its_identity() {
+        let mut receipt = receipt_for(ManagedArtifact::IntegrationOwned {
+            kind: BUILD_KIND.to_owned(),
+            selector: "selector".to_owned(),
+            detail: std::collections::BTreeMap::new(),
+        });
+        receipt.resource_identity = Some(BUILD_IDENTITY.to_owned());
+        assert!(is_build_receipt(&receipt));
+
+        receipt.resource_identity = Some("skill:review".to_owned());
+        assert!(!is_build_receipt(&receipt));
+        receipt.resource_identity = None;
+        assert!(!is_build_receipt(&receipt));
+    }
+
+    /// A cache key differs whenever the attachment does, and is the same
+    /// for the same one.
+    #[test]
+    fn a_cache_key_tells_attachments_apart() {
+        let artifact = ManagedArtifact::IntegrationOwned {
+            kind: "kind".to_owned(),
+            selector: "selector".to_owned(),
+            detail: std::collections::BTreeMap::new(),
+        };
+        let receipt = receipt_for(artifact.clone());
+        let package_level = AttachmentReceipt {
+            resource_identity: None,
+            ..receipt.clone()
+        };
+        let other_package = AttachmentReceipt {
+            package_id: "other@market".to_owned(),
+            ..receipt.clone()
+        };
+        let other_harness = AttachmentReceipt {
+            integration: "elsewhere".to_owned(),
+            ..receipt.clone()
+        };
+
+        assert_eq!(receipt.cache_key(), receipt.clone().cache_key());
+        let keys: std::collections::BTreeSet<String> =
+            [&receipt, &package_level, &other_package, &other_harness]
+                .iter()
+                .map(|receipt| receipt.cache_key())
+                .collect();
+        assert_eq!(keys.len(), 4);
+        assert!(keys.iter().all(|key| !key.is_empty()));
+    }
+
+    #[test]
+    fn a_registration_is_misplaced_only_when_registered_elsewhere() {
+        let at = |registered: Option<&str>| VendorRegistration {
+            kind: VendorRegistrationKind::Marketplace,
+            name: "market".to_owned(),
+            expected: std::path::PathBuf::from("expected"),
+            registered: registered.map(std::path::PathBuf::from),
+        };
+        assert!(!at(None).misplaced());
+        assert!(!at(Some("expected")).misplaced());
+        assert!(at(Some("elsewhere")).misplaced());
+    }
+
+    #[test]
+    fn only_the_first_turn_is_the_degraded_channel() {
+        assert!(ContextChannel::FirstTurn.is_degraded());
+        for channel in [
+            ContextChannel::Directory,
+            ContextChannel::LaunchHook,
+            ContextChannel::SessionPlugin,
+        ] {
+            assert!(!channel.is_degraded(), "channel: {channel:?}");
+        }
+    }
+
+    #[test]
+    fn a_conversation_another_agent_holds_is_not_answered() {
+        let mine = SessionId::parse("mine").unwrap();
+        let theirs = SessionId::parse("theirs").unwrap();
+        let claimed = [theirs.clone()];
+        let ctx = ObservationContext {
+            cwd: Path::new("checkout"),
+            since_unix: 0,
+            preceded_by: None,
+            claimed_elsewhere: &claimed,
+        };
+        assert!(ctx.is_unclaimed(&mine));
+        assert!(!ctx.is_unclaimed(&theirs));
+    }
+
+    #[test]
+    fn only_an_adapted_rules_route_needs_the_engine() {
+        assert!(RulesRoute::adapted("engine").needs_engine());
+        assert!(!RulesRoute::native("reads them").needs_engine());
+        assert!(!RulesRoute::unsupported("nothing").needs_engine());
+    }
+
+    /// ADR-026: a capability invoked by label is invoked as
+    /// `<plugin>:<capability>`.
+    #[test]
+    fn a_qualified_label_is_the_plugin_then_the_capability() {
+        assert_eq!(qualified_capability_name("flow", "review"), "flow:review");
+
+        let root = uze_testkit::temp::scratch("qualified-names");
+        assert_eq!(
+            qualified_exposure_name_candidates(&skill(&root, "review"), "flow"),
+            ["flow:review"]
+        );
+        assert!(qualified_exposure_name_candidates(&mcp(&root, "server"), "flow").is_empty());
+    }
+
+    /// One candidate, qualified by the package so two plugins' same-named
+    /// capabilities never propose the same name; none for a resource that
+    /// has no name of its own.
+    #[test]
+    fn the_default_name_is_one_package_qualified_candidate() {
+        let root = uze_testkit::temp::scratch("default-names");
+        let resource = mcp(&root, "server");
+
+        let candidates = default_exposure_name_candidates(&resource);
+        assert_eq!(candidates.len(), 1, "{candidates:?}");
+        assert!(candidates[0].starts_with(resource.package_id.as_str()));
+        assert!(candidates[0].ends_with("server"));
+        assert_eq!(
+            UndeclaredIntegration.exposure_name_candidates(&resource),
+            candidates
+        );
+
+        let unnamed = Resource::from_package(
+            package_id(&root),
+            root.clone(),
+            Capability {
+                kind: CapabilityKind::Mcp,
+                path: root.join(".mcp.json"),
+                payload: Vec::new(),
+            },
+        );
+        assert!(default_exposure_name_candidates(&unnamed).is_empty());
+    }
+
+    /// A package's resource is seen under the plugin namespace when it is
+    /// invoked by label, and under its own name otherwise.
+    #[test]
+    fn a_packaged_resource_is_named_by_the_plugin_it_is_active_under() {
+        let root = uze_testkit::temp::scratch("packaged-names");
+        let package = stored(&root, "alias");
+
+        assert_eq!(
+            UndeclaredIntegration
+                .packaged_exposure_name(&package, &skill(&root, "review"))
+                .as_deref(),
+            Some("alias:review")
+        );
+        assert_eq!(
+            UndeclaredIntegration
+                .packaged_exposure_name(&package, &mcp(&root, "server"))
+                .as_deref(),
+            Some("server")
+        );
+    }
+
+    /// ADR-036: a plugin is active under its own bare name unless an
+    /// install-time alias resolved a collision.
+    #[test]
+    fn a_plugin_is_active_under_its_alias_or_else_its_own_name() {
+        let root = uze_testkit::temp::scratch("active-name");
+        let home = UzeHome::at(root.join("home"));
+        let source = root.join("flow");
+        std::fs::create_dir_all(source.join("skills").join("review")).unwrap();
+        std::fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("skills").join("review").join("SKILL.md"),
+            "# Review\n",
+        )
+        .unwrap();
+
+        let bare = Resource::from_package(
+            PackageId::from_marketplace_plugin("market", "flow", &source.join("plugin.json"))
+                .unwrap(),
+            source.clone(),
+            Capability {
+                kind: CapabilityKind::AgentSkill,
+                path: source.join("skills").join("review").join("SKILL.md"),
+                payload: Vec::new(),
+            },
+        );
+        assert_eq!(active_plugin_name(&home, &bare), "flow");
+
+        let stored = crate::UzeStore::new(home.clone())
+            .ingest(
+                &crate::MaterializedPackage::borrowed(
+                    source.clone(),
+                    crate::Provenance::of_local_path(&source),
+                ),
+                "market",
+                Some("flow-two"),
+            )
+            .unwrap();
+        let aliased = Resource::from_package(
+            stored.id.clone(),
+            stored.root.clone(),
+            Capability {
+                kind: CapabilityKind::AgentSkill,
+                path: stored.root.join("skills").join("review").join("SKILL.md"),
+                payload: Vec::new(),
+            },
+        );
+        assert_eq!(active_plugin_name(&home, &aliased), "flow-two");
+    }
+
+    /// A harness whose plan delivers a managed artifact, or nothing.
+    struct Planned {
+        artifact: Option<ManagedArtifact>,
+        aliases: &'static [&'static str],
+    }
+    impl IntegrationPort for Planned {
+        fn id(&self) -> &'static str {
+            "planned"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &crate::Resource) -> ExposurePlan {
+            let mechanism = match &self.artifact {
+                Some(artifact) => ExposureMechanism::Managed(artifact.clone()),
+                None => ExposureMechanism::Unsupported {
+                    rationale: "nothing".to_owned(),
+                },
+            };
+            ExposurePlan {
+                route: crate::router::CompatibilityRoute::Native,
+                mechanism,
+                evidence: String::new(),
+            }
+        }
+        fn aliases(&self) -> &'static [&'static str] {
+            self.aliases
+        }
+    }
+
+    /// A harness whose launch always carries an argument.
+    struct Contributing;
+    impl IntegrationPort for Contributing {
+        fn id(&self) -> &'static str {
+            "contributing"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &crate::Resource) -> ExposurePlan {
+            panic!("not used")
+        }
+        fn runtime_contribution(&self, _ctx: &RuntimeContext) -> HarnessRuntimeContribution {
+            HarnessRuntimeContribution {
+                extra_args: vec![OsString::from("--projected")],
+                ..HarnessRuntimeContribution::passthrough()
+            }
+        }
+    }
+
+    use crate::capability::{Capability, CapabilityKind, Resource};
+    use crate::store::PackageId;
+
+    fn package_id(root: &Path) -> PackageId {
+        PackageId::from_marketplace_plugin("market", "flow", &root.join("plugin.json")).unwrap()
+    }
+
+    fn skill(root: &Path, name: &str) -> Resource {
+        Resource::from_package(
+            package_id(root),
+            root.to_path_buf(),
+            Capability {
+                kind: CapabilityKind::AgentSkill,
+                path: root.join("skills").join(name).join("SKILL.md"),
+                payload: Vec::new(),
+            },
+        )
+    }
+
+    fn mcp(root: &Path, name: &str) -> Resource {
+        Resource::from_package_named(
+            package_id(root),
+            root.to_path_buf(),
+            Capability {
+                kind: CapabilityKind::Mcp,
+                path: root.join(".mcp.json"),
+                payload: Vec::new(),
+            },
+            name.to_owned(),
+        )
+    }
+
+    fn stored(root: &Path, active_name: &str) -> StoredPackage {
+        StoredPackage {
+            id: package_id(root),
+            root: root.to_path_buf(),
+            manifest: root.join("plugin.json"),
+            provenance: crate::Provenance::of_local_path(root),
+            active_name: active_name.to_owned(),
+        }
+    }
+
+    fn receipt_for(artifact: ManagedArtifact) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: "flow@market".to_owned(),
+            resource_identity: Some("skill:review".to_owned()),
+            integration: "undeclared".to_owned(),
+            artifact,
+        }
+    }
 }
