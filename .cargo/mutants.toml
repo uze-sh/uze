@@ -98,6 +98,8 @@ exclude_re = [
   'uze-core/src/capability/extension/locate\.rs.*replace match guard chars\.peek\(\)\.map\(\|\(_, next\)\| \*next\) == Some\(.-.\) with true in locate$',
   # NodeName is answered only when the statement has no name, so the node is None either way.
   'uze-core/src/capability/extension/locate\.rs.*delete match arm At::NodeName\{\.\.\} in Lexer::answer$',
+  # A protocol equal to this build's is taken by the arm before.
+  'uze-core/src/capability/extension/manifest\.rs.*replace > with >= in protocol$',
   # LATER is empty: no name is ever found in it.
   'uze-core/src/capability/extension/manifest\.rs.*replace == with != in unknown$',
   # A node whose property was refused already refuses the view; keeping it adds nothing.
