@@ -500,4 +500,114 @@ mod tests {
         assert!(!applies_at(&linked));
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn a_region_no_release_wrote_is_neither_removed_nor_kept() {
+        let (dir, files) = project("retired-regions-foreign");
+        text_region::attach(&files.agents_md, "custom:mine", "keep me\n").unwrap();
+        text_region::attach(&files.agents_md, "package:greet:tools:instructions", "hi\n").unwrap();
+
+        let planned = plan(&files).unwrap();
+
+        assert_eq!(
+            planned.remove,
+            vec!["package:greet:tools:instructions".to_owned()]
+        );
+        assert!(planned.keep.is_empty(), "{:?}", planned.keep);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_retired_region_written_twice_is_planned_once() {
+        let (dir, files) = project("retired-regions-twice");
+        let identity = "package:greet:tools:instructions";
+        std::fs::write(
+            &files.agents_md,
+            format!(
+                "<!-- uze:begin {identity} -->\na\n<!-- uze:end {identity} -->\n\
+                 <!-- uze:begin {identity} -->\nb\n<!-- uze:end {identity} -->\n"
+            ),
+        )
+        .unwrap();
+
+        let planned = plan(&files).unwrap();
+
+        assert_eq!(planned.remove.len() + planned.keep.len(), 1, "{planned:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A harness an earlier release bridged `AGENTS.md` into, through a
+    /// file of its own.
+    struct Bridged;
+
+    impl uze_core::integration::IntegrationPort for Bridged {
+        fn id(&self) -> &'static str {
+            "bridged"
+        }
+
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Adaptable,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "context only".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+
+        fn attach_receipt(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> Result<Option<uze_core::integration::AttachmentReceipt>> {
+            Ok(None)
+        }
+
+        fn context_delivery(&self) -> ContextDelivery {
+            ContextDelivery::Bridge {
+                file_name: "VENDOR.md",
+            }
+        }
+    }
+
+    #[test]
+    fn a_bridge_left_in_a_harnesss_own_file_is_pending_in_a_main_working_tree_only() {
+        let root = uze_testkit::temp::scratch("retired-regions-pending");
+        let primary = root.join("repo");
+        uze_testkit::git::mark_repository(&primary);
+        let app = UzeApplication::new(
+            uze_core::UzeHome::at(root.join("uze")),
+            vec![Box::new(Bridged)],
+        );
+        assert!(pending(&app, &primary).is_none(), "nothing left yet");
+        let vendor = primary.join("VENDOR.md");
+        text_region::attach(&vendor, INSTRUCTION_BRIDGE, INSTRUCTION_BRIDGE_CONTENT).unwrap();
+
+        let planned = pending(&app, &primary).expect("the bridge is pending");
+
+        assert_eq!(planned.bridges.len(), 1);
+        assert_eq!(planned.bridges[0].file, vendor);
+        assert_eq!(planned.bridges[0].fate, BridgeFate::Region);
+
+        let slot = primary.join(".worktrees").join("ab12cd");
+        std::fs::create_dir_all(&slot).unwrap();
+        std::fs::write(slot.join(".git"), "gitdir: ../../.git/worktrees/ab12cd\n").unwrap();
+        text_region::attach(
+            &slot.join("VENDOR.md"),
+            INSTRUCTION_BRIDGE,
+            INSTRUCTION_BRIDGE_CONTENT,
+        )
+        .unwrap();
+        assert!(
+            pending(&app, &slot).is_none(),
+            "a slot's files are its branch's"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
