@@ -686,4 +686,119 @@ mod tests {
         assert!(!timed_out);
         assert!(status.success());
     }
+
+    #[test]
+    fn some_kilobytes_of_output_are_reported_whole() {
+        let (succeeded, output) = run_shell_bounded(
+            Path::new("."),
+            &step(
+                "head -c 20000 /dev/zero | tr '\\0' 'k'",
+                "[Console]::Out.Write('k' * 20000)",
+            ),
+            Duration::from_secs(30),
+        );
+        assert!(succeeded, "{output}");
+        assert_eq!(output.len(), 20000, "{}", &output[..80.min(output.len())]);
+        assert!(!output.contains("[output truncated"));
+    }
+
+    /// The command's text may name what it prints; what it printed is
+    /// what is asserted on here.
+    #[test]
+    fn a_timed_out_command_reports_what_it_said_not_only_what_it_was() {
+        let (succeeded, output) = run_shell_bounded(
+            Path::new("."),
+            &step(
+                "echo said-$((40+2)); sleep 30",
+                "'said-' + (40+2); Start-Sleep 30",
+            ),
+            Duration::from_millis(500),
+        );
+        assert!(!succeeded);
+        assert!(output.contains("said-42"), "{output}");
+    }
+
+    /// A stream that yields each step in turn, then ends.
+    struct Scripted(std::collections::VecDeque<io::Result<Vec<u8>>>);
+
+    impl Read for Scripted {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            match self.0.pop_front() {
+                None => Ok(0),
+                Some(Err(error)) => Err(error),
+                Some(Ok(bytes)) => {
+                    buffer[..bytes.len()].copy_from_slice(&bytes);
+                    Ok(bytes.len())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn read_bounded_retries_an_interrupted_read_and_stops_at_a_failed_one() {
+        let read = |steps: Vec<io::Result<Vec<u8>>>| read_bounded(Scripted(steps.into()), 4096).0;
+        assert_eq!(
+            read(vec![
+                Ok(b"one ".to_vec()),
+                Err(io::ErrorKind::Interrupted.into()),
+                Ok(b"two".to_vec()),
+            ]),
+            b"one two"
+        );
+        assert_eq!(
+            read(vec![
+                Ok(b"one".to_vec()),
+                Err(io::ErrorKind::BrokenPipe.into()),
+                Ok(b" two".to_vec()),
+            ]),
+            b"one"
+        );
+    }
+
+    #[test]
+    fn standard_error_follows_standard_output_on_a_line_of_its_own() {
+        let read = |text: &str| Stream::Read {
+            bytes: text.as_bytes().to_vec(),
+            dropped: 0,
+        };
+        assert_eq!(combine_streams(&read("out"), &read("err")), "out\nerr");
+        assert_eq!(combine_streams(&read("out\n"), &read("err")), "out\nerr");
+        assert_eq!(combine_streams(&read(""), &read("err")), "err");
+        assert_eq!(combine_streams(&read("out"), &read("  ")), "out");
+    }
+
+    /// A stand-in for `uze`, printing the arguments it was started with.
+    // Its stand-in is a POSIX shell script, which only a Unix runs.
+    #[cfg(unix)]
+    fn uze_stand_in() -> PathBuf {
+        let path = uze_testkit::temp::scratch("uze-stand-in").join("uze");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        uze_testkit::process::install_executable(&path, b"#!/bin/sh\necho \"$@\"\n");
+        path
+    }
+
+    #[test]
+    // Its stand-in is a POSIX shell script, which only a Unix runs.
+    #[cfg(unix)]
+    fn a_portable_line_runs_through_uze_shell_and_a_native_one_in_the_shell() {
+        let uze = Uze::At(uze_stand_in());
+        assert_eq!(
+            run_bounded(
+                &uze,
+                Path::new("."),
+                crate::shell::Runs::Portable("pnpm build"),
+                Duration::from_secs(10),
+            ),
+            (true, "shell -c pnpm build".to_owned())
+        );
+        assert_eq!(
+            run_bounded(
+                &uze,
+                Path::new("."),
+                crate::shell::Runs::Native("echo native; exit 3"),
+                Duration::from_secs(10),
+            ),
+            (false, "native".to_owned())
+        );
+    }
 }
