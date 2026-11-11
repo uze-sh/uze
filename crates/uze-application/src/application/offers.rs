@@ -296,6 +296,7 @@ pub fn key_offers(customised: bool) -> Vec<ActionOffer> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ExtensionCondition;
     use crate::application::read_models::Freshness;
 
     fn plugin(
@@ -411,5 +412,206 @@ mod tests {
             Action::RemovePlugin.destructive(),
             "a menu decides where to put an entry from this, not from a list of its own"
         );
+    }
+
+    fn standing(
+        condition: crate::application::ExtensionCondition,
+    ) -> crate::application::ExtensionReport {
+        crate::application::ExtensionReport {
+            id: "band".to_owned(),
+            plugin: "board".to_owned(),
+            marketplace: "market".to_owned(),
+            name: "Board".to_owned(),
+            grants: vec!["read:checkout".to_owned()],
+            condition,
+            new_grants: Vec::new(),
+            enabled_in: Vec::new(),
+            enabled_everywhere: false,
+            reaches_agents: false,
+            updated_at: None,
+            checkout_refused: None,
+            offer_declined: false,
+            errors: Vec::new(),
+            programs: Vec::new(),
+            confined: None,
+            preferences: Vec::new(),
+            band_rows: None,
+            digest: None,
+        }
+    }
+
+    fn with_a_program(
+        mut report: crate::application::ExtensionReport,
+    ) -> crate::application::ExtensionReport {
+        report.programs.push(crate::application::ProgramPin {
+            name: "sh".to_owned(),
+            path: None,
+            unresolved: None,
+            runs_anything: true,
+            reads: Vec::new(),
+            packaged: false,
+        });
+        report
+    }
+
+    fn find(offers: &[ActionOffer], action: Action) -> Option<&ActionOffer> {
+        offers.iter().find(|offer| offer.action == action)
+    }
+
+    fn found(offers: &[ActionOffer], action: Action) -> &ActionOffer {
+        find(offers, action).unwrap_or_else(|| panic!("{action:?} is offered: {offers:?}"))
+    }
+
+    #[test]
+    fn only_the_bundled_marketplace_cannot_be_removed() {
+        let summary = |name: &str| MarketplaceSummary {
+            name: name.to_owned(),
+            source: "somewhere".to_owned(),
+            homepage: None,
+            plugin_count: 0,
+            linked_to: None,
+        };
+        let bundled = summary(uze_core::manifest::BUILT_IN_MARKETPLACE).offers();
+        assert!(!found(&bundled, Action::RemoveMarketplace).is_available());
+        let community = summary("community").offers();
+        assert!(found(&community, Action::RemoveMarketplace).is_available());
+    }
+
+    #[test]
+    fn a_harness_can_always_be_set_up() {
+        for present in [false, true] {
+            let harness =
+                crate::application::read_models::tests::harness(present, "not configured");
+            assert!(found(&harness.offers(), Action::SetupHarness).is_available());
+        }
+    }
+
+    #[test]
+    fn a_builtin_extension_offers_its_preferences_only_when_it_declares_some() {
+        let with = builtin_extension_offers(true, true);
+        assert!(found(&with, Action::EditPreferences).is_available());
+        assert!(found(&with, Action::DisableExtension).is_available());
+        let without = builtin_extension_offers(false, false);
+        assert!(find(&without, Action::EditPreferences).is_none());
+        assert!(found(&without, Action::EnableExtension).is_available());
+    }
+
+    #[test]
+    fn a_declared_extension_offers_preferences_when_it_declares_some() {
+        let mut report = standing(ExtensionCondition::Enabled);
+        assert!(
+            find(
+                &declared_extension_offers(true, Some(&report), true),
+                Action::EditPreferences
+            )
+            .is_none()
+        );
+        report.preferences.push(crate::application::PreferenceRow {
+            name: "depth".to_owned(),
+            label: "Depth".to_owned(),
+            kind: "number",
+            value: serde_json::json!(1),
+            values: Vec::new(),
+            default: serde_json::json!(1),
+            min: None,
+            max: None,
+        });
+        assert!(
+            found(
+                &declared_extension_offers(true, Some(&report), false),
+                Action::EditPreferences
+            )
+            .is_available(),
+            "preferences are the machine's, set with or without a project"
+        );
+    }
+
+    /// Outside a project, one that runs code is enabled nowhere, so its
+    /// enable says where to go instead of flipping a switch that changes
+    /// nothing; inside one, the same extension can be enabled.
+    #[test]
+    fn an_extension_enabled_per_project_is_enabled_from_inside_one() {
+        let report = standing(ExtensionCondition::NeedsEnabling);
+        let outside = declared_extension_offers(true, Some(&report), false);
+        assert!(
+            found(&outside, Action::EnableExtension)
+                .reason()
+                .is_some_and(|reason| reason.contains("per project")),
+            "{outside:?}"
+        );
+        let inside = declared_extension_offers(true, Some(&report), true);
+        assert!(found(&inside, Action::EnableExtension).is_available());
+        assert!(!found(&inside, Action::DisableExtension).is_available());
+
+        let switched_off = declared_extension_offers(false, Some(&report), false);
+        assert!(
+            found(&switched_off, Action::EnableExtension).is_available(),
+            "switching it on is the machine's, and it is off: {switched_off:?}"
+        );
+        let runs_nothing = standing(ExtensionCondition::FixturesOnly);
+        let machine = declared_extension_offers(true, Some(&runs_nothing), false);
+        assert_eq!(machine, extension_offers(true), "only the machine's switch");
+    }
+
+    #[test]
+    fn an_extension_enabled_here_can_be_disabled_and_not_enabled_again() {
+        let enabled =
+            declared_extension_offers(true, Some(&standing(ExtensionCondition::Enabled)), true);
+        assert!(!found(&enabled, Action::EnableExtension).is_available());
+        assert!(found(&enabled, Action::DisableExtension).is_available());
+
+        let switched_off =
+            declared_extension_offers(false, Some(&standing(ExtensionCondition::Enabled)), true);
+        assert!(
+            found(&switched_off, Action::EnableExtension).is_available(),
+            "the machine's switch is off, so it is not enabled here"
+        );
+    }
+
+    #[test]
+    fn programs_are_found_again_only_once_consented_to() {
+        let enabled = with_a_program(standing(ExtensionCondition::Enabled));
+        assert!(
+            found(
+                &declared_extension_offers(true, Some(&enabled), true),
+                Action::ResolvePrograms
+            )
+            .is_available()
+        );
+        let unconsented = with_a_program(standing(ExtensionCondition::NeedsConsent));
+        assert!(
+            find(
+                &declared_extension_offers(true, Some(&unconsented), true),
+                Action::ResolvePrograms
+            )
+            .is_none()
+        );
+        let without = standing(ExtensionCondition::Enabled);
+        assert!(
+            find(
+                &declared_extension_offers(true, Some(&without), true),
+                Action::ResolvePrograms
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn a_row_moves_only_where_there_is_room() {
+        let middle = status_order_offers(true, true);
+        assert!(found(&middle, Action::MoveItemUp).is_available());
+        assert!(found(&middle, Action::MoveItemDown).is_available());
+        let first = status_order_offers(false, true);
+        assert!(!found(&first, Action::MoveItemUp).is_available());
+        let last = status_order_offers(true, false);
+        assert!(!found(&last, Action::MoveItemDown).is_available());
+    }
+
+    #[test]
+    fn a_key_resets_only_once_customised() {
+        let shipped = key_offers(false);
+        assert!(found(&shipped, Action::ChangeKey).is_available());
+        assert!(!found(&shipped, Action::ResetKey).is_available());
+        assert!(found(&key_offers(true), Action::ResetKey).is_available());
     }
 }
