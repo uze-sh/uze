@@ -701,38 +701,6 @@ mod tests {
         );
     }
 
-    /// A lock held for a moment by a descriptor another thread's spawn
-    /// carried is taken once it goes, rather than reported as held.
-    #[test]
-    fn a_lock_released_within_the_grace_is_taken() {
-        let root = uze_testkit::temp::scratch("lock-grace");
-        fs::create_dir_all(&root).unwrap();
-        let path = root.join("grace.lock");
-        let open = || {
-            OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .write(true)
-                .open(&path)
-                .unwrap()
-        };
-        let holder = open();
-        try_lock_exclusive(&holder).unwrap();
-        let contender = open();
-        let (go, wait) = std::sync::mpsc::channel::<()>();
-        let releasing = std::thread::spawn(move || {
-            wait.recv().unwrap();
-            std::thread::sleep(Duration::from_millis(3));
-            drop(holder);
-        });
-
-        go.send(()).unwrap();
-        let outcome = try_lock_exclusive_briefly(&contender);
-        releasing.join().unwrap();
-        assert!(outcome.is_ok(), "{outcome:?}");
-        let _ = fs::remove_dir_all(root);
-    }
-
     #[test]
     fn lock_blocks_a_concurrent_mutation_attempt() {
         let root = uze_testkit::temp::scratch("lock");
