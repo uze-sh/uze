@@ -406,3 +406,122 @@ fn an_inferred_use_makes_the_count_an_estimate() {
     );
     assert!(machine.resources[0].uses_on(None).unwrap().estimate);
 }
+
+#[test]
+fn a_stamp_is_a_length_and_the_second_it_changed() {
+    let changed = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    assert_eq!(
+        Stamp::of(42, changed),
+        Stamp {
+            length: 42,
+            changed: 1_700_000_000
+        }
+    );
+}
+
+#[test]
+fn a_day_is_counted_from_the_epoch() {
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(3 * DAY + 5 * 3600);
+    assert_eq!(day_of(time), 3);
+}
+
+#[test]
+fn what_was_kept_spares_reading_an_unchanged_record_again() {
+    let root = uze_testkit::temp::TempDir::new("machine-usage-ledger-kept");
+    let home = UzeHome::at(root.path());
+    let mut harness = Harness::default();
+    harness.write("a", vec![typed("review")]);
+    let carried = [skill("review")];
+    let mut ledger = Ledger::load(&home);
+    read(&mut ledger, &harness, &carried).unwrap();
+    ledger.save(&home).unwrap();
+
+    let mut kept = Ledger::load(&home);
+    assert_eq!(total(&read(&mut kept, &harness, &carried).unwrap()), 1);
+    assert_eq!(harness.reads.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn uses_of_one_target_on_one_day_are_one_tally_by_who_asked() {
+    let model =
+        |name: &str, at: SystemTime| Use::named(ResourceKind::Skill, name, at, Invoker::Model);
+    let agent = Use::named(ResourceKind::Agent, "review", days_ago(1), Invoker::Person);
+    let mut harness = Harness::default();
+    harness.write(
+        "a",
+        vec![
+            typed("review"),
+            model("review", days_ago(1)),
+            model("review", days_ago(1)),
+            model("review", days_ago(2)),
+            typed("lint"),
+            agent,
+        ],
+    );
+    let carried = [
+        skill("review"),
+        skill("lint"),
+        FoundResource::new(
+            ResourceKind::Agent,
+            "review",
+            Definition::Markdown(PathBuf::from("/agents/review.md")),
+        ),
+    ];
+    let mut tallies = read(&mut Ledger::default(), &harness, &carried).unwrap();
+    tallies.sort_by_key(|tally| (tally.kind as u8, tally.target.clone(), tally.day));
+    let summary: Vec<_> = tallies
+        .iter()
+        .map(|tally| {
+            (
+                tally.kind,
+                tally.target.clone(),
+                day_of(now()) - tally.day,
+                tally.by_person,
+                tally.by_model,
+            )
+        })
+        .collect();
+    let name = |text: &str| Target::Name(text.into());
+    let mut expected = vec![
+        (ResourceKind::Skill, name("lint"), 1, 1, 0),
+        (ResourceKind::Skill, name("review"), 2, 0, 1),
+        (ResourceKind::Skill, name("review"), 1, 1, 2),
+        (ResourceKind::Agent, name("review"), 1, 1, 0),
+    ];
+    expected.sort_by_key(|row| (row.0 as u8, row.1.clone(), u64::MAX - row.2));
+    assert_eq!(summary, expected);
+}
+
+#[test]
+fn a_use_counts_only_for_a_resource_of_its_own_kind() {
+    let mut machine = overview(vec![row("review", &["a"])]);
+    let mut agent = tally(Target::Name("review".into()), 1, 4, 0);
+    agent.kind = ResourceKind::Agent;
+    let tallies = BTreeMap::from([("a".to_owned(), Some(vec![agent]))]);
+    count_uses(&mut machine, &tallies);
+    assert_eq!(machine.resources[0].uses_on(None).unwrap().total, 0);
+}
+
+#[test]
+fn each_harness_is_dated_by_the_oldest_use_its_archive_keeps() {
+    let mut archive = Archive::default();
+    archive.harnesses.insert(
+        "a".into(),
+        BTreeMap::from([(
+            "gone".to_owned(),
+            vec![
+                tally(Target::Name("review".into()), 30, 1, 0),
+                tally(Target::Name("review".into()), 90, 1, 0),
+            ],
+        )]),
+    );
+    let mut machine = overview(Vec::new());
+    date_archives(&mut machine, &archive);
+    let since: BTreeMap<_, _> = machine
+        .harnesses
+        .iter()
+        .map(|report| (report.id.as_str(), report.uses_since))
+        .collect();
+    assert_eq!(since["a"], Some(day_of(now()) - 90));
+    assert_eq!(since["b"], None);
+}
