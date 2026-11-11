@@ -413,6 +413,34 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// ADR 018 bounds the backstop at a day: an entry probed earlier the
+    /// same day, whose executable is unchanged, is still the answer.
+    #[test]
+    fn an_entry_probed_hours_ago_is_reused_within_the_days_backstop() {
+        let dir = unique_temp_dir("within-ttl");
+        let bin = fake_executable(&dir, "fake-harness-e");
+        let path_str = bin.to_str().unwrap();
+        let cache_path = temp_cache_path("within-ttl");
+        let detection = HarnessDetection {
+            present: true,
+            version: Some("2.0.0".to_owned()),
+        };
+        let twenty_three_hours = Duration::from_secs(23 * 3600).as_nanos();
+        let mut on_disk = OnDiskCache::default();
+        on_disk.entries.insert(
+            "codex".to_owned(),
+            CachedEntry {
+                detection: detection.clone(),
+                fingerprint: Fingerprint::resolve(&[path_str], Path::new("/nonexistent-shims")),
+                cached_at_unix_nanos: now_unix_nanos() - twenty_three_hours,
+            },
+        );
+        on_disk.save(&cache_path);
+        let cache = DetectionCache::at(cache_path);
+        assert_eq!(cache.get("codex", &[path_str]), Some(detection));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn missing_cache_file_is_fail_open() {
         let cache = DetectionCache::at(PathBuf::from("/nonexistent/dir/harness_detection.json"));

@@ -47,4 +47,107 @@ exclude_re = [
   'uze-script/src/primitives\.rs.*replace == with != in compiled$',
   # Dropping the struct drops the sender right after, which ends the thread the same way.
   'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
+
+  # uze-core delivery/
+  # Each trait default below already returns exactly the value the mutant puts back.
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::(install|republish_packages) -> Result<\(\)> with Ok\(\(\)\)$',
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::(setup_artifacts|registrations|own_worktree_places|start_session_args|resume_session_args|first_turn_args|memory_source|collect_runtime|install_locations|unreadable|generated_requirements|held_back|withheld_paths) -> .* with vec!\[\]$',
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::(withdraw_registrations|attach_rules_engine|package_executions) -> Result<.*> with Ok\(vec!\[\]\)$',
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::(facts|aliases|reported_events|managed_environment|runtime_executable_aliases) -> .* with Vec::leak\(Vec::new\(\)\)$',
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::(check_capability|hook_capabilities|runtime_contribution|flag_catalog|detect) -> .* with Default::default\(\)$',
+  'uze-core/src/delivery/integration\.rs.*replace IntegrationPort::deliver_context -> .* with Ok\(Default::default\(\)\)$',
+  # On Unix a label is its own file name, so both arms spell it alike; Windows runs the test that tells them apart.
+  'uze-core/src/delivery/exposure\.rs.*delete match arm Self::VendorConfigEntry\{\.\.\} \| Self::HookConfigEntry\{\.\.\} in ManagedArtifact::is_named$',
+  # Any error other than absence still ends in the write failing on the same path, with nothing written.
+  'uze-core/src/delivery/exposure\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with true in (attach_generated_file|attach_generated_tree|attach_symlink)$',
+  # The staging directory was just created beside the destination, so reading the destination fails only by absence.
+  'uze-core/src/delivery/persistence\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with true in swap_in$',
+  # Joining an absolute target onto the parent yields that same absolute target.
+  'uze-core/src/delivery/persistence\.rs.*replace match guard target\.is_relative\(\) with true in resolve_symlinks$',
+  # Whether a write waits for the disk shows only across a crash, which no test can stage.
+  'uze-core/src/delivery/persistence\.rs.*replace == with != in replace_atomically$',
+  # A descriptor just opened for writing fails a non-blocking lock only by its being held.
+  'uze-core/src/delivery/persistence\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::WouldBlock with true in MutationLock::acquire$',
+  # Reaching the deadline at exactly the same instant is not observable.
+  'uze-core/src/delivery/persistence\.rs.*replace < with <= in try_lock_exclusive_briefly$',
+  # The bit set is already clear after the mask, so xor sets it as or does.
+  'uze-core/src/delivery/session\.rs.*replace \| with \^ in format_uuid_v4$',
+  # uze-core project/
+  # Its one caller runs it on a directory it has just created, so the new paths never exist yet.
+  'uze-core/src/project/earlier\.rs.*replace && with \|\| in carry_across_the_move$',
+  # The project marker is at its first shape with no ladder: it has no rungs to drop.
+  'uze-core/src/project/record\.rs.*replace rungs -> Vec<uze_document::earlier::Earlier> with vec!\[\]$',
+  # A root block is dropped only when its key is the document's one root key, so every margin line but a comment opens it.
+  'uze-core/src/project/manifest/edit\.rs.*replace opens_root_key -> bool with true$',
+  # Whatever the guard lets through is text YAML reads as null, which the schema reads as the empty manifest anyway.
+  'uze-core/src/project/manifest\.rs.*replace \|\| with && in parse$',
+  # A placeholder holds no digit or a character no secret is made of, so the checks after it refuse it anyway.
+  'uze-core/src/project/memory/credentials\.rs.*replace \|\| with && in looks_assigned$',
+  # One line cannot be both a begin and an end marker, so an end never sits on its begin.
+  'uze-core/src/project/text_region\.rs.*replace > with >= in scan$',
+  # uze-core capability/
+  # The stack is still far deeper than DEPTH_MAX levels of the parser need.
+  'uze-core/src/capability/extension/bounded\.rs.*: replace \* with \+$',
+  # A `/` outside a string, comment or `/-` is not KDL: the file is refused either way.
+  'uze-core/src/capability/extension/bounded\.rs.*replace match guard self\.peek\(1\) == Some\(b.-.\) with true in Scanner<.a>::run$',
+  # At the end of the bytes the loop steps past it and reports the same unclosed comment.
+  'uze-core/src/capability/extension/bounded\.rs.*replace < with <= in Scanner<.a>::skip_block_comment$',
+  # Reading more of a file past the bound changes only how much is read, not the refusal.
+  'uze-core/src/capability/extension/loaded\.rs.*replace - with \+ in Loaded::read$',
+  # A lone `/` is not KDL, so what completion offers after one is unspecified.
+  'uze-core/src/capability/extension/locate\.rs.*replace match guard chars\.peek\(\)\.map\(\|\(_, next\)\| \*next\) == Some\(.-.\) with true in locate$',
+  # NodeName is answered only when the statement has no name, so the node is None either way.
+  'uze-core/src/capability/extension/locate\.rs.*delete match arm At::NodeName\{\.\.\} in Lexer::answer$',
+  # A protocol equal to this build's is taken by the arm before.
+  'uze-core/src/capability/extension/manifest\.rs.*replace > with >= in protocol$',
+  # LATER is empty: no name is ever found in it.
+  'uze-core/src/capability/extension/manifest\.rs.*replace == with != in unknown$',
+  # A node whose property was refused already refuses the view; keeping it adds nothing.
+  'uze-core/src/capability/extension/view\.rs.*replace &= with \|= in Compiler<., .>::node$',
+  # uze-core package/
+  # `looks_like_path` admits a `~` lead only when nothing or a separator follows it.
+  'uze-core/src/package/acquisition/forge\.rs.*replace match guard rest\.is_empty\(\) \|\| rest\.starts_with\(std::path::is_separator\) with true in expand_home$',
+  # Breaking early only stops reading a listing; the verdict is judged on the counts either way.
+  'uze-core/src/package/acquisition/git\.rs.*replace TreeWeight::over_budget -> bool with false$',
+  'uze-core/src/package/acquisition/git\.rs.*replace \|\| with && in TreeWeight::over_budget$',
+  # Only the path of an `ls-tree` record holds a `/`, so where the split falls counts the same.
+  'uze-core/src/package/acquisition/git\.rs.*replace == with != in record_depth$',
+  # `components()` yields `.` only first in a relative path, and a path joined onto the checkout then stripped of it never starts with one.
+  'uze-core/src/package/acquisition/git\.rs.*delete match arm std::path::Component::CurDir in lexically_within$',
+  # A span field recording the exit code.
+  'uze-core/src/package/acquisition/git\.rs.*delete - in spawn_git$',
+  # The read buffer's size, which changes how many reads a listing takes and nothing else.
+  'uze-core/src/package/acquisition/git\.rs.*replace \* with \+ in run_records$',
+  # A stopped fold is already past its budget and breaks again; a `-z` listing leaves nothing pending.
+  'uze-core/src/package/acquisition/git\.rs.*replace \|\| with && in run_records$',
+  # Connection sharing saves handshakes; ssh opens its own connection when it cannot share one.
+  'uze-core/src/package/acquisition/git\.rs.*replace multiplexing_directory -> Option<PathBuf> with (None|Some\(Default::default\(\)\))$',
+  # The default subpath is the root.
+  'uze-core/src/package/acquisition/marketplace\.rs.*replace MarketplaceSubpath::root -> Self with Default::default\(\)$',
+  # An age equal to the window to the nanosecond.
+  'uze-core/src/package/acquisition/mirror\.rs.*replace < with <= in ensure_for$',
+  # Best effort: the checkout fetches whatever the prefetch did not bring.
+  'uze-core/src/package/acquisition/mirror\.rs.*replace prefetch with \(\)$',
+  'uze-core/src/package/acquisition/mirror\.rs.*replace != with == in prefetch$',
+  # Equal minimums are one requirement, whichever spelling is kept.
+  'uze-core/src/package/requirement\.rs.*replace > with >= in stricter$',
+  # The search resumes on the closing backtick, which cannot start a `!` span.
+  'uze-core/src/package/trust\.rs.*replace \+ with \* in inline_commands$',
+  # `HostRecord` is at its first shape, so its ladder holds no rung.
+  'uze-core/src/package/hosts\.rs.*replace rungs -> Vec<uze_document::earlier::Earlier> with vec!\[\]$',
+  # uze-core machine/
+  # With no project, a path still spelling `{project}` names no file, so the carry skips it all the same.
+  'uze-core/src/machine/earlier\.rs.*replace match guard was\.to_string_lossy\(\)\.contains\(.\{.\) with false in carry_renamed$',
+  # A run ended for a flood with stdout under its bound passed stderr's: the reader raises both together.
+  'uze-core/src/machine/extension_program\.rs.*replace match guard stderr_over with true in run$',
+  # `passthrough` is the default contribution.
+  'uze-core/src/machine/harness_runtime\.rs.*replace HarnessRuntimeContribution::passthrough -> Self with Default::default\(\)$',
+  # On Unix, where mutants run, no shell keeps a PATH apart from this process's.
+  'uze-core/src/machine/harness_runtime\.rs.*replace resolve_for_a_new_shell -> Option<PathBuf> with None$',
+  # A debug rendering: nothing reads it.
+  'uze-core/src/machine/home/owned\.rs.*replace <impl std::fmt::Debug for OwnedPath>::fmt -> std::fmt::Result with Ok\(Default::default\(\)\)$',
+  # A debug rendering: nothing reads it.
+  'uze-core/src/machine/mcp\.rs.*replace <impl std::fmt::Debug for McpSession>::fmt -> std::fmt::Result with Ok\(Default::default\(\)\)$',
+  # Trimming at the slack itself only drops early what the final trim to `cap` drops anyway.
+  'uze-core/src/machine/subprocess\.rs.*replace > with >= in read_bounded$',
 ]

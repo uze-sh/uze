@@ -524,4 +524,128 @@ mod tests {
         );
         assert!(error.to_string().ends_with("no NETWORK_USER"), "{error}");
     }
+
+    #[test]
+    fn the_handshake_tells_the_server_it_is_initialized_before_any_call() {
+        let methods = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&methods);
+        let mut wire = wire(move |asked| {
+            seen.lock()
+                .unwrap()
+                .push(asked["method"].as_str().unwrap_or_default().to_owned());
+            match asked["method"].as_str() {
+                Some("initialize") => vec![answer(asked, json!({ "capabilities": {} }))],
+                Some("tools/call") => vec![answer(
+                    asked,
+                    json!({ "content": [{ "type": "text", "text": "done" }] }),
+                )],
+                _ => Vec::new(),
+            }
+        });
+        wire.initialize(soon()).unwrap();
+        wire.call("t", json!({}), soon()).unwrap();
+        assert_eq!(
+            *methods.lock().unwrap(),
+            ["initialize", "notifications/initialized", "tools/call"]
+        );
+    }
+
+    #[test]
+    fn a_null_structured_content_falls_back_to_the_text() {
+        let result = json!({
+            "structuredContent": null,
+            "content": [{ "type": "text", "text": "plain" }],
+        });
+        assert_eq!(result_value(&result), Ok(json!("plain")));
+    }
+
+    #[test]
+    fn a_result_of_exactly_its_bound_is_handed_back() {
+        let text = "x".repeat(RESULT_MAX - 2);
+        let result = json!({ "content": [{ "type": "text", "text": text }] });
+        assert_eq!(result_value(&result), Ok(Value::String(text)));
+    }
+
+    #[test]
+    fn only_a_tools_failure_a_refusal_or_a_large_result_leaves_the_session() {
+        for kept in [
+            McpError::Tool("failed".into()),
+            McpError::Server("refused".into()),
+            McpError::TooLarge,
+        ] {
+            assert!(kept.leaves_session(), "{kept:?}");
+        }
+        for ended in [
+            McpError::NotStarted("x".into()),
+            McpError::Closed(String::new()),
+            McpError::TimedOut(Duration::from_secs(1)),
+            McpError::Protocol("x".into()),
+        ] {
+            assert!(!ended.leaves_session(), "{ended:?}");
+        }
+    }
+
+    #[test]
+    fn a_long_last_word_is_quoted_by_its_tail() {
+        let said = format!("{}the end", "x".repeat(2 * STDERR_QUOTED));
+        let error = McpError::Closed(said).to_string();
+        assert!(error.ends_with("the end"), "{error}");
+        assert!(
+            error.len() <= "the server ended: ".len() + STDERR_QUOTED,
+            "{} bytes",
+            error.len()
+        );
+    }
+
+    #[test]
+    fn a_line_up_to_its_bound_is_one_message_and_a_longer_one_is_refused() {
+        let at_bound = format!("{}\n", "x".repeat(LINE_MAX - 1));
+        let over = format!("{}\n", "y".repeat(LINE_MAX));
+        let stream = format!("short\n{at_bound}{over}");
+        let lines = read_lines(std::io::Cursor::new(stream.into_bytes()));
+        let next = || lines.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(matches!(next(), Line::Message(line) if line == "short\n"));
+        assert!(matches!(next(), Line::Message(line) if line == at_bound));
+        assert!(matches!(next(), Line::TooLong));
+    }
+
+    /// A server that answers the handshake and one call with `42`, writes
+    /// its pid to `pid_file`, then waits to be ended.
+    // The server stand-in is a POSIX `sh` script.
+    #[cfg(unix)]
+    fn answering_server(pid_file: &std::path::Path) -> McpLaunch {
+        let script = format!(
+            "echo $$ > '{}'; read l; echo '{}'; read l; read l; echo '{}'; sleep 30",
+            pid_file.display(),
+            json!({ "jsonrpc": "2.0", "id": 1, "result": {} }),
+            json!({ "jsonrpc": "2.0", "id": 2, "result": { "content": [{ "type": "text", "text": "42" }] } }),
+        );
+        McpLaunch {
+            command: PathBuf::from("/bin/sh"),
+            args: vec!["-c".into(), script],
+            environment: Vec::new(),
+            cwd: std::env::temp_dir(),
+        }
+    }
+
+    // The server stand-in is a POSIX `sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn a_session_calls_its_server_and_ends_it_when_dropped() {
+        let scratch = uze_testkit::temp::TempDir::new("mcp-session");
+        let pid_file = scratch.join("pid");
+        let mut session =
+            McpSession::start(&answering_server(&pid_file), Duration::from_secs(5)).unwrap();
+        assert_eq!(
+            session.call("t", json!({}), Duration::from_secs(5)),
+            Ok(json!(42))
+        );
+        let pid: u32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        drop(session);
+        assert_eq!(uze_platform::process::alive(pid), Some(false));
+    }
 }

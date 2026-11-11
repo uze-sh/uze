@@ -447,4 +447,15 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn an_option_or_a_setting_given_to_env_is_named_as_such() {
+        for refused in [
+            &b"#!/usr/bin/env -S python3\n"[..],
+            b"#!/usr/bin/env FOO=1 python3\n",
+        ] {
+            let reason = packaged(refused).unwrap_err();
+            assert!(reason.contains("to `env`"), "{reason}");
+        }
+    }
 }

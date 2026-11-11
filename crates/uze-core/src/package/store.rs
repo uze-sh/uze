@@ -1709,4 +1709,214 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(modified_unix(&root), None, "nothing there, no date");
     }
+
+    /// A package named `name`, its bytes at `root`.
+    fn named_package(root: &Path, name: &str) -> MaterializedPackage {
+        fs::create_dir_all(root.join("skills").join(name)).unwrap();
+        fs::write(
+            root.join("plugin.json"),
+            format!("{{\"name\":\"{name}\"}}\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("skills").join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: d\n---\nbody\n"),
+        )
+        .unwrap();
+        MaterializedPackage::borrowed(root.to_path_buf(), Provenance::of_local_path(root))
+    }
+
+    #[test]
+    fn a_package_answers_to_the_alias_it_was_installed_under() {
+        let scratch = uze_testkit::temp::scratch("store-alias");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let stored = store
+            .ingest(
+                &named_package(&scratch.join("flow"), "flow"),
+                "ai",
+                Some("flow2"),
+            )
+            .unwrap();
+
+        assert_eq!(stored.active_name, "flow2");
+        assert_eq!(store.active_name_for(&stored.id), "flow2");
+        assert_eq!(
+            store.find_by_active_name("flow2").unwrap(),
+            Some(stored.id.clone())
+        );
+        assert_eq!(store.find_by_active_name("flow").unwrap(), None);
+
+        let plain = store
+            .ingest(&named_package(&scratch.join("kit"), "kit"), "ai", None)
+            .unwrap();
+        assert_eq!(store.active_name_for(&plain.id), "kit");
+        assert_eq!(
+            store.find_by_active_name("kit").unwrap(),
+            Some(plain.id.clone())
+        );
+        let listed: Vec<PackageId> = store
+            .packages()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.id)
+            .collect();
+        assert_eq!(listed, vec![stored.id, plain.id]);
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    #[test]
+    fn an_alias_that_is_no_name_is_refused() {
+        let scratch = uze_testkit::temp::scratch("store-alias-refused");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        assert!(matches!(
+            store.ingest(
+                &named_package(&scratch.join("flow"), "flow"),
+                "ai",
+                Some("Not A Name")
+            ),
+            Err(UzeError::InvalidPackageName { .. })
+        ));
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    /// Two packages may sit in the Store, but only one may answer to a name:
+    /// the other would shadow it in every harness.
+    #[test]
+    fn a_second_package_claiming_a_held_name_is_refused() {
+        let scratch = uze_testkit::temp::scratch("store-collision");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let first = store
+            .ingest(&named_package(&scratch.join("ai-flow"), "flow"), "ai", None)
+            .unwrap();
+        let refused = store.ingest(
+            &named_package(&scratch.join("other-flow"), "flow"),
+            "other",
+            None,
+        );
+        assert!(
+            matches!(&refused, Err(UzeError::PluginNameCollision { existing, .. }) if existing == first.id.as_str()),
+            "{refused:?}"
+        );
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    #[test]
+    fn a_stored_package_is_dated_when_it_was_written() {
+        let scratch = uze_testkit::temp::scratch("store-dated");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let stored = store
+            .ingest(&named_package(&scratch.join("flow"), "flow"), "ai", None)
+            .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let written = stored
+            .written_at_unix()
+            .expect("a stored package has a date");
+        assert!(now.abs_diff(written) < 60, "{written} against {now}");
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    #[test]
+    fn a_copy_of_a_stored_package_holds_its_bytes() {
+        let scratch = uze_testkit::temp::scratch("store-copy");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let stored = store
+            .ingest(&named_package(&scratch.join("flow"), "flow"), "ai", None)
+            .unwrap();
+        let aside = scratch.join("aside");
+        store.copy_package_to(&stored.id, &aside).unwrap();
+        assert_eq!(
+            fs::read(aside.join("skills/flow/SKILL.md")).unwrap(),
+            fs::read(stored.root.join("skills/flow/SKILL.md")).unwrap()
+        );
+        assert!(aside.join("plugin.json").is_file());
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    /// The copy an earlier release kept under the runtime tree goes with
+    /// the package, and a directory that was never made is no failure.
+    #[test]
+    fn removing_a_package_takes_its_bytes_its_entry_and_its_earlier_copy() {
+        let scratch = uze_testkit::temp::scratch("store-remove");
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let stored = store
+            .ingest(&named_package(&scratch.join("flow"), "flow"), "ai", None)
+            .unwrap();
+        let earlier = store.home().retired_package_dir(&stored.id);
+        fs::create_dir_all(&earlier).unwrap();
+        fs::write(earlier.join("plugin.json"), "{}").unwrap();
+
+        store.remove_package(&stored.id).unwrap();
+
+        assert!(!stored.root.exists());
+        assert!(!earlier.exists());
+        assert!(store.package_ids().unwrap().is_empty());
+        assert!(matches!(
+            store.remove_package(&stored.id),
+            Err(UzeError::UnknownPackage(_))
+        ));
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    #[test]
+    fn a_package_file_of_up_to_a_megabyte_is_read_whole() {
+        let root = uze_testkit::temp::scratch("package-file-within");
+        for length in [512 * 1024, 1024 * 1024] {
+            let file = root.join(format!("file-{length}"));
+            fs::write(&file, vec![b' '; length]).unwrap();
+            assert_eq!(read_package_file(&file).unwrap().len(), length);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_reference_inside_a_list_is_held_to_the_package_too() {
+        let root = uze_testkit::temp::scratch("manifest-unsafe-list");
+        fs::write(
+            root.join("plugin.json"),
+            r#"{"name":"demo","skills":[{"path":"../outside"}]}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            read_plugin_manifest(&root),
+            Err(UzeError::UnsafePathReference { .. })
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_package_is_kept_and_one_leaving_it_is_refused() {
+        let scratch = uze_testkit::temp::scratch("store-links");
+        let source = scratch.join("flow");
+        let package = named_package(&source, "flow");
+        std::os::unix::fs::symlink("skills/flow", source.join("current")).unwrap();
+        assert!(assert_self_contained(&source).is_ok());
+
+        let store = UzeStore::new(UzeHome::at(scratch.join("home")));
+        let stored = store.ingest(&package, "ai", None).unwrap();
+        assert_eq!(
+            fs::read_link(stored.root.join("current")).unwrap(),
+            Path::new("skills/flow")
+        );
+
+        std::os::unix::fs::symlink("../../../elsewhere", source.join("skills/flow/up")).unwrap();
+        assert!(matches!(
+            assert_self_contained(&source),
+            Err(UzeError::PackageEscapesRoot { .. })
+        ));
+        fs::remove_dir_all(scratch).ok();
+    }
+
+    /// The registry is read in a shape an earlier release wrote, so the
+    /// release-floor check has to see that rung.
+    #[test]
+    fn the_registrys_earlier_shape_is_listed_for_the_release_floor() {
+        let listed = rungs();
+        assert!(!listed.is_empty());
+        assert!(listed.iter().all(|rung| rung.name == "packages"));
+    }
 }

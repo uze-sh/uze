@@ -220,4 +220,43 @@ mod tests {
         assert_eq!(png_size(&head), Some((128, 64)));
         assert_eq!(png_size(b"GIF89a"), None);
     }
+
+    #[test]
+    fn a_range_may_name_one_frame_and_a_backwards_one_refuses_the_whole_list() {
+        assert_eq!(frame_list("2-2"), Some(vec![2]));
+        assert_eq!(frame_list("3-1,5"), None);
+    }
+
+    #[test]
+    fn a_state_may_list_exactly_the_most_frames() {
+        let most = frame_list(&format!("0-{}", FRAMES_MAX - 1)).expect("at the bound");
+        assert_eq!(most.len(), FRAMES_MAX);
+        assert_eq!(frame_list(&format!("0-{FRAMES_MAX}")), None);
+    }
+
+    fn header(signature: &[u8], chunk: &[u8], width: u32, height: u32) -> Vec<u8> {
+        let mut head = signature.to_vec();
+        head.extend(13u32.to_be_bytes());
+        head.extend(chunk);
+        head.extend(width.to_be_bytes());
+        head.extend(height.to_be_bytes());
+        head
+    }
+
+    #[test]
+    fn only_a_whole_png_header_has_a_size() {
+        let png = b"\x89PNG\r\n\x1a\n";
+        let mut whole = header(png, b"IHDR", 128, 64);
+        assert_eq!(png_size(&whole), Some((128, 64)));
+        // A real head carries more than the header itself.
+        whole.extend([8, 6, 0, 0, 0]);
+        assert_eq!(png_size(&whole), Some((128, 64)));
+
+        assert_eq!(png_size(&whole[..16]), None, "cut before the size");
+        assert_eq!(
+            png_size(&header(b"\x89PNX\r\n\x1a\n", b"IHDR", 128, 64)),
+            None
+        );
+        assert_eq!(png_size(&header(png, b"IDAT", 128, 64)), None);
+    }
 }

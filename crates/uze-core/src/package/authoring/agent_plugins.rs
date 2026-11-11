@@ -477,4 +477,41 @@ mod tests {
             manifest_field_fault("extensions", &serde_json::json!({ "sh.uze": true })).is_some()
         );
     }
+
+    #[test]
+    fn extensions_holding_something_other_than_objects_name_the_fault() {
+        assert_eq!(
+            manifest_field_fault("extensions", &serde_json::json!({ "sh.uze": true })),
+            Some("must map each namespace to an object")
+        );
+        assert_eq!(
+            manifest_field_fault("extensions", &serde_json::json!([])),
+            Some("must be an object keyed by namespace")
+        );
+    }
+
+    #[test]
+    fn a_skill_description_is_held_to_the_specifications_length() {
+        let root = uze_testkit::temp::scratch("agent-plugins-description");
+        for (name, length) in [
+            ("within", SKILL_DESCRIPTION_MAX_CHARS),
+            ("beyond", SKILL_DESCRIPTION_MAX_CHARS + 1),
+        ] {
+            let skill = root.join("skills").join(name);
+            std::fs::create_dir_all(&skill).unwrap();
+            std::fs::write(
+                skill.join("SKILL.md"),
+                format!(
+                    "---\nname: {name}\ndescription: {}\n---\nbody\n",
+                    "a".repeat(length)
+                ),
+            )
+            .unwrap();
+        }
+        let mut divergences = Vec::new();
+        skill_divergences(&root, &mut divergences);
+        assert_eq!(divergences.len(), 1, "{divergences:?}");
+        assert!(divergences[0].contains("beyond"), "{divergences:?}");
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

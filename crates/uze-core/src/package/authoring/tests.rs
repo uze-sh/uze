@@ -794,6 +794,11 @@ fn check_reports_a_reference_outside_the_plugin() -> Result<()> {
             "/opt/guard",
         ),
         (
+            "hooks.json",
+            r#"{ "hooks": { "PreToolUse": [ { "id": "x", "matcher": "shell", "effect": "deny", "hooks": [ { "type": "command", "command": "sh '/opt/quoted-guard'" } ] } ] } }"#,
+            "/opt/quoted-guard",
+        ),
+        (
             "mcp.json",
             r#"{ "mcpServers": { "example": { "command": "python3", "args": ["../server.py"] } } }"#,
             "../server.py",
@@ -1126,6 +1131,100 @@ fn check_fails_on_a_rule_no_harness_would_deliver() -> Result<()> {
         report.warnings
     );
     assert!(!report.is_clean());
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+#[test]
+fn a_scaffolded_marketplace_starts_with_its_first_commit() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-initial-commit");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let read = |arguments: &[&str]| {
+        uze_git::read(&market, arguments)
+            .unwrap()
+            .successful()
+            .unwrap()
+    };
+    assert_eq!(
+        read(&["log", "-1", "--format=%s"]).trim(),
+        INITIAL_COMMIT_MESSAGE
+    );
+    let status = read(&["status", "--porcelain"]);
+    assert!(status.trim().is_empty(), "{status}");
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+/// A file ending in a newline is followed by one blank line, and one
+/// that cannot be read as text is never written over.
+#[test]
+fn a_projects_attributes_are_added_to_after_one_blank_line_or_left_alone() -> Result<()> {
+    let root = scratch("authoring-attributes-added");
+    let extension = ScaffoldCapabilities {
+        extension: Some("board".to_owned()),
+        ..ScaffoldCapabilities::default()
+    };
+    let project = root.join("project");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join(".gitattributes"), "* text=auto\n").unwrap();
+    scaffold_local_marketplace("tools", None, &project, "plugins")?;
+    scaffold_plugin(&project, "greet", None, None, &extension)?;
+    assert_eq!(
+        fs::read_to_string(project.join(".gitattributes")).unwrap(),
+        format!("* text=auto\n\n{}", include_str!("gitattributes"))
+    );
+
+    let unreadable = root.join("unreadable");
+    fs::create_dir_all(&unreadable).unwrap();
+    let bytes = [0xff, 0xfe, b'\n'];
+    fs::write(unreadable.join(".gitattributes"), bytes).unwrap();
+    scaffold_local_marketplace("tools", None, &unreadable, "plugins")?;
+    assert!(scaffold_plugin(&unreadable, "greet", None, None, &extension).is_err());
+    assert_eq!(fs::read(unreadable.join(".gitattributes")).unwrap(), bytes);
+    fs::remove_dir_all(&root).expect("teardown");
+    Ok(())
+}
+
+#[test]
+fn a_plugins_directory_is_one_plain_segment() {
+    for plain in ["plugins", "tools-plugins", "my_plugins", "p2"] {
+        assert!(is_plain_directory_name(plain), "{plain}");
+    }
+    for not_plain in ["", "-plugins", "a/b", "..", "a b"] {
+        assert!(!is_plain_directory_name(not_plain), "{not_plain}");
+    }
+}
+
+#[test]
+fn check_warns_of_an_agent_field_each_harness_spells_its_own_way() -> Result<()> {
+    let _git_identity = git_identity();
+    let root = scratch("authoring-agent-model");
+    let market = scaffold_marketplace("tools", None, &root.join("market"))?;
+    let plugin = scaffold_plugin(
+        &market,
+        "greet",
+        None,
+        None,
+        &ScaffoldCapabilities::default(),
+    )?;
+    fs::create_dir_all(plugin.join("agents")).unwrap();
+    fs::write(
+        plugin.join("agents/review.md"),
+        "---\nname: review\ndescription: Reviews the diff\nmodel: haiku\n---\nBody.\n",
+    )
+    .unwrap();
+
+    let report = check_plugin(&plugin)?;
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains(&native("agents/review.md"))
+                && warning.contains("`model`")),
+        "{:?}",
+        report.warnings
+    );
     fs::remove_dir_all(&root).expect("teardown");
     Ok(())
 }

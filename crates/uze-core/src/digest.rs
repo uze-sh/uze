@@ -382,4 +382,12 @@ mod tests {
         assert_eq!(short_hex(b"uze"), short_hex(b"uze"));
         assert_ne!(short_hex(b"uze"), short_hex(b"uze "));
     }
+
+    #[test]
+    fn a_secret_is_recorded_as_its_sha256() {
+        assert_eq!(
+            secret_sha256("abc"),
+            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 }

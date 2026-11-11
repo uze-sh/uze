@@ -45,6 +45,12 @@ const PORTABLE: &[&str] = &[
     "xargs -d , echo < list.txt",
     "git ls-files -z | xargs -0 rm",
     "git ls-files '*.orig' | xargs rm -f",
+    "echo -",
+    "set -o errexit",
+    "test foo",
+    "echo a[]",
+    "cargo test 2> errors.log | cat",
+    "cargo test >&1 | cat",
 ];
 
 #[test]
@@ -239,6 +245,68 @@ const REFUSED: &[(&str, &str, usize, Option<Divergence>)] = &[
         Some(Divergence::ExpandedPattern),
     ),
     ("CI=* make", "*", 4, Some(Divergence::ExpandedPattern)),
+    // A word `xargs` hands its delimiter is not the command it runs.
+    (
+        "xargs -d , echo -n < list.txt",
+        "echo -n",
+        12,
+        Some(Divergence::EchoFlag),
+    ),
+    (
+        "set -o nounset",
+        "-o nounset",
+        5,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    // Quoting a flag does not stop a builtin reading it as one.
+    ("echo \"-n\" done", "echo -n", 1, Some(Divergence::EchoFlag)),
+    (
+        "echo x{a,$(head -1 VERSION)}",
+        "-1",
+        17,
+        Some(Divergence::UnsupportedFlag),
+    ),
+    // Quotes and escapes hide a `&` or a `${` from both shells, and only
+    // the quote that opened them closes them.
+    ("echo 'a&b' &", "&", 12, Some(Divergence::Background)),
+    ("echo \"a&b\" &", "&", 12, Some(Divergence::Background)),
+    ("echo \\& x &", "&", 11, Some(Divergence::Background)),
+    ("echo \"it's\" &", "&", 13, Some(Divergence::Background)),
+    ("echo 'say \"hi' &", "&", 16, Some(Divergence::Background)),
+    ("echo '\\' &", "&", 10, Some(Divergence::Background)),
+    ("make |& cat &", "&", 13, Some(Divergence::Background)),
+    ("echo '\"' ${X}", "${", 10, Some(Divergence::BraceParameter)),
+    ("echo '\\' ${X}", "${", 10, Some(Divergence::BraceParameter)),
+    (
+        "echo '*.md' && ls *.md",
+        "*.md",
+        19,
+        Some(Divergence::CaselessGlob),
+    ),
+    (
+        "echo '*.md' \\\" && ls *.md",
+        "*.md",
+        22,
+        Some(Divergence::CaselessGlob),
+    ),
+    (
+        "echo \"it's *.md\" && ls *.md",
+        "*.md",
+        24,
+        Some(Divergence::CaselessGlob),
+    ),
+    (
+        "echo 'say \"*.md' && ls *.md",
+        "*.md",
+        24,
+        Some(Divergence::CaselessGlob),
+    ),
+    (
+        "echo '\\' '*.md' *.md",
+        "*.md",
+        17,
+        Some(Divergence::CaselessGlob),
+    ),
 ];
 
 #[test]
@@ -395,6 +463,12 @@ fn a_flag_the_shell_expands_is_refused_when_it_runs() {
         1
     );
     assert!(!directory.path().join("b").exists(), "nothing was copied");
+}
+
+#[test]
+fn a_line_run_returns_its_exit_status() {
+    let directory = uze_testkit::temp::TempDir::new("portable-shell-run");
+    assert_eq!(run("exit 3", directory.path()), 3);
 }
 
 #[test]

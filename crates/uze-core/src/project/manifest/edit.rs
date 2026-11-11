@@ -737,6 +737,140 @@ marketplaces:
     }
 
     #[test]
+    fn holds_answers_for_a_dotted_path() {
+        let document = open(AUTHORED);
+        assert!(document.holds("workspace.delivery"));
+        assert!(document.holds("marketplaces.ai"));
+        assert!(!document.holds("workspace.slots"));
+        assert!(!document.holds("marketplaces.tools"));
+    }
+
+    #[test]
+    fn removing_one_of_two_items_keeps_the_other_and_the_last_takes_the_key() {
+        let mut document =
+            open("marketplaces:\n  ai:\n    path: ../ai\n    plugins: [flow, review]\n");
+        document
+            .remove_from("marketplaces.ai.plugins", "flow")
+            .unwrap();
+        let plugins = reparsed(&document)["marketplaces"]["ai"]["plugins"].clone();
+        assert_eq!(
+            plugins.as_sequence().map(|items| items.len()),
+            Some(1),
+            "{}",
+            document.source()
+        );
+        assert_eq!(plugins[0].as_str(), Some("review"));
+
+        document
+            .remove_from("marketplaces.ai.plugins", "review")
+            .unwrap();
+        let after = reparsed(&document);
+        assert!(
+            after["marketplaces"]["ai"].get("plugins").is_none(),
+            "{}",
+            document.source()
+        );
+        assert_eq!(after["marketplaces"]["ai"]["path"].as_str(), Some("../ai"));
+    }
+
+    #[test]
+    fn replacing_a_block_with_a_block_keeps_its_place_among_its_neighbours() {
+        let mut document = open(
+            "marketplaces:\n  ai:\n    path: ../ai\n    ref: v0.3.1\n  tools:\n    path: ../tools\n",
+        );
+        document
+            .upsert("marketplaces", "ai", &value("path: ../ai\nref: v0.4.0\n"))
+            .unwrap();
+        let after = document.source();
+        let ai = after.find("ai:").unwrap();
+        let tools = after.find("tools:").unwrap();
+        assert!(ai < tools, "{after}");
+        assert!(after.contains("v0.4.0"), "{after}");
+    }
+
+    /// The scaffold once wrote a root key as a heading over commented
+    /// choices; the first choice made lands under that heading.
+    #[test]
+    fn the_first_entry_under_an_empty_root_key_lands_directly_beneath_it() {
+        for heading in ["workspace:", "workspace:   # how agents run"] {
+            let mut document = open(&format!(
+                "# The project's agents.\n{heading}\n  # slots: 2\n\nmarketplaces:\n  ai: ../ai\n"
+            ));
+            document.set_key(Section::Workspace, "slots", &4).unwrap();
+            let after = document.source();
+            assert_eq!(after.matches("workspace:").count(), 1, "{after}");
+            assert!(
+                after.contains(&format!("{heading}\n  slots: 4\n  # slots: 2\n")),
+                "{after}"
+            );
+            assert!(after.starts_with("# The project's agents.\n"), "{after}");
+            assert_eq!(reparsed(&document)["workspace"]["slots"].as_u64(), Some(4));
+        }
+    }
+
+    #[test]
+    fn an_empty_root_key_on_the_last_line_without_a_newline_is_filled() {
+        let mut document = open("# The project's agents.\nworkspace:");
+        document.set_key(Section::Workspace, "slots", &4).unwrap();
+        assert_eq!(
+            reparsed(&document)["workspace"]["slots"].as_u64(),
+            Some(4),
+            "{}",
+            document.source()
+        );
+    }
+
+    #[test]
+    fn a_created_mapping_ends_the_file_with_one_newline() {
+        let mut document = open("workspace:\n  delivery: pr\n");
+        document
+            .upsert("marketplaces", "ai", &value("path: ../ai\n"))
+            .unwrap();
+        let after = document.source();
+        assert!(
+            after.ends_with('\n') && !after.ends_with("\n\n"),
+            "{after:?}"
+        );
+    }
+
+    #[test]
+    fn a_block_appended_after_an_unterminated_line_starts_on_its_own_line() {
+        let mut document = open("workspace:\n  delivery: pr");
+        document
+            .append_block("marketplaces:\n  ai: ../ai\n")
+            .unwrap();
+        assert_eq!(
+            document.source(),
+            "workspace:\n  delivery: pr\nmarketplaces:\n  ai: ../ai\n"
+        );
+
+        let mut terminated = open("workspace:\n  delivery: pr\n");
+        terminated
+            .append_block("marketplaces:\n  ai: ../ai\n")
+            .unwrap();
+        assert_eq!(
+            terminated.source(),
+            "workspace:\n  delivery: pr\nmarketplaces:\n  ai: ../ai\n"
+        );
+    }
+
+    #[test]
+    fn pushing_onto_an_entry_with_no_list_creates_the_list() {
+        let mut document = open("marketplaces:\n  ai:\n    path: ../ai\n");
+        document
+            .push_unique("marketplaces.ai.plugins", "flow")
+            .unwrap();
+        let after = reparsed(&document);
+        assert_eq!(
+            after["marketplaces"]["ai"]["plugins"][0].as_str(),
+            Some("flow"),
+            "{}",
+            document.source()
+        );
+        assert_eq!(after["marketplaces"]["ai"]["path"].as_str(), Some("../ai"));
+    }
+
+    #[test]
     fn a_hash_inside_a_comment_is_not_mistaken_for_a_shape_we_refuse() {
         let text = "# uses <<: and &anchors in prose\nworkspace:\n  delivery: pr\n";
         assert_eq!(open(text).source(), text);

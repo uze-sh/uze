@@ -678,6 +678,30 @@ mod tests {
     }
 
     #[test]
+    fn a_private_write_publishes_the_payload() {
+        let root = uze_testkit::temp::scratch("write-private");
+        let path = root.join("state").join("token.json");
+        write_atomic_private(&path, b"secret").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"secret");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Only a platform that grants no links reads as one: any other failure
+    /// is the write that failed.
+    // Unix always grants a link, so a refusal here is the write failing;
+    // Windows without developer mode would answer any link as unsupported.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_that_cannot_be_written_is_a_write_error() {
+        let root = uze_testkit::temp::scratch("symlink-write-error");
+        let outcome = create_symlink(&root.join("target"), &root.join("absent").join("link"));
+        assert!(
+            matches!(outcome, Err(UzeError::Write { .. })),
+            "{outcome:?}"
+        );
+    }
+
+    #[test]
     fn lock_blocks_a_concurrent_mutation_attempt() {
         let root = uze_testkit::temp::scratch("lock");
         let home = UzeHome::at(&root);

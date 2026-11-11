@@ -1273,6 +1273,22 @@ mod tests {
         let _ = fs::remove_dir_all(&scratch);
     }
 
+    #[test]
+    fn a_packages_sources_name_the_home_and_the_package_they_belong_to() {
+        let home = UzeHome::at(absolute("sources-of-a-package"));
+        let id = PackageId::from_qualified("flow@ai", Path::new("plugin.json")).unwrap();
+
+        let (found, found_id) = UzeHome::installed_package_of(&home.plugin_dir(&id)).unwrap();
+
+        assert_eq!(found.root(), home.root());
+        assert_eq!(found_id, id);
+        assert_eq!(
+            UzeHome::installed_package_of(&home.root().join("elsewhere").join("ai").join("flow"))
+                .map(|(home, _)| home.root().to_path_buf()),
+            None
+        );
+    }
+
     /// A directory every platform reads as absolute.
     fn absolute(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(name)

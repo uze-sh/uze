@@ -221,4 +221,11 @@ mod tests {
         );
         assert!(delivered.ends_with("---\nRun it.\n"));
     }
+
+    #[test]
+    fn an_empty_frontmatter_is_an_empty_mapping() {
+        let (mapping, body) = frontmatter_of("---\n\n---\nbody\n").expect("an empty head parses");
+        assert!(mapping.is_empty());
+        assert_eq!(body, "body\n");
+    }
 }
