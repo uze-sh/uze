@@ -944,4 +944,60 @@ mod tests {
                 .all(|execution| execution.code.as_ref().unwrap().digest == PACKAGE)
         );
     }
+
+    #[test]
+    fn each_kind_of_execution_is_labelled_for_the_person_asked() {
+        for (kind, label) in [
+            (ExecutionKind::Mcp, "MCP"),
+            (ExecutionKind::Hook, "Hook"),
+            (ExecutionKind::Skill, "Skill"),
+            (ExecutionKind::Agent, "Agent"),
+            (ExecutionKind::Requirement, "Requirement"),
+            (ExecutionKind::Plugin, "Plugin"),
+        ] {
+            assert_eq!(kind.label(), label);
+        }
+    }
+
+    #[test]
+    fn an_execution_only_the_vendor_files_declare_is_asked_about() {
+        let plugin = ExecutableCapability::new(
+            ExecutionKind::Plugin,
+            "bin".to_owned(),
+            "executables".to_owned(),
+        );
+        let executions = package_executions(&[], &[], vec![plugin], PACKAGE);
+        assert_eq!(executions.len(), 1);
+        assert_eq!(executions[0].kind, ExecutionKind::Plugin);
+    }
+
+    #[test]
+    fn a_frontmatter_block_ends_at_its_next_sibling_and_a_quoted_key_is_read() {
+        let head = "harness:\n  claude:\n    hooks:\n      Stop: []\n    model: haiku\n";
+        assert_eq!(
+            frontmatter_blocks(head, &["hooks"]),
+            vec!["hooks: Stop: []".to_owned()]
+        );
+        assert_eq!(
+            frontmatter_blocks("\"allowed-tools\": Bash\nname: a\n", &["allowed-tools"]),
+            vec!["\"allowed-tools\": Bash".to_owned()]
+        );
+    }
+
+    #[test]
+    fn an_inline_command_is_read_to_its_closing_quote_and_no_further() {
+        assert_eq!(
+            inline_commands("Run !`echo !` then `ls`.\n"),
+            vec!["echo !".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_word_climbing_out_of_the_package_names_none_of_its_files() {
+        let root = uze_testkit::temp::scratch("trust-climbing");
+        std::fs::write(root.join("helper.sh"), "true\n").unwrap();
+        assert!(code_identity(&root, ["../helper.sh"].into_iter()).is_none());
+        assert!(code_identity(&root, ["helper.sh"].into_iter()).is_some());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

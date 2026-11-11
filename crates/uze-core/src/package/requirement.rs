@@ -445,4 +445,55 @@ mod tests {
         }
         assert_eq!(Version::find("no digits here"), None);
     }
+
+    #[test]
+    fn a_source_reads_as_who_needs_the_requirement() {
+        assert_eq!(RequirementSource::Author.to_string(), "the plugin");
+        assert_eq!(
+            RequirementSource::Artifact {
+                what: "the hook wrapper".to_owned()
+            }
+            .to_string(),
+            "the hook wrapper"
+        );
+        assert_eq!(
+            RequirementSource::Hook {
+                id: "guard".to_owned(),
+                fails_closed: true
+            }
+            .to_string(),
+            "hook `guard`"
+        );
+    }
+
+    #[test]
+    fn a_set_with_nothing_declared_or_generated_is_empty() {
+        assert!(EffectiveRequirements::of(&[], std::iter::empty()).is_empty());
+        assert!(
+            !EffectiveRequirements::of(&[requirement("jq", None)], std::iter::empty()).is_empty()
+        );
+    }
+
+    #[test]
+    fn a_minimum_stated_later_binds_a_requirement_that_had_none() {
+        let set = EffectiveRequirements::from_sources([
+            (requirement("python3", None), RequirementSource::Author),
+            (
+                requirement("python3", Some(">=3.10")),
+                RequirementSource::Artifact {
+                    what: "the guard".to_owned(),
+                },
+            ),
+        ]);
+        assert_eq!(
+            set.iter().next().unwrap().requirement.version.as_deref(),
+            Some(">=3.10")
+        );
+    }
+
+    #[test]
+    fn different_versions_are_not_equal() {
+        assert_ne!(Version::constraint("1.6"), Version::constraint("1.7"));
+        assert_ne!(Version::constraint("1.6"), Version::constraint("1.6.1"));
+    }
 }
