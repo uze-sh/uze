@@ -1069,4 +1069,77 @@ mod tests {
             );
         }
     }
+
+    /// A retired path is still a place in the home, even where its tier
+    /// was another layout's: the carry and the collectors find it there.
+    #[test]
+    fn every_retired_path_is_a_place_in_the_home() {
+        let home = UzeHome::at("/uze-home");
+        for owned in UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.standing == Standing::Retired)
+        {
+            let path = owned.path(&home);
+            assert!(
+                Tier::of(&home, &path).is_some(),
+                "{} at {}",
+                owned.name,
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn a_theme_is_the_operators_text_and_an_unknown_subtree_is_no_tier() {
+        let home = UzeHome::at("/uze-home");
+        assert_eq!(
+            Tier::of(&home, &home.themes_dir().join("dusk.toml")),
+            Some(Tier::Authored)
+        );
+        assert_eq!(
+            Tier::of(&home, &home.root().join("unknown").join("file")),
+            None
+        );
+    }
+
+    #[test]
+    fn each_tier_is_labelled_by_its_own_name() {
+        for tier in Tier::ALL {
+            assert_eq!(tier.label(), format!("{tier:?}").to_lowercase());
+        }
+    }
+
+    #[test]
+    fn a_path_lies_under_its_ancestors_only() {
+        let home = UzeHome::at("/uze-home");
+        let path = |text: &str| text.split('/').map(str::to_owned).collect::<Vec<_>>();
+        let conversation = UzeHome::owned_path("conversation_path").unwrap();
+        assert!(conversation.lies_under(&home, &path("state")));
+        assert!(!conversation.lies_under(&home, &path("state/projects/abc/conversations/a1.json")));
+        assert!(!conversation.lies_under(&home, &path("cache/projects")));
+    }
+
+    #[test]
+    fn several_placeholders_in_one_segment_each_stand_for_their_own_text() {
+        assert!(segment_matches("{x}-{y}-{z}", "a-b-c"));
+        assert!(!segment_matches("{x}-{y}-{z}", "a-b"));
+    }
+
+    /// What the release floor reads of a retired path is what its entry
+    /// declares: swept, bounded and spelling its own names.
+    #[test]
+    fn the_floor_and_the_collectors_see_what_a_retired_entry_declares() {
+        let detection = UzeHome::owned_path("retired_detection_cache_path").unwrap();
+        assert!(detection.disposable);
+        assert!(UzeHome::disposable_paths().any(|owned| owned.name == detection.name));
+        assert!(matches!(detection.lasts, Lasts::Until(_)));
+        assert_eq!(detection.spelled, ["harness_detection.json"]);
+
+        let floor = UzeHome::earlier();
+        assert!(floor.iter().any(|entry| entry.name == detection.name));
+        assert!(
+            !floor.iter().any(|entry| entry.name == "conversation_path"),
+            "a current path is no earlier release's"
+        );
+    }
 }

@@ -539,6 +539,67 @@ mod tests {
         );
     }
 
+    /// A shim is a link to the `uze` binary, which lies outside the shims
+    /// directory: only skipping the directory itself keeps it from being
+    /// taken for the harness, however the entry spells that directory.
+    #[test]
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    fn a_shims_dir_spelled_another_way_is_skipped_though_its_shims_link_out() {
+        let root = uze_testkit::temp::scratch("resolve-shims-spelled");
+        let shims_dir = root.join("shims");
+        let launched = root.join("launched").join("uze");
+        let elsewhere = root.join("elsewhere");
+        let real_bin_dir = root.join("real-bin");
+        for dir in [
+            &shims_dir,
+            &elsewhere,
+            &real_bin_dir,
+            &root.join("launched"),
+        ] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        make_executable(&launched);
+        make_executable(&real_bin_dir.join("claude"));
+        std::os::unix::fs::symlink(&launched, shims_dir.join("claude")).unwrap();
+        let spelled_otherwise = elsewhere.join("shims");
+        std::os::unix::fs::symlink(&shims_dir, &spelled_otherwise).unwrap();
+
+        assert_eq!(
+            resolve_real_executable_in(
+                [spelled_otherwise, real_bin_dir.clone()],
+                &["claude"],
+                &shims_dir
+            ),
+            Some(real_bin_dir.join("claude").canonical().unwrap())
+        );
+    }
+
+    /// Git is on the `PATH` of every machine this suite runs on.
+    #[test]
+    fn a_program_on_this_processs_path_is_resolved() {
+        let shims_dir = uze_testkit::temp::scratch("resolve-on-path").join("shims");
+        assert!(resolve_real_executable(&["git"], &shims_dir).is_some());
+    }
+
+    #[test]
+    fn a_passthrough_adds_nothing_and_a_note_says_why_it_fell_back() {
+        assert!(HarnessRuntimeContribution::passthrough().is_passthrough());
+        let noted = HarnessRuntimeContribution::passthrough_with_note("projection not written");
+        assert!(noted.is_passthrough());
+        assert_eq!(noted.note.as_deref(), Some("projection not written"));
+        let with_args = HarnessRuntimeContribution {
+            extra_args: vec!["--flag".into()],
+            ..HarnessRuntimeContribution::default()
+        };
+        assert!(!with_args.is_passthrough());
+        let with_env = HarnessRuntimeContribution {
+            extra_env: vec![("NAME".into(), "value".into())],
+            ..HarnessRuntimeContribution::default()
+        };
+        assert!(!with_env.is_passthrough());
+    }
+
     #[test]
     // Its stand-in programs are POSIX scripts (`make_executable`).
     #[cfg(unix)]
@@ -627,6 +688,18 @@ mod tests {
             1
         );
 
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn a_marker_that_no_longer_names_the_root_is_written_again() {
+        let (project, home) = projected("projection-marker-repaired", "fake-harness");
+        let project_dir = home.runtime_project_dir(&project_id_for(&project));
+        fs::write(project_dir.join(PROJECTION_MARKER), "not a marker").unwrap();
+
+        prepare_projection(&home, "fake-harness", &project).unwrap();
+
+        assert_eq!(projection_root(&project_dir), Some(project.clone()));
         let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 
