@@ -72,4 +72,15 @@ exclude_re = [
   'uze-core/src/delivery/persistence\.rs.*replace < with <= in try_lock_exclusive_briefly$',
   # The bit set is already clear after the mask, so xor sets it as or does.
   'uze-core/src/delivery/session\.rs.*replace \| with \^ in format_uuid_v4$',
+  # uze-core project/
+  # Its one caller runs it on a directory it has just created, so the new paths never exist yet.
+  'uze-core/src/project/earlier\.rs.*replace && with \|\| in carry_across_the_move$',
+  # The project marker is at its first shape with no ladder: it has no rungs to drop.
+  'uze-core/src/project/record\.rs.*replace rungs -> Vec<uze_document::earlier::Earlier> with vec!\[\]$',
+  # A root block is dropped only when its key is the document's one root key, so every margin line but a comment opens it.
+  'uze-core/src/project/manifest/edit\.rs.*replace opens_root_key -> bool with true$',
+  # A placeholder holds no digit or a character no secret is made of, so the checks after it refuse it anyway.
+  'uze-core/src/project/memory/credentials\.rs.*replace \|\| with && in looks_assigned$',
+  # One line cannot be both a begin and an end marker, so an end never sits on its begin.
+  'uze-core/src/project/text_region\.rs.*replace > with >= in scan$',
 ]
