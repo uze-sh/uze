@@ -1330,3 +1330,44 @@ fn a_sprites_frames_divide_its_sheet_and_its_columns_fit_across() {
     );
     assert!(sprite_refusal("sprite-gif", 4, 5, b"GIF89a").contains("is not a PNG"));
 }
+
+#[test]
+fn a_diagnostic_about_the_whole_file_reads_as_file_and_message() {
+    assert_eq!(
+        Diagnostic::whole("board.uze", "holds no `<view>`", None).to_string(),
+        "board.uze: holds no `<view>`"
+    );
+}
+
+/// A component's `<view>` is held to the bound on its own, which a view of
+/// exactly that size meets.
+#[test]
+fn a_view_of_exactly_the_bound_is_read_and_one_byte_more_is_not() {
+    let component = |size: usize| format!("<view>\n{}\n</view>\n", "a".repeat(size - 1));
+    assert!(super::view_text("board.uze", component(bounded::FILE_MAX)).is_ok());
+    let refused = super::view_text("board.uze", component(bounded::FILE_MAX + 1)).unwrap_err();
+    assert!(
+        refused[0]
+            .message
+            .contains("larger than the 64 KiB a view may be"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_test_file_is_read_from_the_extension_or_the_editor_holding_it() {
+    let scratch = TempDir::new("test-file-read");
+    std::fs::create_dir_all(scratch.path().join("tests")).unwrap();
+    std::fs::write(scratch.path().join("tests/panel.test.kdl"), A_TEST).unwrap();
+
+    let read =
+        compile_test(scratch.path(), "tests/panel.test.kdl", &Overlay::new()).expect("decodes");
+    assert_eq!(read.tests[0].name, "the next step is offered");
+
+    let held = Overlay::from([(
+        "tests/panel.test.kdl".to_owned(),
+        A_TEST.replace("the next step is offered", "held by the editor"),
+    )]);
+    let read = compile_test(scratch.path(), "tests/panel.test.kdl", &held).expect("decodes");
+    assert_eq!(read.tests[0].name, "held by the editor");
+}
