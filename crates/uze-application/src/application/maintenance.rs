@@ -743,6 +743,82 @@ impl Health<'_> {
     }
 }
 
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+
+    fn needs_you() -> MaintenanceOutcome {
+        MaintenanceOutcome::NeedsHumanAction {
+            plugin: "flow@ai".to_owned(),
+            integration: None,
+            receipt: None,
+            state: None,
+            reason: "the receipt is drifted".to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_repaired_count_is_what_maintenance_put_right_and_nothing_it_left() {
+        let report = MaintenanceReport {
+            outcomes: vec![
+                MaintenanceOutcome::Repaired {
+                    plugin: "flow@ai".to_owned(),
+                    integration: "fixture".to_owned(),
+                    receipt: "skill".to_owned(),
+                },
+                MaintenanceOutcome::OrphanCleaned {
+                    plugin: "flow".to_owned(),
+                    ledger_keys: vec!["skill".to_owned()],
+                },
+                MaintenanceOutcome::PinRestored {
+                    plugin: "flow@ai".to_owned(),
+                    commit: "abc1234".to_owned(),
+                },
+                MaintenanceOutcome::UpdateAvailable {
+                    plugin: "uze@uze".to_owned(),
+                },
+                needs_you(),
+            ],
+            collected: Vec::new(),
+        };
+        assert_eq!(report.repaired_count(), 3);
+        assert_eq!(MaintenanceReport::default().repaired_count(), 0);
+    }
+
+    #[test]
+    fn an_outcome_reads_as_a_sentence_carrying_its_reason() {
+        let rendered = needs_you().to_string();
+        assert_eq!(rendered, "flow@ai needs you: the receipt is drifted");
+        let unavailable = MaintenanceOutcome::Unavailable {
+            integration: "fixture".to_owned(),
+            reason: "it timed out".to_owned(),
+        };
+        assert_eq!(
+            unavailable.to_string(),
+            "fixture could not be checked: it timed out"
+        );
+    }
+
+    #[test]
+    fn the_projection_of_a_project_that_is_gone_is_swept_and_named() {
+        let base = uze_testkit::temp::scratch("maintenance-projections");
+        let app = crate::UzeApplication::new(uze_core::UzeHome::at(base.join("home")), Vec::new());
+        let orphan = app.home.runtime_projects_dir().join("project-gone");
+        std::fs::create_dir_all(&orphan).unwrap();
+
+        assert_eq!(
+            app.health().prune_runtime_projections(),
+            vec!["project-gone".to_owned()]
+        );
+        assert!(!orphan.exists());
+        assert!(
+            app.health().prune_runtime_projections().is_empty(),
+            "a second sweep finds nothing left"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+}
+
 /// Each case restores a receipt-owned symlink, which a Windows account
 /// without the right to create one never gets (delivery copies there).
 #[cfg(all(test, unix))]

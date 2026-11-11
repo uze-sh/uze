@@ -219,7 +219,7 @@ fn tier_bytes(home: &UzeHome, tier: Tier) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
 
@@ -299,6 +299,26 @@ mod tests {
         assert!(
             not_disposable.is_empty(),
             "not disposable: {not_disposable:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Each of the application's collectors reports under a name of its
+    /// own, so what one removed is never read as another's.
+    #[test]
+    fn each_collector_reports_under_a_name_of_its_own() {
+        let root = uze_testkit::temp::scratch("collection-names");
+        let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+        let names: Vec<&str> = app
+            .own_collectors()
+            .iter()
+            .map(|collector| collector.name())
+            .collect();
+        assert!(names.iter().all(|name| !name.is_empty()), "{names:?}");
+        assert_eq!(
+            names.iter().collect::<BTreeSet<_>>().len(),
+            names.len(),
+            "{names:?}"
         );
         let _ = std::fs::remove_dir_all(root);
     }
