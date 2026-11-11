@@ -936,6 +936,32 @@ fn agent_events_actions_and_the_agents_source_need_their_grants() {
 }
 
 #[test]
+fn a_sprites_frame_sides_and_columns_stay_within_their_bounds() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let sprite = |frame: &str, columns: &str| {
+        format!(
+            r#"sprite "pet" sheet="pet.png" frame="{frame}" columns={columns} fallback="idle" {{
+    state "idle" frames="0-3" fps=4
+}}"#
+        )
+    };
+    decoded(&with(&sprite("1x1024", "256")));
+    for frame in ["0x32", "32x0", "1025x32", "32x1025"] {
+        assert!(
+            first_message(&with(&sprite(frame, "4"))).contains("is not a frame size"),
+            "{frame}"
+        );
+    }
+    for columns in ["0", "257"] {
+        assert!(
+            first_message(&with(&sprite("32x32", columns)))
+                .contains("`columns` is a whole number from 1 to 256"),
+            "{columns}"
+        );
+    }
+}
+
+#[test]
 fn a_sprite_and_a_resident_source_are_declared_and_checked() {
     let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
     let sprite = r#"sprite "pet" sheet="pet.png" frame="32x32" columns=4 fallback="idle" {

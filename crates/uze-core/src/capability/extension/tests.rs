@@ -1248,3 +1248,85 @@ fn an_icon_names_the_hosts_or_one_the_manifest_declares() {
     let dir = plugin("icon-declared", &[("board", &gsd_files(&declared, board))]);
     compile_in(dir.path(), "board").expect("a declared icon and one the data names both compile");
 }
+
+fn png_head(width: u32, height: u32) -> Vec<u8> {
+    let mut head = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    head.extend(width.to_be_bytes());
+    head.extend(height.to_be_bytes());
+    head.extend([8, 6, 0, 0, 0]);
+    head
+}
+
+/// `MANIFEST` with a 32x32 sprite of `columns` columns whose last state
+/// plays `last` as its final frame, and a sheet of `sheet` bytes.
+fn compile_sprite(
+    label: &str,
+    columns: u32,
+    last: u32,
+    sheet: &[u8],
+) -> Result<(), Vec<Diagnostic>> {
+    let manifest = format!(
+        r#"{MANIFEST}sprite "pet" sheet="pet.png" frame="32x32" columns={columns} fallback="idle" {{
+    state "idle" frames="0-1" fps=4
+    state "working" frames="2,{last}" fps=12
+}}
+"#
+    );
+    let dir = plugin(label, &[("gsd-band", &gsd_files(&manifest, BOARD))]);
+    let extension = dir.join(EXTENSIONS_DIR).join("gsd-band");
+    std::fs::write(extension.join("pet.png"), sheet).unwrap();
+    let from_disk = compile_in(dir.path(), "gsd-band").map(|_| ());
+    let loaded = Loaded::read(&extension).expect("within the bounds");
+    let from_memory = compile_loaded(identity("gsd-band"), &loaded).map(|_| ());
+    assert_eq!(
+        from_disk, from_memory,
+        "the disk and the loaded bytes agree"
+    );
+    from_disk
+}
+
+fn sprite_refusal(label: &str, columns: u32, last: u32, sheet: &[u8]) -> String {
+    let errors = compile_sprite(label, columns, last, sheet).expect_err("refused");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    errors[0].message.clone()
+}
+
+/// A 128x64 sheet of 32x32 frames holds four columns of two rows: frames
+/// 0 to 7.
+#[test]
+fn a_sprite_plays_only_frames_its_sheet_holds() {
+    assert_eq!(
+        compile_sprite("sprite-fits", 4, 7, &png_head(128, 64)),
+        Ok(())
+    );
+    assert_eq!(
+        compile_sprite("sprite-narrow", 3, 5, &png_head(128, 64)),
+        Ok(())
+    );
+    assert!(
+        sprite_refusal("sprite-beyond", 4, 8, &png_head(128, 64))
+            .contains("plays frame 8, and `pet.png` holds 8")
+    );
+    assert!(
+        sprite_refusal("sprite-beyond-narrow", 3, 6, &png_head(128, 64))
+            .contains("plays frame 6, and `pet.png` holds 6")
+    );
+}
+
+#[test]
+fn a_sprites_frames_divide_its_sheet_and_its_columns_fit_across() {
+    for (width, height) in [(100, 64), (128, 50)] {
+        let message = sprite_refusal("sprite-undivided", 3, 5, &png_head(width, height));
+        assert!(
+            message.contains(&format!(
+                "is {width}x{height}, which 32x32 frames do not divide"
+            )),
+            "{message}"
+        );
+    }
+    assert!(
+        sprite_refusal("sprite-columns", 4, 5, &png_head(96, 64))
+            .contains("holds 3 columns of frames, not 4")
+    );
+    assert!(sprite_refusal("sprite-gif", 4, 5, b"GIF89a").contains("is not a PNG"));
+}
