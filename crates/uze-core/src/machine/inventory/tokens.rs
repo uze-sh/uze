@@ -131,4 +131,31 @@ mod tests {
     fn a_file_too_large_to_read_is_estimated_from_its_size() {
         assert_eq!(estimate_from_size(4_000), 1_000);
     }
+
+    /// The rates the module states, one run of each class at a time.
+    #[test]
+    fn each_kind_of_run_costs_what_the_estimate_states() {
+        assert_eq!(
+            estimate_tokens("make code that reads well and then ship it soon"),
+            10,
+            "a short Latin word is a token"
+        );
+        assert!(
+            estimate_tokens("internationalization") > 1,
+            "a long word is a little more"
+        );
+        assert_eq!(estimate_tokens("7"), 1);
+        assert_eq!(estimate_tokens("123456"), 2, "digits go three to a token");
+        assert_eq!(estimate_tokens("123456789"), 3);
+        assert_eq!(
+            estimate_tokens("--------"),
+            4,
+            "punctuation goes two characters to a token"
+        );
+        assert_eq!(
+            estimate_tokens("приветствие"),
+            5,
+            "another script's word is a token per three letters, and one more"
+        );
+    }
 }

@@ -405,3 +405,308 @@ fn five_hundred_resources_are_assembled_within_budget() {
     assert_eq!(overview.resources.len(), 500);
     assert!(took < budget, "took {took:?}, budget {budget:?}");
 }
+
+fn rule(root: &Path, relative: &str, content: &[u8]) -> FoundResource {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, content).unwrap();
+    FoundResource::new(ResourceKind::Rule, "AGENTS.md", Definition::Whole(path))
+}
+
+fn listed(root: &Path, per_session: &str, when_used: Option<&str>) -> FoundResource {
+    FoundResource::new(
+        ResourceKind::Agent,
+        "reviewer",
+        Definition::Listed {
+            file: root.join("agents.toml"),
+            per_session: per_session.to_owned(),
+            when_used: when_used.map(str::to_owned),
+        },
+    )
+}
+
+/// How many rows two harnesses' copies of one resource make: one when they
+/// say the same thing, two when they differ.
+fn rows_of(a: FoundResource, b: FoundResource) -> usize {
+    assemble(vec![harness("a", vec![a]), harness("b", vec![b])], &[])
+        .resources
+        .len()
+}
+
+#[test]
+fn a_listed_definition_is_measured_by_the_text_its_integration_hands_over() {
+    let root = uze_testkit::temp::TempDir::new("inventory-listed");
+    let overview = assemble(
+        vec![harness(
+            "a",
+            vec![listed(
+                root.path(),
+                "Reviews code.",
+                Some("Read the diff, then say what is wrong with it."),
+            )],
+        )],
+        &[],
+    );
+    let row = &overview.resources[0];
+    assert!(row.per_session.unwrap() > 0);
+    assert!(row.when_used.unwrap() > 0);
+    assert!(row.checked, "a definition read is a fact checked");
+}
+
+#[test]
+fn copies_by_hand_are_told_apart_by_what_they_say_however_they_are_defined() {
+    let root = uze_testkit::temp::TempDir::new("inventory-compared");
+    let a = root.join("a");
+    let b = root.join("b");
+    assert_eq!(
+        rows_of(
+            listed(&a, "Reviews code.", None),
+            listed(&b, "Reviews code.", None)
+        ),
+        1
+    );
+    assert_eq!(
+        rows_of(
+            listed(&a, "Reviews code.", None),
+            listed(&b, "Reviews prose.", None)
+        ),
+        2
+    );
+    assert_eq!(
+        rows_of(
+            rule(root.path(), "a/AGENTS.md", b"Answer in English.\n"),
+            rule(root.path(), "b/AGENTS.md", b"Answer in Portuguese.\n")
+        ),
+        2
+    );
+    let bad = |relative: &str, text: &str| {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, text).unwrap();
+        FoundResource::new(ResourceKind::Skill, "bad", Definition::Markdown(path))
+    };
+    assert_eq!(
+        rows_of(
+            bad("a/skills/bad/SKILL.md", "---\nname: [one\n---\n"),
+            bad("b/skills/bad/SKILL.md", "---\nname: [two\n---\n")
+        ),
+        2
+    );
+}
+
+#[test]
+fn a_definition_of_some_kilobytes_is_read_whole() {
+    let root = uze_testkit::temp::TempDir::new("inventory-kilobytes");
+    let a = vec![b'a'; 10_000];
+    let b = vec![b'b'; 10_000];
+    assert_eq!(
+        rows_of(
+            rule(root.path(), "a/AGENTS.md", &a),
+            rule(root.path(), "b/AGENTS.md", &b)
+        ),
+        2,
+        "two files of one size that say different things are not one"
+    );
+}
+
+#[test]
+fn a_definition_at_the_read_limit_is_read_whole_and_one_past_it_is_measured() {
+    const MEBIBYTE: usize = 1024 * 1024;
+    let root = uze_testkit::temp::TempDir::new("inventory-read-limit");
+    assert_eq!(
+        rows_of(
+            rule(root.path(), "a/AGENTS.md", &vec![b'a'; MEBIBYTE]),
+            rule(root.path(), "b/AGENTS.md", &vec![b'b'; MEBIBYTE])
+        ),
+        2
+    );
+    let past = |relative: &str, size: usize| rule(root.path(), relative, &vec![b'x'; size]);
+    assert_eq!(
+        rows_of(
+            past("c/AGENTS.md", MEBIBYTE + 1),
+            past("d/AGENTS.md", MEBIBYTE + 2)
+        ),
+        2,
+        "too large to read, they are still told apart by their size"
+    );
+    let overview = assemble(
+        vec![harness("a", vec![past("e/AGENTS.md", 2 * MEBIBYTE)])],
+        &[],
+    );
+    assert!(overview.resources[0].per_session.unwrap() > 0);
+
+    let skill_path = root.join("f/skills/huge/SKILL.md");
+    fs::create_dir_all(skill_path.parent().unwrap()).unwrap();
+    fs::write(&skill_path, vec![b'x'; 2 * MEBIBYTE]).unwrap();
+    let huge = |path: &Path| {
+        FoundResource::new(
+            ResourceKind::Skill,
+            "huge",
+            Definition::Markdown(path.to_path_buf()),
+        )
+    };
+    let other_path = root.join("g/skills/huge/SKILL.md");
+    fs::create_dir_all(other_path.parent().unwrap()).unwrap();
+    fs::write(&other_path, vec![b'x'; 2 * MEBIBYTE + 1]).unwrap();
+    let overview = assemble(
+        vec![
+            harness("a", vec![huge(&skill_path)]),
+            harness("b", vec![huge(&other_path)]),
+        ],
+        &[],
+    );
+    assert_eq!(overview.resources.len(), 2);
+    assert!(overview.resources[0].when_used.unwrap() > 0);
+}
+
+#[test]
+fn a_definition_that_cannot_be_read_is_broken() {
+    let root = uze_testkit::temp::TempDir::new("inventory-unreadable");
+    let whole = FoundResource::new(
+        ResourceKind::Rule,
+        "AGENTS.md",
+        Definition::Whole(root.join("missing/AGENTS.md")),
+    );
+    let not_text = root.join("a/skills/binary/SKILL.md");
+    fs::create_dir_all(not_text.parent().unwrap()).unwrap();
+    fs::write(&not_text, [0xff, 0xfe, 0x00, 0x80]).unwrap();
+    let markdown = FoundResource::new(
+        ResourceKind::Skill,
+        "binary",
+        Definition::Markdown(not_text),
+    );
+    let overview = assemble(vec![harness("a", vec![whole, markdown])], &[]);
+    for row in &overview.resources {
+        assert_eq!(
+            row.status,
+            Status::Broken {
+                reason: "cannot be read".into()
+            },
+            "{}",
+            row.name
+        );
+    }
+}
+
+#[test]
+fn a_receipt_owns_only_what_lies_under_what_it_placed() {
+    let root = uze_testkit::temp::TempDir::new("inventory-receipt-elsewhere");
+    let found = skill(root.path(), "a/skills/review", "Review.");
+    let receipt = tree_receipt(
+        "a",
+        "git@uze",
+        &skill_dir(root.path(), "a/skills/git:commit"),
+    );
+    let overview = assemble(vec![harness("a", vec![found])], &[receipt]);
+    assert_eq!(overview.resources[0].origin, Origin::You);
+}
+
+#[test]
+fn a_hook_running_the_wrapper_uze_generated_is_uzes() {
+    let root = uze_testkit::temp::TempDir::new("inventory-hook-wrapper");
+    let wrapper = root.join("wrappers").join("guard.sh");
+    let found = FoundResource::new(
+        ResourceKind::Hook,
+        "guard",
+        Definition::Entry(root.join("settings.json")),
+    )
+    .running(Runs::Shell(format!("sh {}", wrapper.display())));
+    let receipt = AttachmentReceipt {
+        package_id: "guard@uze".into(),
+        resource_identity: None,
+        integration: "a".into(),
+        artifact: ManagedArtifact::HookConfigEntry {
+            config_file: root.join("settings.json"),
+            entry_name: "another-name".into(),
+            event: crate::capability::hook::HookEvent::PreToolUse,
+            expected: String::new(),
+            wrapper,
+        },
+    };
+    let overview = assemble(vec![harness("a", vec![found])], &[receipt]);
+    assert_eq!(
+        overview.resources[0].origin,
+        Origin::Uze {
+            package: "guard@uze".into()
+        }
+    );
+}
+
+#[test]
+fn copies_of_one_name_in_one_harness_each_have_their_own_id() {
+    let root = uze_testkit::temp::TempDir::new("inventory-same-name");
+    let copies: Vec<_> = ["first", "second", "third"]
+        .iter()
+        .map(|place| skill(root.path(), &format!("a/{place}/review"), place))
+        .collect();
+    let alone = assemble(vec![harness("a", vec![copies[0].clone()])], &[]).resources[0]
+        .id
+        .clone();
+    let overview = assemble(vec![harness("a", copies)], &[]);
+    let ids: std::collections::BTreeSet<_> = overview.resources.iter().map(|r| &r.id).collect();
+    assert_eq!(ids.len(), 3, "{ids:?}");
+    assert!(ids.contains(&alone), "the first keeps the id it has alone");
+}
+
+#[test]
+fn an_id_names_the_package_for_what_uze_delivered_and_the_harness_otherwise() {
+    let root = uze_testkit::temp::TempDir::new("inventory-ids");
+    let id_of = |harness_id: &str, relative: &str, receipts: bool| {
+        let found = skill(root.path(), relative, "Commit.");
+        let receipt = tree_receipt(harness_id, "git@uze", &skill_dir(root.path(), relative));
+        let receipts = if receipts { vec![receipt] } else { vec![] };
+        assemble(vec![harness(harness_id, vec![found])], &receipts).resources[0]
+            .id
+            .clone()
+    };
+    assert_eq!(
+        id_of("a", "a/skills/commit", true),
+        id_of("b", "b/elsewhere/commit", true),
+        "a reinstall elsewhere, or on another harness, keeps the id"
+    );
+    assert_ne!(
+        id_of("a", "a/skills/commit", false),
+        id_of("b", "b/skills/commit", false)
+    );
+    assert_eq!(
+        id_of("a", "a/skills/commit", false),
+        id_of("a", "a/moved/commit", false)
+    );
+    let review = skill(root.path(), "a/skills/review", "Review.");
+    assert_ne!(
+        assemble(vec![harness("a", vec![review])], &[]).resources[0].id,
+        id_of("a", "a/skills/commit", false)
+    );
+}
+
+#[test]
+fn what_is_checked_is_a_definition_read_or_a_command_looked_for() {
+    let root = uze_testkit::temp::TempDir::new("inventory-checked");
+    let settings = root.join("settings.json");
+    let skill = skill(root.path(), "a/skills/review", "Review.");
+    let command = FoundResource::new(
+        ResourceKind::Hook,
+        "format",
+        Definition::Entry(settings.clone()),
+    )
+    .running(Runs::Program(
+        std::env::current_exe().unwrap().display().to_string(),
+    ));
+    let proven_wrong = FoundResource::new(ResourceKind::Mcp, "gone", Definition::Entry(settings))
+        .with_problem("its plugin is missing");
+    let overview = assemble(vec![harness("a", vec![skill, command, proven_wrong])], &[]);
+    for row in &overview.resources {
+        assert!(row.checked, "{}", row.name);
+    }
+}
+
+#[test]
+fn a_row_reaches_the_harnesses_that_carry_it_and_no_other() {
+    let root = uze_testkit::temp::TempDir::new("inventory-reaches");
+    let a = skill(root.path(), "a/skills/review", "Review code.");
+    let b = skill(root.path(), "b/skills/review", "Review code.");
+    let overview = assemble(vec![harness("a", vec![a]), harness("b", vec![b])], &[]);
+    let row = &overview.resources[0];
+    assert!(row.reaches("a") && row.reaches("b"));
+    assert!(!row.reaches("c"));
+}

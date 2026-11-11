@@ -205,4 +205,55 @@ mod tests {
             Some(Target::Program("node".into()))
         );
     }
+
+    /// Git is on the `PATH` of every machine this suite runs on.
+    #[test]
+    fn a_program_on_path_is_not_broken() {
+        assert_eq!(runs_problem(&Runs::Program("git".into())), None);
+    }
+
+    #[test]
+    fn a_quoted_script_is_judged_without_its_quotes() {
+        for line in ["bash \"/nowhere/a.sh\"", "bash '/nowhere/a.sh'"] {
+            assert_eq!(
+                shell_target(line),
+                Some(Target::File(PathBuf::from("/nowhere/a.sh"))),
+                "{line}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_assignment_names_a_variable_and_a_path_with_an_equals_sign_is_not_one() {
+        assert_eq!(
+            shell_target("NODE_OPTIONS=--trace node /nowhere/hook.js"),
+            Some(Target::File(PathBuf::from("/nowhere/hook.js")))
+        );
+        assert_eq!(
+            shell_target("/nowhere/a=b/hook"),
+            Some(Target::File(PathBuf::from("/nowhere/a=b/hook")))
+        );
+    }
+
+    #[test]
+    fn an_interpreters_argument_is_its_script_only_when_it_looks_like_one() {
+        assert_eq!(
+            shell_target("node serve"),
+            Some(Target::Program("node".into())),
+            "a word that names no script leaves the interpreter to judge"
+        );
+        assert_eq!(
+            shell_target("node /nowhere/run"),
+            Some(Target::File(PathBuf::from("/nowhere/run")))
+        );
+        assert_eq!(
+            shell_target("node C:\\hooks\\run"),
+            Some(Target::File(PathBuf::from("C:\\hooks\\run")))
+        );
+        assert_ne!(
+            shell_target("node hook.js"),
+            Some(Target::Program("node".into())),
+            "a script's extension makes it the script"
+        );
+    }
 }
