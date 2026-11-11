@@ -135,4 +135,19 @@ exclude_re = [
   'uze-core/src/package/trust\.rs.*replace \+ with \* in inline_commands$',
   # `HostRecord` is at its first shape, so its ladder holds no rung.
   'uze-core/src/package/hosts\.rs.*replace rungs -> Vec<uze_document::earlier::Earlier> with vec!\[\]$',
+  # uze-core machine/
+  # With no project, a path still spelling `{project}` names no file, so the carry skips it all the same.
+  'uze-core/src/machine/earlier\.rs.*replace match guard was\.to_string_lossy\(\)\.contains\(.\{.\) with false in carry_renamed$',
+  # A run ended for a flood with stdout under its bound passed stderr's: the reader raises both together.
+  'uze-core/src/machine/extension_program\.rs.*replace match guard stderr_over with true in run$',
+  # `passthrough` is the default contribution.
+  'uze-core/src/machine/harness_runtime\.rs.*replace HarnessRuntimeContribution::passthrough -> Self with Default::default\(\)$',
+  # On Unix, where mutants run, no shell keeps a PATH apart from this process's.
+  'uze-core/src/machine/harness_runtime\.rs.*replace resolve_for_a_new_shell -> Option<PathBuf> with None$',
+  # A debug rendering: nothing reads it.
+  'uze-core/src/machine/home/owned\.rs.*replace <impl std::fmt::Debug for OwnedPath>::fmt -> std::fmt::Result with Ok\(Default::default\(\)\)$',
+  # A debug rendering: nothing reads it.
+  'uze-core/src/machine/mcp\.rs.*replace <impl std::fmt::Debug for McpSession>::fmt -> std::fmt::Result with Ok\(Default::default\(\)\)$',
+  # Trimming at the slack itself only drops early what the final trim to `cap` drops anyway.
+  'uze-core/src/machine/subprocess\.rs.*replace > with >= in read_bounded$',
 ]
