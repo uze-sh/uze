@@ -1549,6 +1549,14 @@ fn json_needs_no_fields_and_fields_need_lines() {
         first_message(&running("run \"./bin/meter\"\n    fields \"name\"", "", ""))
             .contains("`fields` names the parts of a line")
     );
+    assert!(
+        first_message(&running(
+            "run \"./bin/meter\"\n    output \"json\"\n    fields \"name\"",
+            "",
+            ""
+        ))
+        .contains("`fields` names the parts of a line")
+    );
 }
 
 #[test]
