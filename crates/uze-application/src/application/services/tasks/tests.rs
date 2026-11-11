@@ -4079,3 +4079,99 @@ mod overrides_tests {
         assert!(catalog.check("--model \"open").is_err());
     }
 }
+
+mod identity_tests {
+    use super::*;
+    use uze_core::{
+        UzeHome,
+        exposure::ExposurePlan,
+        integration::SessionContinuity,
+        router::HarnessCapabilities,
+    };
+
+    /// A harness whose prompt invokes a skill with `prefix`, and which
+    /// continues a conversation when `continues`.
+    struct Prompted {
+        id: &'static str,
+        prefix: &'static str,
+        continues: bool,
+    }
+
+    impl IntegrationPort for Prompted {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn invocation_prefix(&self) -> &'static str {
+            self.prefix
+        }
+        fn session_continuity(&self) -> SessionContinuity {
+            if self.continues {
+                SessionContinuity::Observed
+            } else {
+                SessionContinuity::Unsupported
+            }
+        }
+    }
+
+    fn identities() -> Vec<AgentIdentity> {
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("identities")),
+            vec![
+                Box::new(Prompted {
+                    id: "slashed",
+                    prefix: "/",
+                    continues: true,
+                }),
+                Box::new(Prompted {
+                    id: "unprefixed",
+                    prefix: "",
+                    continues: false,
+                }),
+            ],
+        );
+        app.workspace().agent_identities()
+    }
+
+    #[test]
+    fn a_skill_is_typed_with_the_harness_prefix_and_its_arguments() {
+        assert_eq!(
+            crate::application::services::skill_invocation(
+                "$",
+                "uze:init",
+                &["check".to_owned(), "now".to_owned()]
+            ),
+            "$uze:init check now"
+        );
+        let identities = identities();
+        assert_eq!(
+            identities[0].skill_invocation("uze:init", &["check".to_owned()]),
+            Some("/uze:init check".to_owned())
+        );
+        assert_eq!(
+            identities[1].skill_invocation("uze:init", &[]),
+            None,
+            "a harness with no prefix has no way to invoke a skill"
+        );
+    }
+
+    #[test]
+    fn the_continuity_gap_names_whether_the_harness_or_the_missing_launcher_is_why() {
+        let identities = identities();
+        let continuing = identities[0].continuity_gap.clone().unwrap_or_default();
+        assert!(
+            continuing.contains("launcher"),
+            "a harness that continues lacks only UZE's launcher here: {continuing}"
+        );
+        let forgetting = identities[1].continuity_gap.clone().unwrap_or_default();
+        assert!(
+            forgetting.contains("no way to continue"),
+            "a harness with no mechanism says so: {forgetting}"
+        );
+    }
+}

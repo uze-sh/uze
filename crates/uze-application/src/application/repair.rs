@@ -776,7 +776,11 @@ mod tests {
         let (app, base) = application("repair-bytes");
         let source = base.join("flow");
         fs::create_dir_all(source.join("skills/demo")).unwrap();
-        fs::write(source.join("plugin.json"), r#"{"name": "flow"}"#).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
         fs::write(source.join("skills/demo/SKILL.md"), "# Demo\n").unwrap();
         app.plugins()
             .add(PackageSource::Local { path: source }, &AlwaysTrust)

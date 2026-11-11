@@ -768,6 +768,176 @@ mod tests {
         fs::remove_dir_all(&base).ok();
     }
 
+    /// A harness here, whose project rules take `route` and whose agent
+    /// context arrives through `channel`, unless `unavailable` says why not.
+    struct Channelled {
+        route: uze_core::router::CompatibilityRoute,
+        channel: uze_core::integration::ContextChannel,
+        unavailable: Option<&'static str>,
+    }
+
+    impl Channelled {
+        fn native() -> Self {
+            Self {
+                route: uze_core::router::CompatibilityRoute::Native,
+                channel: uze_core::integration::ContextChannel::Directory,
+                unavailable: None,
+            }
+        }
+    }
+
+    impl IntegrationPort for Channelled {
+        fn id(&self) -> &'static str {
+            "channelled"
+        }
+        fn display_name(&self) -> &'static str {
+            "Channelled"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn rules_route(&self) -> uze_core::integration::RulesRoute {
+            uze_core::integration::RulesRoute {
+                route: self.route,
+                reason: "measured".to_owned(),
+            }
+        }
+        fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
+            uze_core::integration::ContextDelivery::Native { files: &[] }
+        }
+        fn context_channel(&self) -> uze_core::integration::ContextChannel {
+            self.channel
+        }
+        fn context_channel_unavailable(&self) -> Option<String> {
+            self.unavailable.map(str::to_owned)
+        }
+    }
+
+    #[test]
+    fn agent_context_falls_short_only_without_an_invisible_channel_that_runs_here() {
+        assert_eq!(agent_context_shortfall(&Channelled::native()), None);
+        let visible = Channelled {
+            channel: uze_core::integration::ContextChannel::FirstTurn,
+            ..Channelled::native()
+        };
+        assert!(
+            agent_context_shortfall(&visible).is_some_and(|why| why.contains("first turn")),
+            "a harness with only the visible first turn says so"
+        );
+        let switched_off = Channelled {
+            unavailable: Some("its hooks are switched off"),
+            ..Channelled::native()
+        };
+        assert!(
+            agent_context_shortfall(&switched_off)
+                .is_some_and(|why| why.contains("its hooks are switched off")),
+            "a channel that cannot run here names why"
+        );
+    }
+
+    #[test]
+    fn the_setup_state_reads_as_words_distinct_for_each_state() {
+        let words = [
+            integration_status(IntegrationStatus::NotConfigured),
+            integration_status(IntegrationStatus::InstalledUnverified),
+            integration_status(IntegrationStatus::InstalledVerified),
+        ];
+        assert_eq!(words[0], "not configured");
+        assert!(words[1].contains("unverified"), "{words:?}");
+        assert!(words[2].contains("verified") && !words[2].contains("unverified"));
+    }
+
+    #[test]
+    fn a_harness_is_labelled_by_its_display_name_and_an_unknown_id_as_itself() {
+        let base = uze_testkit::temp::scratch("doctor-label");
+        let app = UzeApplication::new(
+            UzeHome::at(base.join("home")),
+            vec![Box::new(Channelled::native())],
+        );
+        assert_eq!(app.health().integration_label("channelled"), "Channelled");
+        assert_eq!(app.health().integration_label("elsewhere"), "elsewhere");
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_package_without_its_manifest_blocks_the_store_and_one_without_bytes_does_not() {
+        let base = uze_testkit::temp::scratch("doctor-store");
+        let app = UzeApplication::new(UzeHome::at(base.join("home")), Vec::new());
+        write_plugin(&base, "flow");
+        app.plugins()
+            .add(
+                PackageSource::Local {
+                    path: base.join("flow"),
+                },
+                &AlwaysTrust,
+            )
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        assert_eq!(package_store_inconsistency(&package), None);
+        assert!(
+            matches!(app.health().report().store, StoreHealth::Ready),
+            "a healthy store with no unreadable registration is ready"
+        );
+
+        fs::remove_file(&package.manifest).unwrap();
+        assert!(
+            package_store_inconsistency(&package).is_some_and(|why| why.contains("plugin.json")),
+            "bytes that are not a package name what is missing"
+        );
+
+        fs::remove_dir_all(&package.root).unwrap();
+        assert_eq!(
+            package_store_inconsistency(&package),
+            None,
+            "bytes gone altogether are the health catalogue's to report"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn status_reads_the_instructions_context_and_rules_route_of_each_detected_harness() {
+        for (route, said) in [
+            (uze_core::router::CompatibilityRoute::Native, "native"),
+            (
+                uze_core::router::CompatibilityRoute::Unsupported,
+                "unsupported",
+            ),
+            (uze_core::router::CompatibilityRoute::Adaptable, "engine"),
+        ] {
+            let base = uze_testkit::temp::scratch("doctor-status-route");
+            let app = UzeApplication::new(
+                UzeHome::at(base.join("home")),
+                vec![Box::new(Channelled {
+                    route,
+                    ..Channelled::native()
+                })],
+            );
+            let project = base.join("project");
+            fs::create_dir_all(&project).unwrap();
+            fs::write(project.join("agents.yaml"), "{}\n").unwrap();
+            fs::write(project.join("AGENTS.md"), "# Instructions\n").unwrap();
+
+            let status = app.health().status(&project).unwrap();
+            assert!(status.instructions.exists, "AGENTS.md is there");
+            let harness = &status.harnesses[0];
+            assert_eq!(harness.rules.as_ref().map(|rules| rules.route), Some(said));
+            assert!(
+                harness.context.is_some(),
+                "the context delivery found for this harness is its own"
+            );
+            fs::remove_dir_all(&base).ok();
+        }
+    }
+
     #[test]
     fn matched_inspection_is_cached_across_instances() {
         let base = uze_testkit::temp::scratch("fast-vs-deep");

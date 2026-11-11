@@ -515,3 +515,69 @@ fn a_subagents_record_admits_no_claim_without_its_key() {
             .contains("not an agent UZE launched")
     );
 }
+
+#[test]
+fn a_split_checkout_records_the_agent_it_came_from_and_where() {
+    let world = World::new("work-split-record");
+    let agent = world.agent();
+    let head = world.commit(&agent.1, "plan.md", "the plan\n");
+
+    let split = world.split(&agent, "parser").unwrap();
+
+    let uze_workspace::checkout::record::Recorded::Ours(record) =
+        uze_workspace::checkout::record::read(world.root(), &split.path)
+    else {
+        panic!("the split checkout carries UZE's record");
+    };
+    assert_eq!(
+        record.parent.as_ref().map(AgentId::as_str),
+        Some(agent.0.as_str())
+    );
+    assert_eq!(record.split_at.as_deref(), Some(head.as_str()));
+}
+
+#[test]
+fn a_join_takes_the_subagent_on_the_topic_named_among_several() {
+    let world = World::new("work-join-topic");
+    let agent = world.agent();
+    world.split(&agent, "parser").unwrap();
+    let lexer = world.split(&agent, "lexer").unwrap();
+    world.commit(&lexer.path, "lexer.rs", "fn lex() {}\n");
+
+    assert_eq!(
+        world.join(&agent, "lexer").unwrap(),
+        JoinedWork::Joined { commits: 1 }
+    );
+    assert!(agent.1.join("lexer.rs").is_file());
+}
+
+#[test]
+fn a_subagent_already_joined_is_not_joined_again() {
+    let world = World::new("work-join-twice");
+    let agent = world.agent();
+    let child = world.split(&agent, "parser").unwrap();
+    world.commit(&child.path, "parser.rs", "fn parse() {}\n");
+    world.join(&agent, "parser").unwrap();
+
+    assert!(
+        refusal(world.join(&agent, "parser")).contains("no subagent working on"),
+        "a joined subagent no longer holds a checkout to join"
+    );
+}
+
+#[test]
+fn the_operators_join_names_an_agent_that_is_no_longer_recorded() {
+    let world = World::new("work-join-unrecorded");
+    let agent = world.agent();
+    world.split(&agent, "parser").unwrap();
+
+    assert!(
+        refusal(
+            world
+                .app
+                .workspace()
+                .join_unfinished_work(world.root(), "nobody", "parser")
+        )
+        .contains("no longer recorded")
+    );
+}
