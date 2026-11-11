@@ -104,4 +104,33 @@ exclude_re = [
   'uze-core/src/capability/extension/manifest\.rs.*replace == with != in unknown$',
   # A node whose property was refused already refuses the view; keeping it adds nothing.
   'uze-core/src/capability/extension/view\.rs.*replace &= with \|= in Compiler<., .>::node$',
+  # uze-core package/
+  # `looks_like_path` admits a `~` lead only when nothing or a separator follows it.
+  'uze-core/src/package/acquisition/forge\.rs.*replace match guard rest\.is_empty\(\) \|\| rest\.starts_with\(std::path::is_separator\) with true in expand_home$',
+  # Breaking early only stops reading a listing; the verdict is judged on the counts either way.
+  'uze-core/src/package/acquisition/git\.rs.*replace TreeWeight::over_budget -> bool with false$',
+  'uze-core/src/package/acquisition/git\.rs.*replace \|\| with && in TreeWeight::over_budget$',
+  # Only the path of an `ls-tree` record holds a `/`, so where the split falls counts the same.
+  'uze-core/src/package/acquisition/git\.rs.*replace == with != in record_depth$',
+  # A span field recording the exit code.
+  'uze-core/src/package/acquisition/git\.rs.*delete - in spawn_git$',
+  # The read buffer's size, which changes how many reads a listing takes and nothing else.
+  'uze-core/src/package/acquisition/git\.rs.*replace \* with \+ in run_records$',
+  # A stopped fold is already past its budget and breaks again; a `-z` listing leaves nothing pending.
+  'uze-core/src/package/acquisition/git\.rs.*replace \|\| with && in run_records$',
+  # Connection sharing saves handshakes; ssh opens its own connection when it cannot share one.
+  'uze-core/src/package/acquisition/git\.rs.*replace multiplexing_directory -> Option<PathBuf> with (None|Some\(Default::default\(\)\))$',
+  # The default subpath is the root.
+  'uze-core/src/package/acquisition/marketplace\.rs.*replace MarketplaceSubpath::root -> Self with Default::default\(\)$',
+  # An age equal to the window to the nanosecond.
+  'uze-core/src/package/acquisition/mirror\.rs.*replace < with <= in ensure_for$',
+  # Best effort: the checkout fetches whatever the prefetch did not bring.
+  'uze-core/src/package/acquisition/mirror\.rs.*replace prefetch with \(\)$',
+  'uze-core/src/package/acquisition/mirror\.rs.*replace != with == in prefetch$',
+  # Equal minimums are one requirement, whichever spelling is kept.
+  'uze-core/src/package/requirement\.rs.*replace > with >= in stricter$',
+  # The search resumes on the closing backtick, which cannot start a `!` span.
+  'uze-core/src/package/trust\.rs.*replace \+ with \* in inline_commands$',
+  # `HostRecord` is at its first shape, so its ladder holds no rung.
+  'uze-core/src/package/hosts\.rs.*replace rungs -> Vec<uze_document::earlier::Earlier> with vec!\[\]$',
 ]
