@@ -85,4 +85,21 @@ exclude_re = [
   'uze-core/src/project/memory/credentials\.rs.*replace \|\| with && in looks_assigned$',
   # One line cannot be both a begin and an end marker, so an end never sits on its begin.
   'uze-core/src/project/text_region\.rs.*replace > with >= in scan$',
+  # uze-core capability/
+  # The stack is still far deeper than DEPTH_MAX levels of the parser need.
+  'uze-core/src/capability/extension/bounded\.rs.*: replace \* with \+$',
+  # A `/` outside a string, comment or `/-` is not KDL: the file is refused either way.
+  'uze-core/src/capability/extension/bounded\.rs.*replace match guard self\.peek\(1\) == Some\(b.-.\) with true in Scanner<.a>::run$',
+  # At the end of the bytes the loop steps past it and reports the same unclosed comment.
+  'uze-core/src/capability/extension/bounded\.rs.*replace < with <= in Scanner<.a>::skip_block_comment$',
+  # Reading more of a file past the bound changes only how much is read, not the refusal.
+  'uze-core/src/capability/extension/loaded\.rs.*replace - with \+ in Loaded::read$',
+  # A lone `/` is not KDL, so what completion offers after one is unspecified.
+  'uze-core/src/capability/extension/locate\.rs.*replace match guard chars\.peek\(\)\.map\(\|\(_, next\)\| \*next\) == Some\(.-.\) with true in locate$',
+  # NodeName is answered only when the statement has no name, so the node is None either way.
+  'uze-core/src/capability/extension/locate\.rs.*delete match arm At::NodeName\{\.\.\} in Lexer::answer$',
+  # LATER is empty: no name is ever found in it.
+  'uze-core/src/capability/extension/manifest\.rs.*replace == with != in unknown$',
+  # A node whose property was refused already refuses the view; keeping it adds nothing.
+  'uze-core/src/capability/extension/view\.rs.*replace &= with \|= in Compiler<., .>::node$',
 ]
