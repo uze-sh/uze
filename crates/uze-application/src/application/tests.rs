@@ -2941,3 +2941,185 @@ fn building_the_application_leaves_a_record_where_the_floor_release_reads_it() {
 
     assert!(home.retired_launches_path().is_file());
 }
+
+/// A package carrying only workspace extensions is one, and is named among
+/// the extensions; a package carrying something a harness reads is a
+/// plugin, and is not.
+#[test]
+fn a_package_of_extensions_only_is_an_extension() {
+    let root = uze_testkit::temp::scratch("package-kind");
+    let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(SymlinkIntegration)]);
+    for source in [fixture(), uze_testkit::fixtures::canonical("gsd")] {
+        app.plugins()
+            .add(
+                uze_core::PackageSource::local(source),
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+    }
+    let listed = app.plugins().list().unwrap();
+    let kind_of = |name: &str| {
+        listed
+            .iter()
+            .find(|plugin| plugin.id.starts_with(name))
+            .unwrap_or_else(|| panic!("{name} is listed: {listed:?}"))
+            .kind
+    };
+    assert_eq!(kind_of("gsd"), PackageKind::Extension);
+    assert_eq!(kind_of("uze-agent-skill-conformance"), PackageKind::Plugin);
+
+    let extensions =
+        app.extensions_among(["uze-agent-skill-conformance", "gsd", "not-installed"].into_iter());
+    assert_eq!(extensions, ["gsd"]);
+
+    let plugin = app
+        .plugins()
+        .inspect_in("uze-agent-skill-conformance", None, None)
+        .unwrap();
+    assert!(
+        plugin.extensions.is_empty(),
+        "another package's extensions are not this one's: {:?}",
+        plugin.extensions
+    );
+    let board = app.plugins().inspect_in("gsd", None, None).unwrap();
+    assert!(!board.extensions.is_empty(), "its own extensions are");
+    assert!(
+        board
+            .extensions
+            .iter()
+            .all(|report| report.plugin_id() == board.plugin.id)
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Narrowed to one harness, an inspection carries that harness's delivery
+/// and no other's; each capability is named as a person knows it, with
+/// its text to read.
+#[test]
+fn an_inspection_narrowed_to_one_harness_shows_only_its_delivery() {
+    let root = uze_testkit::temp::scratch("inspect-on");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![Box::new(SymlinkIntegration), Box::new(NamedIntegration)],
+    );
+    app.plugins()
+        .add(
+            uze_core::PackageSource::local(fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let id = "uze-agent-skill-conformance";
+    assert_eq!(
+        app.plugins().inspect_on(id, None).unwrap().deliveries.len(),
+        2
+    );
+    let narrowed = app.plugins().inspect_on(id, Some("n")).unwrap();
+    let harnesses: Vec<&str> = narrowed
+        .deliveries
+        .iter()
+        .map(|delivery| delivery.integration.as_str())
+        .collect();
+    assert_eq!(harnesses, ["named"]);
+    assert!(app.plugins().inspect_on(id, Some("nothing")).is_err());
+
+    let capability = &narrowed.capabilities[0];
+    assert_eq!(capability.name, "uze-e2e", "the skill's own directory");
+    assert!(
+        capability.preview.path.contains("SKILL.md"),
+        "{:?}",
+        capability.preview
+    );
+    assert_eq!(
+        capability.preview.text,
+        fs::read_to_string(fixture().join("skills/uze-e2e/SKILL.md")).unwrap()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A detected harness that takes every delivery.
+struct Accepting;
+
+impl IntegrationPort for Accepting {
+    fn id(&self) -> &'static str {
+        "accepting"
+    }
+
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+
+    fn detect(&self) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: None,
+        }
+    }
+
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "test does not attach".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        Ok(None)
+    }
+}
+
+/// An install one harness refused while another took it stays installed,
+/// and the report names the harness it did not reach.
+#[test]
+fn an_install_names_the_harness_it_did_not_reach() {
+    let root = uze_testkit::temp::scratch("add-undelivered");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![
+            Box::new(Accepting),
+            Box::new(DeliveryRefusedOnce {
+                refuse_next: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            }),
+        ],
+    );
+    let report = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let undelivered: Vec<&HarnessDeliveryReport> = report.undelivered().collect();
+    assert_eq!(undelivered.len(), 1, "{:?}", report.deliveries);
+    assert_eq!(undelivered[0].integration, "refusing-delivery");
+    assert_eq!(
+        app.plugins().list().unwrap().len(),
+        1,
+        "it stayed installed"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A plugin installed from a Git repository carries the commit it was
+/// installed at; one installed from a directory carries none.
+#[test]
+fn a_plugin_from_git_carries_its_commit() {
+    let repository = uze_testkit::git::Repository::new("plugin-from-git");
+    uze_testkit::fixtures::copy_tree(&fixture(), repository.root());
+    repository.git(&["add", "-A"]);
+    repository.git(&["commit", "--quiet", "-m", "plugin"]);
+    let head = repository.head();
+    let root = uze_testkit::temp::scratch("plugin-from-git-home");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.plugins()
+        .add(
+            uze_core::PackageSource::git(repository.root().display().to_string()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let listed = app.plugins().list().unwrap();
+    assert_eq!(listed[0].commit.as_deref(), Some(head.as_str()));
+    fs::remove_dir_all(root).unwrap();
+}
