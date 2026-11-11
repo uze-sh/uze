@@ -742,4 +742,162 @@ mod tests {
         assert!(substitute_all(&["{missing}".to_owned()], &item).is_err());
         assert!(substitute_all(&["{ui.tab}".to_owned()], &item).is_err());
     }
+
+    #[test]
+    fn a_program_still_running_past_a_flood_is_ended_at_once() {
+        let started = Instant::now();
+        assert_eq!(
+            sh(
+                "head -c 2000000 /dev/zero; sleep 30",
+                Duration::from_secs(20)
+            ),
+            ProgramOutcome::Flooded {
+                stream: "stdout",
+                bound: STDOUT_MAX
+            }
+        );
+        assert_eq!(
+            sh(
+                "head -c 200000 /dev/zero >&2; sleep 30",
+                Duration::from_secs(20)
+            ),
+            ProgramOutcome::Flooded {
+                stream: "stderr",
+                bound: STDERR_MAX
+            }
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(15),
+            "it ran to its deadline"
+        );
+    }
+
+    #[test]
+    fn output_up_to_its_bound_is_answered_whole() {
+        let ProgramOutcome::Answered { stdout } = sh(
+            &format!("head -c {STDOUT_MAX} /dev/zero"),
+            Duration::from_secs(10),
+        ) else {
+            panic!("output at its bound was not answered");
+        };
+        assert_eq!(stdout.len(), STDOUT_MAX);
+        let ProgramOutcome::Refused { reason } = sh(
+            "echo 'a reason' >&2; head -c 60000 /dev/zero >&2; exit 3",
+            Duration::from_secs(10),
+        ) else {
+            panic!("standard error under its bound was cut off");
+        };
+        assert_eq!(reason, "a reason");
+    }
+
+    #[test]
+    fn what_a_descendant_writes_within_the_grace_is_part_of_the_answer() {
+        if !Path::new("/usr/bin/setsid").exists() && !Path::new("/bin/setsid").exists() {
+            return;
+        }
+        assert_eq!(
+            sh(
+                "(setsid sh -c 'sleep 0.2; echo late' &); exit 0",
+                Duration::from_secs(10)
+            ),
+            ProgramOutcome::Answered {
+                stdout: b"late\n".to_vec()
+            }
+        );
+    }
+
+    #[test]
+    fn a_helper_that_could_not_confine_is_reported_as_unenforced() {
+        let scratch = uze_testkit::temp::TempDir::new("program-unenforced");
+        let helper = scratch.join("confine-helper");
+        uze_testkit::process::install_executable(
+            &helper,
+            b"#!/bin/sh\necho 'confinement is unavailable here' >&2\nexit 125\n",
+        );
+        let dir = std::env::temp_dir();
+        let outcome = run(&ProgramRun {
+            executable: PathBuf::from("/bin/sh"),
+            args: vec!["-c".to_owned(), "exit 0".to_owned()],
+            cwd: dir.clone(),
+            environment: environment(std::env::vars_os(), &dir, &dir, &BTreeMap::new()),
+            stdin: b"{}".to_vec(),
+            time_limit: Duration::from_secs(5),
+            confine: Some(Confine {
+                helper,
+                rules: "rules".to_owned(),
+            }),
+        });
+        assert_eq!(
+            outcome,
+            ProgramOutcome::Unenforced {
+                reason: "confinement is unavailable here".to_owned()
+            }
+        );
+    }
+
+    /// A stream that yields each step in turn, then ends.
+    struct Scripted(std::collections::VecDeque<io::Result<Vec<u8>>>);
+
+    impl Read for Scripted {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            match self.0.pop_front() {
+                None => Ok(0),
+                Some(Err(error)) => Err(error),
+                Some(Ok(bytes)) => {
+                    buffer[..bytes.len()].copy_from_slice(&bytes);
+                    Ok(bytes.len())
+                }
+            }
+        }
+    }
+
+    fn read_all(steps: Vec<io::Result<Vec<u8>>>) -> Vec<u8> {
+        let reader = bounded_reader(
+            Scripted(steps.into()),
+            STDOUT_MAX,
+            Arc::new(AtomicBool::new(false)),
+        );
+        reader.collect(Instant::now() + Duration::from_secs(5)).0
+    }
+
+    #[test]
+    fn an_interrupted_read_is_retried_and_a_failed_one_ends_the_stream() {
+        assert_eq!(
+            read_all(vec![
+                Ok(b"one ".to_vec()),
+                Err(io::ErrorKind::Interrupted.into()),
+                Ok(b"two".to_vec()),
+            ]),
+            b"one two"
+        );
+        assert_eq!(
+            read_all(vec![
+                Ok(b"one".to_vec()),
+                Err(io::ErrorKind::BrokenPipe.into()),
+                Ok(b" two".to_vec()),
+            ]),
+            b"one"
+        );
+    }
+
+    #[test]
+    fn a_program_that_cannot_be_found_or_was_refused_says_which() {
+        assert_eq!(Unresolved::NotFound.to_string(), "not found");
+        let refused = Unresolved::Refused {
+            found: PathBuf::from("/work/repo/bin/tool"),
+            beneath: PathBuf::from("/work/repo"),
+        }
+        .to_string();
+        assert!(
+            refused.contains("/work/repo/bin/tool") && refused.contains("beneath /work/repo"),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn a_reference_to_the_view_is_refused_even_when_the_item_has_that_field() {
+        let item = serde_json::json!({ "tab": "files" });
+        let refused = substitute_all(&["{ui.tab}".to_owned()], &item).unwrap_err();
+        assert!(refused.contains("is not given"), "{refused}");
+    }
 }
