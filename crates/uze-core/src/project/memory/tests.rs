@@ -637,11 +637,12 @@ fn citations_with_a_space_or_an_odd_segment_are_not_paths() {
     assert_eq!(cited_paths(body), ["crates/kept.rs"]);
 }
 
-/// The index stays within its bound at every size, and an index that fits
-/// its bound exactly is the one that bound gives.
+/// The index stays within its bound at every size; a fact is given a line
+/// only while every other one is still named; and an index that fits its
+/// bound exactly is the one that bound gives.
 #[test]
 fn an_index_fits_its_bound_and_uses_it_to_the_byte() {
-    let entries: Vec<MemoryEntry> = [
+    let worded: Vec<MemoryEntry> = [
         ("reply-in-ptbr", FactKind::Feedback),
         ("secret-phrase", FactKind::User),
         ("lab-image", FactKind::Project),
@@ -651,16 +652,32 @@ fn an_index_fits_its_bound_and_uses_it_to_the_byte() {
     .into_iter()
     .map(|(name, kind)| entry(name, kind, "2026-10-01"))
     .collect();
-    let full = render_index(&entries, usize::MAX);
-    for bound in 150..=full.len() + 8 {
-        let index = render_index(&entries, bound);
-        assert!(
-            index.len() <= bound,
-            "{} bytes in {bound}: {index}",
-            index.len()
-        );
-        if index.contains(NAMES_HEADING) {
-            assert_eq!(render_index(&entries, index.len()), index, "at {bound}");
+    let terse: Vec<MemoryEntry> = ["a", "b", "c", "d", "e"]
+        .into_iter()
+        .map(|name| {
+            let mut fact = entry(name, FactKind::Feedback, "2026-10-01");
+            fact.description = "x".into();
+            fact
+        })
+        .collect();
+    for entries in [worded, terse] {
+        let smallest = render_index(&entries, 0).len();
+        let full = render_index(&entries, usize::MAX);
+        for bound in smallest..=full.len() + 8 {
+            let index = render_index(&entries, bound);
+            assert!(
+                index.len() <= bound,
+                "{} bytes in {bound}: {index}",
+                index.len()
+            );
+            let described = index.lines().any(|line| line.contains("): "));
+            assert!(
+                !(described && index.contains("more kept")),
+                "a line was given while a fact went unnamed, at {bound}: {index}"
+            );
+            if index.contains(NAMES_HEADING) {
+                assert_eq!(render_index(&entries, index.len()), index, "at {bound}");
+            }
         }
     }
 }
@@ -677,14 +694,38 @@ fn a_description_cut_inside_a_character_is_cut_before_it() {
     );
 }
 
+/// Days since 1970-01-01 of a proleptic Gregorian date: the inverse
+/// algorithm, so `today` is checked against the clock independently.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let shifted_month = (month + 9) % 12;
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 #[test]
-fn today_is_a_date_of_this_era() {
+fn today_is_the_clocks_day_in_utc() {
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        / 86_400;
     let today = today();
-    let parts: Vec<&str> = today.split('-').collect();
-    assert_eq!(parts.len(), 3, "{today}");
-    let year: i64 = parts[0].parse().unwrap();
-    assert!((2026..2200).contains(&year), "{today}");
-    assert_eq!((parts[1].len(), parts[2].len()), (2, 2), "{today}");
+    let after = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        / 86_400;
+    let parts: Vec<i64> = today.split('-').map(|part| part.parse().unwrap()).collect();
+    let [year, month, day] = parts[..] else {
+        panic!("not a date: {today}");
+    };
+    let days = u64::try_from(days_from_civil(year, month, day)).unwrap();
+    assert!((before..=after).contains(&days), "{today}");
+    assert_eq!(today.len(), "YYYY-MM-DD".len(), "{today}");
 }
 
 #[test]
