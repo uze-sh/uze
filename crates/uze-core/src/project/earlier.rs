@@ -145,4 +145,35 @@ mod tests {
         assert!(!is_retired_package("project:worktree-policy/0123abcd"));
         assert!(!is_retired_package(INSTRUCTION_BRIDGE));
     }
+
+    /// The architecture suite holds every entry to the release floor, so a
+    /// retired spelling missing from this concern's entries is support
+    /// nothing would ever ask to be taken out.
+    #[test]
+    fn every_retired_region_is_registered_for_the_release_floor() {
+        let spelled: Vec<&str> = earlier()
+            .iter()
+            .flat_map(|entry| entry.spelled.iter().copied())
+            .collect();
+        for retired in [WORKTREE_POLICY, PLUGIN_AUTHORING, INSTRUCTION_BRIDGE] {
+            assert!(spelled.contains(&retired), "{retired} is not registered");
+        }
+    }
+
+    #[test]
+    fn records_before_the_move_are_noticed_until_their_directories_go() {
+        let root = uze_testkit::temp::scratch("project-records-before-the-move");
+        let home = UzeHome::at(&root);
+        assert!(!holds_records_before_the_move(&home), "a fresh home");
+
+        let scattered = home.scattered_project_records("some-project");
+        fs::create_dir_all(scattered.conversations).unwrap();
+        assert!(holds_records_before_the_move(&home));
+
+        for directory in home.scattered_project_records("").directories {
+            let _ = fs::remove_dir_all(directory);
+        }
+        assert!(!holds_records_before_the_move(&home));
+        fs::remove_dir_all(root).unwrap();
+    }
 }

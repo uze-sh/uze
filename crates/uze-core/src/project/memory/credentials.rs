@@ -208,6 +208,29 @@ mod tests {
     }
 
     #[test]
+    fn a_public_certificate_is_not_a_private_key() {
+        let text = format!("-----BEGIN {}-----", "CERTIFICATE");
+        assert_eq!(credential(&text), None);
+    }
+
+    #[test]
+    fn a_prefix_followed_by_prose_is_not_a_token() {
+        let text = format!(
+            "fine-grained tokens start with {} and then carry a long body",
+            "github_pat_"
+        );
+        assert_eq!(credential(&text), None);
+    }
+
+    #[test]
+    fn a_call_assigned_to_a_secret_name_is_not_a_secret() {
+        assert_eq!(
+            secret_assignment("SECRET_KEY=derive(salt2024,pepper)"),
+            None
+        );
+    }
+
+    #[test]
     fn documentation_of_a_variable_is_not_a_secret() {
         for text in [
             "OPENAI_API_KEY=<your-api-key>",

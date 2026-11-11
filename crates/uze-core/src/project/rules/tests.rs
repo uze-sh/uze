@@ -135,6 +135,10 @@ fn every_reason_a_file_is_not_a_rule() {
             NotARule::BlockValue(Field::Globs),
         ),
         (
+            b"---\ntrigger: glob\nglobs:\n-\n---\n",
+            NotARule::BlockValue(Field::Globs),
+        ),
+        (
             b"---\ntrigger: model_decision\ndescription: >\n  folded\n---\n",
             NotARule::BlockValue(Field::Description),
         ),
@@ -299,6 +303,51 @@ fn a_control_character_is_outside_the_dialect() {
         Glob::parse("**/src/\u{1b}x/**").unwrap_err().construct,
         Construct::Control
     );
+}
+
+#[test]
+fn whitespace_and_an_escape_are_each_refused_by_name() {
+    assert_eq!(
+        Glob::parse("**/src/\tui/**").unwrap_err().construct,
+        Construct::Whitespace
+    );
+    assert_eq!(
+        Glob::parse("**/src\\ui/**").unwrap_err().construct,
+        Construct::Escape
+    );
+}
+
+#[test]
+fn a_refusal_says_what_in_the_pattern_is_refused() {
+    let refused = Glob::parse("**/src/\tui/**").unwrap_err().to_string();
+    assert!(refused.contains("whitespace"), "{refused}");
+}
+
+#[test]
+fn a_glob_reads_back_as_it_was_written() {
+    let glob = Glob::parse("**/src/ui/**").unwrap();
+    assert_eq!(glob.as_str(), "**/src/ui/**");
+    assert_eq!(glob.to_string(), "**/src/ui/**");
+}
+
+/// A `-` that opens or closes a set is one of its characters, and a range
+/// may be of one character; only a reversed range is refused.
+#[test]
+fn a_set_reads_its_ranges_and_its_literal_dashes() {
+    let trailing = Glob::parse("**/[a-]").unwrap();
+    assert!(trailing.matches("a") && trailing.matches("-"));
+    assert!(!trailing.matches("b"));
+
+    let after_two = Glob::parse("**/[ab-]").unwrap();
+    assert!(after_two.matches("b") && after_two.matches("-"));
+    assert!(!after_two.matches("c"));
+
+    let late_range = Glob::parse("**/[abcd-f]").unwrap();
+    assert!(late_range.matches("e"));
+    assert!(!late_range.matches("-"));
+
+    let one = Glob::parse("**/[a-a].rs").unwrap();
+    assert!(one.matches("a.rs") && !one.matches("b.rs"));
 }
 
 /// A case of the shared manifest table staged as a checkout: the root as

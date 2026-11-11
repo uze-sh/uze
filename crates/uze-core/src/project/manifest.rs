@@ -939,6 +939,60 @@ mod tests {
     }
 
     #[test]
+    fn a_manifest_of_comments_alone_declares_nothing() {
+        assert_eq!(
+            parsed("# nothing yet\n\n  # still nothing\n").unwrap(),
+            ProjectManifest::default()
+        );
+    }
+
+    #[test]
+    fn a_declared_section_is_read_as_its_owners_type() {
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct Workspace {
+            slots: u32,
+        }
+        let path = Path::new("/p/agents.yaml");
+        let manifest = parsed("workspace:\n  slots: 3\n").unwrap();
+        assert_eq!(
+            manifest
+                .section::<Workspace>(Section::Workspace, path)
+                .unwrap(),
+            Some(Workspace { slots: 3 })
+        );
+        assert_eq!(
+            parsed("")
+                .unwrap()
+                .section::<Workspace>(Section::Workspace, path)
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn unsetting_a_key_removes_it_and_keeps_the_comments_around_it() {
+        let root = uze_testkit::temp::scratch("manifest-unset-key");
+        let authored = "# mine\nworkspace:\n  delivery: pr   # deliberate\n  slots: 2\n";
+        fs::write(manifest_path_for(&root), authored).unwrap();
+
+        unset_key(&root, Section::Workspace, "slots").unwrap();
+
+        let after = fs::read_to_string(manifest_path_for(&root)).unwrap();
+        assert!(!after.contains("slots"), "{after}");
+        assert!(after.contains("delivery: pr   # deliberate"), "{after}");
+        assert!(after.starts_with("# mine\n"), "{after}");
+    }
+
+    #[test]
+    fn unsetting_a_key_in_a_project_with_no_manifest_creates_none() {
+        let root = uze_testkit::temp::scratch("manifest-unset-absent");
+
+        unset_key(&root, Section::Workspace, "slots").unwrap();
+
+        assert!(!manifest_path_for(&root).exists());
+    }
+
+    #[test]
     fn a_misspelled_root_key_is_still_refused() {
         let error = parsed("workspce:\n  delivery: pr\n").unwrap_err();
         assert!(error.to_string().contains("workspce"), "{error}");

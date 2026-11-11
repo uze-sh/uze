@@ -508,3 +508,197 @@ fn a_credential_in_the_description_is_refused_too() {
     assert!(refused.contains("line 1 of the description"), "{refused}");
     assert!(store.list(Scope::Project).unwrap().entries.is_empty());
 }
+
+#[test]
+fn a_scope_is_labelled_as_its_report_names_it() {
+    for scope in [Scope::Project, Scope::Machine] {
+        assert_eq!(
+            serde_json::to_value(scope).unwrap().as_str(),
+            Some(scope.label())
+        );
+    }
+}
+
+#[test]
+fn every_kind_reads_back_from_its_own_label() {
+    for kind in FactKind::ALL {
+        assert_eq!(FactKind::parse(kind.label()), Some(kind));
+    }
+    assert_eq!(FactKind::parse("opinion"), None);
+}
+
+#[test]
+fn a_source_is_described_by_who_wrote_it() {
+    assert_eq!(Source::Operator.describe(), "the operator");
+    let named = Source::Agent {
+        harness: "some-harness".into(),
+        task: "t-7".into(),
+    }
+    .describe();
+    assert!(
+        named.contains("some-harness") && named.contains("t-7"),
+        "{named}"
+    );
+    let unnamed = Source::Agent {
+        harness: String::new(),
+        task: "t-7".into(),
+    }
+    .describe();
+    assert!(
+        unnamed.starts_with("an agent") && unnamed.contains("t-7"),
+        "{unnamed}"
+    );
+}
+
+#[test]
+fn a_store_knows_whether_it_has_a_project() {
+    let (home, project) = home("memory-has-project");
+    assert!(MemoryStore::new(&home, Some(&project)).has_project());
+    assert!(!MemoryStore::new(&home, None).has_project());
+}
+
+#[test]
+fn a_machine_fact_the_operator_writes_applies_at_once() {
+    let (home, project) = home("memory-machine-direct");
+    let store = MemoryStore::new(&home, Some(&project));
+    let written = store
+        .remember(
+            Scope::Machine,
+            &fact("prefers-ptbr", "reply in pt-BR", "b"),
+            false,
+        )
+        .unwrap();
+    assert!(!written.proposed);
+    assert_eq!(store.list(Scope::Machine).unwrap().entries.len(), 1);
+    assert!(store.proposals().entries.is_empty());
+
+    let project_fact = store
+        .remember(Scope::Project, &fact("lab-image", "d", "b"), true)
+        .unwrap();
+    assert!(
+        !project_fact.proposed,
+        "only a machine fact is ever proposed"
+    );
+}
+
+#[test]
+fn a_fact_from_a_newer_build_is_unreadable() {
+    let (home, project) = home("memory-newer-shape");
+    let store = MemoryStore::new(&home, Some(&project));
+    let dir = store.dir(Scope::Project).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    let newer = "---\nshape: 2\nname: newer\ndescription: d\ntype: project\n---\n\nbody\n";
+    fs::write(dir.join("newer.md"), newer).unwrap();
+
+    let listing = store.list(Scope::Project).unwrap();
+    assert!(listing.entries.is_empty(), "{listing:?}");
+    assert_eq!(listing.unreadable.len(), 1);
+}
+
+#[test]
+fn only_markdown_files_are_read_as_facts() {
+    let (home, project) = home("memory-markdown-only");
+    let store = MemoryStore::new(&home, Some(&project));
+    store
+        .remember(Scope::Project, &fact("kept", "d", "b"), false)
+        .unwrap();
+    let dir = store.dir(Scope::Project).unwrap();
+    fs::write(dir.join("notes.txt"), "not a fact").unwrap();
+    fs::create_dir_all(dir.join("folder.md")).unwrap();
+
+    let listing = store.list(Scope::Project).unwrap();
+    assert_eq!(listing.entries.len(), 1);
+    assert!(listing.unreadable.is_empty(), "{listing:?}");
+}
+
+#[test]
+fn forgetting_what_cannot_be_removed_is_an_error_not_an_absence() {
+    let (home, project) = home("memory-forget-refused");
+    let store = MemoryStore::new(&home, Some(&project));
+    let dir = store.dir(Scope::Project).unwrap();
+    fs::create_dir_all(dir.join("stuck.md")).unwrap();
+    assert!(store.forget(Scope::Project, "stuck").is_err());
+}
+
+#[test]
+fn discarding_answers_whether_there_was_a_proposal() {
+    let (home, project) = home("memory-discard");
+    let store = MemoryStore::new(&home, Some(&project));
+    assert!(!store.discard("never-proposed").unwrap());
+
+    fs::create_dir_all(home.proposed_memory_dir().join("stuck.md")).unwrap();
+    assert!(store.discard("stuck").is_err());
+}
+
+#[test]
+fn citations_with_a_space_or_an_odd_segment_are_not_paths() {
+    let body = "Run `cargo fmt crates/a.rs`, see `src//main.rs` or `src/./main.rs`, \
+                and `release/v2.` but `crates/kept.rs`.";
+    assert_eq!(cited_paths(body), ["crates/kept.rs"]);
+}
+
+/// The index stays within its bound at every size, and an index that fits
+/// its bound exactly is the one that bound gives.
+#[test]
+fn an_index_fits_its_bound_and_uses_it_to_the_byte() {
+    let entries: Vec<MemoryEntry> = [
+        ("reply-in-ptbr", FactKind::Feedback),
+        ("secret-phrase", FactKind::User),
+        ("lab-image", FactKind::Project),
+        ("dashboards", FactKind::Reference),
+        ("runbooks", FactKind::Reference),
+    ]
+    .into_iter()
+    .map(|(name, kind)| entry(name, kind, "2026-10-01"))
+    .collect();
+    let full = render_index(&entries, usize::MAX);
+    for bound in 150..=full.len() + 8 {
+        let index = render_index(&entries, bound);
+        assert!(
+            index.len() <= bound,
+            "{} bytes in {bound}: {index}",
+            index.len()
+        );
+        if index.contains(NAMES_HEADING) {
+            assert_eq!(render_index(&entries, index.len()), index, "at {bound}");
+        }
+    }
+}
+
+#[test]
+fn a_description_cut_inside_a_character_is_cut_before_it() {
+    let mut long = entry("long", FactKind::Feedback, "2026-10-01");
+    long.description = format!("{}é and more", "a".repeat(LINE_DESCRIPTION - 1));
+    let index = render_index(&[long], 1_000);
+    let description = index.split_once("): ").unwrap().1;
+    assert_eq!(
+        description,
+        format!("{}…", "a".repeat(LINE_DESCRIPTION - 1))
+    );
+}
+
+#[test]
+fn today_is_a_date_of_this_era() {
+    let today = today();
+    let parts: Vec<&str> = today.split('-').collect();
+    assert_eq!(parts.len(), 3, "{today}");
+    let year: i64 = parts[0].parse().unwrap();
+    assert!((2026..2200).contains(&year), "{today}");
+    assert_eq!((parts[1].len(), parts[2].len()), (2, 2), "{today}");
+}
+
+#[test]
+fn dates_across_leap_days_centuries_and_year_ends_are_civil() {
+    for (days, date) in [
+        (-1, (1969, 12, 31)),
+        (10_956, (1999, 12, 31)),
+        (11_016, (2000, 2, 29)),
+        (11_017, (2000, 3, 1)),
+        (19_737, (2024, 1, 15)),
+        (47_540, (2100, 2, 28)),
+        (47_541, (2100, 3, 1)),
+        (157_113, (2400, 2, 29)),
+    ] {
+        assert_eq!(civil_from_days(days), date, "{days}");
+    }
+}
