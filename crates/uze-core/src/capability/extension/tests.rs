@@ -1452,6 +1452,18 @@ fn a_block_on_a_leaf_without_a_string_is_not_read_as_a_pasted_string() {
         said.message.contains("`Pips` holds no other nodes"),
         "{said:?}"
     );
+    // A leaf whose required argument is a name, not a string.
+    let said = refused(r#"Sprite { pet; }"#);
+    assert!(
+        said.iter()
+            .all(|diagnostic| !diagnostic.message.contains("takes a string")),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|diagnostic| diagnostic.message.contains("`Sprite` takes one argument")),
+        "{said:?}"
+    );
 }
 
 #[test]
