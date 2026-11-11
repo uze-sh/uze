@@ -646,6 +646,10 @@ fn copies_of_one_name_in_one_harness_each_have_their_own_id() {
     let ids: std::collections::BTreeSet<_> = overview.resources.iter().map(|r| &r.id).collect();
     assert_eq!(ids.len(), 3, "{ids:?}");
     assert!(ids.contains(&alone), "the first keeps the id it has alone");
+    assert!(
+        !alone.contains('#'),
+        "only a later copy is told apart by its place: {alone}"
+    );
 }
 
 #[test]
