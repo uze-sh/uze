@@ -413,6 +413,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    /// Only the shims directory itself is skipped: another directory that
+    /// merely shares its final name is searched like any other entry.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_named_like_the_shims_elsewhere_is_searched() {
+        let root = uze_testkit::temp::scratch("harness-shims-namesake");
+        let shims = root.join("uze").join("shims");
+        let namesake = root.join("other-tool").join("shims");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&namesake).unwrap();
+        let name = "uze-test-harness-namesake";
+        uze_testkit::process::install_executable(&namesake.join(name), b"#!/bin/sh\n");
+
+        let resolved = super::resolve_real_executable_in([namesake.clone()], &[name], &shims);
+        assert_eq!(
+            resolved,
+            Some(namesake.join(name).canonical().unwrap()),
+            "a namesake of the shims directory holds a real harness"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// A harness its installer put where no search path reaches is found
     /// at the location the integration documents, and a documented
     /// location that is UZE's own shim is not.
