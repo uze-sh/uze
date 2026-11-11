@@ -112,6 +112,8 @@ exclude_re = [
   'uze-core/src/package/acquisition/git\.rs.*replace \|\| with && in TreeWeight::over_budget$',
   # Only the path of an `ls-tree` record holds a `/`, so where the split falls counts the same.
   'uze-core/src/package/acquisition/git\.rs.*replace == with != in record_depth$',
+  # `components()` yields `.` only first in a relative path, and a path joined onto the checkout then stripped of it never starts with one.
+  'uze-core/src/package/acquisition/git\.rs.*delete match arm std::path::Component::CurDir in lexically_within$',
   # A span field recording the exit code.
   'uze-core/src/package/acquisition/git\.rs.*delete - in spawn_git$',
   # The read buffer's size, which changes how many reads a listing takes and nothing else.
