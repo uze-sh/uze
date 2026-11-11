@@ -327,4 +327,29 @@ mod tests {
             Some(SkillInvocationPolicy::USER_ONLY)
         );
     }
+
+    #[test]
+    fn only_model_and_user_together_are_the_default_and_neither_is_invalid() {
+        assert!(SkillInvocationPolicy::MODEL_AND_USER.is_default());
+        assert!(!SkillInvocationPolicy::MODEL_ONLY.is_default());
+        assert!(!SkillInvocationPolicy::USER_ONLY.is_default());
+        assert!(!SkillInvocationPolicy::INVALID.is_default());
+
+        assert!(SkillInvocationPolicy::INVALID.is_invalid());
+        assert!(!SkillInvocationPolicy::MODEL_ONLY.is_invalid());
+        assert!(!SkillInvocationPolicy::USER_ONLY.is_invalid());
+        assert!(!SkillInvocationPolicy::MODEL_AND_USER.is_invalid());
+    }
+
+    #[test]
+    fn the_frontmatter_head_ends_before_its_closing_line() {
+        assert_eq!(
+            split_frontmatter("---\nname: demo\n---\nbody\n"),
+            Some(("name: demo", "body\n"))
+        );
+        assert_eq!(
+            split_frontmatter("---\r\nname: demo\r\n---\r\nbody\r\n"),
+            Some(("name: demo", "body\r\n"))
+        );
+    }
 }

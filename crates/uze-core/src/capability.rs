@@ -330,4 +330,36 @@ mod resource_tests {
         );
         assert_eq!(resource.skill_policy, None);
     }
+
+    #[test]
+    fn skills_and_agents_are_the_kinds_reached_by_their_plugin_qualified_label() {
+        assert!(CapabilityKind::AgentSkill.is_invoked_by_label());
+        assert!(CapabilityKind::Agent.is_invoked_by_label());
+        assert!(!CapabilityKind::Mcp.is_invoked_by_label());
+        assert!(!CapabilityKind::Hook.is_invoked_by_label());
+    }
+
+    #[test]
+    fn a_capability_is_named_by_its_file_and_shown_relative_to_its_root() {
+        let root = PathBuf::from("demo-package");
+        let path = root.join("agents").join("reviewer.md");
+        let capability = Capability {
+            kind: CapabilityKind::Agent,
+            path: path.clone(),
+            payload: Vec::new(),
+        };
+
+        assert_eq!(capability.name(), "reviewer.md");
+        let relative = Path::new("agents").join("reviewer.md");
+        assert_eq!(capability.display_path(&root), relative.to_string_lossy());
+        // Outside the root there is nothing to strip: the path shows whole.
+        assert_eq!(
+            capability.display_path(Path::new("elsewhere")),
+            path.to_string_lossy()
+        );
+
+        let id = PackageId::from_plugin_name("demo-package", Path::new("plugin.json")).unwrap();
+        let resource = Resource::from_package(id, root.clone(), capability);
+        assert_eq!(resource.display_path(&root), relative.to_string_lossy());
+    }
 }

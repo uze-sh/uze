@@ -1151,4 +1151,238 @@ mod tests {
         let compatibility = assess(&hook, &HookCapabilities::default(), false);
         assert_eq!(compatibility.route, CompatibilityRoute::Unsupported);
     }
+
+    fn every_semantic() -> HookCapabilities {
+        HookCapabilities {
+            events: [
+                HookEvent::PreToolUse,
+                HookEvent::PostToolUse,
+                HookEvent::Stop,
+                HookEvent::SessionStart,
+            ]
+            .into_iter()
+            .collect(),
+            effects: [
+                HookEffect::Observe,
+                HookEffect::Allow,
+                HookEffect::Ask,
+                HookEffect::Deny,
+                HookEffect::Transform,
+            ]
+            .into_iter()
+            .collect(),
+            supports_native_matchers: true,
+            supports_input_transform: true,
+            executes_handlers_in_order: true,
+        }
+    }
+
+    fn pre_tool_hook(
+        effect: HookEffect,
+        matchers: Vec<HookMatcher>,
+        handlers: usize,
+    ) -> PortableHook {
+        PortableHook {
+            id: "guard".into(),
+            event: HookEvent::PreToolUse,
+            matchers,
+            handlers: vec![CommandHook::line("check"); handlers],
+            effect,
+            order: 0,
+        }
+    }
+
+    /// `Native` needs every axis preserved and no bridge; a bridge that
+    /// preserves every axis is `Adaptable`.
+    #[test]
+    fn a_hook_the_target_fully_preserves_is_native_unless_bridged() {
+        let full = every_semantic();
+        for hook in [
+            pre_tool_hook(HookEffect::Observe, Vec::new(), 1),
+            pre_tool_hook(HookEffect::Transform, Vec::new(), 1),
+            pre_tool_hook(
+                HookEffect::Observe,
+                vec![HookMatcher::Native("Write".into())],
+                1,
+            ),
+            pre_tool_hook(HookEffect::Observe, Vec::new(), 2),
+        ] {
+            let native = assess(&hook, &full, false);
+            assert_eq!(native.route, CompatibilityRoute::Native, "{hook:?}");
+            assert_eq!(native.reason, None, "{hook:?}");
+            assert_eq!(
+                assess(&hook, &full, true).route,
+                CompatibilityRoute::Adaptable,
+                "{hook:?}"
+            );
+        }
+    }
+
+    /// Each axis the target lacks is named, and only a hook that relies on
+    /// it is affected by it.
+    #[test]
+    fn each_missing_semantic_axis_degrades_only_the_hooks_that_need_it() {
+        let lacking = |change: fn(&mut HookCapabilities)| {
+            let mut capabilities = every_semantic();
+            change(&mut capabilities);
+            capabilities
+        };
+        let cases: [(HookCapabilities, PortableHook, PortableHook, &str); 4] = [
+            (
+                lacking(|c| {
+                    c.effects.remove(&HookEffect::Observe);
+                }),
+                pre_tool_hook(HookEffect::Observe, Vec::new(), 1),
+                pre_tool_hook(HookEffect::Allow, Vec::new(), 1),
+                "`observe` hook effect",
+            ),
+            (
+                lacking(|c| c.supports_native_matchers = false),
+                pre_tool_hook(
+                    HookEffect::Observe,
+                    vec![HookMatcher::Native("Write".into())],
+                    1,
+                ),
+                pre_tool_hook(
+                    HookEffect::Observe,
+                    vec![HookMatcher::Portable("shell".into())],
+                    1,
+                ),
+                "native tool matcher",
+            ),
+            (
+                lacking(|c| c.supports_input_transform = false),
+                pre_tool_hook(HookEffect::Transform, Vec::new(), 1),
+                pre_tool_hook(HookEffect::Observe, Vec::new(), 1),
+                "transform pre-tool input",
+            ),
+            (
+                lacking(|c| c.executes_handlers_in_order = false),
+                pre_tool_hook(HookEffect::Observe, Vec::new(), 2),
+                pre_tool_hook(HookEffect::Observe, Vec::new(), 1),
+                "ordered multi-handler",
+            ),
+        ];
+        for (capabilities, needs_it, does_not, names) in cases {
+            let degraded = assess(&needs_it, &capabilities, false);
+            assert_eq!(degraded.route, CompatibilityRoute::Degraded, "{names}");
+            assert!(
+                degraded
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains(names)),
+                "{names}: {:?}",
+                degraded.reason
+            );
+            let untouched = assess(&does_not, &capabilities, false);
+            assert_eq!(untouched.route, CompatibilityRoute::Native, "{names}");
+        }
+    }
+
+    /// A deny or ask hook the target cannot carry whole would fail open,
+    /// so it is not delivered at all rather than delivered degraded.
+    #[test]
+    fn a_decision_the_target_cannot_carry_whole_is_unsupported() {
+        let mut capabilities = every_semantic();
+        capabilities.supports_native_matchers = false;
+        let native = vec![HookMatcher::Native("Write".into())];
+        for effect in [HookEffect::Deny, HookEffect::Ask] {
+            let compatibility = assess(
+                &pre_tool_hook(effect, native.clone(), 1),
+                &capabilities,
+                true,
+            );
+            assert_eq!(
+                compatibility.route,
+                CompatibilityRoute::Unsupported,
+                "{effect:?}"
+            );
+        }
+        assert_eq!(
+            assess(
+                &pre_tool_hook(HookEffect::Allow, native, 1),
+                &capabilities,
+                true
+            )
+            .route,
+            CompatibilityRoute::Degraded
+        );
+    }
+
+    static BINDINGS: [ToolBinding; 2] = [
+        ToolBinding {
+            alias: "shell",
+            native_tool: Some("Bash"),
+            also_matches: &["Shell"],
+            fields: &[("command", "command")],
+        },
+        ToolBinding {
+            alias: "agent.spawn",
+            native_tool: None,
+            also_matches: &[],
+            fields: &[],
+        },
+    ];
+
+    #[test]
+    fn a_vocabulary_resolves_aliases_and_every_native_name_it_knows() {
+        let vocabulary = HarnessToolVocabulary {
+            bindings: &BINDINGS,
+        };
+
+        assert_eq!(vocabulary.binding("shell"), Some(&BINDINGS[0]));
+        assert_eq!(vocabulary.binding("agent.spawn"), Some(&BINDINGS[1]));
+        assert_eq!(vocabulary.binding("file.write"), None);
+
+        assert_eq!(vocabulary.binding_for_native("Bash"), Some(&BINDINGS[0]));
+        assert_eq!(vocabulary.binding_for_native("Shell"), Some(&BINDINGS[0]));
+        assert_eq!(vocabulary.binding_for_native("Read"), None);
+
+        assert_eq!(
+            vocabulary.native_names(),
+            vec![("Bash", &BINDINGS[0]), ("Shell", &BINDINGS[0])]
+        );
+    }
+
+    #[test]
+    fn a_script_named_from_a_backslash_root_is_not_inside_the_package() {
+        let error = parse_manifest(
+            Path::new("hooks.json"),
+            exec_manifest(r#"{"type":"command","command":"\\guard.py","args":[]}"#).as_bytes(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("not a path inside the package"), "{error}");
+    }
+
+    #[test]
+    fn a_hook_id_must_be_a_nonempty_plain_word() {
+        for id in ["", "has space", "slash/ed"] {
+            let source = format!(
+                r#"{{"hooks":{{"PreToolUse":[{{"id":"{id}","hooks":[{{"type":"command","command":"ok"}}]}}]}}}}"#
+            );
+            assert!(
+                matches!(
+                    parse_manifest(Path::new("hooks.json"), source.as_bytes()),
+                    Err(UzeError::InvalidHookManifest { .. })
+                ),
+                "{id:?}"
+            );
+        }
+    }
+
+    /// The maximum is what a group may take, so a group that needs exactly
+    /// that long is accepted.
+    #[test]
+    fn a_group_that_needs_exactly_the_maximum_is_accepted() {
+        let timeout = MAX_TIMEOUT_SECONDS - 2;
+        let source = format!(
+            r#"{{"hooks":{{"PreToolUse":[{{"id":"long","hooks":[{{"type":"command","command":"ok","timeout":{timeout}}}]}}]}}}}"#
+        );
+        let group = parse_manifest(Path::new("hooks.json"), source.as_bytes()).unwrap();
+        assert_eq!(
+            group_timeout_bound(&group[0].handlers),
+            u32::from(MAX_TIMEOUT_SECONDS)
+        );
+    }
 }

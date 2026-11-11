@@ -659,4 +659,28 @@ mod tests {
             "[projects\n"
         );
     }
+
+    #[test]
+    fn booleans_are_read_back_by_key_and_other_values_left_out() {
+        let home = home("config-bools");
+        set_bool(&home, "features", "beta", true).expect("written");
+        set_bool(&home, "features", "telemetry", false).expect("written");
+        set(&home, "features", "channel", "nightly").expect("written");
+
+        assert_eq!(
+            bools(&home, "features").expect("readable"),
+            BTreeMap::from([("beta".to_owned(), true), ("telemetry".to_owned(), false)])
+        );
+        assert!(bools(&home, "absent").expect("readable").is_empty());
+    }
+
+    /// Only a missing file is an empty configuration; one that cannot be
+    /// read is an error, never silently treated as having nothing set.
+    #[test]
+    fn a_configuration_that_cannot_be_read_is_an_error() {
+        let home = home("config-unreadable");
+        fs::create_dir_all(home.config_path()).unwrap();
+
+        assert!(get(&home, "appearance", "theme").is_err());
+    }
 }
