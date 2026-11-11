@@ -386,4 +386,31 @@ mod tests {
             argv(&["deno", "run", "/root/guard.ts"], Some("deno"))
         );
     }
+
+    /// A stand-in for a Python, answering `--version` as `script` does.
+    // Its stand-in programs are POSIX shell scripts, which only a Unix runs.
+    #[cfg(unix)]
+    fn python_answering(label: &str, script: &str) -> PathBuf {
+        let path = uze_testkit::temp::scratch(label).join("python");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        uze_testkit::process::install_executable(&path, script.as_bytes());
+        path
+    }
+
+    #[test]
+    // Its stand-in programs are POSIX shell scripts, which only a Unix runs.
+    #[cfg(unix)]
+    fn only_a_python_3_that_answers_counts() {
+        let answers = |label: &str, script: &str| {
+            let path = python_answering(label, script);
+            python_answers(&[path.to_str().unwrap()])
+        };
+        assert!(answers("python-3", "#!/bin/sh\necho 'Python 3.12.1'\n"));
+        assert!(!answers("python-2", "#!/bin/sh\necho 'Python 2.7.18'\n"));
+        assert!(!answers(
+            "python-alias",
+            "#!/bin/sh\necho 'Python 3.12.1'\nexit 9\n"
+        ));
+        assert!(!python_answers(&[]));
+    }
 }
