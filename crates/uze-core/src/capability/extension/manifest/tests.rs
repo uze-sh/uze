@@ -1462,6 +1462,8 @@ fn a_call_names_a_function_by_letters_digits_and_underscores() {
         )
     };
     decoded(&call("next_phase"));
+    decoded(&call("_next"));
+    assert!(first_message(&call("1st")).contains("`1st` is not a function's name"));
     assert!(first_message(&call("next-phase")).contains("`next-phase` is not a function's name"));
 }
 
