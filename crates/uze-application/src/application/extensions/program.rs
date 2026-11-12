@@ -854,4 +854,228 @@ mod tests {
             assert!(!is_picture_name(name), "{name}");
         }
     }
+
+    /// The program a test asks about, pinned under `root` and never run.
+    struct Question {
+        root: PathBuf,
+        home: UzeHome,
+        checkout: ExtensionCheckout,
+        program: Program,
+        input: serde_json::Value,
+    }
+
+    impl Question {
+        fn new(label: &str) -> Self {
+            let root = uze_testkit::temp::scratch(label);
+            let checkout = root.join("checkout");
+            std::fs::create_dir_all(&checkout).unwrap();
+            Self {
+                home: UzeHome::at(root.join("uze")),
+                checkout: ExtensionCheckout {
+                    common_dir: checkout.join(".git"),
+                    root: checkout,
+                },
+                program: Program::new(vec!["tool".to_owned(), "--now".to_owned()]),
+                input: serde_json::json!({ "phase": "12" }),
+                root,
+            }
+        }
+
+        fn consent(&self, confined: bool) -> ExtensionConsent {
+            ExtensionConsent {
+                exec_paths: Some(BTreeMap::from([(
+                    "tool".to_owned(),
+                    self.root.join("bin").join("tool"),
+                )])),
+                enforced_at_accept: Some(confined),
+                ..ExtensionConsent::default()
+            }
+        }
+
+        fn asked<'a>(&'a self, asking: Asking, consent: Option<&'a ExtensionConsent>) -> Asked<'a> {
+            Asked {
+                home: &self.home,
+                extension_dir: &self.root,
+                files: None,
+                program: &self.program,
+                output: &Output::Json,
+                reads: &[],
+                asking,
+                declaration: "meter",
+                extension: "gpu-meter",
+                checkout: &self.checkout,
+                input: &self.input,
+                store: None,
+                consent,
+                helper: None,
+                literal: false,
+                pictures: None,
+            }
+        }
+    }
+
+    impl Drop for Question {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// A program allowed to run confined is not run where nothing confines
+    /// it; one allowed unconfined is laid out to run.
+    #[test]
+    fn a_program_allowed_confined_is_not_run_unconfined() {
+        let question = Question::new("program-confined-only");
+        let dir = question.root.join("run");
+
+        let confined = question.consent(true);
+        assert!(matches!(
+            prepare(&question.asked(Asking::Source, Some(&confined)), &dir),
+            Err(NotRun::Withheld(reason)) if reason.contains("does not confine programs now")
+        ));
+        let unconfined = question.consent(false);
+        let run = prepare(&question.asked(Asking::Source, Some(&unconfined)), &dir)
+            .unwrap_or_else(|_| panic!("laid out"));
+        assert_eq!(run.executable, question.root.join("bin").join("tool"));
+        assert_eq!(run.args, ["--now"]);
+    }
+
+    /// What a program reads on its standard input names what asked: a
+    /// source or an action, by its declaration.
+    #[test]
+    fn a_programs_input_names_the_declaration_that_asked() {
+        let question = Question::new("program-declared-as");
+        let consent = question.consent(false);
+        let context = |asking: Asking| {
+            let run = prepare(
+                &question.asked(asking, Some(&consent)),
+                &question.root.join("run"),
+            )
+            .unwrap_or_else(|_| panic!("laid out"));
+            let stdin: serde_json::Value = serde_json::from_slice(&run.stdin).unwrap();
+            stdin["context"].clone()
+        };
+        assert_eq!(context(Asking::Source)["source"], "meter");
+        assert_eq!(context(Asking::Refresh)["source"], "meter");
+        assert_eq!(context(Asking::Action)["action"], "meter");
+        assert!(context(Asking::Action).get("source").is_none());
+    }
+
+    #[test]
+    fn only_top_level_text_numbers_and_flags_become_inputs() {
+        let inputs = flat_inputs(&serde_json::json!({
+            "phase": "12",
+            "count": 3,
+            "draft": true,
+            "nested": { "deeper": "x" },
+            "list": ["a"],
+            "nothing": null,
+            "not a name": "x",
+        }));
+        assert_eq!(
+            inputs,
+            BTreeMap::from([
+                ("count".to_owned(), "3".to_owned()),
+                ("draft".to_owned(), "true".to_owned()),
+                ("phase".to_owned(), "12".to_owned()),
+            ])
+        );
+        assert!(flat_inputs(&serde_json::json!("text")).is_empty());
+    }
+
+    /// An action that refuses says why where the operator is looking; a
+    /// source that refuses fails, saying so.
+    #[test]
+    fn a_refusal_is_a_notice_for_an_action_and_a_failure_for_a_source() {
+        let question = Question::new("program-refused");
+        let refused = || ProgramOutcome::Refused {
+            reason: "no GPU".to_owned(),
+        };
+        match outcome(&question.asked(Asking::Action, None), refused()) {
+            Answer::Answered { envelope, .. } => {
+                assert_eq!(envelope.notice.as_deref(), Some("no GPU"));
+            }
+            other => panic!("an action's refusal is answered: {other:?}"),
+        }
+        match outcome(&question.asked(Asking::Source, None), refused()) {
+            Answer::Failed { reason, .. } => {
+                assert!(reason.contains("refused: no GPU"), "{reason}")
+            }
+            other => panic!("a source's refusal fails: {other:?}"),
+        }
+    }
+
+    /// A script's `run_program` of a program nobody pinned is refused,
+    /// naming the program, and nothing runs.
+    #[test]
+    fn a_script_running_an_unpinned_program_is_refused() {
+        let question = Question::new("program-reply-unpinned");
+        let unpinned = ExtensionConsent {
+            exec_paths: Some(BTreeMap::new()),
+            enforced_at_accept: Some(false),
+            ..ExtensionConsent::default()
+        };
+        let mut asked = question.asked(Asking::Source, Some(&unpinned));
+        asked.literal = true;
+        let refused = reply(&asked).unwrap_err();
+        assert!(refused.0.starts_with("`tool`: "), "{refused:?}");
+        assert!(refused.0.contains("not found"), "{refused:?}");
+    }
+
+    /// A scratch whose process cannot be told is kept for far longer than
+    /// any program may run.
+    #[test]
+    fn a_scratch_of_an_unknown_process_is_kept_long_past_any_time_limit() {
+        let root = uze_testkit::temp::scratch("program-scratch-stale-bound");
+        let home = UzeHome::at(root.clone());
+        let left = home.extension_scratch_dir("unknown-0");
+        std::fs::create_dir_all(left.join(SCRATCH)).unwrap();
+        let half_an_hour_ago =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(30 * 60);
+        uze_platform::fs::set_modified(&left, half_an_hour_ago).unwrap();
+
+        assert!(sweep_scratch(&home, STALE_SCRATCH, |_| None).is_empty());
+        assert!(left.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A live run's scratch is kept for days; only the week's cap takes it
+    /// from a pid that answers alive.
+    #[test]
+    fn a_live_runs_scratch_is_kept_for_days() {
+        let root = uze_testkit::temp::scratch("program-scratch-days");
+        let home = UzeHome::at(root.clone());
+        let running = home.extension_scratch_dir("4242-0");
+        std::fs::create_dir_all(running.join(SCRATCH)).unwrap();
+        let two_days_ago =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 24 * 60 * 60);
+        uze_platform::fs::set_modified(&running, two_days_ago).unwrap();
+
+        assert!(sweep_scratch(&home, STALE_SCRATCH, |_| Some(true)).is_empty());
+        assert!(running.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Collecting pictures keeps each extension's newest and no more.
+    #[test]
+    fn collecting_pictures_bounds_each_extensions_own() {
+        use crate::application::Collectable as _;
+        let root = uze_testkit::temp::scratch("program-pictures-collect");
+        let home = UzeHome::at(root.clone());
+        let dir = home.extension_pictures_dir("media@studio", "screen");
+        std::fs::create_dir_all(&dir).unwrap();
+        let start = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        for index in 0..KEPT_PICTURES + 1 {
+            let path = dir.join(format!("shot-{index:02}.png"));
+            std::fs::write(&path, b"png").unwrap();
+            uze_platform::fs::set_modified(
+                &path,
+                start + std::time::Duration::from_secs(index as u64),
+            )
+            .unwrap();
+        }
+
+        let collected = ExtensionPictures.collect(&home);
+        assert_eq!(collected.removed, [dir.join("shot-00.png")]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
