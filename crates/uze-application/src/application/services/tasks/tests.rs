@@ -4480,3 +4480,43 @@ mod root_standing_tests {
         assert_eq!(view.ahead, 1);
     }
 }
+
+mod unread_policy_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    fn application(label: &str) -> UzeApplication {
+        UzeApplication::new(UzeHome::at(uze_testkit::temp::scratch(label)), Vec::new())
+    }
+
+    /// A manifest that does not parse says nothing about where an agent
+    /// belongs: only a launch that names its kind still goes ahead.
+    #[test]
+    fn an_unreadable_manifest_places_only_an_agent_whose_kind_was_named() {
+        let repository = uze_testkit::git::Repository::new("place-unreadable");
+        let root = repository.root().canonical().unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace: [unterminated\n").unwrap();
+        let app = application("place-unreadable-home");
+
+        assert!(
+            app.workspace()
+                .place_new_agent(&root, None, "fixture", &[])
+                .is_err()
+        );
+        assert!(
+            app.workspace()
+                .place_new_agent(&root, Some(PlacementKind::InPlace), "fixture", &[])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_declared_target_is_pulled_on_request() {
+        let repository = uze_testkit::git::Repository::new("pull-declared");
+        let root = repository.root().canonical().unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  target: main\n").unwrap();
+        repository.with_origin("main");
+        let app = application("pull-declared-home");
+        assert!(app.workspace().pull_target(&root).is_some());
+    }
+}

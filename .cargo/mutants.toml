@@ -297,4 +297,11 @@ exclude_re = [
   'uze-application/src/application/project_environment\.rs.*replace Project<._>::prefetch_install_sources with \(\)$',
   # A collector's name labels the report; any non-empty label behaves the same.
   'uze-application/src/application/rules_engine\.rs.*replace <impl super::Collectable for RuleSessions>::name -> &.static str with "xyzzy"$',
+  # uze-application services
+  # A collector's name only labels its report; a distinct, non-empty one is tested.
+  'uze-application/src/application/maintenance\.rs.*replace <impl Collectable for \w+(<.*>)?>::name -> &.static str with "xyzzy"$',
+  # The test integration's capabilities already are the default.
+  'uze-application/src/application/maintenance\.rs.*TestIntegration>::capabilities -> uze_core::router::HarnessCapabilities with Default::default\(\)$',
+  # The wording of a warning a person reads; that it is given is the delivery's.
+  'uze-application/src/application/services/tasks/delivery\.rs.*replace superseded_delivery -> String with ',
 ]
