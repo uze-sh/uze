@@ -4110,9 +4110,7 @@ mod overrides_tests {
 mod identity_tests {
     use super::*;
     use uze_core::{
-        UzeHome,
-        exposure::ExposurePlan,
-        integration::SessionContinuity,
+        UzeHome, exposure::ExposurePlan, integration::SessionContinuity,
         router::HarnessCapabilities,
     };
 
@@ -4383,7 +4381,10 @@ mod facade_tests {
         let root = repository.root().canonical().unwrap();
         let app = application("facade-refresh-home");
         let agent = placed(&app, &root);
-        assert!(!app.workspace().refresh_conversation("unregistered", claim(&agent)));
+        assert!(
+            !app.workspace()
+                .refresh_conversation("unregistered", claim(&agent))
+        );
     }
 
     #[test]
@@ -4415,7 +4416,9 @@ mod facade_tests {
         let other = uze_platform::shell::spelling("windows", "posix");
         std::fs::write(
             root.join("agents.yaml"),
-            format!("workspace:\n  gate:\n    {other}: make check\n  setup: for f in *; do make; done\n"),
+            format!(
+                "workspace:\n  gate:\n    {other}: make check\n  setup: for f in *; do make; done\n"
+            ),
         )
         .unwrap();
         let workspace = app.workspace();

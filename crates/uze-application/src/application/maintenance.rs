@@ -841,7 +841,8 @@ mod report_tests {
         let base = uze_testkit::temp::scratch("maintenance-live");
         let home = uze_core::UzeHome::at(base.join("home"));
         let inspected = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let app = crate::UzeApplication::new(home.clone(), vec![Box::new(Counting(inspected.clone()))]);
+        let app =
+            crate::UzeApplication::new(home.clone(), vec![Box::new(Counting(inspected.clone()))]);
         let source = base.join("flow");
         std::fs::create_dir_all(source.join("skills/demo")).unwrap();
         std::fs::write(

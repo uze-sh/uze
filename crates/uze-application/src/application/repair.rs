@@ -605,7 +605,10 @@ mod tests {
             "everything repaired"
         );
         assert_eq!(report(vec![network()]).exit_status(), 2);
-        assert_eq!(report(vec![RepairOutcome::Repaired, network()]).exit_status(), 2);
+        assert_eq!(
+            report(vec![RepairOutcome::Repaired, network()]).exit_status(),
+            2
+        );
         assert_eq!(report(vec![human()]).exit_status(), 1);
         assert_eq!(report(vec![unrepairable()]).exit_status(), 1);
         assert_eq!(
