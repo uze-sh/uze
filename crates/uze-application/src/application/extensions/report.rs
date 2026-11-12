@@ -791,4 +791,145 @@ mod tests {
         assert_eq!(row.stepped(true), Some(serde_json::json!("dark")));
         assert_eq!(row.stepped(false), Some(serde_json::json!("auto")));
     }
+
+    /// The civil calendar's century and era turns: a year divisible by 100
+    /// is no leap year unless 400 divides it too.
+    #[test]
+    fn an_update_is_dated_across_century_turns() {
+        assert_eq!(utc_day(951_782_400), "2000-02-29");
+        assert_eq!(utc_day(951_868_800), "2000-03-01");
+        assert_eq!(utc_day(4_107_456_000), "2100-02-28");
+        assert_eq!(utc_day(4_107_542_400), "2100-03-01");
+        assert_eq!(utc_day(13_574_563_200), "2400-02-29");
+    }
+
+    fn row(kind: &'static str, value: serde_json::Value, values: &[&str]) -> PreferenceRow {
+        PreferenceRow {
+            name: "pref".to_owned(),
+            label: "Pref".to_owned(),
+            kind,
+            value,
+            values: values.iter().map(|value| (*value).to_owned()).collect(),
+            default: serde_json::Value::Null,
+            min: None,
+            max: None,
+        }
+    }
+
+    #[test]
+    fn a_press_flips_a_toggle_and_moves_a_choice_round_its_values() {
+        let toggle = |value| row("toggle", value, &[]);
+        assert_eq!(toggle(true.into()).pressed(), Some(false.into()));
+        assert_eq!(toggle(false.into()).pressed(), Some(true.into()));
+        assert_eq!(toggle(serde_json::Value::Null).pressed(), Some(true.into()));
+        assert_eq!(toggle(true.into()).stepped(true), Some(false.into()));
+
+        let choice = |value: &str| row("choice", value.into(), &["light", "dark", "auto"]);
+        assert_eq!(choice("light").pressed(), Some("dark".into()));
+        assert_eq!(choice("dark").pressed(), Some("auto".into()));
+        assert_eq!(choice("auto").pressed(), Some("light".into()), "round");
+        assert_eq!(choice("unknown").pressed(), Some("light".into()));
+
+        assert_eq!(row("text", "a".into(), &[]).pressed(), None, "typed");
+        assert_eq!(row("number", 3.into(), &[]).pressed(), None, "typed");
+    }
+
+    #[test]
+    fn a_secret_says_only_whether_it_is_set() {
+        let secret = |set: bool| row("secret", set.into(), &[]);
+        assert!(secret(true).is_secret());
+        assert!(!row("text", "a".into(), &[]).is_secret());
+        assert_eq!(secret(true).said(), "set");
+        assert_eq!(secret(false).said(), "not set");
+        assert_eq!(row("toggle", true.into(), &[]).said(), "on");
+        assert_eq!(row("text", "week".into(), &[]).said(), "week");
+    }
+
+    #[test]
+    fn text_and_a_secret_are_typed_as_they_are() {
+        assert_eq!(row("text", "".into(), &[]).typed("a b"), Some("a b".into()));
+        assert_eq!(
+            row("secret", false.into(), &[]).typed("ghp_x"),
+            Some("ghp_x".into())
+        );
+        assert_eq!(row("toggle", true.into(), &[]).typed("on"), None);
+    }
+
+    /// A number too large for a whole one stays a number.
+    #[test]
+    fn a_number_past_the_whole_numbers_stays_a_number() {
+        let past = 2f64.powi(63);
+        assert_eq!(as_number(past), serde_json::Value::from(past));
+        assert_eq!(as_number(3.0), serde_json::json!(3));
+    }
+
+    #[test]
+    fn every_condition_and_every_grant_reads_as_its_own() {
+        use ExtensionCondition as Condition;
+        let conditions = [
+            Condition::FixturesOnly,
+            Condition::NeedsConsent,
+            Condition::NeedsEnabling,
+            Condition::Enabled,
+            Condition::Consented,
+            Condition::Held,
+            Condition::Broken,
+        ];
+        let said: BTreeSet<&str> = conditions
+            .iter()
+            .map(|condition| condition.said())
+            .collect();
+        assert_eq!(said.len(), conditions.len(), "{said:?}");
+        assert!(said.iter().all(|text| !text.trim().is_empty()));
+
+        let unknown = grant_meaning("not-a-grant");
+        for grant in ["read:checkout", "exec:sh", "store", "agent:observe"] {
+            let meaning = grant_meaning(grant);
+            assert!(!meaning.trim().is_empty(), "{grant}");
+            assert_ne!(meaning, unknown, "{grant}");
+        }
+    }
+
+    #[test]
+    fn a_report_names_its_plugin_and_the_day_it_was_updated() {
+        let world = World::new("report-plugin-day");
+        let mut report = report_of(&world, None);
+        assert_eq!(report.plugin_id(), "gsd@studio");
+        assert_eq!(report.updated_on(), None);
+        report.updated_at = Some(1_792_972_800);
+        assert_eq!(report.updated_on().as_deref(), Some("2026-10-26"));
+    }
+
+    #[test]
+    fn the_project_here_is_the_checkout_a_path_sits_in() {
+        let world = World::new("report-project-here");
+        let extensions = world.app.extensions();
+        let here = extensions
+            .project_here(&world.checkout.join(".planning"))
+            .expect("inside the project");
+        assert!(
+            uze_platform::path::same_path(&here, &world.checkout),
+            "{}",
+            here.display()
+        );
+        let nowhere = uze_testkit::temp::scratch("report-project-nowhere");
+        assert_eq!(extensions.project_here(&nowhere.join("absent")), None);
+        let _ = fs::remove_dir_all(nowhere);
+    }
+
+    /// Asked as the workspace asks, an extension still awaiting consent is
+    /// offered where its plugin is declared.
+    #[test]
+    fn the_workspace_offers_what_awaits_consent_where_it_is_declared() {
+        let world = World::new("report-offers-machine");
+        declare_the_plugin(&world);
+        let offered: Vec<String> = world
+            .app
+            .extensions()
+            .offers(&world.checkout)
+            .iter()
+            .map(ExtensionReport::attribution)
+            .collect();
+        assert_eq!(offered, ["gsd@studio/gsd-band"]);
+    }
 }

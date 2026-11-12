@@ -191,4 +191,27 @@ mod tests {
         );
         assert!(summary.views.is_empty() && summary.sections.is_empty());
     }
+
+    /// Only an extension from the built-in marketplace is official.
+    #[test]
+    fn only_the_built_in_marketplaces_extensions_are_official() {
+        let diagnostics = Vec::new();
+        assert!(!summarize(installed(), Err(&diagnostics)).official);
+        let mut built_in = installed();
+        built_in.identity.marketplace = uze_core::manifest::BUILT_IN_MARKETPLACE.to_owned();
+        assert!(summarize(built_in, Err(&diagnostics)).official);
+    }
+
+    #[test]
+    fn every_installed_extension_is_summarized() {
+        let world = crate::application::extensions::runner::tests::World::new("summaries");
+        let ids: Vec<String> = world
+            .app
+            .extensions()
+            .summaries()
+            .into_iter()
+            .map(|summary| summary.identity.id)
+            .collect();
+        assert_eq!(ids, ["gsd-band", "gsd-panel"]);
+    }
 }

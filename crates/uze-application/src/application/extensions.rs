@@ -63,3 +63,31 @@ impl Extensions<'_> {
         extensions::set_enabled(&self.0.home, id, enabled)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::UzeApplication;
+
+    /// A built-in extension switched off is among those disabled until it
+    /// is switched on again.
+    #[test]
+    fn an_extension_switched_off_is_disabled_until_switched_on() {
+        let root = uze_testkit::temp::scratch("extensions-switch");
+        let app = UzeApplication::new(uze_core::UzeHome::at(root.join("uze")), Vec::new());
+        let extensions = app.extensions();
+        assert!(extensions.disabled().unwrap().is_empty());
+
+        extensions.set_enabled("focus", false).unwrap();
+        assert_eq!(
+            extensions
+                .disabled()
+                .unwrap()
+                .into_iter()
+                .collect::<Vec<_>>(),
+            ["focus"]
+        );
+        extensions.set_enabled("focus", true).unwrap();
+        assert!(extensions.disabled().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
