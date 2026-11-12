@@ -91,6 +91,13 @@ mod tests {
     }
 
     #[test]
+    fn the_share_is_what_two_sets_hold_in_common_over_what_they_hold_together() {
+        let left = ["alpha".to_owned(), "beta".to_owned()];
+        let right = ["beta".to_owned(), "gamma".to_owned()];
+        assert_eq!(overlap(&left, &right), (1, 1.0 / 3.0));
+    }
+
+    #[test]
     fn accents_case_and_separators_fold_away() {
         assert_eq!(fold("Decisão"), "decisao");
         assert_eq!(fold("ÍNDICE da memória"), "indice da memoria");

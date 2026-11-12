@@ -860,3 +860,381 @@ fn a_proposal_and_an_applied_fact_are_never_offered_for_each_other() {
         applied.similar
     );
 }
+
+fn remember_described(home: &UzeHome, project: &Path, name: &str, description: &str, body: &str) {
+    MemoryStore::new(home, Some(project))
+        .remember(
+            Scope::Project,
+            &Remember {
+                name,
+                kind: FactKind::Feedback,
+                description,
+                body,
+                source: Source::Operator,
+            },
+            false,
+        )
+        .unwrap();
+}
+
+fn found_names(found: &find::Found) -> Vec<&str> {
+    found
+        .matches
+        .iter()
+        .map(|found| found.entry.name.as_str())
+        .collect()
+}
+
+#[test]
+fn find_keeps_only_the_kind_asked_for() {
+    let (home, project) = world("app-memory-find-kind");
+    for (name, kind) in [
+        ("as-project", FactKind::Project),
+        ("as-reference", FactKind::Reference),
+        ("as-user", FactKind::User),
+    ] {
+        remember_body(&home, &project, Scope::Project, name, kind, "alpha");
+    }
+    let report = gather(&home, Some(&project), &[], None);
+
+    let found = find::find(&report, &["alpha".to_owned()], Some(FactKind::Reference));
+
+    assert_eq!(found_names(&found), ["as-reference"]);
+}
+
+#[test]
+fn find_lists_twenty_facts_and_says_when_it_left_more_out() {
+    let (home, project) = world("app-memory-find-limit");
+    for index in 0..20 {
+        remember_body(
+            &home,
+            &project,
+            Scope::Project,
+            &format!("fact-{index:02}"),
+            FactKind::Project,
+            "alpha",
+        );
+    }
+    let words = ["alpha".to_owned()];
+    let twenty = find::find(&gather(&home, Some(&project), &[], None), &words, None);
+    assert_eq!((twenty.total, twenty.matches.len()), (20, 20));
+    assert!(!twenty.truncated, "every match was listed");
+
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "fact-20",
+        FactKind::Project,
+        "alpha",
+    );
+    let more = find::find(&gather(&home, Some(&project), &[], None), &words, None);
+    assert_eq!((more.total, more.matches.len()), (21, 20));
+    assert!(more.truncated);
+}
+
+#[test]
+fn a_word_in_the_name_ranks_above_the_same_word_in_a_description() {
+    let (home, project) = world("app-memory-find-name-description");
+    remember_described(&home, &project, "zeta-alpha", "about nothing", "body");
+    remember_described(&home, &project, "beta", "mentions alpha here", "body");
+
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["alpha".to_owned()],
+        None,
+    );
+
+    assert_eq!(found_names(&found), ["zeta-alpha", "beta"]);
+}
+
+#[test]
+fn a_fact_quotes_at_most_three_body_lines() {
+    let (home, project) = world("app-memory-find-body-hits");
+    remember_described(
+        &home,
+        &project,
+        "many",
+        "about nothing",
+        "alpha one\nalpha two\nalpha three\nalpha four\nalpha five",
+    );
+
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["alpha".to_owned()],
+        None,
+    );
+
+    let body_hits = found.matches[0]
+        .hits
+        .iter()
+        .filter(|hit| hit.field == "body")
+        .count();
+    assert_eq!(body_hits, 3);
+}
+
+#[test]
+fn the_front_matter_is_never_searched_as_body() {
+    let (home, project) = world("app-memory-find-front-matter");
+    remember_described(&home, &project, "plain", "about nothing", "body");
+
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["operator".to_owned()],
+        None,
+    );
+
+    assert_eq!(found.total, 0, "{:?}", found_names(&found));
+}
+
+#[test]
+fn a_long_body_line_is_quoted_short_and_cut_between_characters() {
+    let (home, project) = world("app-memory-find-long-line");
+    let ascii = format!("alpha {}", "x".repeat(400));
+    let accented = format!("a{}", "é".repeat(200));
+    remember_described(&home, &project, "ascii", "about nothing", &ascii);
+    remember_described(
+        &home,
+        &project,
+        "accented",
+        "about nothing",
+        &format!("alpha\n{accented}"),
+    );
+
+    let ascii_found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["xxxx".to_owned()],
+        None,
+    );
+    let accented_found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["éé".to_owned()],
+        None,
+    );
+
+    for found in [&ascii_found, &accented_found] {
+        let hit = found.matches[0]
+            .hits
+            .iter()
+            .find(|hit| hit.field == "body")
+            .unwrap();
+        let kept = hit.text.strip_suffix('…').expect("a cut line says so");
+        assert!(kept.len() <= 200, "{} bytes", kept.len());
+        assert!(kept.len() > 190, "{} bytes", kept.len());
+    }
+}
+
+#[test]
+fn a_machine_fact_is_shown_with_the_machine_flag() {
+    let (home, project) = world("app-memory-find-machine");
+    remember_body(
+        &home,
+        &project,
+        Scope::Machine,
+        "on-the-machine",
+        FactKind::User,
+        "alpha",
+    );
+
+    let found = find::find(
+        &gather(&home, Some(&project), &[], None),
+        &["alpha".to_owned()],
+        None,
+    );
+
+    assert_eq!(
+        found.matches[0].show,
+        "uze agent memory show on-the-machine -m"
+    );
+}
+
+#[test]
+fn the_application_finds_what_its_store_holds() {
+    let (home, project) = world("app-memory-app-find");
+    uze_testkit::git::mark_repository(&project);
+    remember_body(
+        &home,
+        &project,
+        Scope::Project,
+        "kept",
+        FactKind::User,
+        "alpha",
+    );
+    let app = app(&home, Vec::new());
+
+    let found = app
+        .memory()
+        .find(caller(&project), &["alpha".to_owned()], None)
+        .unwrap();
+
+    assert_eq!(found_names(&found), ["kept"]);
+}
+
+#[test]
+fn a_report_at_a_directory_lists_its_projects_facts_and_where_they_live() {
+    let (home, project) = world("app-memory-report-at");
+    uze_testkit::git::mark_repository(&project);
+    remember(&home, &project, Scope::Project, "kept", false);
+    let app = app(&home, Vec::new());
+
+    let report = app.memory().report_at(&project);
+
+    assert!(report.entries.iter().any(|entry| entry.name == "kept"));
+    assert!(report.project_dir.is_some());
+    assert_eq!(report.machine_dir, home.machine_memory_dir());
+}
+
+#[test]
+fn forget_says_whether_there_was_a_fact_to_forget() {
+    let (home, project) = world("app-memory-forget");
+    remember(&home, &project, Scope::Machine, "kept", false);
+    let app = app(&home, Vec::new());
+
+    assert!(
+        app.memory()
+            .forget(caller(&project), Scope::Machine, "kept")
+            .unwrap()
+    );
+    assert!(
+        !app.memory()
+            .forget(caller(&project), Scope::Machine, "kept")
+            .unwrap()
+    );
+}
+
+#[test]
+fn an_accepted_proposal_becomes_a_machine_fact_and_a_discarded_one_is_gone() {
+    let (home, project) = world("app-memory-accept-discard");
+    remember(&home, &project, Scope::Machine, "to-accept", true);
+    remember(&home, &project, Scope::Machine, "to-discard", true);
+    let app = app(&home, Vec::new());
+
+    let accepted = app.memory().accept("to-accept").unwrap();
+    assert!(
+        accepted.starts_with(home.machine_memory_dir()),
+        "{accepted:?}"
+    );
+    assert!(accepted.is_file());
+
+    assert!(app.memory().discard("to-discard").unwrap());
+    assert!(!app.memory().discard("to-discard").unwrap());
+}
+
+#[test]
+fn show_reads_the_harness_entry_of_the_name_asked_for() {
+    let (home, project) = world("app-memory-show-harness");
+    uze_testkit::git::mark_repository(&project);
+    let kept_dir = home.root().join("harness-memory");
+    std::fs::create_dir_all(&kept_dir).unwrap();
+    let mut first = kept("first", "keeper");
+    first.path = kept_dir.join("first.md");
+    std::fs::write(&first.path, "the first entry\n").unwrap();
+    let mut second = kept("second", "keeper");
+    second.path = kept_dir.join("second.md");
+    std::fs::write(&second.path, "the second entry\n").unwrap();
+    let app = app(
+        &home,
+        vec![Box::new(Harness {
+            id: "keeper",
+            writes_own: true,
+            keeps: vec![first, second],
+        })],
+    );
+
+    let shown = app
+        .memory()
+        .show(caller(&project), Scope::Project, "second")
+        .unwrap();
+
+    assert_eq!(shown.entry.name, "second");
+    assert_eq!(shown.body, "the second entry\n");
+}
+
+#[test]
+fn one_shared_word_is_not_a_near_duplicate() {
+    let (home, project) = world("app-memory-similar-one-word");
+    uze_testkit::git::mark_repository(&project);
+    let app = app(&home, Vec::new());
+    let write = |name: &str, description: &str| {
+        app.memory()
+            .remember(
+                caller(&project),
+                Scope::Project,
+                name,
+                FactKind::Feedback,
+                description,
+                "",
+            )
+            .unwrap()
+    };
+    write("release-train", "Release on Fridays");
+
+    let written = write("release", "release");
+
+    assert!(written.similar.is_none(), "{:?}", written.similar);
+}
+
+#[test]
+fn only_plain_top_level_names_in_gitignore_are_left_unjudged() {
+    let (_home, project) = world("app-memory-gitignore");
+    std::fs::write(
+        project.join(".gitignore"),
+        "# a comment\n!negated\n/build/\nsrc/generated\n*.log\n/\n\ntarget\n",
+    )
+    .unwrap();
+
+    assert_eq!(ignored_roots(&project), ["build", "target"]);
+}
+
+#[test]
+fn the_memory_section_fits_the_room_it_is_asked_with_and_fills_it() {
+    let (home, project) = world("app-memory-room-exact");
+    for index in 0..60 {
+        remember_described(
+            &home,
+            &project,
+            &format!("fact-{index:02}"),
+            "a standing piece of guidance long enough to need its own line",
+            "body",
+        );
+    }
+    let writes_through_uze = Harness {
+        id: "through-uze",
+        writes_own: false,
+        keeps: Vec::new(),
+    };
+    let heading = agent_context::heading(HEADING).len();
+    for room in (1_600..2_400).step_by(7) {
+        let sections = context_sections(
+            &home,
+            &SectionAsk {
+                room,
+                ..reserved(&project)
+            },
+            &writes_through_uze,
+            &[],
+        );
+        let taken = heading + sections[0].text.len();
+        assert!(taken <= room, "{taken} bytes in a room of {room}");
+        assert!(room - taken < 120, "{taken} bytes in a room of {room}");
+    }
+}
+
+#[test]
+fn a_link_is_read_once_and_only_when_it_could_name_a_fact() {
+    let long = "x".repeat(200);
+    let text = format!("[[first]] [[ ]] [[first]] [[{long}]] [[two\nlines]] [[second]]");
+
+    assert_eq!(links::written(&text), ["first", "second"]);
+}
+
+#[test]
+fn a_link_resolves_by_the_facts_file_stem() {
+    let mut entry = kept("A Pretty Name", "keeper");
+    entry.path = PathBuf::from("facts").join("deploy-steps.md");
+    let entries = [entry];
+
+    let resolved = links::resolve("deploy-steps", &entries).map(|entry| entry.name.as_str());
+
+    assert_eq!(resolved, Some("A Pretty Name"));
+}
