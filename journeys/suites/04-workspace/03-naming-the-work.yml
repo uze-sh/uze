@@ -129,6 +129,13 @@ scenes:
         timeout: 40
         settle: 1.0
         say: the workspace reads the branch the checkout is actually on
+      # The label follows the branch as soon as the sidebar reads it; the
+      # commit reaches the record on a later reconciliation pass, which a
+      # slow runner may not have finished when the label is drawn.
+      - wait: shell
+        until: grep -Eq '"state":[[:space:]]*"ready"' {uze_home}/state/projects/*/tasks.json
+        timeout: 30
+        say: the workspace has seen the commit
     then:
       - tasks: { newest_branch: "fix/renamed-by-hand", newest_label: "renamed by hand" }
         about: |
