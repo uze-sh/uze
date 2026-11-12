@@ -304,4 +304,7 @@ exclude_re = [
   'uze-application/src/application/maintenance\.rs.*TestIntegration>::capabilities -> uze_core::router::HarnessCapabilities with Default::default\(\)$',
   # The wording of a warning a person reads; that it is given is the delivery's.
   'uze-application/src/application/services/tasks/delivery\.rs.*replace superseded_delivery -> String with ',
+  # uze-application lifecycle
+  # Removal returns NotFound only when the path vanished between its stat and its removal.
+  'uze-application/src/application/uninstall\.rs.*replace match guard error\.kind\(\) != std::io::ErrorKind::NotFound with true in remove_path$',
 ]
