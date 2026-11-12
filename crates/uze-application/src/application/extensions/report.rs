@@ -932,4 +932,69 @@ mod tests {
             .collect();
         assert_eq!(offered, ["gsd@studio/gsd-band"]);
     }
+
+    /// Has the band want `exec:sh`, declared to read `/etc/gsd`.
+    fn wants_sh(world: &World) {
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!(
+                "{}\nexec \"sh\" {{\n    reads \"/etc/gsd\"\n}}\n",
+                text.replace(
+                    "wants \"read:checkout\"",
+                    "wants \"read:checkout\" \"exec:sh\""
+                )
+            ),
+        )
+        .unwrap();
+    }
+
+    /// Once consented to, a program is reported where its consent pinned
+    /// it, and as running unconfined when it was accepted unconfined.
+    #[test]
+    fn a_consented_program_is_reported_as_it_was_accepted() {
+        let world = World::new("report-pinned-program");
+        wants_sh(&world);
+        let extensions = world.app.extensions();
+        let pinned = world.checkout.with_file_name("pinned").join("sh");
+        consent::accept(
+            &world.app.home,
+            &consent_key(&world.band()),
+            &consent::Wants {
+                grants: ["exec:sh".to_owned(), "read:checkout".to_owned()].into(),
+                reads: [("sh".to_owned(), ["/etc/gsd".to_owned()].into())].into(),
+                packaged: BTreeSet::new(),
+            },
+            &extensions.digest(&world.band()).unwrap(),
+            1,
+            Some(consent::Pinned {
+                paths: [("sh".to_owned(), pinned.clone())].into(),
+                enforced: false,
+            }),
+        )
+        .unwrap();
+
+        let report = report_of(&world, Some(&world.checkout));
+        assert_eq!(report.condition, ExtensionCondition::NeedsEnabling);
+        let paths: Vec<_> = report.programs.iter().map(|pin| pin.path.clone()).collect();
+        assert_eq!(paths, [Some(pinned)]);
+        assert_eq!(report.confined, Some(false), "accepted unconfined");
+    }
+
+    /// An update that brings a program nobody accepted reports it as it
+    /// would be pinned now, and as this machine would run it.
+    #[test]
+    fn a_program_an_update_brings_is_reported_as_it_would_run_now() {
+        let world = World::new("report-held-program");
+        world.enabled();
+        wants_sh(&world);
+        let extensions = world.app.extensions();
+
+        let report = report_of(&world, Some(&world.checkout));
+        assert_eq!(report.condition, ExtensionCondition::Held);
+        let would = extensions.programs_to_pin(&world.band()).unwrap();
+        assert_eq!(report.programs, would);
+        assert_eq!(report.confined, Some(crate::confinement().is_available()));
+    }
 }
