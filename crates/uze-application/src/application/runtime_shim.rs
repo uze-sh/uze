@@ -70,3 +70,55 @@ impl UzeApplication {
         Ok(Some(RuntimeShimSetup { shim_path }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A harness found off `PATH`, launched through UZE.
+    struct Launched;
+
+    impl IntegrationPort for Launched {
+        fn id(&self) -> &'static str {
+            "launched"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+    }
+
+    // A launcher is a link on Unix, and anything else at its path is
+    // somebody else's; on Windows a copy there is replaced instead.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_somebody_else_put_at_the_launchers_path_is_a_conflict() {
+        let root = uze_testkit::temp::scratch("runtime-shim-conflict");
+        let home = UzeHome::at(root.join("uze"));
+        let shim = home.shim_path("launched");
+        fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        fs::write(&shim, "somebody else's").unwrap();
+        let app = UzeApplication::new(home, Vec::new());
+
+        let refused = app
+            .ensure_runtime_shim(&Launched, Some(&root.join("launched")))
+            .expect_err("the path is taken");
+        assert!(
+            matches!(&refused, UzeError::ManagedEntryConflict(path) if *path == shim),
+            "{refused:?}"
+        );
+        assert_eq!(fs::read_to_string(&shim).unwrap(), "somebody else's");
+        let _ = fs::remove_dir_all(root);
+    }
+}

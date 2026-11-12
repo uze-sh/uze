@@ -117,6 +117,38 @@ mod tests {
     }
 
     #[test]
+    fn a_loose_file_whose_name_is_not_a_sixteen_digit_digest_stays() {
+        let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("loose-compiled-names"));
+        std::fs::create_dir_all(home.runtime_extensions_dir()).unwrap();
+        let short = home.loose_compiled_extension_path("abcdef");
+        let not_hex = home.loose_compiled_extension_path("zzzzzzzzzzzzzzzz");
+        std::fs::write(&short, "x").unwrap();
+        std::fs::write(&not_hex, "x").unwrap();
+
+        assert!(remove_loose_compiled_views(&home).is_empty());
+        assert!(short.exists() && not_hex.exists());
+    }
+
+    #[test]
+    fn package_copies_are_held_while_their_directory_is_there() {
+        let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("earlier-copies-held"));
+        assert!(!holds_package_copies(&home));
+        std::fs::create_dir_all(package_copies_dir(&home).join("flow@ai")).unwrap();
+        assert!(holds_package_copies(&home));
+    }
+
+    #[test]
+    fn this_crates_earlier_entries_are_declared_in_this_file() {
+        let entries = earlier();
+        assert!(!entries.is_empty());
+        let source = include_str!("earlier.rs");
+        for entry in entries {
+            assert!(entry.site.ends_with("earlier.rs"), "{}", entry.site);
+            assert!(source.contains(entry.name), "{}", entry.name);
+        }
+    }
+
+    #[test]
     fn an_earlier_package_copy_goes_once_no_receipt_names_it() {
         let home = uze_core::UzeHome::at(uze_testkit::temp::scratch("earlier-package-copies"));
         let named = package_copies_dir(&home).join("flow@ai");

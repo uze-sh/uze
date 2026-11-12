@@ -365,6 +365,31 @@ mod tests {
         assert!(cache.get("pkg:test:old", None).is_none());
     }
 
+    /// A verdict stands for a day, like the detection cache's: one cached
+    /// a few hours ago still answers.
+    #[test]
+    fn a_verdict_from_hours_ago_still_answers() {
+        let home = home_at("ttl-hours");
+        let path = home.inspection_cache_path();
+        let persisted = OnDiskCache {
+            entries: [(
+                "pkg:test:recent".to_owned(),
+                CachedInspection {
+                    state: AttachmentState::Matched,
+                    reason: "ok".to_owned(),
+                    cached_at_unix_nanos: now_unix_nanos()
+                        - Duration::from_secs(3 * 60 * 60).as_nanos(),
+                    fingerprint: None,
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+        persisted.save(&path);
+        let cache = InspectionCache::new(&home);
+        assert!(cache.get("pkg:test:recent", None).is_some());
+    }
+
     #[test]
     fn missing_or_corrupt_cache_file_is_fail_open() {
         let cache = InspectionCache {

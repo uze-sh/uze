@@ -533,3 +533,359 @@ fn left_as_it_is(finding: &HealthFinding) -> RepairOutcome {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    use uze_core::integration::{
+        HarnessDetection, IntegrationStatus, VendorRegistration, VendorRegistrationKind,
+    };
+    use uze_core::router::HarnessCapabilities;
+    use uze_core::trust::AlwaysTrust;
+
+    use super::*;
+    use crate::application::catalogue::Severity;
+
+    fn finding(subject: Subject, lane: Lane, about: &str) -> HealthFinding {
+        HealthFinding {
+            subject,
+            lane,
+            severity: Severity::Warning,
+            about: about.to_owned(),
+            detail: format!("{about} is not as it should be"),
+            harness: None,
+            location: None,
+            path: None,
+            command: None,
+        }
+    }
+
+    fn entry(outcome: RepairOutcome) -> RepairEntry {
+        RepairEntry {
+            finding: HealthFinding::stale_endpoint(Path::new("endpoint")),
+            outcome,
+        }
+    }
+
+    fn report(outcomes: Vec<RepairOutcome>) -> RepairReport {
+        RepairReport {
+            entries: outcomes.into_iter().map(entry).collect(),
+            ..RepairReport::default()
+        }
+    }
+
+    fn human() -> RepairOutcome {
+        RepairOutcome::NeedsHuman {
+            reason: "yours to decide".to_owned(),
+            command: None,
+        }
+    }
+
+    fn network() -> RepairOutcome {
+        RepairOutcome::NeedsNetwork {
+            reason: "offline".to_owned(),
+        }
+    }
+
+    fn unrepairable() -> RepairOutcome {
+        RepairOutcome::Unrepairable {
+            reason: "did not take".to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_exit_status_says_healthy_waiting_on_the_person_or_only_on_the_network() {
+        assert_eq!(report(Vec::new()).exit_status(), 0, "nothing to repair");
+        assert_eq!(
+            report(vec![RepairOutcome::Repaired]).exit_status(),
+            0,
+            "everything repaired"
+        );
+        assert_eq!(report(vec![network()]).exit_status(), 2);
+        assert_eq!(
+            report(vec![RepairOutcome::Repaired, network()]).exit_status(),
+            2
+        );
+        assert_eq!(report(vec![human()]).exit_status(), 1);
+        assert_eq!(report(vec![unrepairable()]).exit_status(), 1);
+        assert_eq!(
+            report(vec![network(), human()]).exit_status(),
+            1,
+            "what waits on the person outranks the network"
+        );
+    }
+
+    #[test]
+    fn repaired_counts_only_the_findings_that_were_put_right() {
+        assert_eq!(report(Vec::new()).repaired(), 0);
+        let mixed = report(vec![
+            RepairOutcome::Repaired,
+            human(),
+            RepairOutcome::Repaired,
+            network(),
+            unrepairable(),
+        ]);
+        assert_eq!(mixed.repaired(), 2);
+    }
+
+    #[test]
+    fn a_delivery_waiting_on_its_bytes_stands_or_falls_with_them() {
+        let receipts = finding(Subject::Receipts, Lane::Repair, "flow@local");
+        let builds = finding(Subject::Builds, Lane::Repair, "flow@local");
+        let flow_bytes = finding(Subject::PackageBytes, Lane::Repair, "flow@local");
+        let other_bytes = finding(Subject::PackageBytes, Lane::Repair, "std@local");
+        let planned = vec![receipts.clone(), other_bytes.clone(), flow_bytes.clone()];
+        let tried = BTreeMap::from([
+            (key_of(&other_bytes), RepairOutcome::Repaired),
+            (key_of(&flow_bytes), network()),
+        ]);
+
+        assert_eq!(
+            waits_on_bytes(&tried, &planned, &receipts),
+            Some(&network()),
+            "a receipt takes what came of its own package's bytes"
+        );
+        assert_eq!(waits_on_bytes(&tried, &planned, &builds), Some(&network()));
+
+        let operator = finding(Subject::Receipts, Lane::Operator, "flow@local");
+        assert_eq!(
+            waits_on_bytes(&tried, &planned, &operator),
+            None,
+            "a finding the person resolves waits on no bytes"
+        );
+        let records = finding(Subject::Records, Lane::Repair, "flow@local");
+        assert_eq!(
+            waits_on_bytes(&tried, &planned, &records),
+            None,
+            "only what is built or delivered from the bytes waits on them"
+        );
+        let untried = finding(Subject::Receipts, Lane::Repair, "lone@local");
+        assert_eq!(
+            waits_on_bytes(&tried, &planned, &untried),
+            None,
+            "a package whose bytes were never planned waits on nothing"
+        );
+    }
+
+    #[test]
+    fn no_terminal_runtime_leaves_no_endpoint_to_clear() {
+        assert_eq!(NoTerminalEndpoint.stale(), None);
+        assert_eq!(NoTerminalEndpoint.clear(), Ok(false));
+    }
+
+    /// A terminal runtime whose endpoint is stale until it is cleared, or
+    /// whose clearing is refused.
+    struct StaleEndpoint {
+        cleared: Cell<bool>,
+        refuse: Option<&'static str>,
+    }
+
+    impl StaleEndpoint {
+        fn clearing() -> Self {
+            Self {
+                cleared: Cell::new(false),
+                refuse: None,
+            }
+        }
+
+        fn refusing(reason: &'static str) -> Self {
+            Self {
+                cleared: Cell::new(false),
+                refuse: Some(reason),
+            }
+        }
+    }
+
+    impl TerminalEndpoint for StaleEndpoint {
+        fn stale(&self) -> Option<PathBuf> {
+            (!self.cleared.get()).then(|| PathBuf::from("terminal.sock"))
+        }
+
+        fn clear(&self) -> std::result::Result<bool, String> {
+            if let Some(reason) = self.refuse {
+                return Err(reason.to_owned());
+            }
+            self.cleared.set(true);
+            Ok(true)
+        }
+    }
+
+    fn application(label: &str) -> (UzeApplication, PathBuf) {
+        let base = uze_testkit::temp::scratch(label);
+        let app = UzeApplication::new(UzeHome::at(base.join("home")), Vec::new());
+        (app, base)
+    }
+
+    fn outcome_for(report: &RepairReport, subject: Subject) -> Vec<&RepairOutcome> {
+        report
+            .entries
+            .iter()
+            .filter(|entry| entry.finding.subject == subject)
+            .map(|entry| &entry.outcome)
+            .collect()
+    }
+
+    #[test]
+    fn a_stale_terminal_endpoint_is_planned_and_cleared_by_the_runtime() {
+        let (app, base) = application("repair-endpoint");
+        let endpoint = StaleEndpoint::clearing();
+
+        let plan = app.repair_plan(&endpoint);
+        assert!(
+            plan.findings
+                .iter()
+                .any(|finding| finding.subject == Subject::TerminalEndpoint),
+            "the plan is observed live, endpoint included: {:?}",
+            plan.findings
+        );
+
+        let report = app.repair(plan, &endpoint, false);
+        assert!(endpoint.cleared.get(), "the runtime was asked to clear it");
+        assert_eq!(
+            outcome_for(&report, Subject::TerminalEndpoint),
+            vec![&RepairOutcome::Repaired]
+        );
+        assert_eq!(report.exit_status(), 0);
+        assert!(
+            report.measured.is_some(),
+            "the home is measured once the repair is done"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn an_endpoint_the_runtime_will_not_clear_is_reported_once_with_its_reason() {
+        let (app, base) = application("repair-endpoint-refused");
+        let endpoint = StaleEndpoint::refusing("the workspace lock is held");
+
+        let plan = app.repair_plan(&endpoint);
+        let report = app.repair(plan, &endpoint, false);
+        assert_eq!(
+            outcome_for(&report, Subject::TerminalEndpoint),
+            vec![&RepairOutcome::Unrepairable {
+                reason: "the workspace lock is held".to_owned()
+            }],
+            "one entry per finding, carrying why the repair did not take"
+        );
+        assert_eq!(report.exit_status(), 1);
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn missing_package_bytes_are_acquired_again_from_where_they_came() {
+        let (app, base) = application("repair-bytes");
+        let source = base.join("flow");
+        fs::create_dir_all(source.join("skills/demo")).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        fs::write(source.join("skills/demo/SKILL.md"), "# Demo\n").unwrap();
+        app.plugins()
+            .add(PackageSource::Local { path: source }, &AlwaysTrust)
+            .unwrap();
+        let installed = app.installed_packages().remove(0);
+        fs::remove_dir_all(&installed.root).unwrap();
+
+        let plan = app.repair_plan(&NoTerminalEndpoint);
+        assert!(
+            plan.findings
+                .iter()
+                .any(|finding| finding.subject == Subject::PackageBytes),
+            "{:?}",
+            plan.findings
+        );
+        let report = app.repair(plan, &NoTerminalEndpoint, false);
+        assert_eq!(
+            outcome_for(&report, Subject::PackageBytes),
+            vec![&RepairOutcome::Repaired],
+            "{:?}",
+            report.entries
+        );
+        assert!(installed.root.join("plugin.json").is_file());
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A harness here and set up, holding one registration away from where
+    /// UZE keeps it, and whose launcher has no real binary to start.
+    struct Misplaced {
+        registered: Mutex<PathBuf>,
+        expected: PathBuf,
+    }
+
+    impl IntegrationPort for Misplaced {
+        fn id(&self) -> &'static str {
+            "misplaced"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn status(&self, _home: &UzeHome) -> IntegrationStatus {
+            IntegrationStatus::InstalledUnverified
+        }
+        fn supports_runtime_integration(&self) -> bool {
+            true
+        }
+        fn shim_name(&self) -> &'static str {
+            "uze-repair-fixture-without-binary"
+        }
+        fn registrations(&self, _read: RegistrationRead) -> Vec<VendorRegistration> {
+            vec![VendorRegistration {
+                kind: VendorRegistrationKind::Marketplace,
+                name: "fixture".to_owned(),
+                expected: self.expected.clone(),
+                registered: Some(self.registered.lock().unwrap().clone()),
+            }]
+        }
+        fn repoint_registration(&self, _registration: &VendorRegistration) -> Result<()> {
+            *self.registered.lock().unwrap() = self.expected.clone();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_misplaced_registration_is_moved_back_and_a_launcher_without_a_binary_says_why() {
+        let base = uze_testkit::temp::scratch("repair-harness");
+        let app = UzeApplication::new(
+            UzeHome::at(base.join("home")),
+            vec![Box::new(Misplaced {
+                registered: Mutex::new(base.join("elsewhere")),
+                expected: base.join("home/marketplace"),
+            })],
+        );
+
+        let plan = app.repair_plan(&NoTerminalEndpoint);
+        let report = app.repair(plan, &NoTerminalEndpoint, false);
+        assert_eq!(
+            outcome_for(&report, Subject::Registrations),
+            vec![&RepairOutcome::Repaired],
+            "{:?}",
+            report.entries
+        );
+        let shims = outcome_for(&report, Subject::Shims);
+        assert!(
+            matches!(
+                shims.as_slice(),
+                [RepairOutcome::Unrepairable { reason }] if reason.contains("executable")
+            ),
+            "the launcher's own refusal is the reason given: {shims:?}"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+}

@@ -980,7 +980,7 @@ mod mirror_tests {
 
     /// A marketplace repository with two plugins, and the commit each of
     /// its two revisions landed on.
-    fn marketplace(label: &str) -> (uze_testkit::git::Repository, String) {
+    pub(super) fn marketplace(label: &str) -> (uze_testkit::git::Repository, String) {
         let repository = uze_testkit::git::Repository::empty(label);
         let root = repository.root().to_path_buf();
         for plugin in ["flow", "review"] {
@@ -1486,8 +1486,32 @@ mod mirror_tests {
 }
 
 #[cfg(test)]
+mod mirror_tests_support {
+    /// A repository holding a marketplace named `name`, with one plugin.
+    pub(super) fn plugin_repository(name: &str) -> std::path::PathBuf {
+        let root = uze_testkit::temp::scratch(&format!("prefetch-{name}"));
+        std::fs::create_dir_all(root.join("plugins/solo")).unwrap();
+        std::fs::write(root.join("plugins/solo/plugin.json"), r#"{"name":"solo"}"#).unwrap();
+        std::fs::write(
+            root.join("marketplace.json"),
+            serde_json::json!({
+                "name": name,
+                "plugins": [{ "name": "solo", "source": "./plugins/solo" }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        uze_testkit::git::commit_everything_in(&root);
+        root
+    }
+}
+
+#[cfg(test)]
 mod removal_tests {
+    use super::mirror_tests::marketplace;
     use crate::UzeApplication;
+    use std::fs;
+    use uze_core::UzeError;
     use uze_core::integration::{AttachmentInspection, AttachmentState};
     use uze_core::{PackageSource, UzeHome};
 
@@ -1517,5 +1541,403 @@ mod removal_tests {
             "a verdict cached before the removal must not outlive it"
         );
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A committed marketplace named `name` with one plugin. Not a
+    /// `Repository`, which holds the process environment and so allows
+    /// only one at a time.
+    fn plugin_repository(label: &str, name: &str) -> std::path::PathBuf {
+        let root = uze_testkit::temp::scratch(label);
+        fs::create_dir_all(root.join("plugins/solo/skills/one")).unwrap();
+        fs::write(
+            root.join("plugins/solo/plugin.json"),
+            r#"{"name":"solo","description":"d"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("plugins/solo/skills/one/SKILL.md"),
+            "---\nname: one\ndescription: d\n---\n\nsolo.\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("marketplace.json"),
+            serde_json::json!({
+                "name": name,
+                "plugins": [{ "name": "solo", "source": "./plugins/solo" }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        uze_testkit::git::commit_everything_in(&root);
+        root
+    }
+
+    /// A marketplace's plugins are listed, and one asked about by name is
+    /// that one, with the revision its own directory was last written at.
+    #[test]
+    fn a_marketplace_plugin_is_found_by_its_own_name_with_its_revision() {
+        let home_root = uze_testkit::temp::scratch("market-inspect-plugin");
+        let (repository, _first) = marketplace("market-inspect-plugin-src");
+        let app = UzeApplication::new(UzeHome::at(home_root.join("uze")), Vec::new());
+        app.marketplace()
+            .register_typed_source(&PackageSource::git(repository.root().to_string_lossy()))
+            .unwrap();
+
+        let offered: Vec<String> = app
+            .marketplace()
+            .plugins()
+            .unwrap()
+            .into_iter()
+            .filter(|plugin| plugin.marketplace == "mkt")
+            .map(|plugin| plugin.name)
+            .collect();
+        assert_eq!(offered, ["flow", "review"]);
+
+        let review = app.marketplace().inspect_plugin("mkt", "review").unwrap();
+        assert_eq!(review.summary.name, "review");
+        assert!(
+            matches!(
+                review.revision,
+                Some(crate::application::Revision::Commit { .. })
+            ),
+            "{:?}",
+            review.revision
+        );
+
+        app.marketplace()
+            .install_plugin("flow@mkt", &uze_core::trust::AlwaysTrust)
+            .unwrap();
+        let installed = app.plugins().inspect("flow@mkt").unwrap();
+        assert!(
+            matches!(
+                installed.revision,
+                Some(crate::application::Revision::Commit { .. })
+            ),
+            "{:?}",
+            installed.revision
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// Linking keeps the commit each plugin installed from that marketplace
+    /// was pinned to, and only those; unlinking says whether there was a
+    /// link to stop.
+    #[test]
+    fn linking_keeps_the_pins_of_that_marketplaces_plugins() {
+        let home_root = uze_testkit::temp::scratch("market-link-pins");
+        let (repository, first) = marketplace("market-link-pins-src");
+        let other = plugin_repository("market-link-pins-other", "other");
+        let home = UzeHome::at(home_root.join("uze"));
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        for source in [repository.root(), other.as_path()] {
+            app.marketplace().add(&source.to_string_lossy()).unwrap();
+        }
+        for plugin in ["flow@mkt", "solo@other"] {
+            app.marketplace()
+                .install_plugin(plugin, &uze_core::trust::AlwaysTrust)
+                .unwrap();
+        }
+
+        let checkout = home_root.join("checkout");
+        assert!(
+            app.marketplace().link("mkt", &checkout).unwrap(),
+            "a checkout not there yet is cloned"
+        );
+        let record = uze_core::state::marketplace_get(&home, "mkt")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            record.pinned_before_link,
+            std::collections::BTreeMap::from([("flow".to_owned(), first)])
+        );
+        let registration = app
+            .marketplace()
+            .register(&repository.root().to_string_lossy())
+            .unwrap();
+        assert!(registration.linked);
+        assert_eq!(
+            registration
+                .checkout
+                .map(|path| uze_platform::path::canonical(&path).unwrap()),
+            Some(uze_platform::path::canonical(&checkout).unwrap())
+        );
+
+        assert!(app.marketplace().unlink("mkt").unwrap());
+        assert!(!app.marketplace().unlink("mkt").unwrap());
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A harness whose derived view is rebuilt on every republish, counted.
+    struct Republishing(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl uze_core::integration::IntegrationPort for Republishing {
+        fn id(&self) -> &'static str {
+            "republishing"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn republish_packages(
+            &self,
+            _packages: &[uze_core::StoredPackage],
+        ) -> uze_core::Result<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// Removing a marketplace takes its own plugins with it, leaves
+    /// another marketplace's alone, and rebuilds the views that listed
+    /// what went.
+    #[test]
+    fn removing_a_marketplace_takes_only_its_own_plugins() {
+        let home_root = uze_testkit::temp::scratch("market-remove-own");
+        let (repository, _first) = marketplace("market-remove-own-src");
+        let other = plugin_repository("market-remove-own-other", "other");
+        let republished = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let app = UzeApplication::new(
+            UzeHome::at(home_root.join("uze")),
+            vec![Box::new(Republishing(republished.clone()))],
+        );
+        for source in [repository.root(), other.as_path()] {
+            app.marketplace().add(&source.to_string_lossy()).unwrap();
+        }
+        for plugin in ["flow@mkt", "solo@other"] {
+            app.marketplace()
+                .install_plugin(plugin, &uze_core::trust::AlwaysTrust)
+                .unwrap();
+        }
+
+        let before = republished.load(std::sync::atomic::Ordering::SeqCst);
+        let report = app.marketplace().remove("mkt").unwrap();
+        assert_eq!(report.removed, ["flow@mkt"]);
+        assert!(
+            republished.load(std::sync::atomic::Ordering::SeqCst) > before,
+            "the views were rebuilt without what went"
+        );
+        assert!(report.record_removed);
+        let left: Vec<String> = app
+            .plugins()
+            .list()
+            .unwrap()
+            .into_iter()
+            .map(|plugin| plugin.id)
+            .collect();
+        assert_eq!(left, ["solo@other"]);
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// What registering says about where a marketplace is read: a local
+    /// directory, repository or not, resolves only here; a repository
+    /// reached by URL resolves anywhere.
+    #[test]
+    fn a_registration_says_where_it_is_read_and_whether_it_travels() {
+        let home_root = uze_testkit::temp::scratch("market-register");
+        let app = UzeApplication::new(UzeHome::at(home_root.join("uze")), Vec::new());
+
+        let plain = home_root.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        fs::write(
+            plain.join("marketplace.json"),
+            r#"{"name":"plain","plugins":[]}"#,
+        )
+        .unwrap();
+        let registered = app
+            .marketplace()
+            .register(&plain.to_string_lossy())
+            .unwrap();
+        assert!(registered.added);
+        assert!(registered.resolves_here_only);
+        assert_eq!(
+            registered
+                .checkout
+                .map(|path| uze_platform::path::canonical(&path).unwrap()),
+            Some(uze_platform::path::canonical(&plain).unwrap())
+        );
+
+        let travelling = plugin_repository("market-register-travelling", "travelling");
+        uze_testkit::git::isolated_git_in(
+            &travelling,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.com/acme/travelling",
+            ],
+        );
+        let registered = app
+            .marketplace()
+            .register(&travelling.to_string_lossy())
+            .unwrap();
+        assert!(
+            !registered.resolves_here_only,
+            "a checkout with an origin resolves wherever the origin does"
+        );
+
+        let local = plugin_repository("market-register-local", "local");
+        let registered = app
+            .marketplace()
+            .register(&local.as_path().to_string_lossy())
+            .unwrap();
+        assert!(registered.resolves_here_only, "a repository with no origin");
+        assert!(registered.checkout.is_some());
+
+        let remote = plugin_repository("market-register-remote", "remote");
+        let registered = app
+            .marketplace()
+            .register_typed_source(&uze_core::PackageSource::git(
+                remote.as_path().to_string_lossy(),
+            ))
+            .unwrap();
+        assert!(registered, "newly registered");
+        assert!(
+            !app.marketplace()
+                .register_typed_source(&uze_core::PackageSource::git(
+                    remote.as_path().to_string_lossy(),
+                ))
+                .unwrap(),
+            "already registered from the same source"
+        );
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A Git source's reference travels with the request for it.
+    #[test]
+    fn a_marketplace_request_keeps_the_reference_asked_for() {
+        let request = super::MarketplaceRequest::of(&uze_core::PackageSource::Git {
+            url: "https://example.com/acme/market".to_owned(),
+            reference: Some("v1".to_owned()),
+            subdirectory: None,
+        })
+        .unwrap();
+        assert_eq!(request.reference.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn host_aliases_are_defined_made_default_and_removed() {
+        let home_root = uze_testkit::temp::scratch("market-hosts");
+        let app = UzeApplication::new(UzeHome::at(home_root.join("uze")), Vec::new());
+        let market = app.marketplace();
+        market.define_host("acme", "https://git.acme.test").unwrap();
+        market
+            .define_host("spare", "https://git.spare.test")
+            .unwrap();
+        let entry = |alias: &str| {
+            market
+                .hosts()
+                .unwrap()
+                .into_iter()
+                .find(|entry| entry.alias == alias)
+        };
+        assert_eq!(entry("acme").unwrap().base, "https://git.acme.test");
+        assert!(!entry("acme").unwrap().default);
+
+        market.set_default_host("acme").unwrap();
+        assert!(entry("acme").unwrap().default);
+
+        assert!(!market.remove_host("spare").unwrap(), "not the default");
+        assert!(entry("spare").is_none());
+        assert!(market.remove_host("acme").unwrap(), "it was the default");
+        assert!(entry("acme").is_none());
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    /// A refused short locator suggests the same path on every other host
+    /// at a forge's root, and never the host asked or one serving under a
+    /// path of its own.
+    #[test]
+    fn a_refused_locator_suggests_the_other_hosts_at_a_root() {
+        let home_root = uze_testkit::temp::scratch("market-suggest");
+        let home = UzeHome::at(home_root.join("uze"));
+        uze_core::hosts::define(&home, "acme", "https://git.acme.test").unwrap();
+        uze_core::hosts::define(&home, "nested", "https://git.nested.test/group").unwrap();
+        let hosts = uze_core::hosts::load(&home).unwrap();
+        let asked = uze_core::PackageSource::git("https://git.acme.test/my-org/plugins");
+        let refused = || UzeError::RepositoryAccessRefused {
+            detail: "not found".to_owned(),
+        };
+
+        let UzeError::RepositoryAccessRefused { detail } =
+            super::suggesting_other_hosts(refused(), &asked, &hosts)
+        else {
+            panic!("the refusal stays a refusal");
+        };
+        assert!(detail.contains("github:my-org/plugins"), "{detail}");
+        assert!(!detail.contains("acme:"), "the host asked: {detail}");
+        assert!(!detail.contains("nested:"), "a host under a path: {detail}");
+
+        let bare = uze_core::PackageSource::git("https://git.acme.test/");
+        let UzeError::RepositoryAccessRefused { detail } =
+            super::suggesting_other_hosts(refused(), &bare, &hosts)
+        else {
+            panic!("the refusal stays a refusal");
+        };
+        assert_eq!(detail, "not found", "no path to suggest elsewhere");
+        fs::remove_dir_all(&home_root).unwrap();
+    }
+
+    fn prefetched(app: &UzeApplication, wanted: &[(String, super::MarketplaceRequest)]) -> usize {
+        app.mirrors_fetched.lock().unwrap().clear();
+        super::prefetch_mirrors(
+            &app.home,
+            &app.mirrors_fetched,
+            &app.marketplace_catalogues,
+            wanted,
+            None,
+        );
+        app.mirrors_fetched.lock().unwrap().len()
+    }
+
+    /// Every distinct marketplace an operation will read, two or more, is
+    /// fetched up front, each once; one read from a linked checkout has no
+    /// mirror to fetch.
+    #[test]
+    fn the_marketplaces_an_operation_reads_are_fetched_up_front() {
+        let home_root = uze_testkit::temp::scratch("market-prefetch");
+        let home = UzeHome::at(home_root.join("uze"));
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let repositories: Vec<_> = ["one", "two", "three", "linked"]
+            .iter()
+            .map(|name| super::mirror_tests_support::plugin_repository(name))
+            .collect();
+        let request = |index: usize| {
+            let source = PackageSource::git(repositories[index].to_string_lossy());
+            super::MarketplaceRequest::of(&source).unwrap()
+        };
+        uze_core::state::marketplace_add(
+            &home,
+            "linked",
+            PackageSource::git(repositories[3].to_string_lossy()),
+        )
+        .unwrap();
+        uze_core::state::marketplace_link(&home, "linked", &repositories[3], Default::default())
+            .unwrap();
+
+        let three = [
+            ("one".to_owned(), request(0)),
+            ("two".to_owned(), request(1)),
+            ("one".to_owned(), request(0)),
+            ("three".to_owned(), request(2)),
+            ("linked".to_owned(), request(3)),
+        ];
+        assert_eq!(prefetched(&app, &three), 3);
+        let two = [
+            ("one".to_owned(), request(0)),
+            ("two".to_owned(), request(1)),
+        ];
+        assert_eq!(prefetched(&app, &two), 2);
+        fs::remove_dir_all(&home_root).unwrap();
     }
 }

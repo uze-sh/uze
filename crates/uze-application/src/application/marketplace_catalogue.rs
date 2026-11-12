@@ -1314,4 +1314,168 @@ mod tests {
         );
         fs::remove_dir_all(&root).unwrap();
     }
+
+    fn age_entry(home: &UzeHome, name: &str, by: Duration) {
+        let entry = home.marketplace_cache_dir().join(name);
+        let mut meta: Meta =
+            serde_json::from_slice(&fs::read(entry.join(META_FILE)).unwrap()).unwrap();
+        meta.cached_at_unix_nanos = now_unix_nanos() - by.as_nanos();
+        fs::write(entry.join(META_FILE), serde_json::to_vec(&meta).unwrap()).unwrap();
+    }
+
+    /// The background pass fetches a mirrored marketplace once its entry
+    /// is older than the catalogue's hour, and leaves a younger one and a
+    /// linked one alone.
+    #[test]
+    fn the_background_pass_fetches_only_what_has_gone_stale() {
+        let root = uze_testkit::temp::scratch("catalogue-refresh-stale");
+        // Committed without a `Repository`, which allows one at a time.
+        let committed = |label: &str, name: &str| {
+            let at = root.join(label);
+            marketplace_at(&at, name, &["a"]);
+            uze_testkit::git::commit_everything_in(&at);
+            git_source(&at.to_string_lossy())
+        };
+        let fresh = committed("fresh-source", "fresh");
+        let stale = committed("stale-source", "stale");
+        let linked = committed("linked-source", "linked");
+        let home = UzeHome::at(root.join("uze"));
+        let cache = MarketplaceCatalogues::new(&home);
+        for source in [&fresh, &stale, &linked] {
+            let (name, _) = cache.adopt(source).unwrap();
+            uze_core::state::marketplace_add(&home, &name, source.clone()).unwrap();
+        }
+        uze_core::state::marketplace_link(
+            &home,
+            "linked",
+            &root.join("linked-source"),
+            std::collections::BTreeMap::new(),
+        )
+        .unwrap();
+        age_entry(&home, "fresh", Duration::from_secs(30 * 60));
+        age_entry(&home, "stale", Duration::from_secs(2 * 60 * 60));
+        age_entry(&home, "linked", Duration::from_secs(2 * 60 * 60));
+
+        assert_eq!(cache.refresh_stale(&home), ["stale"]);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Forgetting a listing drops what the entry says and keeps the mirror
+    /// a pinned commit is put back from.
+    #[test]
+    fn forgetting_a_listing_keeps_the_mirror() {
+        let root = uze_testkit::temp::scratch("catalogue-forget-listing");
+        let (_repository, source) = marketplace_repository("cat-forget", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        let cache = MarketplaceCatalogues::new(&home);
+        cache.adopt(&source).unwrap();
+        let entry = home.marketplace_cache_dir().join("remote");
+
+        cache.forget_listing("remote");
+        assert!(!entry.join(META_FILE).exists(), "the listing went");
+        assert!(entry.join(REPOSITORY_DIR).is_dir(), "the mirror stayed");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A Git source naming the directory its catalogue sits in is read
+    /// there.
+    #[test]
+    fn a_catalogue_in_a_subdirectory_is_read_there() {
+        let root = uze_testkit::temp::scratch("catalogue-subpath");
+        let repository = uze_testkit::git::Repository::empty("cat-subpath");
+        marketplace_at(&repository.root().join("catalogue"), "nested", &["flow"]);
+        repository.git(&["add", "-A"]);
+        repository.git(&["commit", "-m", "marketplace"]);
+        let source = PackageSource::Git {
+            url: repository.root().to_string_lossy().into_owned(),
+            reference: None,
+            subdirectory: Some(PathBuf::from("catalogue")),
+        };
+        let home = UzeHome::at(root.join("uze"));
+        let (name, catalogue) = MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
+        assert_eq!(name, "nested");
+        assert_eq!(catalogue.manifest.plugins.len(), 1);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A plugin another writer published first is kept, and this writer's
+    /// copy dropped, rather than the publish failing.
+    #[test]
+    fn a_plugin_published_first_by_another_writer_is_kept() {
+        let root = uze_testkit::temp::scratch("catalogue-publish-race");
+        let out = root.join("commit").join("flow");
+        fs::create_dir_all(&out).unwrap();
+        fs::write(out.join("plugin.json"), "theirs").unwrap();
+
+        publish(&out, |staging| {
+            fs::create_dir_all(staging).unwrap();
+            fs::write(staging.join("plugin.json"), "ours").unwrap();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(out.join("plugin.json")).unwrap(),
+            "theirs"
+        );
+        let leftovers: Vec<_> = fs::read_dir(root.join("commit"))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect();
+        assert_eq!(leftovers, ["flow"], "no staging is left behind");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The head a mirror resolved is dated when it was recorded, in
+    /// seconds since the epoch.
+    #[test]
+    fn a_mirrored_head_is_dated_when_it_was_recorded() {
+        let root = uze_testkit::temp::scratch("catalogue-mirrored-head");
+        let (repository, source) = marketplace_repository("cat-head", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
+        let head = mirrored_head(&home, "remote").expect("recorded");
+        assert_eq!(head.commit, repository.head());
+        assert!(
+            head.at_unix >= before && head.at_unix <= before + 3600,
+            "{} against {before}",
+            head.at_unix
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    // Ageing a directory needs a handle on it, which std opens on Unix and
+    // not on Windows, where a directory needs a flag std does not set.
+    #[cfg(unix)]
+    #[test]
+    fn the_mirrors_collector_takes_a_cold_commits_plugins() {
+        let root = uze_testkit::temp::scratch("catalogue-mirrors-collect");
+        let (_repository, source) = marketplace_repository("cat-collect", "remote", &["flow"]);
+        let home = UzeHome::at(root.join("uze"));
+        MarketplaceCatalogues::new(&home).adopt(&source).unwrap();
+        let old = home
+            .marketplace_cache_dir()
+            .join("remote")
+            .join(MATERIALIZED_DIR)
+            .join("0000000000000000000000000000000000000000");
+        fs::create_dir_all(old.join("flow")).unwrap();
+        let long_ago = std::time::SystemTime::now() - Duration::from_secs(2 * 60 * 60);
+        fs::File::open(&old)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+
+        let collected = crate::application::Collectable::collect(&MarketplaceMirrors, &home);
+        assert_eq!(
+            collected.collector,
+            crate::application::Collectable::name(&MarketplaceMirrors)
+        );
+        assert_eq!(collected.removed, std::slice::from_ref(&old));
+        assert!(!old.exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
 }

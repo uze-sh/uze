@@ -486,3 +486,72 @@ fn a_command_added_in_a_worktree_waits_for_the_projects_approval() {
         view.awaiting
     );
 }
+
+#[test]
+fn an_approval_is_withdrawn_once_and_says_whether_there_was_one() {
+    let app = application("declaration-revoke");
+    let repository = project(
+        "declaration-revoke",
+        Some("workspace:\n  setup:\n    posix: pnpm install\n    windows: pnpm install\n"),
+    );
+    let awaiting = app
+        .workspace()
+        .commands_awaiting_approval(repository.root())
+        .expect("the setup awaits approval");
+    app.workspace().approve_commands(&awaiting).unwrap();
+
+    assert!(app.workspace().revoke_commands(repository.root()).unwrap());
+    assert!(
+        app.workspace()
+            .commands_awaiting_approval(repository.root())
+            .is_some(),
+        "withdrawn, the commands wait for approval again"
+    );
+    assert!(
+        !app.workspace().revoke_commands(repository.root()).unwrap(),
+        "there is no approval left to withdraw"
+    );
+}
+
+/// A change that leaves the commands as they were does not make them
+/// wait again, even while they still wait on the first approval.
+#[test]
+fn an_unrelated_change_to_unapproved_commands_does_not_say_they_wait_again() {
+    let app = application("declaration-unapproved");
+    let repository = project(
+        "declaration-unapproved",
+        Some("workspace:\n  setup:\n    posix: pnpm install\n    windows: pnpm install\n"),
+    );
+    assert!(
+        app.workspace()
+            .commands_awaiting_approval(repository.root())
+            .is_some()
+    );
+    assert!(matches!(
+        apply(
+            &app,
+            &repository,
+            &[set(DeclarationKey::Slots, DeclaredValue::Number(2))]
+        ),
+        DeclarationApplied::Written {
+            awaits_approval_again: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn a_manifest_that_cannot_be_read_refuses_the_edit() {
+    let app = application("declaration-unreadable");
+    let repository = project("declaration-unreadable", None);
+    fs::create_dir_all(repository.root().join("agents.yaml")).unwrap();
+    assert!(
+        app.workspace()
+            .apply_declaration(
+                repository.root(),
+                &[set(DeclarationKey::Slots, DeclaredValue::Number(2))]
+            )
+            .is_err(),
+        "only a manifest that is not there is written from nothing"
+    );
+}

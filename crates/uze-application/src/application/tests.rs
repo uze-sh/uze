@@ -1646,6 +1646,181 @@ fn an_update_keeps_a_plugin_the_person_switched_off_switched_off() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// The person's own choice to keep a plugin on survives an update too: only
+/// a harness where it was switched off is switched off again.
+// Uses the linking stand-in integration above, Unix only.
+#[cfg(unix)]
+#[test]
+fn an_update_leaves_a_plugin_the_person_kept_on_switched_on() {
+    let root = uze_testkit::temp::scratch("update-kept-on");
+    let attached = root.join("attached");
+    fs::create_dir_all(&attached).unwrap();
+    let off = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let switched_off_again = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        UzeHome::at(root.join("home")),
+        vec![Box::new(SwitchedOffIntegration {
+            envelope: EnvelopingIntegration {
+                root: attached.clone(),
+            },
+            off: off.clone(),
+            switched_off_again: switched_off_again.clone(),
+        })],
+    );
+    let added = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+
+    let updated = app
+        .plugins()
+        .update(&added.plugin.id, &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(updated, UpdatePluginReport::Updated { .. }),
+        "{updated:?}"
+    );
+    assert_eq!(switched_off_again.load(Ordering::SeqCst), 0);
+    assert!(!off.load(Ordering::SeqCst));
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Counts every time the operator is asked, and grants.
+#[derive(Default)]
+struct CountingAuthority {
+    asked: AtomicUsize,
+}
+
+impl uze_core::trust::TrustAuthority for CountingAuthority {
+    fn authorize(&self, _request: &uze_core::trust::TrustRequest) -> uze_core::trust::TrustOutcome {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        uze_core::trust::TrustOutcome::Granted
+    }
+}
+
+/// A revision that runs exactly what the installed one already ran asks
+/// nobody again, even from a source that crosses the trust boundary.
+#[test]
+fn replacing_a_plugin_with_bytes_that_run_nothing_new_asks_no_one() {
+    let root = uze_testkit::temp::scratch("replace-nothing-new");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let added = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let same_bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+    let authority = CountingAuthority::default();
+
+    app.plugins()
+        .replace_with(
+            &added.plugin.id,
+            same_bytes,
+            &authority,
+            uze_core::trust::SourceOrigin::Project,
+        )
+        .unwrap();
+
+    assert_eq!(authority.asked.load(Ordering::SeqCst), 0);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The same bytes from a declared source, installed fresh, are asked about.
+#[test]
+fn installing_a_plugin_that_runs_something_from_a_declared_source_asks_once() {
+    let root = uze_testkit::temp::scratch("install-declared-asks");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+    let authority = CountingAuthority::default();
+
+    app.plugins()
+        .install_materialized(
+            bytes,
+            "local",
+            None,
+            &authority,
+            &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Project,
+        )
+        .unwrap();
+
+    assert_eq!(authority.asked.load(Ordering::SeqCst), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// What the operator is shown for a server whose command names no file of
+/// the package lists no code for it.
+#[test]
+fn the_detail_of_a_trust_question_names_code_only_where_a_command_names_some() {
+    struct Unavailable;
+    impl uze_core::trust::TrustAuthority for Unavailable {
+        fn authorize(
+            &self,
+            _request: &uze_core::trust::TrustRequest,
+        ) -> uze_core::trust::TrustOutcome {
+            uze_core::trust::TrustOutcome::Unavailable
+        }
+    }
+    let root = uze_testkit::temp::scratch("trust-detail-code");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+
+    let refused = app.plugins().install_materialized(
+        bytes,
+        "local",
+        None,
+        &Unavailable,
+        &uze_core::naming::NoNameCollisionAuthority,
+        uze_core::trust::SourceOrigin::Project,
+    );
+
+    let Err(UzeError::TrustRequired { detail, .. }) = &refused else {
+        panic!("not a trust question: {refused:?}");
+    };
+    assert!(detail.contains("/bin/github-mcp"), "{detail}");
+    assert!(!detail.contains("[code"), "{detail}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_commit_is_read_by_its_first_twelve_characters() {
+    assert_eq!(
+        super::lifecycle::update::short_commit("0123456789abcdef0123"),
+        "0123456789ab"
+    );
+    assert_eq!(super::lifecycle::update::short_commit("abc"), "abc");
+}
+
+#[test]
+fn opening_the_workspace_applies_a_pending_official_update() {
+    let root = uze_testkit::temp::scratch("catch-up-applies");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.ensure_default_plugins().unwrap();
+    let package = app.package_by_name("uze").unwrap();
+    let manifest = package.root.join("plugin.json");
+    let pristine = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, "{\"name\":\"uze\",\"stale\":true}").unwrap();
+
+    let outcomes = app.plugins().catch_up();
+
+    assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+    assert!(outcomes[0].applied, "{outcomes:?}");
+    assert_eq!(fs::read_to_string(&manifest).unwrap(), pristine);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn remove_is_idempotent_without_claiming_history_for_absent_state() {
     let root = uze_testkit::temp::scratch("remove-twice");
@@ -2940,4 +3115,268 @@ fn building_the_application_leaves_a_record_where_the_floor_release_reads_it() {
     let _app = UzeApplication::new(home.clone(), Vec::new());
 
     assert!(home.retired_launches_path().is_file());
+}
+
+/// A package carrying only workspace extensions is one, and is named among
+/// the extensions; a package carrying something a harness reads is a
+/// plugin, and is not.
+#[test]
+fn a_package_of_extensions_only_is_an_extension() {
+    let root = uze_testkit::temp::scratch("package-kind");
+    let app = UzeApplication::new(UzeHome::at(&root), vec![Box::new(SymlinkIntegration)]);
+    for source in [fixture(), uze_testkit::fixtures::canonical("gsd")] {
+        app.plugins()
+            .add(
+                uze_core::PackageSource::local(source),
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+    }
+    let listed = app.plugins().list().unwrap();
+    let kind_of = |name: &str| {
+        listed
+            .iter()
+            .find(|plugin| plugin.id.starts_with(name))
+            .unwrap_or_else(|| panic!("{name} is listed: {listed:?}"))
+            .kind
+    };
+    assert_eq!(kind_of("gsd"), PackageKind::Extension);
+    assert_eq!(kind_of("uze-agent-skill-conformance"), PackageKind::Plugin);
+
+    let extensions =
+        app.extensions_among(["uze-agent-skill-conformance", "gsd", "not-installed"].into_iter());
+    assert_eq!(extensions, ["gsd"]);
+
+    let plugin = app
+        .plugins()
+        .inspect_in("uze-agent-skill-conformance", None, None)
+        .unwrap();
+    assert!(
+        plugin.extensions.is_empty(),
+        "another package's extensions are not this one's: {:?}",
+        plugin.extensions
+    );
+    let board = app.plugins().inspect_in("gsd", None, None).unwrap();
+    assert!(!board.extensions.is_empty(), "its own extensions are");
+    assert!(
+        board
+            .extensions
+            .iter()
+            .all(|report| report.plugin_id() == board.plugin.id)
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Narrowed to one harness, an inspection carries that harness's delivery
+/// and no other's; each capability is named as a person knows it, with
+/// its text to read.
+#[test]
+fn an_inspection_narrowed_to_one_harness_shows_only_its_delivery() {
+    let root = uze_testkit::temp::scratch("inspect-on");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![Box::new(SymlinkIntegration), Box::new(NamedIntegration)],
+    );
+    app.plugins()
+        .add(
+            uze_core::PackageSource::local(fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let id = "uze-agent-skill-conformance";
+    assert_eq!(
+        app.plugins().inspect_on(id, None).unwrap().deliveries.len(),
+        2
+    );
+    let narrowed = app.plugins().inspect_on(id, Some("n")).unwrap();
+    let harnesses: Vec<&str> = narrowed
+        .deliveries
+        .iter()
+        .map(|delivery| delivery.integration.as_str())
+        .collect();
+    assert_eq!(harnesses, ["named"]);
+    assert!(app.plugins().inspect_on(id, Some("nothing")).is_err());
+
+    let capability = &narrowed.capabilities[0];
+    assert_eq!(capability.name, "uze-e2e", "the skill's own directory");
+    assert!(
+        capability.preview.path.contains("SKILL.md"),
+        "{:?}",
+        capability.preview
+    );
+    assert_eq!(
+        capability.preview.text,
+        fs::read_to_string(fixture().join("skills/uze-e2e/SKILL.md")).unwrap()
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A detected harness that takes every delivery.
+struct Accepting;
+
+impl IntegrationPort for Accepting {
+    fn id(&self) -> &'static str {
+        "accepting"
+    }
+
+    fn capabilities(&self) -> HarnessCapabilities {
+        HarnessCapabilities::default()
+    }
+
+    fn detect(&self) -> HarnessDetection {
+        HarnessDetection {
+            present: true,
+            version: None,
+        }
+    }
+
+    fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+        ExposurePlan {
+            route: CompatibilityRoute::Adaptable,
+            mechanism: ExposureMechanism::Unsupported {
+                rationale: "test does not attach".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+        Ok(None)
+    }
+}
+
+/// An install one harness refused while another took it stays installed,
+/// and the report names the harness it did not reach.
+#[test]
+fn an_install_names_the_harness_it_did_not_reach() {
+    let root = uze_testkit::temp::scratch("add-undelivered");
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![
+            Box::new(Accepting),
+            Box::new(DeliveryRefusedOnce {
+                refuse_next: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            }),
+        ],
+    );
+    let report = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let undelivered: Vec<&HarnessDeliveryReport> = report.undelivered().collect();
+    assert_eq!(undelivered.len(), 1, "{:?}", report.deliveries);
+    assert_eq!(undelivered[0].integration, "refusing-delivery");
+    assert_eq!(
+        app.plugins().list().unwrap().len(),
+        1,
+        "it stayed installed"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A plugin installed from a Git repository carries the commit it was
+/// installed at; one installed from a directory carries none.
+#[test]
+fn a_plugin_from_git_carries_its_commit() {
+    let repository = uze_testkit::git::Repository::new("plugin-from-git");
+    uze_testkit::fixtures::copy_tree(&fixture(), repository.root());
+    repository.git(&["add", "-A"]);
+    repository.git(&["commit", "--quiet", "-m", "plugin"]);
+    let head = repository.head();
+    let root = uze_testkit::temp::scratch("plugin-from-git-home");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.plugins()
+        .add(
+            uze_core::PackageSource::git(repository.root().display().to_string()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let listed = app.plugins().list().unwrap();
+    assert_eq!(listed[0].commit.as_deref(), Some(head.as_str()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Installed means in the Store under the default's own id: another
+/// package already there does not make a refused default count as
+/// installed, and a default already there is not installed again.
+#[test]
+fn a_default_plugin_is_installed_once_and_only_counted_when_it_is() {
+    let root = uze_testkit::temp::scratch("bootstrap-counted");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let refuse_at = Arc::new(AtomicUsize::new(usize::MAX));
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![Box::new(PreparationRefusedOnce {
+            calls: calls.clone(),
+            refuse_at: refuse_at.clone(),
+        })],
+    );
+    install_conformance_fixture(&app, "alpha");
+    refuse_at.store(calls.load(Ordering::SeqCst), Ordering::SeqCst);
+    let id = bootstrap::DEFAULT_PLUGIN_IDS[0];
+    assert!(
+        !app.ensure_default_plugin_installed(id).unwrap(),
+        "refused, and the other package does not stand in for it"
+    );
+
+    refuse_at.store(usize::MAX, Ordering::SeqCst);
+    assert!(app.ensure_default_plugin_installed(id).unwrap());
+    assert!(
+        !app.ensure_default_plugin_installed(id).unwrap(),
+        "already there, so not installed again"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A settled machine's bootstrap writes nothing, not even the mutation
+/// lock's holder, and still prepares a harness detected since.
+#[test]
+fn a_settled_bootstrap_takes_no_lock_and_still_prepares_harnesses() {
+    let root = uze_testkit::temp::scratch("bootstrap-settled");
+    let home = UzeHome::at(&root);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        home.clone(),
+        vec![Box::new(PreparationRefusedOnce {
+            calls: calls.clone(),
+            refuse_at: Arc::new(AtomicUsize::new(usize::MAX)),
+        })],
+    );
+    assert!(app.ensure_default_plugins().unwrap());
+    let _ = fs::remove_file(home.mutation_lock_path());
+    let prepared = calls.load(Ordering::SeqCst);
+
+    assert!(!app.ensure_default_plugins().unwrap());
+    assert!(
+        !home.mutation_lock_path().exists(),
+        "a warm bootstrap took the lock"
+    );
+    assert!(
+        calls.load(Ordering::SeqCst) > prepared,
+        "the detected harness was prepared"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A bundled plugin is compared with this binary's own snapshot, so the
+/// comparison is dated now.
+#[test]
+fn a_bundled_plugins_freshness_is_established_now() {
+    let root = uze_testkit::temp::scratch("bundled-freshness");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    app.ensure_default_plugins().unwrap();
+    let listed = app.plugins().list().unwrap();
+    let established = listed[0].freshness.established_at_unix.expect("compared");
+    assert!(
+        established >= before && established <= before + 3600,
+        "{established} against {before}"
+    );
+    fs::remove_dir_all(root).unwrap();
 }

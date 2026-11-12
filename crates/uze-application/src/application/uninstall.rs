@@ -1029,7 +1029,266 @@ fn remove_path(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        collections::BTreeMap,
+        sync::{Arc, Mutex},
+    };
+
+    use uze_core::{
+        UzeHome,
+        exposure::{ExposureMechanism, ExposurePlan},
+        integration::{HarnessDetection, VendorRegistration, VendorRegistrationKind},
+        provisioning::ProvisioningResult,
+        router::{CompatibilityRoute, HarnessCapabilities},
+    };
+
     use super::*;
+
+    /// What a scripted harness answers, and what it was asked, in order.
+    #[derive(Default)]
+    struct Script {
+        /// What inspecting the receipt at a location answers: matched
+        /// unless named here.
+        states: BTreeMap<PathBuf, AttachmentState>,
+        /// Locations whose detach the harness answers as still there.
+        holds_on_to: Vec<PathBuf>,
+        registrations: Vec<VendorRegistration>,
+        /// Whether preparing it again moves its registrations off the
+        /// generated tree.
+        moves_to_its_stores: bool,
+        asked: Vec<String>,
+    }
+
+    struct Scripted {
+        id: &'static str,
+        name: &'static str,
+        present: bool,
+        script: Arc<Mutex<Script>>,
+    }
+
+    impl IntegrationPort for Scripted {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+
+        fn display_name(&self) -> &'static str {
+            self.name
+        }
+
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: CompatibilityRoute::Adaptable,
+                mechanism: ExposureMechanism::Unsupported {
+                    rationale: "scripted".to_owned(),
+                },
+                evidence: "scripted".to_owned(),
+            }
+        }
+
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: self.present,
+                version: None,
+            }
+        }
+
+        fn install(&self, _home: &UzeHome, _detection: &HarnessDetection) -> Result<()> {
+            let mut script = self.script.lock().unwrap();
+            script.asked.push("install".to_owned());
+            if script.moves_to_its_stores {
+                script.registrations.clear();
+            }
+            Ok(())
+        }
+
+        fn inspect_receipt(&self, receipt: &AttachmentReceipt) -> AttachmentInspection {
+            let state = self
+                .script
+                .lock()
+                .unwrap()
+                .states
+                .get(&receipt.artifact.location())
+                .copied()
+                .unwrap_or(AttachmentState::Matched);
+            AttachmentInspection {
+                state,
+                reason: format!("scripted as {state:?}"),
+            }
+        }
+
+        fn detach_receipt(&self, receipt: &AttachmentReceipt) -> Result<AttachmentInspection> {
+            let location = receipt.artifact.location();
+            let mut script = self.script.lock().unwrap();
+            script.asked.push(format!("detach {}", location.display()));
+            if script.holds_on_to.contains(&location) {
+                return Ok(AttachmentInspection {
+                    state: AttachmentState::Drifted,
+                    reason: "edited since".to_owned(),
+                });
+            }
+            script.states.insert(location, AttachmentState::Missing);
+            Ok(AttachmentInspection {
+                state: AttachmentState::Missing,
+                reason: String::new(),
+            })
+        }
+
+        fn withdraw_registrations(&self) -> Result<Vec<String>> {
+            self.script
+                .lock()
+                .unwrap()
+                .asked
+                .push("withdraw".to_owned());
+            Ok(vec!["uze".to_owned()])
+        }
+
+        fn registrations(&self, _read: RegistrationRead) -> Vec<VendorRegistration> {
+            self.script.lock().unwrap().registrations.clone()
+        }
+    }
+
+    /// A scratch UZE home and the harnesses it knows, each scripted.
+    struct Machine {
+        root: PathBuf,
+        home: UzeHome,
+        scripts: Vec<Arc<Mutex<Script>>>,
+        app: UzeApplication,
+    }
+
+    impl Machine {
+        /// `harnesses` names each harness by id, display name and whether
+        /// its CLI is here.
+        fn new(label: &str, harnesses: &[(&'static str, &'static str, bool)]) -> Self {
+            let root = uze_testkit::temp::scratch(label);
+            let home = UzeHome::at(root.join("uze"));
+            home.ensure_layout().unwrap();
+            let scripts: Vec<Arc<Mutex<Script>>> = harnesses
+                .iter()
+                .map(|_| Arc::new(Mutex::new(Script::default())))
+                .collect();
+            let integrations: Vec<Box<dyn IntegrationPort>> = harnesses
+                .iter()
+                .zip(&scripts)
+                .map(|(&(id, name, present), script)| {
+                    Box::new(Scripted {
+                        id,
+                        name,
+                        present,
+                        script: script.clone(),
+                    }) as Box<dyn IntegrationPort>
+                })
+                .collect();
+            let app = UzeApplication::new(home.clone(), integrations);
+            Self {
+                root,
+                home,
+                scripts,
+                app,
+            }
+        }
+
+        fn script(&self, at: usize) -> std::sync::MutexGuard<'_, Script> {
+            self.scripts[at].lock().unwrap()
+        }
+
+        fn asked(&self, at: usize) -> Vec<String> {
+            self.script(at).asked.clone()
+        }
+
+        fn deliver(&self, receipt: AttachmentReceipt) -> AttachmentReceipt {
+            state::record_receipt(&self.home, receipt.clone()).unwrap();
+            receipt
+        }
+
+        fn receipts(&self) -> Vec<AttachmentReceipt> {
+            state::receipts(&self.home, None).unwrap()
+        }
+
+        fn purge(&self) -> Result<UninstallReport> {
+            let plan = self.app.uninstall_plan(UninstallMode::Purge);
+            self.app.uninstall(&plan, &|| Ok(()))
+        }
+
+        fn program(&self) -> Result<UninstallReport> {
+            let plan = self.app.uninstall_plan(UninstallMode::Program);
+            self.app.uninstall(&plan, &|| Ok(()))
+        }
+    }
+
+    impl Drop for Machine {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn owned(integration: &str, package: &str, kind: &str, selector: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: package.to_owned(),
+            // One receipt per package and identity: a build has its own.
+            resource_identity: (kind == uze_core::integration::BUILD_KIND)
+                .then(|| uze_core::integration::BUILD_IDENTITY.to_owned()),
+            integration: integration.to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: kind.to_owned(),
+                selector: selector.to_owned(),
+                detail: BTreeMap::new(),
+            },
+        }
+    }
+
+    /// A plugin the harness installed from UZE's marketplace.
+    fn plugin(integration: &str, selector: &str) -> AttachmentReceipt {
+        owned(integration, selector, "plugin", selector)
+    }
+
+    /// A plugin installed from a build under `root`.
+    fn plugin_reading(integration: &str, selector: &str, root: &Path) -> AttachmentReceipt {
+        let mut receipt = plugin(integration, selector);
+        if let ManagedArtifact::IntegrationOwned { detail, .. } = &mut receipt.artifact {
+            detail.insert(
+                "root".to_owned(),
+                serde_json::Value::String(root.join("build").to_string_lossy().into_owned()),
+            );
+        }
+        receipt
+    }
+
+    fn server(integration: &str, name: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: "demo@uze".to_owned(),
+            resource_identity: Some(format!("demo@uze/mcp/{name}")),
+            integration: integration.to_owned(),
+            artifact: ManagedArtifact::VendorConfigEntry {
+                entry_name: name.to_owned(),
+                transport: "stdio".to_owned(),
+                command: PathBuf::from("server"),
+                args: Vec::new(),
+                cwd: None,
+                environment: Vec::new(),
+                enabled: None,
+            },
+        }
+    }
+
+    fn link(integration: &str, path: &Path) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: "demo@uze".to_owned(),
+            resource_identity: Some("demo@uze/skill/demo".to_owned()),
+            integration: integration.to_owned(),
+            artifact: ManagedArtifact::SymlinkReference {
+                path: path.to_path_buf(),
+                target: path.with_extension("target"),
+            },
+        }
+    }
+
+    fn location(receipt: &AttachmentReceipt) -> String {
+        format!("detach {}", receipt.artifact.location().display())
+    }
 
     fn placed() -> BinaryPlan {
         BinaryPlan::Placed {
@@ -1151,5 +1410,571 @@ mod tests {
         );
         assert_eq!(manual.len(), 1, "{manual:?}");
         assert!(manual[0].contains("/opt/uze/bin"), "{manual:?}");
+    }
+
+    #[test]
+    fn a_purge_takes_deliveries_back_readers_first_and_withdraws_between() {
+        let machine = Machine::new("uninstall-purge-order", &[("alpha", "Alpha", true)]);
+        let store = machine.home.store_dir().join("demo-1");
+        let build = machine.deliver(owned("alpha", "demo@uze", "build", "demo"));
+        let entry = machine.deliver(server("alpha", "demo-server"));
+        let installed = machine.deliver(plugin_reading("alpha", "demo@uze", &store));
+
+        let report = machine.purge().unwrap();
+
+        assert_eq!(
+            machine.asked(0),
+            vec![
+                location(&installed),
+                "withdraw".to_owned(),
+                location(&entry),
+                location(&build),
+            ]
+        );
+        assert!(machine.receipts().is_empty(), "{:?}", machine.receipts());
+        assert_eq!(report.detached.len(), 3, "{:?}", report.detached);
+        assert_eq!(
+            report.withdrawn,
+            vec![("Alpha".to_owned(), "uze".to_owned())]
+        );
+        assert!(report.home_removed);
+        assert_eq!(report.removed, vec![machine.home.root().to_path_buf()]);
+        assert!(!machine.home.root().exists());
+    }
+
+    #[test]
+    fn a_harness_holding_only_plugins_is_withdrawn_from_once_they_are_gone() {
+        let machine = Machine::new("uninstall-purge-plugins", &[("alpha", "Alpha", true)]);
+        let installed = machine.deliver(plugin("alpha", "demo@uze"));
+
+        machine.purge().unwrap();
+
+        assert_eq!(
+            machine.asked(0),
+            vec![location(&installed), "withdraw".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_plugin_that_will_not_come_off_keeps_its_marketplace_and_the_builds_it_reads() {
+        let machine = Machine::new("uninstall-purge-held", &[("alpha", "Alpha", true)]);
+        let build = machine.deliver(owned("alpha", "demo@uze", "build", "demo"));
+        let entry = machine.deliver(server("alpha", "demo-server"));
+        let installed = machine.deliver(plugin("alpha", "demo@uze"));
+        machine
+            .script(0)
+            .holds_on_to
+            .push(installed.artifact.location());
+
+        let stopped = machine.purge();
+
+        let Err(UzeError::LifecycleBlocked(message)) = &stopped else {
+            panic!("the purge went on: {stopped:?}");
+        };
+        assert!(message.contains("Alpha still reads"), "{message}");
+        assert_eq!(
+            machine.asked(0),
+            vec![location(&installed), location(&entry)]
+        );
+        let left = machine.receipts();
+        assert!(
+            left.contains(&installed) && left.contains(&build),
+            "{left:?}"
+        );
+        assert!(!left.contains(&entry), "{left:?}");
+        assert!(machine.home.root().is_dir());
+    }
+
+    #[test]
+    fn a_delivery_already_gone_is_forgotten_without_asking_the_harness() {
+        let machine = Machine::new("uninstall-purge-gone", &[("alpha", "Alpha", true)]);
+        let installed = machine.deliver(plugin("alpha", "demo@uze"));
+        machine
+            .script(0)
+            .states
+            .insert(installed.artifact.location(), AttachmentState::Missing);
+
+        machine.purge().unwrap();
+
+        assert_eq!(machine.asked(0), vec!["withdraw".to_owned()]);
+    }
+
+    #[test]
+    fn a_purge_withdraws_from_every_harness_here_whether_it_holds_receipts_or_not() {
+        let machine = Machine::new(
+            "uninstall-purge-every-harness",
+            &[
+                ("alpha", "Alpha", true),
+                ("beta", "Beta", true),
+                ("gamma", "Gamma", false),
+            ],
+        );
+        let installed = machine.deliver(plugin("alpha", "demo@uze"));
+
+        machine.purge().unwrap();
+
+        assert_eq!(
+            machine.asked(0),
+            vec![location(&installed), "withdraw".to_owned()]
+        );
+        assert_eq!(machine.asked(1), vec!["withdraw".to_owned()]);
+        assert!(machine.asked(2).is_empty(), "{:?}", machine.asked(2));
+    }
+
+    #[test]
+    fn a_purge_keeps_only_the_store_a_plugin_left_behind_still_reads() {
+        let machine = Machine::new("uninstall-purge-keeps", &[("alpha", "Alpha", true)]);
+        let read = machine.home.store_dir().join("demo-1");
+        let unread = machine.home.store_dir().join("other-2");
+        fs::create_dir_all(read.join("build")).unwrap();
+        fs::create_dir_all(&unread).unwrap();
+        let installed = machine.deliver(plugin_reading("alpha", "demo@uze", &read));
+        machine
+            .script(0)
+            .states
+            .insert(installed.artifact.location(), AttachmentState::Drifted);
+
+        let report = machine.purge().unwrap();
+
+        assert!(machine.asked(0).is_empty(), "{:?}", machine.asked(0));
+        assert_eq!(report.left.len(), 1, "{:?}", report.left);
+        assert!(read.join("build").is_dir());
+        assert!(!unread.exists());
+        assert!(!machine.home.runtime_dir().exists());
+        assert!(!machine.home.state_dir().exists());
+        assert!(!report.home_removed);
+        assert!(report.kept.contains(&read), "{:?}", report.kept);
+    }
+
+    #[test]
+    fn a_copy_left_in_a_discovery_root_keeps_no_store() {
+        let machine = Machine::new("uninstall-purge-copy-left", &[("alpha", "Alpha", true)]);
+        let copy = machine.deliver(link("alpha", &machine.root.join("skills").join("demo")));
+        machine.deliver(plugin("alpha", "demo@uze"));
+        machine
+            .script(0)
+            .states
+            .insert(copy.artifact.location(), AttachmentState::Drifted);
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Purge);
+
+        assert_eq!(plan.harnesses.len(), 1);
+        assert!(
+            plan.harnesses[0].keeps.is_empty(),
+            "{:?}",
+            plan.harnesses[0].keeps
+        );
+    }
+
+    #[test]
+    fn a_purge_plan_groups_receipts_by_harness_and_leaves_what_cannot_be_asked() {
+        let machine = Machine::new(
+            "uninstall-plan-harnesses",
+            &[("alpha", "Alpha", true), ("beta", "Beta", false)],
+        );
+        machine.deliver(plugin("alpha", "one@uze"));
+        machine.deliver(plugin("beta", "two@uze"));
+        machine.deliver(plugin("alpha", "three@uze"));
+        machine.deliver(plugin("ghost", "four@uze"));
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Purge);
+
+        let ids: Vec<&str> = plan.harnesses.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["alpha", "beta", "ghost"]);
+        let alpha = &plan.harnesses[0];
+        assert!(alpha.cli_present);
+        let subjects: Vec<&str> = alpha.receipts.iter().map(|r| r.subject.as_str()).collect();
+        assert_eq!(subjects, ["one@uze", "three@uze"]);
+        assert!(alpha.receipts.iter().all(|r| r.fate == ReceiptFate::Detach));
+        let beta = &plan.harnesses[1];
+        assert!(!beta.cli_present);
+        assert_eq!(beta.receipts[0].fate, ReceiptFate::Leave);
+        assert!(
+            beta.receipts[0].reason.contains("not installed"),
+            "{}",
+            beta.receipts[0].reason
+        );
+        let ghost = &plan.harnesses[2];
+        assert_eq!(ghost.name, "ghost");
+        assert_eq!(ghost.receipts[0].fate, ReceiptFate::Leave);
+        let left: Vec<(&str, &str)> = plan
+            .left()
+            .map(|(harness, receipt)| (harness.id.as_str(), receipt.subject.as_str()))
+            .collect();
+        assert_eq!(left, [("beta", "two@uze"), ("ghost", "four@uze")]);
+    }
+
+    #[test]
+    fn the_program_plan_keeps_every_delivery_and_asks_no_harness() {
+        let machine = Machine::new("uninstall-plan-program", &[("beta", "Beta", false)]);
+        machine.deliver(plugin("beta", "two@uze"));
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+
+        assert!(plan.harnesses[0].cli_present);
+        assert_eq!(plan.harnesses[0].receipts[0].fate, ReceiptFate::Keep);
+        assert_eq!(plan.left().count(), 0);
+    }
+
+    #[test]
+    fn the_program_uninstall_removes_the_generated_tier_and_keeps_what_a_reinstall_adopts() {
+        let machine = Machine::new("uninstall-program", &[("alpha", "Alpha", true)]);
+        machine.deliver(plugin("alpha", "demo@uze"));
+        fs::create_dir_all(machine.home.store_dir().join("demo-1")).unwrap();
+        let foreign = machine.home.root().join("notes");
+        fs::write(&foreign, "mine").unwrap();
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+        let notes = plan
+            .entries
+            .iter()
+            .find(|entry| entry.path == foreign)
+            .unwrap();
+        assert_eq!((notes.holds, notes.remove), ("not uze's", false));
+        let report = machine.app.uninstall(&plan, &|| Ok(())).unwrap();
+
+        assert!(machine.asked(0).is_empty(), "{:?}", machine.asked(0));
+        assert!(!machine.home.runtime_dir().exists());
+        assert!(!machine.home.cache_dir().exists());
+        assert!(machine.home.store_dir().join("demo-1").is_dir());
+        assert!(machine.home.state_dir().is_dir());
+        assert!(foreign.is_file());
+        assert!(
+            report.removed.contains(&machine.home.runtime_dir()),
+            "{:?}",
+            report.removed
+        );
+        assert!(
+            report.kept.contains(&machine.home.store_dir()),
+            "{:?}",
+            report.kept
+        );
+        assert_eq!(machine.receipts().len(), 1);
+    }
+
+    #[test]
+    fn a_purge_marks_every_home_entry_for_removal() {
+        let machine = Machine::new("uninstall-plan-purge-entries", &[]);
+        fs::write(machine.home.root().join("notes"), "mine").unwrap();
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Purge);
+
+        assert!(!plan.entries.is_empty());
+        assert!(
+            plan.entries.iter().all(|entry| entry.remove),
+            "{:?}",
+            plan.entries
+        );
+    }
+
+    /// A harness still pointed at a marketplace under the generated tree.
+    fn reads_the_generated_tree(machine: &Machine, at: usize) {
+        machine.script(at).registrations.push(VendorRegistration {
+            kind: VendorRegistrationKind::Marketplace,
+            name: "uze".to_owned(),
+            expected: machine.home.store_dir(),
+            registered: Some(machine.home.runtime_dir().join("marketplace")),
+        });
+    }
+
+    #[test]
+    fn a_harness_still_reading_the_generated_tree_stops_the_program_uninstall() {
+        let machine = Machine::new("uninstall-program-refused", &[("alpha", "Alpha", true)]);
+        reads_the_generated_tree(&machine, 0);
+
+        let refused = machine.program();
+
+        let Err(UzeError::UninstallRefused { reason, .. }) = &refused else {
+            panic!("the uninstall went on: {refused:?}");
+        };
+        assert!(reason.contains("Alpha"), "{reason}");
+        assert!(machine.home.runtime_dir().is_dir());
+    }
+
+    #[test]
+    fn a_harness_moved_to_its_stores_on_the_way_lets_the_program_uninstall_go_on() {
+        let machine = Machine::new("uninstall-program-converges", &[("alpha", "Alpha", true)]);
+        reads_the_generated_tree(&machine, 0);
+        machine.script(0).moves_to_its_stores = true;
+
+        machine.program().unwrap();
+
+        assert!(machine.asked(0).contains(&"install".to_owned()));
+        assert!(!machine.home.runtime_dir().exists());
+    }
+
+    #[test]
+    fn a_purge_does_not_wait_for_a_harness_to_leave_the_generated_tree() {
+        let machine = Machine::new("uninstall-purge-generated", &[("alpha", "Alpha", true)]);
+        reads_the_generated_tree(&machine, 0);
+
+        let report = machine.purge().unwrap();
+
+        assert!(report.home_removed);
+    }
+
+    #[test]
+    fn a_receipt_naming_the_package_copies_counts_against_its_own_harness() {
+        let machine = Machine::new(
+            "uninstall-runtime-receipts",
+            &[("alpha", "Alpha", true), ("beta", "Beta", true)],
+        );
+        let copies = crate::application::earlier::package_copies_dir(&machine.home);
+        machine.deliver(link("alpha", &copies.join("demo")));
+
+        assert_eq!(
+            machine.app.reads_the_runtime_tree(),
+            vec!["Alpha".to_owned()]
+        );
+    }
+
+    #[test]
+    fn only_a_harness_setup_installed_is_named_as_provisioned() {
+        let machine = Machine::new(
+            "uninstall-provisioned",
+            &[("alpha", "Alpha", true), ("beta", "Beta", true)],
+        );
+        let detection = HarnessDetection {
+            present: true,
+            version: None,
+        };
+        let installed =
+            ProvisioningResult::verified(ProvisionAction::Install, "official", detection.clone());
+        let updated = ProvisioningResult::verified(ProvisionAction::Update, "official", detection);
+        state::record_provisioning(&machine.home, "alpha", &installed).unwrap();
+        state::record_provisioning(&machine.home, "beta", &updated).unwrap();
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+
+        assert_eq!(plan.provisioned, vec!["Alpha".to_owned()]);
+    }
+
+    // Unix reads a link's target back as it was written; a Windows junction
+    // reads back in its verbatim form, which this comparison does not model.
+    #[cfg(unix)]
+    #[test]
+    fn a_project_is_listed_by_the_links_it_holds_into_the_home() {
+        let machine = Machine::new("uninstall-projects", &[]);
+        let linked = machine.root.join("linked");
+        let plain = machine.root.join("plain");
+        let worktrees = linked.join(uze_workspace::worktree::WORKTREES_DIRECTORY);
+        fs::create_dir_all(&worktrees).unwrap();
+        fs::create_dir_all(worktrees.join("elsewhere")).unwrap();
+        fs::create_dir_all(&plain).unwrap();
+        let into_home = worktrees.join("a1~uze");
+        uze_platform::fs::symlink(&machine.home.runtime_dir(), &into_home).unwrap();
+        let outside = worktrees.join("b2~uze");
+        uze_platform::fs::symlink(&machine.root, &outside).unwrap();
+        for project in [&linked, &plain] {
+            uze_core::record::ensure(&machine.home, project).unwrap();
+        }
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+
+        assert_eq!(plan.projects.len(), 1, "{:?}", plan.projects);
+        assert_eq!(
+            uze_platform::path::canonical(&plan.projects[0].root).unwrap(),
+            uze_platform::path::canonical(&linked).unwrap()
+        );
+        assert_eq!(plan.projects[0].links, vec![into_home]);
+    }
+
+    #[test]
+    fn only_a_checkout_holding_commits_its_target_lacks_is_named_as_unlanded() {
+        let repository = uze_testkit::git::Repository::new("uninstall-unlanded");
+        let project = uze_platform::path::canonical(repository.root()).unwrap();
+        let machine = Machine::new("uninstall-unlanded-home", &[]);
+        let place = || {
+            machine
+                .app
+                .workspace()
+                .place_new_agent(
+                    &project,
+                    Some(crate::application::services::PlacementKind::Isolated),
+                    "keeper",
+                    &[],
+                )
+                .unwrap()
+                .cwd
+        };
+        let worked = place();
+        let idle = place();
+        fs::write(worked.join("work.txt"), "unlanded").unwrap();
+        repository.git_in(&worked, &["add", "work.txt"]);
+        repository.git_in(&worked, &["commit", "--quiet", "-m", "work"]);
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+
+        let unlanded: Vec<(PathBuf, usize)> = plan
+            .projects
+            .iter()
+            .flat_map(|project| &project.unlanded)
+            .map(|checkout| {
+                (
+                    uze_platform::path::canonical(&checkout.path).unwrap(),
+                    checkout.commits,
+                )
+            })
+            .collect();
+        assert_eq!(
+            unlanded,
+            vec![(uze_platform::path::canonical(&worked).unwrap(), 1)],
+            "idle at {}",
+            idle.display()
+        );
+    }
+
+    fn empty_plan() -> UninstallPlan {
+        UninstallPlan {
+            mode: UninstallMode::Program,
+            home: PathBuf::from("uze"),
+            home_present: false,
+            harnesses: Vec::new(),
+            entries: Vec::new(),
+            projects: Vec::new(),
+            provisioned: Vec::new(),
+            binary: BinaryPlan::Unknown,
+            running: None,
+        }
+    }
+
+    #[test]
+    fn a_plan_is_empty_only_with_no_home_no_links_and_no_placed_binary() {
+        assert!(empty_plan().is_empty());
+        assert!(
+            !UninstallPlan {
+                home_present: true,
+                ..empty_plan()
+            }
+            .is_empty()
+        );
+        assert!(
+            !UninstallPlan {
+                projects: vec![ProjectWork {
+                    links: vec![PathBuf::from("a~uze")],
+                    ..ProjectWork::default()
+                }],
+                ..empty_plan()
+            }
+            .is_empty()
+        );
+        assert!(
+            !UninstallPlan {
+                binary: placed(),
+                ..empty_plan()
+            }
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_report_needs_the_person_only_when_a_step_is_left_to_them() {
+        let mut report = UninstallReport {
+            mode: UninstallMode::Program,
+            home: PathBuf::from("uze"),
+            detached: Vec::new(),
+            withdrawn: Vec::new(),
+            left: Vec::new(),
+            links_removed: Vec::new(),
+            removed: Vec::new(),
+            kept: Vec::new(),
+            home_removed: false,
+            binary: BinaryOutcome::Unknown,
+            running: None,
+            manual: Vec::new(),
+            projects: Vec::new(),
+            provisioned: Vec::new(),
+        };
+        assert!(!report.needs_the_person());
+
+        report.manual.push("remove it yourself".to_owned());
+
+        assert!(report.needs_the_person());
+    }
+
+    #[test]
+    fn a_purge_undoes_deliveries_then_entries_and_builds_last() {
+        let build = owned("alpha", "demo@uze", "build", "demo").artifact;
+        let engine = owned("alpha", "demo@uze", "rules-engine", "rules").artifact;
+        let installed = plugin("alpha", "demo@uze").artifact;
+        let entry = server("alpha", "demo").artifact;
+
+        assert_eq!(Reads::of(&build), Reads::Material);
+        assert_eq!(Reads::of(&engine), Reads::Entry);
+        assert_eq!(Reads::of(&installed), Reads::Delivery);
+        assert_eq!(Reads::of(&entry), Reads::Entry);
+    }
+
+    #[test]
+    fn only_a_plugin_is_installed_through_the_marketplace() {
+        assert!(installed_through_a_marketplace(
+            &plugin("alpha", "demo@uze").artifact
+        ));
+        for kind in ["build", "rules-engine"] {
+            assert!(!installed_through_a_marketplace(
+                &owned("alpha", "demo@uze", kind, "demo").artifact
+            ));
+        }
+    }
+
+    #[test]
+    fn the_command_that_removes_a_binary_is_read_from_where_it_was_put() {
+        let cargo = removal_command(Path::new("/home/someone/.cargo/bin/uze"));
+        assert_eq!(cargo.as_deref(), Some("cargo uninstall uze"));
+        assert_eq!(
+            removal_command(Path::new("/usr/local/Cellar/uze/1.0/bin/uze")).as_deref(),
+            Some("brew uninstall uze")
+        );
+        assert_eq!(
+            removal_command(Path::new("/opt/homebrew/bin/uze")).as_deref(),
+            Some("brew uninstall uze")
+        );
+        assert_eq!(removal_command(Path::new("/opt/tools/bin/uze")), None);
+        assert_eq!(removal_command(Path::new("/home/someone/.cargo/uze")), None);
+    }
+
+    #[test]
+    fn removing_a_path_takes_a_file_or_a_tree_and_accepts_one_already_gone() {
+        let root = uze_testkit::temp::scratch("uninstall-remove-path");
+        let file = root.join("file");
+        let tree = root.join("tree");
+        fs::write(&file, "x").unwrap();
+        fs::create_dir_all(tree.join("inner")).unwrap();
+        fs::write(tree.join("inner/file"), "x").unwrap();
+
+        remove_path(&file).unwrap();
+        remove_path(&tree).unwrap();
+        remove_path(&root.join("never-there")).unwrap();
+
+        assert!(!file.exists() && !tree.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // POSIX permissions make a removal fail here; Windows has no read-only
+    // directory that refuses an unlink the same way.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_cannot_be_removed_is_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = uze_testkit::temp::scratch("uninstall-remove-refused");
+        let sealed = root.join("sealed");
+        fs::create_dir_all(&sealed).unwrap();
+        let file = sealed.join("file");
+        fs::write(&file, "x").unwrap();
+        fs::set_permissions(&sealed, fs::Permissions::from_mode(0o555)).unwrap();
+        // An account that ignores permissions cannot be refused at all.
+        let ignores_permissions = fs::write(sealed.join("probe"), "x").is_ok();
+
+        let removed = remove_path(&file);
+
+        fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).unwrap();
+        if !ignores_permissions {
+            assert!(
+                matches!(removed, Err(UzeError::Write { .. })),
+                "{removed:?}"
+            );
+            assert!(file.exists());
+        }
+        let _ = fs::remove_dir_all(&root);
     }
 }

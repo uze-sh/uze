@@ -743,6 +743,166 @@ impl Health<'_> {
     }
 }
 
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+
+    fn needs_you() -> MaintenanceOutcome {
+        MaintenanceOutcome::NeedsHumanAction {
+            plugin: "flow@ai".to_owned(),
+            integration: None,
+            receipt: None,
+            state: None,
+            reason: "the receipt is drifted".to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_repaired_count_is_what_maintenance_put_right_and_nothing_it_left() {
+        let report = MaintenanceReport {
+            outcomes: vec![
+                MaintenanceOutcome::Repaired {
+                    plugin: "flow@ai".to_owned(),
+                    integration: "fixture".to_owned(),
+                    receipt: "skill".to_owned(),
+                },
+                MaintenanceOutcome::OrphanCleaned {
+                    plugin: "flow".to_owned(),
+                    ledger_keys: vec!["skill".to_owned()],
+                },
+                MaintenanceOutcome::PinRestored {
+                    plugin: "flow@ai".to_owned(),
+                    commit: "abc1234".to_owned(),
+                },
+                MaintenanceOutcome::UpdateAvailable {
+                    plugin: "uze@uze".to_owned(),
+                },
+                needs_you(),
+            ],
+            collected: Vec::new(),
+        };
+        assert_eq!(report.repaired_count(), 3);
+        assert_eq!(MaintenanceReport::default().repaired_count(), 0);
+    }
+
+    #[test]
+    fn an_outcome_reads_as_a_sentence_carrying_its_reason() {
+        let rendered = needs_you().to_string();
+        assert_eq!(rendered, "flow@ai needs you: the receipt is drifted");
+        let unavailable = MaintenanceOutcome::Unavailable {
+            integration: "fixture".to_owned(),
+            reason: "it timed out".to_owned(),
+        };
+        assert_eq!(
+            unavailable.to_string(),
+            "fixture could not be checked: it timed out"
+        );
+    }
+
+    /// A harness that counts each live inspection and finds every receipt
+    /// matched.
+    struct Counting(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl uze_core::integration::IntegrationPort for Counting {
+        fn id(&self) -> &'static str {
+            "counting"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn inspect_receipt(
+            &self,
+            _receipt: &uze_core::integration::AttachmentReceipt,
+        ) -> uze_core::integration::AttachmentInspection {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            uze_core::integration::AttachmentInspection {
+                state: AttachmentState::Matched,
+                reason: "test".to_owned(),
+            }
+        }
+    }
+
+    /// Only a build's matched inspection is taken from the cache; what a
+    /// receipt carries whole is cheap to look at, and looked at every pass.
+    #[test]
+    fn maintenance_inspects_a_receipt_that_is_not_a_build_live_every_pass() {
+        let base = uze_testkit::temp::scratch("maintenance-live");
+        let home = uze_core::UzeHome::at(base.join("home"));
+        let inspected = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let app =
+            crate::UzeApplication::new(home.clone(), vec![Box::new(Counting(inspected.clone()))]);
+        let source = base.join("flow");
+        std::fs::create_dir_all(source.join("skills/demo")).unwrap();
+        std::fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(source.join("skills/demo/SKILL.md"), "# Demo\n").unwrap();
+        app.plugins()
+            .add(
+                uze_core::PackageSource::Local { path: source },
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        state::record_receipt(
+            &home,
+            uze_core::integration::AttachmentReceipt {
+                package_id: package.id.as_str().to_owned(),
+                resource_identity: None,
+                integration: "counting".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path: base.join("harness/skill"),
+                    target: base.join("target"),
+                },
+            },
+        )
+        .unwrap();
+
+        let before = inspected.load(std::sync::atomic::Ordering::SeqCst);
+        app.health().maintain();
+        app.health().maintain();
+        assert_eq!(
+            inspected.load(std::sync::atomic::Ordering::SeqCst) - before,
+            2,
+            "each pass looked at the receipt itself"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn the_projection_of_a_project_that_is_gone_is_swept_and_named() {
+        let base = uze_testkit::temp::scratch("maintenance-projections");
+        let app = crate::UzeApplication::new(uze_core::UzeHome::at(base.join("home")), Vec::new());
+        let orphan = app.home.runtime_projects_dir().join("project-gone");
+        std::fs::create_dir_all(&orphan).unwrap();
+
+        assert_eq!(
+            app.health().prune_runtime_projections(),
+            vec!["project-gone".to_owned()]
+        );
+        assert!(!orphan.exists());
+        assert!(
+            app.health().prune_runtime_projections().is_empty(),
+            "a second sweep finds nothing left"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+}
+
 /// Each case restores a receipt-owned symlink, which a Windows account
 /// without the right to create one never gets (delivery copies there).
 #[cfg(all(test, unix))]

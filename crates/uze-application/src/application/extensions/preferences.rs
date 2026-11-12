@@ -180,4 +180,65 @@ mod tests {
         assert!(set(&home, "review", &declared(), "missing", &true.into()).is_err());
         assert!(!home.config_path().exists());
     }
+
+    /// A built-in's drawer lists each preference with what it may hold: a
+    /// choice its values, a number its bounds.
+    #[test]
+    fn a_builtins_drawer_lists_each_preference_with_what_it_may_hold() {
+        let root = uze_testkit::temp::scratch("preferences-builtin");
+        let app = crate::UzeApplication::new(UzeHome::at(root.join("uze")), Vec::new());
+        let extensions = app.extensions();
+        let declared = vec![
+            PreferenceDecl {
+                name: "theme".to_owned(),
+                label: "Theme".to_owned(),
+                kind: PreferenceKind::Choice {
+                    values: vec!["light".to_owned(), "dark".to_owned()],
+                },
+                default: "dark".into(),
+            },
+            PreferenceDecl {
+                name: "minutes".to_owned(),
+                label: "Minutes".to_owned(),
+                kind: PreferenceKind::Number {
+                    min: Some(1),
+                    max: Some(90),
+                },
+                default: 25.into(),
+            },
+        ];
+
+        let rows = extensions.builtin_preference_rows("focus", &declared);
+        let listed: Vec<_> = rows
+            .iter()
+            .map(|row| (row.name.as_str(), row.values.clone(), row.min, row.max))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                (
+                    "theme",
+                    vec!["light".to_owned(), "dark".to_owned()],
+                    None,
+                    None
+                ),
+                ("minutes", Vec::new(), Some(1), Some(90)),
+            ]
+        );
+        assert_eq!(
+            extensions.builtin_preferences("focus", &declared),
+            serde_json::json!({ "theme": "dark", "minutes": 25 })
+        );
+        assert_eq!(
+            extensions
+                .set_builtin_preference("focus", &declared, "minutes", 40.into())
+                .unwrap(),
+            serde_json::json!({ "theme": "dark", "minutes": 40 })
+        );
+        assert_eq!(
+            extensions.builtin_preferences("focus", &declared),
+            serde_json::json!({ "theme": "dark", "minutes": 40 })
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

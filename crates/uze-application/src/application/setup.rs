@@ -430,3 +430,67 @@ impl UzeApplication {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plants every retired path removed by name, as an earlier release
+    /// left it, and returns where each is.
+    fn plant_retired(home: &UzeHome) -> Vec<PathBuf> {
+        removed_by_name()
+            .map(|owned| {
+                let path = owned.path(home);
+                if owned.form == uze_core::home::Form::Directory {
+                    std::fs::create_dir_all(&path).unwrap();
+                } else {
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(&path, "left by an earlier release").unwrap();
+                }
+                path
+            })
+            .collect()
+    }
+
+    /// Every retired path is removed, and reported; a current record
+    /// beside them stays.
+    #[test]
+    fn the_retired_collector_removes_every_retired_path_present() {
+        let root = uze_testkit::temp::scratch("setup-retired");
+        let home = UzeHome::at(&root);
+        let mut planted = plant_retired(&home);
+        assert!(!planted.is_empty(), "the map retires paths by name");
+        std::fs::create_dir_all(home.config_path().parent().unwrap()).unwrap();
+        std::fs::write(home.config_path(), "").unwrap();
+
+        let collected = Retired.collect(&home);
+        assert_eq!(collected.collector, Retired.name());
+        let mut removed = collected.removed;
+        removed.sort();
+        planted.sort();
+        planted.dedup();
+        assert_eq!(removed, planted);
+        assert!(
+            planted
+                .iter()
+                .all(|path| std::fs::symlink_metadata(path).is_err())
+        );
+        assert!(home.config_path().exists(), "a current record stays");
+        assert!(Retired.collect(&home).removed.is_empty(), "nothing left");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn every_command_retires_what_an_earlier_release_left() {
+        let root = uze_testkit::temp::scratch("setup-retire-on-command");
+        let home = UzeHome::at(&root);
+        let planted = plant_retired(&home);
+        UzeApplication::new(home, Vec::new()).retire_records_of_earlier_releases();
+        assert!(
+            planted
+                .iter()
+                .all(|path| std::fs::symlink_metadata(path).is_err())
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

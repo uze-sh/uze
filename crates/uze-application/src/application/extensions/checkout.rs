@@ -321,4 +321,46 @@ mod tests {
         assert!(reason.contains("not inside a Git checkout"), "{reason}");
         fs::remove_dir_all(root).unwrap();
     }
+
+    /// Asked as the application asks, with this machine's surroundings: a
+    /// repository in its temporary directory is refused, and the refusal
+    /// reads as its reason.
+    #[test]
+    fn this_machines_temporary_directory_holds_no_checkout() {
+        let root =
+            uze_platform::path::canonical(&uze_testkit::temp::scratch("checkout-machine")).unwrap();
+        let project = root.join("project");
+        repository(&project);
+        let app = crate::UzeApplication::new(uze_core::UzeHome::at(root.join("uze")), Vec::new());
+
+        let refusal = app.extensions().checkout(&project).expect_err("refused");
+        assert!(
+            refusal.reason().contains("temporary directory"),
+            "{}",
+            refusal.reason()
+        );
+        assert_eq!(refusal.to_string(), refusal.reason());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Git's files are a bare repository only all together: a `HEAD` file,
+    /// or an `objects` or `refs` directory alone, is not one.
+    #[test]
+    fn a_directory_with_only_some_of_gits_files_is_not_bare() {
+        let (root, _) = world("checkout-partly-bare");
+        let head_only = root.join("home/head");
+        fs::create_dir_all(&head_only).unwrap();
+        fs::write(head_only.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let without_objects = root.join("home/refs-only");
+        fs::create_dir_all(without_objects.join("refs")).unwrap();
+        fs::write(without_objects.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let without_head = root.join("home/no-head");
+        fs::create_dir_all(without_head.join("objects")).unwrap();
+        fs::create_dir_all(without_head.join("refs")).unwrap();
+
+        for dir in [&head_only, &without_objects, &without_head] {
+            assert!(!is_bare(dir), "{}", dir.display());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }

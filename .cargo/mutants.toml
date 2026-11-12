@@ -262,4 +262,49 @@ exclude_re = [
   'uze-core/src/machine/mcp\.rs.*replace <impl std::fmt::Debug for McpSession>::fmt -> std::fmt::Result with Ok\(Default::default\(\)\)$',
   # Trimming at the slack itself only drops early what the final trim to `cap` drops anyway.
   'uze-core/src/machine/subprocess\.rs.*replace > with >= in read_bounded$',
+  # uze-application catalogue
+  # An opaque path is neither superseded_dir nor a Directory, so without its arm it falls to `_ => {}` all the same.
+  'uze-application/src/application/schema\.rs.*delete match arm Form::Opaque in Walk<._>::visit$',
+  # Every retired disposable path is Generated or Remembered, tiers the walk skips, so none is found Retired today.
+  'uze-application/src/application/schema\.rs.*delete match arm SchemaFinding::Retired in compare$',
+  # Without the guard the placeholder is pushed as a literal segment, a path that never exists, so the answer is false all the same.
+  'uze-application/src/application/schema\.rs.*replace match guard segment\.starts_with\(.\{.\) with false in Walk<._>::carried_beside$',
+  # The age is measured in nanoseconds from a clock read inside the call: equality with the window cannot be arranged.
+  'uze-application/src/application/marketplace_catalogue\.rs.*replace < with <= in MarketplaceCatalogues::refresh_stale$',
+  # The label a collection report prints, read nowhere else.
+  'uze-application/src/application/setup\.rs.*replace <impl Collectable for Retired>::name -> &.static str with ',
+  'uze-application/src/application/marketplace_catalogue\.rs.*replace <impl super::Collectable for MarketplaceMirrors>::name -> &.static str with ',
+  # Only spares a second fetch of a mirror already fetched in the same operation; what is installed is the same.
+  'uze-application/src/application/marketplace\.rs.*delete ! in MarketplaceRequest::materialize_plugin$',
+  # uze-application extensions
+  # A collector's name only labels what the report says it removed.
+  'uze-application/src/application/extensions/(compiled|mcp|program)\.rs.*Collectable for (CompiledViews<.*>|DeliveredPackages|ExtensionScratch|ExtensionPictures)>::name -> ',
+  # A Debug rendering for a developer's eyes; nothing reads it.
+  'uze-application/src/application/extensions/(mcp|reach|runner)\.rs.*std::fmt::Debug for (McpSessions|CheckoutReach|Running)>::fmt ',
+  # Where secrets are kept is uze-workspace's wording, passed through.
+  'uze-application/src/application/extensions/report\.rs.*replace secrets_kept_in -> ',
+  # A test's own cleanup of its scratch directory.
+  'uze-application/src/application/extensions/fetch\.rs.*replace tests::<impl Drop for World>::drop with \(\)$',
+  # Two cached revisions never tie: each has its own path.
+  'uze-application/src/application/extensions/compiled\.rs.*replace > with >= in pruned_compiled_cache$',
+  # A loaded extension holds at most LOAD_BYTES in all, which is IMAGE_FILE_MAX,
+  # so no file of it reaches the bound the slice cuts at.
+  'uze-application/src/application/extensions/runner\.rs.*replace \+ with [*-] in ExtensionRunner::media$',
+  # How long a listing is kept changes what a question costs, never its answer.
+  'uze-application/src/application/extensions/runner\.rs.*replace < with (<=|==) in ExtensionRunner::installed$',
+  # uze-application environment
+  # The prefetch only warms mirrors: each read after it fetches what it lacks itself.
+  'uze-application/src/application/project_environment\.rs.*replace Project<._>::prefetch_install_sources with \(\)$',
+  # A collector's name labels the report; any non-empty label behaves the same.
+  'uze-application/src/application/rules_engine\.rs.*replace <impl super::Collectable for RuleSessions>::name -> &.static str with "xyzzy"$',
+  # uze-application services
+  # A collector's name only labels its report; a distinct, non-empty one is tested.
+  'uze-application/src/application/maintenance\.rs.*replace <impl Collectable for \w+(<.*>)?>::name -> &.static str with "xyzzy"$',
+  # The test integration's capabilities already are the default.
+  'uze-application/src/application/maintenance\.rs.*TestIntegration>::capabilities -> uze_core::router::HarnessCapabilities with Default::default\(\)$',
+  # The wording of a warning a person reads; that it is given is the delivery's.
+  'uze-application/src/application/services/tasks/delivery\.rs.*replace superseded_delivery -> String with ',
+  # uze-application lifecycle
+  # Removal returns NotFound only when the path vanished between its stat and its removal.
+  'uze-application/src/application/uninstall\.rs.*replace match guard error\.kind\(\) != std::io::ErrorKind::NotFound with true in remove_path$',
 ]

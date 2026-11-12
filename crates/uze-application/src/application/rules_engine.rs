@@ -268,6 +268,129 @@ impl super::Collectable for RuleSessions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+    use uze_core::capability::Resource;
+    use uze_core::exposure::{ExposureMechanism, ExposurePlan};
+    use uze_core::router::{CompatibilityRoute, HarnessCapabilities};
+
+    /// A harness whose rules route needs the engine, and which hands back
+    /// one artifact for the engine and one of setup's own.
+    struct EngineHarness(&'static str);
+
+    fn owned(selector: &str) -> ManagedArtifact {
+        ManagedArtifact::IntegrationOwned {
+            kind: "test-entry".to_owned(),
+            selector: selector.to_owned(),
+            detail: BTreeMap::new(),
+        }
+    }
+
+    impl IntegrationPort for EngineHarness {
+        fn id(&self) -> &'static str {
+            self.0
+        }
+
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: CompatibilityRoute::Adaptable,
+                mechanism: ExposureMechanism::Unsupported {
+                    rationale: "rules only".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+
+        fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+            Ok(None)
+        }
+
+        fn rules_route(&self) -> RulesRoute {
+            RulesRoute::adapted("the test engine hands rules over")
+        }
+
+        fn attach_rules_engine(&self) -> Result<Vec<ManagedArtifact>> {
+            Ok(vec![owned("engine-entry")])
+        }
+
+        fn setup_artifacts(&self) -> Vec<ManagedArtifact> {
+            vec![owned("setup-entry")]
+        }
+    }
+
+    #[test]
+    fn a_delivered_engine_is_recorded_per_artifact_under_its_harness_and_selector() {
+        let root = uze_testkit::temp::scratch("rules-engine-receipts");
+        let home = UzeHome::at(root.join("uze"));
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let harness = EngineHarness("engine-harness");
+        let bystander = EngineHarness("bystander");
+        assert!(!app.rules_engine_delivered(&harness));
+
+        let setup = app.deliver_rules_engine(&harness);
+
+        assert!(setup.delivered, "{:?}", setup.error);
+        let identities: Vec<(String, Option<String>)> =
+            state::receipts(&home, Some(state::SETUP_OWNER))
+                .unwrap()
+                .into_iter()
+                .map(|receipt| (receipt.integration, receipt.resource_identity))
+                .collect();
+        assert!(
+            identities.contains(&(
+                "engine-harness".to_owned(),
+                Some("rules:engine-entry".to_owned())
+            )),
+            "{identities:?}"
+        );
+        assert!(
+            identities.contains(&(
+                "engine-harness".to_owned(),
+                Some("setup:setup-entry".to_owned())
+            )),
+            "{identities:?}"
+        );
+        assert!(app.rules_engine_delivered(&harness));
+        assert!(
+            !app.rules_engine_delivered(&bystander),
+            "another harness's receipt does not stand for this one"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_session_record_exactly_as_old_as_the_limit_is_kept() {
+        let dir = uze_testkit::temp::scratch("rules-sessions-boundary");
+        let record = dir.join("session");
+        std::fs::write(&record, "handed").unwrap();
+        let written = std::fs::metadata(&record).unwrap().modified().unwrap();
+        let age = Duration::from_secs(60);
+
+        assert!(sweep_rule_sessions(&dir, written + age, age).is_empty());
+        assert!(record.exists());
+        assert_eq!(
+            sweep_rule_sessions(&dir, written + age + Duration::from_secs(1), age),
+            vec![record.clone()]
+        );
+        assert!(!record.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_rule_sessions_collector_answers_for_the_disposable_sessions_directory() {
+        let roots = RuleSessions.roots();
+        assert!(!roots.is_empty());
+        for root in roots {
+            assert!(
+                UzeHome::owned_path(root).is_some_and(|owned| owned.disposable),
+                "{root} is a disposable path the home names"
+            );
+        }
+        assert!(!RuleSessions.name().is_empty());
+    }
 
     #[test]
     fn a_missing_dependency_names_every_harness_the_engine_was_delivered_to() {

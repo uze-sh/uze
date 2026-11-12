@@ -884,3 +884,6 @@ fn same_name_space(
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests;

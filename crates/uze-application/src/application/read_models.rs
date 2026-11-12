@@ -1546,3 +1546,316 @@ pub struct AutoUpdateOutcome {
     /// or a failure. `None` when `applied`.
     pub detail: Option<String>,
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use uze_core::integration::{AttachmentInspection, AttachmentReceipt, ManagedArtifact};
+    use uze_core::reconciliation::ReconciledReceipt;
+
+    /// A harness row as `doctor` builds one, detected or not and in the
+    /// setup state given.
+    pub(crate) fn harness(present: bool, setup: &str) -> HarnessHealth {
+        HarnessHealth {
+            integration: "test".to_owned(),
+            display_name: "Test".to_owned(),
+            description: String::new(),
+            detection: HarnessDetection {
+                present,
+                version: None,
+            },
+            below_minimum: None,
+            setup: setup.to_owned(),
+            strategy: None,
+            provisioning: None,
+            publication: PublicationStatus::NotApplicable,
+            capabilities: uze_core::router::HarnessCapabilities::default(),
+            runtime_shim_active: false,
+            context_support: HarnessContextSupport {
+                instructions: ContextMechanism::Native,
+                project_skills: ContextMechanism::Native,
+                project_agents: ContextMechanism::Native,
+                project_rules: ContextMechanism::Native,
+            },
+            agent_context: None,
+        }
+    }
+
+    #[test]
+    fn a_harness_is_configured_only_when_present_and_set_up() {
+        assert!(harness(true, "installed / verified").configured());
+        assert!(!harness(true, "not configured").configured());
+        assert!(!harness(false, "installed / verified").configured());
+    }
+
+    fn registration(checkout: Option<&str>, subpath: Option<&str>) -> MarketplaceRegistration {
+        MarketplaceRegistration {
+            added: true,
+            identity: "https://example.com/acme/market".to_owned(),
+            resolves_here_only: false,
+            checkout: checkout.map(PathBuf::from),
+            subpath: subpath.map(PathBuf::from),
+            linked: false,
+        }
+    }
+
+    /// A marketplace read from a checkout is placed there, in the
+    /// catalogue's directory when it has one; one read from its remote is
+    /// placed at its identity.
+    #[test]
+    fn a_registration_names_where_its_catalogue_is_read() {
+        let checkout = PathBuf::from("work").join("market");
+        let local = registration(checkout.to_str(), None);
+        assert_eq!(local.place(), checkout.display().to_string());
+        let nested = registration(checkout.to_str(), Some("catalogue"));
+        assert_eq!(
+            nested.place(),
+            checkout.join("catalogue").display().to_string()
+        );
+        let remote = registration(None, None);
+        assert_eq!(remote.place(), "https://example.com/acme/market");
+        let remote_nested = registration(None, Some("catalogue"));
+        assert_eq!(
+            remote_nested.place(),
+            "https://example.com/acme/market/catalogue"
+        );
+    }
+
+    #[test]
+    fn a_registration_says_whether_it_follows_a_working_tree_or_commits() {
+        let mut linked = registration(Some("market"), None);
+        linked.linked = true;
+        let follows = linked.reads();
+        assert!(follows.contains("market"), "{follows}");
+        assert!(follows.contains("working tree"), "{follows}");
+        let mirrored = registration(None, None).reads();
+        assert!(
+            mirrored.contains("https://example.com/acme/market"),
+            "{mirrored}"
+        );
+        assert!(mirrored.contains("commits"), "{mirrored}");
+        assert_ne!(follows, linked.place());
+    }
+
+    #[test]
+    fn store_health_says_what_holds_it_back() {
+        assert_eq!(StoreHealth::Ready.to_string(), "ready");
+        let quarantined =
+            StoreHealth::Quarantined(vec!["one is unreadable".to_owned(), "two".to_owned()])
+                .to_string();
+        assert!(quarantined.contains("2 registration"), "{quarantined}");
+        assert!(quarantined.contains("one is unreadable"), "{quarantined}");
+        let blocked = StoreHealth::Blocked("the ledger is corrupt".to_owned()).to_string();
+        assert!(blocked.contains("the ledger is corrupt"), "{blocked}");
+    }
+
+    fn regions(remove: &[&str], bridges: Vec<BridgeFate>) -> RetiredRegionsPlan {
+        RetiredRegionsPlan {
+            file: PathBuf::from("AGENTS.md"),
+            remove: remove.iter().map(|region| (*region).to_owned()).collect(),
+            keep: vec![("edited".to_owned(), "edited by hand".to_owned())],
+            bridges: bridges
+                .into_iter()
+                .map(|fate| RetiredBridge {
+                    file: PathBuf::from("BRIDGE.md"),
+                    fate,
+                })
+                .collect(),
+        }
+    }
+
+    /// Only a region still to remove, or a bridge that goes, changes a
+    /// file: a region or bridge kept is left exactly as it is.
+    #[test]
+    fn retired_regions_change_a_file_only_when_something_goes() {
+        let kept = regions(&[], vec![BridgeFate::Kept("edited".to_owned())]);
+        assert!(!kept.has_changes());
+        assert!(regions(&["plugins"], Vec::new()).has_changes());
+        assert!(regions(&[], vec![BridgeFate::Region]).has_changes());
+        assert!(regions(&[], vec![BridgeFate::File]).has_changes());
+
+        let plan = |leftover_regions| ContextPlan {
+            agents_md: PathBuf::from("AGENTS.md"),
+            leftover_regions,
+        };
+        assert!(!plan(None).has_changes());
+        assert!(!plan(Some(kept)).has_changes());
+        assert!(plan(Some(regions(&["plugins"], Vec::new()))).has_changes());
+    }
+
+    fn environment() -> crate::application::project_environment::ProjectEnvironmentPlan {
+        crate::application::project_environment::ProjectEnvironmentPlan {
+            missing: Vec::new(),
+            unresolved: Vec::new(),
+            surplus: Vec::new(),
+            stale_projection: None,
+            unreproducible_marketplaces: Vec::new(),
+            has_changes: false,
+        }
+    }
+
+    /// Each thing the plan owes is drift, and the drift carries what the
+    /// plan named.
+    #[test]
+    fn an_environment_is_clear_only_when_nothing_is_owed() {
+        assert!(EnvironmentDrift::from(&environment()).is_clear());
+
+        let mut missing = environment();
+        missing.missing = vec!["flow@market".to_owned()];
+        let drift = EnvironmentDrift::from(&missing);
+        assert_eq!(drift.missing, ["flow@market"]);
+        assert!(!drift.is_clear());
+
+        let mut unresolved = environment();
+        unresolved.unresolved = vec!["review".to_owned()];
+        let drift = EnvironmentDrift::from(&unresolved);
+        assert_eq!(drift.unresolved, ["review"]);
+        assert!(!drift.is_clear());
+
+        let mut surplus = environment();
+        surplus.surplus = vec!["old@market".to_owned()];
+        let drift = EnvironmentDrift::from(&surplus);
+        assert_eq!(drift.surplus, ["old@market"]);
+        assert!(!drift.is_clear());
+
+        let mut stale = environment();
+        stale.stale_projection = Some(crate::application::project_environment::StaleProjection {
+            region: "plugins".to_owned(),
+            projected_identity: "plugins:old".to_owned(),
+        });
+        let drift = EnvironmentDrift::from(&stale);
+        assert!(drift.stale_projection);
+        assert!(!drift.is_clear());
+
+        let mut unreproducible = environment();
+        unreproducible.unreproducible_marketplaces = vec!["local".to_owned()];
+        assert_eq!(
+            EnvironmentDrift::from(&unreproducible).unreproducible_marketplaces,
+            ["local"]
+        );
+    }
+
+    #[test]
+    fn a_delivery_is_healthy_only_without_findings() {
+        let mut health = HarnessDeliveryHealth {
+            integration: "test".to_owned(),
+            display_name: "Test".to_owned(),
+            expected: 1,
+            present: 1,
+            findings: Vec::new(),
+        };
+        assert!(health.healthy());
+        health.findings.push(DeliveryFinding {
+            capability: "review".to_owned(),
+            kind: DeliveryFindingKind::Missing,
+            detail: "nothing delivers it".to_owned(),
+        });
+        assert!(!health.healthy());
+    }
+
+    #[test]
+    fn this_machines_confinement_says_how_or_why_not() {
+        assert!(!ProgramConfinement::of_this_machine().summary.is_empty());
+    }
+
+    fn receipt(state: AttachmentState) -> ReconciledReceipt {
+        ReconciledReceipt {
+            ledger_key: format!("{state:?}"),
+            receipt: AttachmentReceipt {
+                package_id: "flow@market".to_owned(),
+                resource_identity: None,
+                integration: "test".to_owned(),
+                artifact: ManagedArtifact::IntegrationOwned {
+                    kind: "test".to_owned(),
+                    selector: format!("{state:?}"),
+                    detail: std::collections::BTreeMap::new(),
+                },
+            },
+            inspection: AttachmentInspection {
+                state,
+                reason: "test".to_owned(),
+            },
+        }
+    }
+
+    /// Every receipt is counted once, under its own state, and a ledger
+    /// that could not be read is carried so destructive work stays blocked.
+    #[test]
+    fn managed_state_counts_each_receipt_under_its_state() {
+        let mut receipts = Vec::new();
+        for (state, count) in [
+            (AttachmentState::Matched, 3),
+            (AttachmentState::Missing, 2),
+            (AttachmentState::Drifted, 2),
+            (AttachmentState::Conflict, 2),
+            (AttachmentState::Blocked, 2),
+        ] {
+            receipts.extend(std::iter::repeat_with(|| receipt(state)).take(count));
+        }
+        let report = ReconciliationReport {
+            package_id: "flow@market".to_owned(),
+            receipts,
+            ledger_error: Some("unreadable".to_owned()),
+        };
+        let summary = managed_state(&report);
+        assert_eq!(summary.matched, 3);
+        assert_eq!(summary.missing, 2);
+        assert_eq!(summary.drifted, 2);
+        assert_eq!(summary.conflicts, 2);
+        assert_eq!(summary.blocked, 2);
+        assert_eq!(summary.ledger_error.as_deref(), Some("unreadable"));
+    }
+
+    struct Routed(uze_core::integration::RulesRoute);
+
+    impl IntegrationPort for Routed {
+        fn id(&self) -> &'static str {
+            "routed"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn rules_route(&self) -> uze_core::integration::RulesRoute {
+            self.0.clone()
+        }
+    }
+
+    /// A harness reading rules itself, or reading none, answers that
+    /// whatever setup delivered; only one that needs the engine depends on
+    /// whether setup delivered it.
+    #[test]
+    fn rules_reach_a_harness_natively_through_setup_or_not_at_all() {
+        use uze_core::integration::RulesRoute;
+        for delivered in [false, true] {
+            assert_eq!(
+                ContextMechanism::for_rules(&Routed(RulesRoute::native("reads them")), delivered),
+                ContextMechanism::Native
+            );
+            assert_eq!(
+                ContextMechanism::for_rules(&Routed(RulesRoute::unsupported("none")), delivered),
+                ContextMechanism::Unsupported
+            );
+        }
+        let adapted = Routed(RulesRoute::adapted("through the engine"));
+        assert_eq!(
+            ContextMechanism::for_rules(&adapted, true),
+            ContextMechanism::SetupDelivered
+        );
+        assert_eq!(
+            ContextMechanism::for_rules(&adapted, false),
+            ContextMechanism::SetupMissing
+        );
+    }
+}

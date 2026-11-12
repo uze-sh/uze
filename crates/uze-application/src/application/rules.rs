@@ -183,3 +183,135 @@ impl Project<'_> {
         Ok(rules::discover(&root)?.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rule(path: &str, frontmatter: &str) -> rules::Rule {
+        rules::parse_rule(path, format!("---\n{frontmatter}\n---\nbody\n").as_bytes()).unwrap()
+    }
+
+    fn found(rules: Vec<rules::Rule>, manifest: rules::ManifestFindings) -> rules::ProjectRules {
+        rules::ProjectRules {
+            root: PathBuf::from("checkout"),
+            present: true,
+            rules,
+            not_rules: Vec::new(),
+            manifest,
+        }
+    }
+
+    fn report(rules: Vec<rules::Rule>) -> RulesReport {
+        found(rules, rules::ManifestFindings::default()).into()
+    }
+
+    fn summary(trigger: &'static str, plugin: Option<&str>) -> RuleSummary {
+        RuleSummary {
+            path: ".agents/rules/r.md".to_owned(),
+            trigger,
+            patterns: Vec::new(),
+            description: None,
+            plugin: plugin.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_manifest_with_nothing_to_say_is_left_out_of_the_report() {
+        assert_eq!(report(Vec::new()).manifest, None);
+    }
+
+    #[test]
+    fn a_manifest_that_inherits_is_reported_and_still_clean() {
+        let report: RulesReport = found(
+            Vec::new(),
+            rules::ManifestFindings {
+                unreadable: None,
+                inherits: true,
+            },
+        )
+        .into();
+        assert!(report.manifest_inherits());
+        assert_eq!(report.unreadable_manifest(), None);
+        assert!(report.is_clean());
+    }
+
+    #[test]
+    fn an_unreadable_manifest_says_why_and_is_not_clean() {
+        let report: RulesReport = found(
+            Vec::new(),
+            rules::ManifestFindings {
+                unreadable: Some("not JSON".to_owned()),
+                inherits: false,
+            },
+        )
+        .into();
+        assert_eq!(report.unreadable_manifest(), Some("not JSON"));
+        assert!(!report.manifest_inherits());
+        assert!(!report.is_clean());
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_rule_makes_the_report_unclean() {
+        let mut report = report(Vec::new());
+        assert!(report.is_clean());
+        report.not_rules.push(NotARuleSummary {
+            path: ".agents/rules/notes.md".to_owned(),
+            reason: "no frontmatter".to_owned(),
+        });
+        assert!(!report.is_clean());
+    }
+
+    #[test]
+    fn a_report_without_a_manifest_neither_inherits_nor_is_unreadable() {
+        let report = report(Vec::new());
+        assert!(!report.manifest_inherits());
+        assert_eq!(report.unreadable_manifest(), None);
+    }
+
+    #[test]
+    fn a_plugins_copy_is_attributed_to_its_plugin_and_not_counted_as_the_projects_own() {
+        let report = report(vec![
+            rule(".agents/rules/ui.md", "trigger: always_on"),
+            rule(".agents/rules/acme@corp/lint.md", "trigger: always_on"),
+        ]);
+        let plugins: Vec<Option<&str>> = report
+            .rules
+            .iter()
+            .map(|rule| rule.plugin.as_deref())
+            .collect();
+        assert_eq!(plugins, [None, Some("acme@corp")]);
+        let own: Vec<&str> = report.own().map(|rule| rule.path.as_str()).collect();
+        assert_eq!(own, [".agents/rules/ui.md"]);
+    }
+
+    #[test]
+    fn triggers_are_counted_in_the_formats_order_leaving_out_the_unused_and_the_plugins() {
+        let report = RulesReport {
+            root: PathBuf::from("checkout"),
+            directory: rules::RULES_DIR,
+            present: true,
+            rules: vec![
+                summary("manual", None),
+                summary("always_on", None),
+                summary("manual", None),
+                summary("glob", Some("acme@corp")),
+            ],
+            not_rules: Vec::new(),
+            manifest: None,
+        };
+        assert_eq!(
+            report.by_trigger(),
+            [
+                TriggerCount {
+                    trigger: "always_on",
+                    rules: 1
+                },
+                TriggerCount {
+                    trigger: "manual",
+                    rules: 2
+                },
+            ]
+        );
+    }
+}
