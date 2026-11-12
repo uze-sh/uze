@@ -1029,7 +1029,11 @@ fn a_co_holder_whose_own_plan_moved_on_lets_the_entry_go() {
     let shared = linked(machine.skills().join("review"));
     let old = machine.deliver(machine.capability_receipt("alpha", shared.clone()));
     machine.deliver(machine.capability_receipt("beta", shared));
-    let unrelated = machine.deliver(claim("beta", linked(machine.root.join("unrelated"))));
+    // Another capability of the same package, elsewhere.
+    let unrelated = machine.deliver(AttachmentReceipt {
+        package_id: machine.package.id.as_str().to_owned(),
+        ..claim("beta", linked(machine.root.join("unrelated")))
+    });
 
     machine
         .app
@@ -1416,7 +1420,10 @@ fn another_capabilitys_receipt_at_the_entry_is_no_co_holder_to_release() {
     machine.script(1).plan = Some(new_shape);
     let shared = linked(machine.skills().join("review"));
     let old = machine.deliver(machine.capability_receipt("alpha", shared.clone()));
-    let other = machine.deliver(claim("beta", shared));
+    let other = machine.deliver(AttachmentReceipt {
+        package_id: machine.package.id.as_str().to_owned(),
+        ..claim("beta", shared)
+    });
 
     machine
         .app
