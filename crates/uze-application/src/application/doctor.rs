@@ -938,6 +938,110 @@ mod tests {
         }
     }
 
+    /// A harness here that holds back, until the person acts in it, the
+    /// first resource each receipt serves.
+    struct Holding;
+
+    impl IntegrationPort for Holding {
+        fn id(&self) -> &'static str {
+            "holding"
+        }
+        fn display_name(&self) -> &'static str {
+            "Holding"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn held_back(
+            &self,
+            _package: &StoredPackage,
+            _receipt: &AttachmentReceipt,
+            served: &[&uze_core::capability::Resource],
+        ) -> Vec<uze_core::integration::HeldBack> {
+            served
+                .first()
+                .map(|resource| uze_core::integration::HeldBack {
+                    capability: resource.identity(),
+                    action: "approve it in the harness".to_owned(),
+                })
+                .into_iter()
+                .collect()
+        }
+    }
+
+    #[test]
+    fn what_a_detected_harness_holds_back_is_noted_for_its_own_receipts_by_name() {
+        let base = uze_testkit::temp::scratch("doctor-held-back");
+        let home = UzeHome::at(base.join("home"));
+        let app = UzeApplication::new(home.clone(), vec![Box::new(Holding)]);
+        for name in ["flow", "std"] {
+            write_plugin(&base, name);
+            app.plugins()
+                .add(
+                    PackageSource::Local {
+                        path: base.join(name),
+                    },
+                    &AlwaysTrust,
+                )
+                .unwrap();
+        }
+        for package in app.installed_packages() {
+            let resources = uze_core::engine::package_resources(&package).unwrap();
+            for integration in ["holding", "elsewhere"] {
+                state::record_receipt(
+                    &home,
+                    AttachmentReceipt {
+                        package_id: package.id.as_str().to_owned(),
+                        resource_identity: Some(resources[0].identity()),
+                        integration: integration.to_owned(),
+                        artifact: ManagedArtifact::IntegrationOwned {
+                            kind: "test".to_owned(),
+                            selector: integration.to_owned(),
+                            detail: BTreeMap::default(),
+                        },
+                    },
+                )
+                .unwrap();
+            }
+        }
+
+        let every = held_back_notes(&app, None);
+        assert_eq!(
+            every
+                .iter()
+                .map(|note| note.plugin.as_str())
+                .collect::<Vec<_>>(),
+            ["flow@local", "std@local"],
+            "one note per receipt of the detected harness: {every:?}"
+        );
+        assert!(every.iter().all(|note| note.harness == "Holding"));
+        assert!(
+            every
+                .iter()
+                .all(|note| note.name == "SKILL.md" && note.capability != note.name),
+            "named by its resource's own name, not its identity: {every:?}"
+        );
+        let flow = held_back_notes(&app, Some("flow@local"));
+        assert_eq!(flow.len(), 1, "{flow:?}");
+        assert_eq!(flow[0].plugin, "flow@local");
+        fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn matched_inspection_is_cached_across_instances() {
         let base = uze_testkit::temp::scratch("fast-vs-deep");

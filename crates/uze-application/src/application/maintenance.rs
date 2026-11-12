@@ -799,6 +799,89 @@ mod report_tests {
         );
     }
 
+    /// A harness that counts each live inspection and finds every receipt
+    /// matched.
+    struct Counting(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl uze_core::integration::IntegrationPort for Counting {
+        fn id(&self) -> &'static str {
+            "counting"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn inspect_receipt(
+            &self,
+            _receipt: &uze_core::integration::AttachmentReceipt,
+        ) -> uze_core::integration::AttachmentInspection {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            uze_core::integration::AttachmentInspection {
+                state: AttachmentState::Matched,
+                reason: "test".to_owned(),
+            }
+        }
+    }
+
+    /// Only a build's matched inspection is taken from the cache; what a
+    /// receipt carries whole is cheap to look at, and looked at every pass.
+    #[test]
+    fn maintenance_inspects_a_receipt_that_is_not_a_build_live_every_pass() {
+        let base = uze_testkit::temp::scratch("maintenance-live");
+        let home = uze_core::UzeHome::at(base.join("home"));
+        let inspected = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let app = crate::UzeApplication::new(home.clone(), vec![Box::new(Counting(inspected.clone()))]);
+        let source = base.join("flow");
+        std::fs::create_dir_all(source.join("skills/demo")).unwrap();
+        std::fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        std::fs::write(source.join("skills/demo/SKILL.md"), "# Demo\n").unwrap();
+        app.plugins()
+            .add(
+                uze_core::PackageSource::Local { path: source },
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        state::record_receipt(
+            &home,
+            uze_core::integration::AttachmentReceipt {
+                package_id: package.id.as_str().to_owned(),
+                resource_identity: None,
+                integration: "counting".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path: base.join("harness/skill"),
+                    target: base.join("target"),
+                },
+            },
+        )
+        .unwrap();
+
+        let before = inspected.load(std::sync::atomic::Ordering::SeqCst);
+        app.health().maintain();
+        app.health().maintain();
+        assert_eq!(
+            inspected.load(std::sync::atomic::Ordering::SeqCst) - before,
+            2,
+            "each pass looked at the receipt itself"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn the_projection_of_a_project_that_is_gone_is_swept_and_named() {
         let base = uze_testkit::temp::scratch("maintenance-projections");
