@@ -1779,6 +1779,51 @@ mod tests {
         assert_eq!(plan.projects[0].links, vec![into_home]);
     }
 
+    #[test]
+    fn only_a_checkout_holding_commits_its_target_lacks_is_named_as_unlanded() {
+        let repository = uze_testkit::git::Repository::new("uninstall-unlanded");
+        let project = uze_platform::path::canonical(repository.root()).unwrap();
+        let machine = Machine::new("uninstall-unlanded-home", &[]);
+        let place = || {
+            machine
+                .app
+                .workspace()
+                .place_new_agent(
+                    &project,
+                    Some(crate::application::services::PlacementKind::Isolated),
+                    "keeper",
+                    &[],
+                )
+                .unwrap()
+                .cwd
+        };
+        let worked = place();
+        let idle = place();
+        fs::write(worked.join("work.txt"), "unlanded").unwrap();
+        repository.git_in(&worked, &["add", "work.txt"]);
+        repository.git_in(&worked, &["commit", "--quiet", "-m", "work"]);
+
+        let plan = machine.app.uninstall_plan(UninstallMode::Program);
+
+        let unlanded: Vec<(PathBuf, usize)> = plan
+            .projects
+            .iter()
+            .flat_map(|project| &project.unlanded)
+            .map(|checkout| {
+                (
+                    uze_platform::path::canonical(&checkout.path).unwrap(),
+                    checkout.commits,
+                )
+            })
+            .collect();
+        assert_eq!(
+            unlanded,
+            vec![(uze_platform::path::canonical(&worked).unwrap(), 1)],
+            "idle at {}",
+            idle.display()
+        );
+    }
+
     fn empty_plan() -> UninstallPlan {
         UninstallPlan {
             mode: UninstallMode::Program,
