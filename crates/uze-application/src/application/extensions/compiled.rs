@@ -669,7 +669,7 @@ mod tests {
         fs::write(&revision, serde_json::to_vec(&compiled()).unwrap()).unwrap();
 
         let collected = CompiledViews(&app).collect(&home);
-        assert_eq!(collected.removed, [revision.clone()]);
+        assert_eq!(collected.removed, std::slice::from_ref(&revision));
         assert!(!revision.exists());
         fs::remove_dir_all(root).unwrap();
     }
