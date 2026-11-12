@@ -1002,16 +1002,23 @@ mod tests {
         }
         for package in app.installed_packages() {
             let resources = uze_core::engine::package_resources(&package).unwrap();
-            for integration in ["holding", "elsewhere"] {
+            // Another harness's receipt, for one package only, is not this
+            // harness's to judge.
+            let integrations: &[&str] = if package.id.as_str() == "flow@local" {
+                &["holding", "elsewhere"]
+            } else {
+                &["holding"]
+            };
+            for integration in integrations {
                 state::record_receipt(
                     &home,
                     AttachmentReceipt {
                         package_id: package.id.as_str().to_owned(),
                         resource_identity: Some(resources[0].identity()),
-                        integration: integration.to_owned(),
+                        integration: (*integration).to_owned(),
                         artifact: ManagedArtifact::IntegrationOwned {
                             kind: "test".to_owned(),
-                            selector: integration.to_owned(),
+                            selector: (*integration).to_owned(),
                             detail: BTreeMap::default(),
                         },
                     },
@@ -1107,6 +1114,93 @@ mod tests {
             app.health().dangling_references().is_empty(),
             "a reference a receipt claims is the receipt's to judge"
         );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A harness here whose plan for every capability is unsupported, with
+    /// why.
+    struct Hookless;
+
+    impl IntegrationPort for Hookless {
+        fn id(&self) -> &'static str {
+            "hookless"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "this harness runs no hooks".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+    }
+
+    /// A hook a harness cannot run is a row that says what is lost, and a
+    /// hook attached there shows the artifact its own receipt owns.
+    #[test]
+    fn each_hook_is_a_row_per_harness_naming_what_is_weakened_and_its_own_receipt() {
+        let base = uze_testkit::temp::scratch("doctor-hooks");
+        let home = UzeHome::at(base.join("home"));
+        let app = UzeApplication::new(home.clone(), vec![Box::new(Hookless)]);
+        let source = base.join("guarded");
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "guarded" }).to_string(),
+        )
+        .unwrap();
+        fs::write(source.join("scripts/guard"), "exit 0\n").unwrap();
+        let hook = serde_json::json!({ "type": "command", "command": "scripts/guard", "args": [], "timeout": 10 });
+        let group = serde_json::json!({ "id": "guard", "matcher": "shell", "hooks": [hook] });
+        fs::write(
+            source.join("hooks.json"),
+            serde_json::json!({ "hooks": { "PreToolUse": [group] } }).to_string(),
+        )
+        .unwrap();
+        app.plugins()
+            .add(PackageSource::Local { path: source }, &AlwaysTrust)
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        let hook_identity = uze_core::engine::package_resources(&package)
+            .unwrap()
+            .into_iter()
+            .find(|resource| resource.capability.kind == CapabilityKind::Hook)
+            .expect("the package carries a hook")
+            .identity();
+        // Another receipt of the same harness, recorded first, that is not
+        // the hook's.
+        for (identity, path) in [(None, "package-link"), (Some(hook_identity), "hook-link")] {
+            state::record_receipt(
+                &home,
+                AttachmentReceipt {
+                    package_id: package.id.as_str().to_owned(),
+                    resource_identity: identity,
+                    integration: "hookless".to_owned(),
+                    artifact: ManagedArtifact::SymlinkReference {
+                        path: base.join(path),
+                        target: base.join("target"),
+                    },
+                },
+            )
+            .unwrap();
+        }
+
+        let report = app.health().report();
+        let hooks = &report.attachments[0].hooks;
+        let [row] = hooks.as_slice() else {
+            panic!("one hook on one harness: {hooks:?}");
+        };
+        assert_eq!(row.harness, "hookless");
+        assert_eq!(row.weakened.as_deref(), Some("this harness runs no hooks"));
+        assert_eq!(
+            row.artifact.as_deref(),
+            Some(base.join("hook-link").as_path())
+        );
+        assert!(row.state.is_some());
         fs::remove_dir_all(&base).ok();
     }
 

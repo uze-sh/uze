@@ -604,3 +604,17 @@ fn a_subagent_holding_nothing_does_not_hold_its_agents_delivery_back() {
 
     assert_eq!(report.outcome, DeliveryOutcome::Merged, "{report:?}");
 }
+
+/// A subagent's checkout counts against the project's declared bound on
+/// checkouts like any other.
+#[test]
+fn a_split_is_refused_once_the_project_has_every_checkout_it_allows() {
+    let world = World::new("work-split-bound");
+    std::fs::write(world.root().join("agents.yaml"), "workspace:\n  slots: 1\n").unwrap();
+    let agent = world.agent();
+
+    assert!(
+        world.split(&agent, "parser").is_err(),
+        "the agent's own checkout is the only one the project allows"
+    );
+}

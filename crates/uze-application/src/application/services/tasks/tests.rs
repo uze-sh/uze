@@ -4523,3 +4523,164 @@ mod unread_policy_tests {
         assert!(app.workspace().pull_target(&root).is_some());
     }
 }
+
+mod retired_region_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    #[test]
+    fn a_region_an_earlier_release_left_in_agents_md_is_planned_for_removal() {
+        let repository = uze_testkit::git::Repository::new("leftover-regions");
+        let root = repository.root().canonical().unwrap();
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("leftover-regions-home")),
+            Vec::new(),
+        );
+        assert!(app.workspace().leftover_regions(&root).is_none());
+
+        uze_core::text_region::attach(
+            &root.join("AGENTS.md"),
+            "package:greet:tools:instructions",
+            "hello\n",
+        )
+        .unwrap();
+        assert!(app.workspace().leftover_regions(&root).is_some());
+    }
+}
+
+mod space_memory_tests {
+    use super::*;
+    use uze_core::{
+        UzeHome,
+        exposure::ExposurePlan,
+        memory::{FactKind, MemoryEntry, Scope},
+        router::HarnessCapabilities,
+    };
+
+    /// A harness that keeps one fact for the project and one for the
+    /// machine.
+    struct Remembering;
+
+    fn entry(name: &str, scope: Scope) -> MemoryEntry {
+        MemoryEntry {
+            name: name.to_owned(),
+            description: format!("{name} fact"),
+            kind: FactKind::Project,
+            scope,
+            origin: "remembering".to_owned(),
+            source: None,
+            path: PathBuf::from(format!("{name}.md")),
+            updated: None,
+            writable: false,
+            proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
+        }
+    }
+
+    impl IntegrationPort for Remembering {
+        fn id(&self) -> &'static str {
+            "remembering"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn memory_source(&self, _project_root: &Path) -> Vec<MemoryEntry> {
+            vec![
+                entry("project-fact", Scope::Project),
+                entry("machine-fact", Scope::Machine),
+            ]
+        }
+    }
+
+    #[test]
+    fn a_directorys_overview_keeps_the_project_facts_apart_from_the_machines() {
+        let directory = uze_testkit::temp::scratch("space-memory");
+        let app = UzeApplication::new(
+            UzeHome::at(directory.join("home")),
+            vec![Box::new(Remembering)],
+        );
+        let place = directory.join("notes");
+        std::fs::create_dir_all(&place).unwrap();
+
+        let crate::SpaceOverview::Directory(space) =
+            app.workspace().space_overview(&place).unwrap()
+        else {
+            panic!("the directory is there");
+        };
+        let names = |entries: &[crate::application::memory::Entry]| {
+            entries
+                .iter()
+                .map(|entry| entry.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&space.memory.project), ["project-fact"]);
+        assert_eq!(names(&space.memory.machine), ["machine-fact"]);
+    }
+}
+
+mod preserved_work_tests {
+    use super::*;
+    use uze_core::UzeHome;
+    use uze_workspace::conversation::{ConversationOrigin, HarnessConversation};
+
+    /// An agent's work is last active when it last launched into a
+    /// conversation its record still names, and a project's overview lists
+    /// its own preserved work.
+    #[test]
+    fn preserved_work_is_as_recent_as_its_last_conversation_and_listed_by_its_project() {
+        let repository = uze_testkit::git::Repository::new("preserved-recent");
+        let root = repository.root().canonical().unwrap();
+        let home = UzeHome::at(uze_testkit::temp::scratch("preserved-recent-home"));
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "fixture", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+        let created = app
+            .workspace()
+            .preserved_work()
+            .into_iter()
+            .find(|work| work.id == id.as_str())
+            .expect("the agent's work is preserved")
+            .created_at_unix;
+        let conversed = created + 1_000;
+        conversation::update(&home, &root, &id, |record| {
+            record.harnesses.insert(
+                "fixture".to_owned(),
+                HarnessConversation {
+                    conversation: Some(uze_core::session::SessionId::parse("talk").unwrap()),
+                    origin: ConversationOrigin::Assigned,
+                    launched_at_unix: conversed,
+                    observed_at_unix: None,
+                    preceded_by: None,
+                    left_at_unix: None,
+                },
+            );
+        })
+        .unwrap();
+
+        let preserved = app.workspace().preserved_work();
+        let work = preserved
+            .iter()
+            .find(|work| work.id == id.as_str())
+            .expect("still preserved");
+        assert_eq!(work.last_active_unix, conversed);
+
+        let crate::SpaceOverview::Directory(space) = app.workspace().space_overview(&root).unwrap()
+        else {
+            panic!("the project is there");
+        };
+        let Some(Ok(project)) = &space.project else {
+            panic!("the project reads: {:?}", space.project.is_some());
+        };
+        assert!(
+            project.preserved.iter().any(|work| work.id == id.as_str()),
+            "the project's overview lists its own preserved work"
+        );
+    }
+}
