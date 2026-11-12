@@ -1086,7 +1086,11 @@ mod tests {
             .set_preference(&world.band(), "token", "ghp_x".into())
             .unwrap();
         assert!(set().contains("token"));
-        for refused in [serde_json::json!("two\nlines"), serde_json::json!(5)] {
+        for refused in [
+            serde_json::json!("two\nlines"),
+            serde_json::json!("a".repeat(4097)),
+            serde_json::json!(5),
+        ] {
             assert!(
                 extensions
                     .set_preference(&world.band(), "token", refused.clone())
