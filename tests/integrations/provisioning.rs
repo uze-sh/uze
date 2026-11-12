@@ -195,3 +195,72 @@ fn every_registered_harness_installs_through_its_documented_windows_route() {
     drop(scope);
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// The detection cache fingerprints the program a harness is reached by:
+/// a `claude` installed after the first probe makes the cached "not
+/// installed" stale at once, instead of when it expires.
+// The stand-in is a POSIX shell script, which only Unix runs as a program.
+#[cfg(unix)]
+#[test]
+fn a_claude_installed_after_a_probe_makes_the_cached_answer_stale() {
+    use uze_core::UzeHome;
+    use uze_core::detection_cache::DetectionCache;
+    use uze_core::integration::{HarnessDetection, IntegrationPort};
+    use uze_integrations::claude::ClaudeIntegration;
+
+    let root = uze_testkit::temp::scratch("claude-detection-fingerprint");
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.home(root.join("home")).set("PATH", &bin);
+    let home = UzeHome::at(root.join("uze"));
+    let claude = ClaudeIntegration::new(root.join("home/.claude"), home.clone());
+    let candidates = claude.detection_program_candidates();
+    DetectionCache::new(&home).put(claude.id(), &candidates, HarnessDetection::default());
+    assert!(
+        DetectionCache::new(&home)
+            .get(claude.id(), &candidates)
+            .is_some(),
+        "nothing changed yet"
+    );
+
+    uze_testkit::process::install_executable(&bin.join("claude"), b"#!/bin/sh\n");
+
+    assert!(
+        DetectionCache::new(&home)
+            .get(claude.id(), &candidates)
+            .is_none()
+    );
+    drop(env);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// Claude Code's native installer puts `claude` in `~/.local/bin`, which a
+/// shell may not search: the harness is still found there.
+// The stand-in is a POSIX shell script, which only Unix runs as a program.
+#[cfg(unix)]
+#[test]
+fn a_claude_the_native_installer_left_off_path_is_found() {
+    use uze_core::UzeHome;
+    use uze_core::harness_runtime::resolve_harness_executable;
+    use uze_core::integration::IntegrationPort;
+    use uze_integrations::claude::ClaudeIntegration;
+
+    let root = uze_testkit::temp::scratch("claude-install-location");
+    let empty = root.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let installed = root.join("home/.local/bin/claude");
+    std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
+    uze_testkit::process::install_executable(&installed, b"#!/bin/sh\n");
+    let mut env = uze_testkit::env::scope();
+    env.home(root.join("home")).set("PATH", &empty);
+    let home = UzeHome::at(root.join("uze"));
+    let claude = ClaudeIntegration::new(root.join("home/.claude"), home.clone());
+
+    assert_eq!(
+        resolve_harness_executable(&["claude"], &home.shims_dir(), &claude.install_locations()),
+        Some(installed)
+    );
+    drop(env);
+    let _ = std::fs::remove_dir_all(root);
+}

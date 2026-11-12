@@ -266,3 +266,63 @@ fn a_skill_file_is_known_by_its_name_whatever_the_separators() {
         .join(std::path::MAIN_SEPARATOR_STR);
     assert!(super::is_skill_file(&native), "{native}");
 }
+
+#[test]
+fn a_use_is_dated_at_its_lines_timestamp() {
+    let world = World::new("codex-usage-dated");
+    let skill = "/home/me/.agents/skills/probe-skill/SKILL.md";
+    world.write(&[mention("t1", "probe-skill", skill)]);
+    let read = world.read(Resume::Start);
+    let written = transcript::unix_seconds("2026-10-31T10:00:00Z").unwrap();
+    assert_eq!(read.uses[0].at, UNIX_EPOCH + Duration::from_secs(written));
+}
+
+/// A `<skill>` block is the person's mention only in their own message:
+/// the same block in what the agent or the developer layer said names no
+/// use by the person.
+#[test]
+fn a_skill_block_outside_the_persons_message_counts_nothing() {
+    let world = World::new("codex-usage-roles");
+    let skill = "/home/me/.agents/skills/probe-skill/SKILL.md";
+    let spoken_by = |role: &str| {
+        let mut said = mention("t1", "probe-skill", skill);
+        said["payload"]["role"] = json!(role);
+        said
+    };
+    world.write(&[spoken_by("assistant"), spoken_by("developer")]);
+    assert!(world.read(Resume::Start).uses.is_empty());
+}
+
+/// Only a call named `spawn_agent` dispatches an agent, whatever another
+/// call's arguments carry or mention.
+#[test]
+fn only_a_dispatch_counts_an_agent() {
+    let world = World::new("codex-usage-not-a-dispatch");
+    world.write(&[line(
+        "response_item",
+        json!({
+            "type": "function_call", "name": "send_input", "namespace": "collaboration",
+            "arguments": json!({"message": "report back once spawn_agent returns", "agent_type": "probe_agent"}).to_string(),
+            "call_id": "c1", "internal_chat_message_metadata_passthrough": {"turn_id": "t1"}
+        }),
+    )]);
+    assert!(world.read(Resume::Start).uses.is_empty());
+}
+
+/// Codex resolves a read's file itself; that resolved path is the skill
+/// read, whatever the shell spelling of the command was.
+#[test]
+fn a_parsed_read_counts_the_path_codex_resolved() {
+    let world = World::new("codex-usage-resolved-read");
+    let skill = "/home/me/.agents/skills/x/SKILL.md";
+    world.write(&[command("t1", "cat ~/.agents/skills/x/SKILL.md", skill, 0)]);
+    assert_eq!(
+        targets(&world.read(Resume::Start)),
+        [(
+            ResourceKind::Skill,
+            Target::Definition(skill.into()),
+            Invoker::Model,
+            true
+        )]
+    );
+}

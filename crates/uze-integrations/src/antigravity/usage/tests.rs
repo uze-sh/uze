@@ -299,3 +299,118 @@ fn a_call_whose_result_is_not_written_yet_counts() {
     );
     assert_eq!(gemini.read(&path).len(), 1);
 }
+
+#[test]
+fn a_file_beside_a_skill_is_no_read_of_the_skill() {
+    let gemini = Gemini::new("agy-usage-supporting-file");
+    let supporting = gemini.cli.join("skills/probe-skill/reference.md");
+    let path = gemini.transcript(
+        "a",
+        &[
+            call(
+                1,
+                "read_file",
+                json!({"Path": supporting.to_string_lossy()}),
+            ),
+            result(2, "DONE"),
+        ],
+    );
+    assert!(gemini.read(&path).is_empty());
+}
+
+/// A `skills/` directory is a plugin's only inside the plugins agy staged,
+/// and a staged plugin's skills live in its own `skills/`.
+#[test]
+fn a_skill_outside_the_roots_agy_reads_is_no_use() {
+    let gemini = Gemini::new("agy-usage-unknown-root");
+    let elsewhere = "/work/repo/.agents/skills/x/SKILL.md";
+    let plugin_agent = gemini.config.join("plugins/flow/agents/x/SKILL.md");
+    let path = gemini.transcript(
+        "a",
+        &[
+            call(1, "read_file", json!({"Path": elsewhere})),
+            result(2, "DONE"),
+            call(
+                3,
+                "read_file",
+                json!({"Path": plugin_agent.to_string_lossy()}),
+            ),
+            result(4, "DONE"),
+        ],
+    );
+    assert!(gemini.read(&path).is_empty());
+}
+
+#[test]
+fn a_command_naming_the_skill_in_single_quotes_counts() {
+    let gemini = Gemini::new("agy-usage-single-quoted");
+    let skill = gemini.skill("probe-skill");
+    let path = gemini.transcript(
+        "a",
+        &[
+            call(
+                1,
+                "run_command",
+                json!({"CommandLine": format!("cat '{skill}'")}),
+            ),
+            result(2, "DONE"),
+        ],
+    );
+    assert_eq!(
+        named(&gemini.read(&path)),
+        [(ResourceKind::Skill, "probe-skill".into(), Invoker::Model)]
+    );
+}
+
+/// A skill name is one word: an empty one, or one holding a space, is not
+/// a skill agy invoked.
+#[test]
+fn an_invocation_naming_no_single_word_is_no_use() {
+    let gemini = Gemini::new("agy-usage-typed-malformed");
+    let path = gemini.transcript(
+        "a",
+        &[typed(
+            "go",
+            "<SKILL>The user has explicitly invoked the () skill.</SKILL>\n<SKILL>The user has explicitly invoked the (two words) skill.</SKILL>\n",
+        )],
+    );
+    assert!(gemini.read(&path).is_empty());
+}
+
+/// Only the model's own steps answer a call: a step from anywhere else in
+/// between leaves the call waiting for its result.
+#[test]
+fn a_step_the_model_did_not_write_answers_no_call() {
+    let gemini = Gemini::new("agy-usage-foreign-step");
+    let skill = gemini.skill("probe-skill");
+    let path = gemini.transcript(
+        "a",
+        &[
+            call(1, "read_file", json!({"Path": skill})),
+            json!({"step_index": 2, "source": "SYSTEM", "type": "GENERIC", "status": "ERROR",
+                "created_at": AT}),
+            result(3, "DONE"),
+        ],
+    );
+    assert_eq!(
+        named(&gemini.read(&path)),
+        [(ResourceKind::Skill, "probe-skill".into(), Invoker::Model)]
+    );
+}
+
+/// A name already spelled with the listed `:` is not rewritten again.
+#[test]
+fn an_agent_name_holding_a_colon_is_kept_as_written() {
+    let gemini = Gemini::new("agy-usage-colon-agent");
+    let path = gemini.transcript(
+        "a",
+        &[
+            call(1, "invoke_subagent", json!({"TypeName": "flow_x:y"})),
+            result(2, "DONE"),
+        ],
+    );
+    assert_eq!(
+        named(&gemini.read(&path)),
+        [(ResourceKind::Agent, "flow_x:y".into(), Invoker::Model)]
+    );
+}

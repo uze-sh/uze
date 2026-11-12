@@ -242,3 +242,39 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 }
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    fn labels_of(label: &str, body_bytes: usize) -> Vec<String> {
+        let directory = uze_testkit::temp::scratch(label);
+        std::fs::create_dir_all(&directory).unwrap();
+        let head = "---\nname: sized\ndescription: d\n---\n";
+        let definition = format!("{head}{}", "x".repeat(body_bytes - head.len()));
+        assert_eq!(definition.len(), body_bytes);
+        std::fs::write(directory.join("sized.md"), definition).unwrap();
+        let labels = project_agents(&directory)
+            .into_iter()
+            .map(|agent| agent.label)
+            .collect();
+        std::fs::remove_dir_all(&directory).ok();
+        labels
+    }
+
+    /// The bound is the largest definition read, so one of exactly that
+    /// size is still listed.
+    #[test]
+    fn a_definition_of_exactly_the_bound_is_listed() {
+        assert_eq!(
+            labels_of("project-agent-at-bound", MAX_PROJECT_AGENT_BYTES as usize),
+            ["sized"]
+        );
+    }
+
+    /// The bound is far past any real prompt: a long one of 64 KiB reads.
+    #[test]
+    fn a_long_real_prompt_is_listed() {
+        assert_eq!(labels_of("project-agent-long", 64 * 1024), ["sized"]);
+    }
+}

@@ -1087,3 +1087,455 @@ mod detach_tests {
         let _ = fs::remove_dir_all(root);
     }
 }
+
+#[cfg(test)]
+mod port_tests {
+    use std::ffi::OsString;
+    use std::time::UNIX_EPOCH;
+
+    use uze_core::capability::Capability;
+    use uze_core::integration::{AgentContext, ObservationContext};
+    use uze_core::inventory::ResourceKind;
+    use uze_core::session::SessionId;
+    use uze_core::store::PackageId;
+    use uze_core::usage::{Resume, Target};
+
+    use super::*;
+
+    const CONVERSATION: &str = "f85c1dbb-27bc-438b-9191-b007994e8f65";
+
+    /// A machine of its own, with Antigravity's tree under
+    /// `<scratch>/.gemini/antigravity-cli` once something is written there.
+    fn world(label: &str) -> (uze_testkit::temp::TempDir, AntigravityIntegration) {
+        let scratch = uze_testkit::temp::TempDir::new(label);
+        let integration =
+            AntigravityIntegration::new(scratch.join(".agents"), UzeHome::at(scratch.join("uze")));
+        (scratch, integration)
+    }
+
+    fn set_up(integration: &AntigravityIntegration) {
+        integration
+            .install(
+                &integration.uze_home,
+                &HarnessDetection {
+                    present: true,
+                    version: Some(VERSION.to_owned()),
+                },
+            )
+            .unwrap();
+    }
+
+    fn resource(scratch: &Path, kind: CapabilityKind, relative: &str, payload: &[u8]) -> Resource {
+        let root = scratch.join("store/flow");
+        Resource::from_package(
+            PackageId::from_plugin_name("flow", &root.join("plugin.json")).unwrap(),
+            root.clone(),
+            Capability {
+                kind,
+                path: root.join(relative),
+                payload: payload.to_vec(),
+            },
+        )
+    }
+
+    fn agent(scratch: &Path, frontmatter: &str) -> Resource {
+        resource(
+            scratch,
+            CapabilityKind::Agent,
+            "agents/auditor.md",
+            format!("---\nname: auditor\ndescription: Audits.\n{frontmatter}---\nAudit.\n")
+                .as_bytes(),
+        )
+    }
+
+    fn write(path: &Path, content: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, content).unwrap();
+    }
+
+    fn plugin_receipt(kind: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: "flow@market".to_owned(),
+            resource_identity: None,
+            integration: ID.to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: kind.to_owned(),
+                selector: "flow".to_owned(),
+                detail: BTreeMap::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn an_agent_delivered_on_its_own_is_written_where_antigravity_reads_agents() {
+        let (scratch, integration) = world("agy-port-agent");
+        let Some(ManagedArtifact::GeneratedFile { path, .. }) =
+            integration.attach(&agent(scratch.path(), "")).unwrap()
+        else {
+            panic!("an agent is delivered as a generated file");
+        };
+        assert!(
+            path.starts_with(integration.cli_root.join("agents")),
+            "{path:?}"
+        );
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.contains("name: flow_auditor"), "{written}");
+    }
+
+    /// `agy mcp add` writes the server into `mcp_config.json`; one already
+    /// there exactly as planned is this attach done, and is what the
+    /// receipt records.
+    #[test]
+    fn an_mcp_server_delivered_on_its_own_is_attached_as_its_entry() {
+        let (scratch, integration) = world("agy-port-mcp");
+        set_up(&integration);
+        let root = scratch.join("store/flow");
+        let server = Resource::from_package_named(
+            PackageId::from_plugin_name("flow", &root.join("plugin.json")).unwrap(),
+            root.clone(),
+            Capability {
+                kind: CapabilityKind::Mcp,
+                path: root.join("mcp.json"),
+                payload: br#"{"command":"/bin/server","args":["--serve"]}"#.to_vec(),
+            },
+            "server".to_owned(),
+        );
+        let ExposureMechanism::Managed(planned) = integration.exposure_plan(&server).mechanism
+        else {
+            panic!("an MCP server is managed once setup has run");
+        };
+        let ManagedArtifact::VendorConfigEntry {
+            entry_name,
+            command,
+            args,
+            ..
+        } = &planned
+        else {
+            panic!("an MCP server is an entry of Antigravity's own config");
+        };
+        write(
+            &integration.mcp_config_path,
+            &serde_json::json!({"mcpServers": {entry_name: {"command": command, "args": args}}})
+                .to_string(),
+        );
+        assert_eq!(integration.attach(&server).unwrap(), Some(planned));
+    }
+
+    /// A plugin an earlier build installed straight from the Store is still
+    /// a plugin, proven by its fingerprint like the ones UZE generates.
+    #[test]
+    fn a_plugin_an_earlier_build_installed_is_inspected_by_its_fingerprint() {
+        let (_scratch, integration) = world("agy-port-earlier-plugin");
+        let inspection = integration.inspect_receipt(&plugin_receipt(PLUGIN_KIND));
+        assert_eq!(inspection.state, AttachmentState::Blocked);
+        assert!(
+            inspection.reason.contains("fingerprint"),
+            "{}",
+            inspection.reason
+        );
+    }
+
+    #[test]
+    fn only_a_generated_plugin_serves_the_package_plan() {
+        let (_scratch, integration) = world("agy-port-serves");
+        assert!(!integration.package_receipt_serves(&plugin_receipt(PLUGIN_KIND)));
+        assert!(integration.package_receipt_serves(&plugin_receipt(GENERATED_PLUGIN_KIND)));
+    }
+
+    #[test]
+    fn the_agent_context_channel_waits_for_a_sign_in() {
+        let (_scratch, integration) = world("agy-port-sign-in");
+        assert!(integration.context_channel_unavailable().is_some());
+        write(
+            &integration.cli_root.join("antigravity-oauth-token"),
+            "token",
+        );
+        assert_eq!(integration.context_channel_unavailable(), None);
+    }
+
+    #[test]
+    fn the_agent_context_is_added_after_the_checkout() {
+        let (scratch, integration) = world("agy-port-context");
+        let dir = scratch.join("agent");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("context.md");
+        let checkout = scratch.join("repo");
+        let link = scratch.join("repo~uze");
+        let contribution = integration
+            .deliver_context(
+                &integration.uze_home,
+                &AgentContext {
+                    dir: &dir,
+                    file: &file,
+                    checkout: &checkout,
+                    text: "",
+                    instructions: "",
+                    notes: None,
+                    link: &link,
+                    launch: "launch-1",
+                    session: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            contribution.args.get(..2),
+            Some(&[OsString::from("--add-dir"), checkout.into_os_string()][..])
+        );
+    }
+
+    #[test]
+    fn the_conversation_antigravity_indexed_for_a_checkout_is_its_session() {
+        let (_scratch, integration) = world("agy-port-session");
+        let cwd = Path::new("/work/slot");
+        write(
+            &integration.cli_root.join("cache/last_conversations.json"),
+            &serde_json::json!({"/work/slot": CONVERSATION}).to_string(),
+        );
+        write(
+            &integration
+                .cli_root
+                .join(format!("conversations/{CONVERSATION}.db")),
+            "",
+        );
+        let session = SessionId::parse(CONVERSATION).unwrap();
+        let elsewhere = SessionId::parse("f85c1dbb-27bc-438b-9191-b007994e8f63").unwrap();
+
+        assert_eq!(integration.session_recorded_for(cwd), Some(session.clone()));
+        assert!(integration.session_exists(&session, cwd));
+        assert!(!integration.session_exists(&elsewhere, cwd));
+        assert_eq!(
+            integration.observe_session(&ObservationContext {
+                cwd,
+                since_unix: 0,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            }),
+            Some(session)
+        );
+    }
+
+    /// No tree is no Antigravity on this machine, which is not the same
+    /// answer as an Antigravity holding nothing.
+    #[test]
+    fn without_its_tree_antigravity_reports_no_machine_at_all() {
+        let (_scratch, integration) = world("agy-port-absent");
+        assert!(integration.machine_inventory().is_none());
+        assert!(integration.session_counts().is_none());
+        assert!(integration.usage_records(UNIX_EPOCH).is_none());
+    }
+
+    #[test]
+    fn the_machine_antigravity_keeps_is_read_from_its_own_tree() {
+        let (_scratch, integration) = world("agy-port-machine");
+        let skill = integration.cli_root.join("skills/review/SKILL.md");
+        write(&skill, "---\nname: review\ndescription: Review.\n---\n");
+        write(
+            &integration
+                .cli_root
+                .join(format!("conversations/{CONVERSATION}.db")),
+            "",
+        );
+        let steps = [
+            serde_json::json!({"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE",
+                "status": "DONE", "tool_calls": [{"name": "read_file", "args": {"Path": skill}}]}),
+            serde_json::json!({"step_index": 2, "source": "MODEL", "type": "GENERIC",
+                "status": "DONE"}),
+        ];
+        write(
+            &integration.cli_root.join(format!(
+                "brain/{CONVERSATION}/.system_generated/logs/transcript.jsonl"
+            )),
+            &format!("{}\n{}\n", steps[0], steps[1]),
+        );
+
+        let found = integration.machine_inventory().unwrap();
+        assert!(
+            found
+                .iter()
+                .any(|resource| resource.kind == ResourceKind::Skill && resource.name == "review"),
+            "{found:?}"
+        );
+        assert_eq!(integration.session_counts().unwrap().total, 1);
+        let records = integration.usage_records(UNIX_EPOCH).unwrap();
+        assert_eq!(records.len(), 1);
+        let read = integration.read_usage(&records[0], Resume::Start).unwrap();
+        assert_eq!(
+            read.uses
+                .iter()
+                .map(|found| &found.target)
+                .collect::<Vec<_>>(),
+            [&Target::Name("review".to_owned())]
+        );
+    }
+
+    /// The plugin census needs `agy plugin list --json` as 1.3.4 prints it.
+    #[test]
+    fn an_agy_older_than_the_plugin_census_needs_is_below_the_floor() {
+        let (_scratch, integration) = world("agy-port-floor");
+        let floor = integration.minimum_version().expect("a floor");
+        let detected = |version: &str| HarnessDetection {
+            present: true,
+            version: Some(version.to_owned()),
+        };
+        assert!(detected("1.3.3").is_below(floor));
+        assert!(!detected("1.3.4").is_below(floor));
+    }
+
+    #[test]
+    fn resuming_and_a_first_turn_carry_what_they_name() {
+        let (_scratch, integration) = world("agy-port-launch");
+        let session = SessionId::parse(CONVERSATION).unwrap();
+        assert!(
+            integration
+                .resume_session_args(&session)
+                .contains(&OsString::from(CONVERSATION))
+        );
+        assert!(
+            integration
+                .first_turn_args("read your briefing")
+                .contains(&OsString::from("read your briefing"))
+        );
+    }
+
+    /// The detection cache goes stale when the program the workspace
+    /// launches changes, so that program is among the ones it watches.
+    #[test]
+    fn detection_watches_the_program_the_workspace_launches() {
+        let (_scratch, integration) = world("agy-port-detection");
+        let launched = integration.aliases().first().expect("a program to launch");
+        assert!(
+            integration
+                .detection_program_candidates()
+                .contains(launched)
+        );
+    }
+
+    /// The official installer puts `agy` in `~/.local/bin`, which a shell
+    /// opened before the install does not search.
+    #[test]
+    fn agy_is_looked_for_where_its_installer_puts_it() {
+        let (_scratch, integration) = world("agy-port-install-locations");
+        let destination = Path::new(".local")
+            .join("bin")
+            .join(uze_platform::executable::file_name("agy"));
+        let locations = integration.install_locations();
+        assert!(!locations.is_empty());
+        assert!(
+            locations
+                .iter()
+                .all(|location| location.ends_with(&destination)),
+            "{locations:?}"
+        );
+    }
+
+    #[test]
+    fn republishing_retires_what_an_earlier_layout_staged_and_nothing_names() {
+        let (_scratch, integration) = world("agy-port-retire");
+        let root = crate::shared::earlier::attachment_root(&integration.uze_home, ID);
+        let stale = root.join("stale");
+        let named = root.join("named");
+        write(&stale.join("plugin.json"), "{}");
+        write(&named.join("auditor.md"), "agent");
+        uze_core::state::record_receipt(
+            &integration.uze_home,
+            AttachmentReceipt {
+                package_id: "flow@market".to_owned(),
+                resource_identity: Some("agent:auditor".to_owned()),
+                integration: ID.to_owned(),
+                artifact: ManagedArtifact::GeneratedFile {
+                    path: named.join("auditor.md"),
+                    content: "agent".to_owned(),
+                },
+            },
+        )
+        .unwrap();
+
+        integration.republish_packages(&[]).unwrap();
+
+        assert!(!stale.exists());
+        assert!(named.is_dir());
+    }
+
+    fn carried_warnings(findings: &Findings) -> Vec<&String> {
+        findings
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("not carried to Antigravity"))
+            .collect()
+    }
+
+    /// The common layer speaks for `model` and `tools`; any other root field
+    /// Antigravity does not read is this integration's to name.
+    #[test]
+    fn a_root_field_antigravity_drops_is_named_once() {
+        let (scratch, integration) = world("agy-port-check-agent");
+        let colored = integration.check_capability(&agent(scratch.path(), "color: blue\n"));
+        let warnings = carried_warnings(&colored);
+        assert_eq!(warnings.len(), 1, "{:?}", colored.warnings);
+        assert!(warnings[0].contains("`color`"), "{}", warnings[0]);
+
+        let modelled = integration.check_capability(&agent(scratch.path(), "model: x\n"));
+        assert!(
+            carried_warnings(&modelled).is_empty(),
+            "{:?}",
+            modelled.warnings
+        );
+    }
+
+    #[test]
+    fn a_skill_is_delivered_inside_the_root_doctor_scans() {
+        let (scratch, integration) = world("agy-port-skill-root");
+        set_up(&integration);
+        let skill = resource(
+            scratch.path(),
+            CapabilityKind::AgentSkill,
+            "skills/review/SKILL.md",
+            b"---\nname: review\ndescription: Review.\n---\n",
+        );
+        let ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { path, .. }) =
+            integration.exposure_plan(&skill).mechanism
+        else {
+            panic!("a skill is a managed directory once setup has run");
+        };
+        assert_eq!(path.parent(), integration.skill_discovery_root().as_deref());
+    }
+
+    /// An earlier build linked a Skill entry to a wrapper it generated;
+    /// detaching the entry takes the wrapper nothing links to any more.
+    // A directory link needs no privilege on Unix alone.
+    #[cfg(unix)]
+    #[test]
+    fn detaching_an_earlier_skill_link_takes_its_wrapper_too() {
+        let (_scratch, integration) = world("agy-port-skill-link");
+        let wrapper = crate::shared::earlier::skill_wrapper_root(&integration.uze_home, ID)
+            .join("flow")
+            .join("review");
+        write(&wrapper.join("SKILL.md"), "---\nname: flow:review\n---\n");
+        let link = integration.skills_dir.join("flow:review");
+        fs::create_dir_all(&integration.skills_dir).unwrap();
+        std::os::unix::fs::symlink(&wrapper, &link).unwrap();
+        let receipt = AttachmentReceipt {
+            package_id: "flow@market".to_owned(),
+            resource_identity: Some("skill:review".to_owned()),
+            integration: ID.to_owned(),
+            artifact: ManagedArtifact::SymlinkReference {
+                path: link.clone(),
+                target: wrapper.clone(),
+            },
+        };
+
+        let detached = integration.detach_receipt(&receipt).unwrap();
+
+        assert_eq!(detached.state, AttachmentState::Missing);
+        assert!(link.symlink_metadata().is_err());
+        assert!(!wrapper.exists());
+    }
+
+    /// Skills reach Antigravity as slash commands, resolved by `/` and
+    /// `/name` (see [`skills`]).
+    #[test]
+    fn a_skill_is_typed_after_a_slash() {
+        let (_scratch, integration) = world("agy-port-prefix");
+        assert_eq!(integration.invocation_prefix(), "/");
+    }
+}

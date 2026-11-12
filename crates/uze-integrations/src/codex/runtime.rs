@@ -219,6 +219,7 @@ pub(super) fn collect_role_files(home: &UzeHome, integration: &str) -> Vec<PathB
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::{Path, PathBuf};
 
     use uze_core::harness_runtime::RuntimeContext;
     use uze_core::home::UzeHome;
@@ -402,5 +403,194 @@ mod tests {
         let mut taken = std::collections::HashSet::new();
         assert_eq!(role_file_name("a:b", &mut taken), "a_b.toml");
         assert_eq!(role_file_name("a_b", &mut taken), "a_b-2.toml");
+        assert_eq!(role_file_name("a/b", &mut taken), "a_b-3.toml");
+    }
+
+    /// The role file a launch reads in `config.toml`'s place: the
+    /// `config_file` the override names for `label`.
+    fn role_file(
+        contribution: &uze_core::harness_runtime::HarnessRuntimeContribution,
+        label: &str,
+    ) -> PathBuf {
+        let value = contribution.extra_args[1].to_string_lossy().into_owned();
+        let parsed: toml_edit::DocumentMut = value.parse().unwrap();
+        PathBuf::from(parsed["agents"][label]["config_file"].as_str().unwrap())
+    }
+
+    fn agent(checkout: &Path, name: &str) {
+        fs::create_dir_all(checkout.join(".agents/agents")).unwrap();
+        fs::write(
+            checkout.join(".agents/agents").join(format!("{name}.md")),
+            format!("---\ndescription: {name}\n---\nDo it.\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_role_file_follows_its_agent_when_the_agent_changes() {
+        let root = uze_testkit::temp::scratch("codex-project-agents-refresh");
+        let project = project_with_agents(&root);
+        let home = UzeHome::at(root.join("uze-home"));
+        let ctx = RuntimeContext {
+            cwd: &project,
+            home: &home,
+        };
+        let config = codex_config(&root, &project, "trusted");
+        let first = runtime_contribution(&ctx, &["codex"], &config);
+
+        fs::write(
+            project.join(".agents/agents/reviewer.md"),
+            "---\nname: house-reviewer\ndescription: Reviews\n---\nReview it twice.\n",
+        )
+        .unwrap();
+        let second = runtime_contribution(&ctx, &["codex"], &config);
+
+        let role = role_file(&second, "house-reviewer");
+        assert_eq!(role, role_file(&first, "house-reviewer"));
+        assert_eq!(
+            fs::read_to_string(role).unwrap(),
+            "developer_instructions = \"Review it twice.\"\n"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Maintenance takes the role file of an agent the project dropped and
+    /// keeps the others; a project whose root is gone is left to the
+    /// projections' collector, which takes its whole directory.
+    #[test]
+    fn collecting_takes_only_the_role_files_of_agents_a_project_dropped() {
+        let root = uze_testkit::temp::scratch("codex-project-agents-collect");
+        let project = project_with_agents(&root);
+        let home = UzeHome::at(root.join("uze-home"));
+        let launch = |checkout: &Path| {
+            runtime_contribution(
+                &RuntimeContext {
+                    cwd: checkout,
+                    home: &home,
+                },
+                &["codex"],
+                &codex_config(&root, checkout, "trusted"),
+            )
+        };
+        let contribution = launch(&project);
+        let (reviewer, security) = (
+            role_file(&contribution, "house-reviewer"),
+            role_file(&contribution, "security"),
+        );
+        let gone = root.join("gone");
+        uze_testkit::git::mark_repository(&gone);
+        agent(&gone, "lost");
+        let lost = role_file(&launch(&gone), "lost");
+        fs::remove_dir_all(&gone).unwrap();
+        fs::remove_file(project.join(".agents/agents/reviewer.md")).unwrap();
+
+        let codex = crate::codex::CodexIntegration::new(root.join(".agents"), home.clone());
+        let collected = uze_core::integration::IntegrationPort::collect_runtime(&codex, &home);
+
+        assert_eq!(collected, std::slice::from_ref(&reviewer));
+        assert!(!reviewer.exists());
+        assert!(security.exists());
+        assert!(
+            lost.exists(),
+            "the projections' collector takes it, not this"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Whether a launch from `checkout`, which holds one agent, is handed it
+    /// when Codex's `config.toml` trusts only `trusted`.
+    fn agents_in_trusted(root: &Path, checkout: &Path, trusted: &Path) -> bool {
+        agent(checkout, "reviewer");
+        let canonical = uze_platform::path::canonical(trusted).unwrap();
+        let config = codex_config(root, &canonical, "trusted");
+        let home = UzeHome::at(root.join("uze-home"));
+        let ctx = RuntimeContext {
+            cwd: checkout,
+            home: &home,
+        };
+        let activates = projection_would_activate(&ctx, &config);
+        let contribution = runtime_contribution(&ctx, &["codex"], &config);
+        if activates {
+            assert!(role_file(&contribution, "reviewer").is_file());
+        } else {
+            assert!(contribution.extra_args.is_empty());
+            assert!(
+                contribution
+                    .note
+                    .as_deref()
+                    .is_some_and(|note| note.contains("trust")),
+                "{:?}",
+                contribution.note
+            );
+            assert!(!home.runtime_dir().exists(), "no role file is written");
+        }
+        activates
+    }
+
+    /// Codex trusts a linked worktree by its repository's primary checkout,
+    /// the parent of the shared `.git`.
+    #[test]
+    fn a_linked_worktree_takes_the_trust_of_its_primary_checkout() {
+        use uze_testkit::git::{commit_everything_in, isolated_git_in};
+        let root = uze_testkit::temp::scratch("codex-worktree-trust");
+        let primary = root.join("primary");
+        fs::create_dir_all(&primary).unwrap();
+        fs::write(primary.join("README.md"), "primary\n").unwrap();
+        commit_everything_in(&primary);
+        let worktree = root.join("slot");
+        isolated_git_in(
+            &primary,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "-b",
+                "slot",
+                worktree.to_str().unwrap(),
+            ],
+        );
+
+        assert!(agents_in_trusted(&root, &worktree, &primary));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A bare repository has no primary checkout: a worktree of it has only
+    /// the trust recorded for the worktree itself, never the trust of the
+    /// directory the bare repository sits in.
+    #[test]
+    fn a_worktree_of_a_bare_repository_borrows_no_trust_from_its_parent_directory() {
+        use uze_testkit::git::{commit_everything_in, isolated_git_in};
+        let root = uze_testkit::temp::scratch("codex-bare-worktree-trust");
+        let source = root.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("README.md"), "source\n").unwrap();
+        commit_everything_in(&source);
+        let holder = root.join("holder");
+        fs::create_dir_all(&holder).unwrap();
+        let bare = holder.join("proj.git");
+        isolated_git_in(
+            &root,
+            &[
+                "clone",
+                "--quiet",
+                "--bare",
+                source.to_str().unwrap(),
+                bare.to_str().unwrap(),
+            ],
+        );
+        let worktree = root.join("slot");
+        isolated_git_in(
+            &bare,
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                worktree.to_str().unwrap(),
+                "main",
+            ],
+        );
+
+        assert!(!agents_in_trusted(&root, &worktree, &holder));
+        let _ = fs::remove_dir_all(&root);
     }
 }

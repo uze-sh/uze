@@ -801,3 +801,32 @@ pub(crate) fn marketplace_entries(listing: &serde_json::Value) -> Option<&Vec<se
             .and_then(serde_json::Value::as_array)
     })
 }
+
+#[cfg(test)]
+mod manifest_fields_tests {
+    use super::manifest_fields;
+
+    /// The description and version a generated envelope carries are the
+    /// package's own, and the harness caches a plugin by that version; only
+    /// what the manifest leaves out is defaulted.
+    #[test]
+    fn a_generated_envelope_carries_the_package_s_own_description_and_version() {
+        let scratch = uze_testkit::temp::TempDir::new("manifest-fields");
+        let manifest = scratch.path().join("plugin.json");
+        std::fs::write(
+            &manifest,
+            r#"{"name":"kit","version":"1.2.3","description":"Does X"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            manifest_fields(&manifest, "Generated."),
+            ("Does X".to_owned(), "1.2.3".to_owned())
+        );
+
+        std::fs::write(&manifest, r#"{"name":"kit"}"#).unwrap();
+        assert_eq!(
+            manifest_fields(&manifest, "Generated."),
+            ("Generated.".to_owned(), "0.1.0".to_owned())
+        );
+    }
+}

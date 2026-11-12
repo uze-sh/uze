@@ -47,6 +47,118 @@ exclude_re = [
   'uze-script/src/primitives\.rs.*replace == with != in compiled$',
   # Dropping the struct drops the sender right after, which ends the thread the same way.
   'uze-script/src/resident\.rs.*replace <impl Drop for Resident>::drop with \(\)$',
+  # Nothing calls IntegrationPort::hook_capabilities: entry plans read HOOKS directly.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::hook_capabilities -> .* with Default::default\(\)$',
+  # Nothing calls IntegrationPort::context_accumulates.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::context_accumulates -> bool with false$',
+  # Every IntegrationOwned receipt antigravity records is a build, matched first, or one of the two plugin kinds.
+  'uze-integrations/src/antigravity\.rs.*replace match guard kind == PLUGIN_KIND \|\| kind == GENERATED_PLUGIN_KIND with true in <impl IntegrationPort for AntigravityIntegration>::(inspect|detach)_receipt$',
+  # agent_exposure_plan's route comes from projection_route, which is only Native or Degraded.
+  'uze-integrations/src/antigravity\.rs.*replace match guard plan\.route != CompatibilityRoute::Unsupported with true in AntigravityIntegration::plugin_agent_file$',
+  # Text for the doctor read model only.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::description -> .* with (""|"xyzzy")$',
+  # Read only by src/bin/uze-harness-matrix.rs for the docs table: an icon and a link.
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::icon_path -> .* with (None|Some\(""\)|Some\("xyzzy"\))$',
+  'uze-integrations/src/antigravity\.rs.*replace <impl IntegrationPort for AntigravityIntegration>::homepage -> .* with None$',
+  # --- uze-integrations: Codex ---
+  # Docs-site text and links, read only by the harness matrix generator.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::(description|icon_path|homepage) -> .* with .*$',
+  # Nothing in the workspace reads IntegrationPort::reported_events yet.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::reported_events -> .* with .*$',
+  # Nothing reads IntegrationPort::hook_capabilities; Codex hands HOOKS to generated_requirements itself.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::hook_capabilities -> .* with Default::default\(\)$',
+  # Nothing reads IntegrationPort::context_accumulates.
+  'uze-integrations/src/codex\.rs.*replace <impl IntegrationPort for CodexIntegration>::context_accumulates -> bool with false$',
+  # inspect_receipt answers Blocked for a kind this guard refuses, so detach has returned before it.
+  'uze-integrations/src/codex\.rs.*replace match guard marketplace::receipt_origin::<CodexMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for CodexIntegration>::detach_receipt$',
+  # Two rollouts for one checkout in the same second: either is the newest, and read_dir order is unspecified.
+  'uze-integrations/src/codex/session\.rs.*replace > with >= in observe$',
+  # --- uze-integrations: OpenCode ---
+  # No caller asks for hook capabilities through the port; the trait default stands in.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::hook_capabilities -> uze_core::hook::HookCapabilities with Default::default\(\)$',
+  # Rules and build receipts are dispatched first; the plugin is OpenCode's only other IntegrationOwned receipt.
+  'uze-integrations/src/opencode\.rs.*replace match guard kind == runtime_plugin::KIND with true in runtime_plugin_path$',
+  # Detach reaches the removal only after inspection read the file; NotFound there is only a race.
+  'uze-integrations/src/opencode\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in OpenCodeIntegration::detach_hook_bridge$',
+  # A test helper: without Bun it already answers None, and CI asserts Bun is there.
+  'uze-integrations/src/opencode\.rs.*(replace bun_for_tests -> Option<&.static str> with None|delete ! in bun_for_tests)$',
+  # Unix always takes the official installer; only Windows reaches the distribution target.
+  'uze-integrations/src/opencode/distribution\.rs.*delete match arm "linux" in target_for$',
+  # The three shifted bytes share no bit, so `^` of them is `|`.
+  'uze-integrations/src/opencode/distribution\.rs.*replace \| with \^ in base64$',
+  # An empty object then renders `{  }`, the same JavaScript value as `{}`.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace match guard entries\.is_empty\(\) with false in inline_literal$',
+  # Either one quotes every key, and a quoted identifier key is the same JavaScript object.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace \|\| with && in key_literal$',
+  # The doctor and TUI blurb only.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::description -> &.static str with ',
+  # Read only by the harness-matrix docs tool, which `uze-harness-matrix --check` guards.
+  'uze-integrations/src/opencode\.rs.*replace <impl IntegrationPort for OpenCodeIntegration>::(icon_path|homepage) -> Option<&.static str> with ',
+  # The label of the provisioning method in the setup report.
+  'uze-integrations/src/opencode/provision\.rs.*replace Route::method -> &.static str with ',
+  # Only the line width and indentation of the generated JavaScript; the value is the same.
+  'uze-integrations/src/opencode/runtime_plugin\.rs.*replace (\+ with -|\* with \+|\* with /|\+ with \*) in literal$',
+  # --- uze-integrations: shared ---
+  # (posix) PosixWrapper::source is None only for a bridge target, and only wrapper targets plan a wrapper.
+  'uze-integrations/src/hooks\.rs.*replace HookTarget::deliverable -> bool with true$',
+  # Every wrapper dialect declares a transform for both shells; a bridge answers before.
+  'uze-integrations/src/hooks/wrapper\.rs.*replace transforms_here -> bool with true$',
+  # (posix) shell::script names the script itself, so the wrapper is already the first word.
+  'uze-integrations/src/hooks/event_entry\.rs.*replace wrapper_position -> usize with 0$',
+  # No caller uses IntegrationRegistry::all(); iter(), get() and into_inner() are used instead.
+  'uze-integrations/src/registry\.rs.*replace IntegrationRegistry::all -> &\[Box<dyn IntegrationPort>\] with Vec::leak\(Vec::new\(\)\)$',
+  # (posix) the shell family here is Posix, so the answer is already true.
+  'uze-integrations/src/rules\.rs.*replace deliverable_here -> bool with true$',
+  # Setup-owned receipts of one integration are the engine's or OpenCode's plugin; another event's entry never sits in this event's array.
+  'uze-integrations/src/rules\.rs.*replace match guard kind == KIND && recorded_selector == selector with true in RulesTarget::attach$',
+  'uze-integrations/src/rules\.rs.*replace && with \|\| in RulesTarget::attach$',
+  # Only skips hashing: with the key unchanged (it holds the root) inspect keeps the build on Matched and Drifted alike. Anchored on the column, as the key's own `==` in publish are caught.
+  'uze-integrations/src/shared/build\.rs:\d+:45: replace == with != in publish$',
+  'uze-integrations/src/shared/build\.rs:\d+:56: delete ! in publish$',
+  # With the same key the early return has already answered every build with files; one with none is Blocked, not Matched.
+  'uze-integrations/src/shared/build\.rs.*replace match guard same_key with false in publish$',
+  # Only the prune bound: remove_dir takes an empty directory inside the retired tree, which retire_unnamed_attachments sweeps anyway.
+  'uze-integrations/src/shared/earlier\.rs.*replace skill_wrapper_root -> PathBuf with Default::default\(\)$',
+  # The file was just seen as a regular file; NotFound needs a race with another remover.
+  'uze-integrations/src/shared/json_config\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in write_object_or_remove_emptied$',
+  # Both callers read the bridge just before removing it; NotFound needs a race.
+  'uze-integrations/src/hooks/bridge\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in remove_bridge_file$',
+  # Both dialects override recorded_root; the trait default is never called.
+  'uze-integrations/src/shared/marketplace\.rs.*replace MarketplaceDialect::recorded_root -> Option<Option<PathBuf>> with Some\(',
+  # Callers hand repoint only what registration() yields: the uze-store marketplace registration.
+  'uze-integrations/src/shared/marketplace\.rs.*replace \|\| with && in repoint$',
+  # A fast path: with nothing carried or no token the loop rewrites nothing either.
+  'uze-integrations/src/shared/package_root\.rs.*replace \|\| with && in PluginRoot::carry_references$',
+  # An answer exactly as old as the window, to the nanosecond, is not observable.
+  'uze-integrations/src/shared/process\.rs.*replace < with <= in json$',
+  # Test helper: -1 only marks a signal death, which no test expects.
+  'uze-integrations/src/hooks/wrapper_tests\.rs.*delete - in run$',
+  # Test helper: only removes a scratch checkout.
+  'uze-integrations/src/rules/engine_tests\.rs.*replace <impl Drop for Checkout>::drop with \(\)$',
+  # Test helper: it is the assertion, so emptying it always passes; its callers assert through it.
+  'uze-integrations/src/rules/engine_tests\.rs.*replace engine_answers_the_glob_table with \(\)$',
+  # Noise: swaps the two reasons only; the state is Matched either way.
+  'uze-integrations/src/rules\.rs.*replace == with != in inspect_engine$',
+  # Noise: only the exit code a tracing span records.
+  'uze-integrations/src/shared/process\.rs.*delete - in run_captured$',
+  # Nothing in the workspace asks a harness for these; hook delivery reads `HOOKS` itself.
+  'uze-integrations/src/claude\.rs.*replace <impl IntegrationPort for ClaudeIntegration>::(hook_capabilities|reported_events|context_accumulates) -> ',
+  # Only a package-level receipt reaches these, and Claude's only package-level IntegrationOwned receipts are its plugin kinds.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::(unreadable|switched_off|switch_off)$',
+  # Rules and build receipts match earlier arms; any other IntegrationOwned kind reads Blocked either way.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::inspect_receipt$',
+  # Reached only once inspect_receipt said Matched, which an unknown IntegrationOwned kind never is.
+  'uze-integrations/src/claude\.rs.*replace match guard marketplace::receipt_origin::<ClaudeMarketplace>\(kind\)\.is_some\(\) with true in <impl IntegrationPort for ClaudeIntegration>::detach_receipt$',
+  # Presentation text for the doctor; a test catching it would copy the literal.
+  'uze-integrations/src/claude\.rs.*replace <impl IntegrationPort for ClaudeIntegration>::description -> .* with "xyzzy"$',
+  # One level past DEEPEST, which no plugin layout reaches; the walk stays bounded either way.
+  'uze-integrations/src/claude/plugin\.rs.*replace < with <= in collect_files$',
+  # NotFound only when a concurrent projection takes the link out between the check and the removal.
+  'uze-integrations/src/claude/runtime\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with false in project_resource_projection$',
+  # Reached only when the link's rename fails, which an atomic rename in one directory does not on Unix.
+  'uze-integrations/src/claude/runtime\.rs.*delete ! in project_resource_projection$',
+  # Between transcripts modified in the same second the pick is the listing's order either way.
+  'uze-integrations/src/claude/session\.rs.*replace > with >= in observe$',
 
   # uze-core delivery/
   # Each trait default below already returns exactly the value the mutant puts back.

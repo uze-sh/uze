@@ -402,21 +402,33 @@ mod tests {
         std::fs::write(
             &config,
             format!(
-                "[hooks.state.{:?}]\ntrusted_hash = \"a\"\n[hooks.state.{:?}]\ntrusted_hash = \"b\"\n",
+                "[hooks.state.{:?}]\ntrusted_hash = \"a\"\n[hooks.state.{:?}]\ntrusted_hash = \"c\"\n[hooks.state.{:?}]\ntrusted_hash = \"b\"\n",
                 key(0),
+                key(1),
                 key(2)
             ),
         )
         .unwrap();
-        let expected = ours_again.to_string();
-        let entry = HookEntry {
-            config_file: &hooks,
-            entry_name: "pkg@market:guard",
-            event: HookEvent::PreToolUse,
-            expected: &expected,
-            wrapper: Path::new("/store/codex/pkg@market/hooks/uze-exec"),
+        let removal = |group: &Value| {
+            let expected = group.to_string();
+            let entry = HookEntry {
+                config_file: &hooks,
+                entry_name: "pkg@market:guard",
+                event: HookEvent::PreToolUse,
+                expected: &expected,
+                wrapper: Path::new("/store/codex/pkg@market/hooks/uze-exec"),
+            };
+            shifted_by_removal(&config, &entry)
         };
-        assert_eq!(shifted_by_removal(&config, &entry), [key(2)]);
+        assert_eq!(
+            removal(&ours_again),
+            [key(2)],
+            "the removed group's own key leaves with it, and nothing before it moves"
+        );
+        assert!(
+            removal(&theirs).is_empty(),
+            "nothing comes after the last group"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -433,6 +445,35 @@ mod tests {
             identity_hash(HookEvent::PreToolUse, None, &handler),
             CENSUS_HASH,
         );
+    }
+
+    /// Codex fingerprints a group's matcher with its handler, so the same
+    /// handler under another matcher is another hook to review; `Stop`
+    /// takes no matcher, so one written there changes nothing.
+    #[test]
+    fn a_matcher_is_part_of_a_handlers_identity_except_on_stop() {
+        let handler = serde_json::json!({"type": "command", "command": "guard", "timeout": 5});
+        let bash = Value::from("Bash");
+        assert_ne!(
+            identity_hash(HookEvent::PreToolUse, Some(&bash), &handler),
+            identity_hash(HookEvent::PreToolUse, None, &handler)
+        );
+        assert_eq!(
+            identity_hash(HookEvent::Stop, Some(&bash), &handler),
+            identity_hash(HookEvent::Stop, None, &handler)
+        );
+    }
+
+    /// The canonical form Codex fingerprints: compact, keys sorted, and
+    /// array items in their own order with a comma between them.
+    #[test]
+    fn the_canonical_json_is_compact_with_sorted_keys() {
+        let mut canonical = String::new();
+        write_sorted(
+            &serde_json::json!({"b": [1, {"d": 2, "c": 3}], "a": "x"}),
+            &mut canonical,
+        );
+        assert_eq!(canonical, r#"{"a":"x","b":[1,{"c":3,"d":2}]}"#);
     }
 
     /// One delivered group in a `hooks.json`, a foreign one before it, and

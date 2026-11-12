@@ -263,3 +263,39 @@ fn no_session_text_reaches_the_overview() {
     assert_eq!(sessions.unwrap().total, 1);
     assert!(!kept.contains(sentinel), "{kept}");
 }
+
+/// A link in `skills/` whose target is gone still names a skill, one that
+/// reads as broken; a live link to a directory without a `SKILL.md` is no
+/// skill at all.
+// A symbolic link, which Windows lets an ordinary account make only in developer mode.
+#[cfg(unix)]
+#[test]
+fn a_broken_skill_link_is_a_skill_and_a_link_to_no_skill_is_not() {
+    let root = uze_testkit::temp::TempDir::new("claude-inventory-skill-links");
+    let skills = root.join(".claude/skills");
+    let empty = root.join("empty");
+    fs::create_dir_all(&skills).unwrap();
+    fs::create_dir_all(&empty).unwrap();
+    std::os::unix::fs::symlink(root.join("gone"), skills.join("broken")).unwrap();
+    std::os::unix::fs::symlink(&empty, skills.join("hollow")).unwrap();
+
+    let found = inventory_of(root.path());
+
+    assert_eq!(named(&found, "broken").kind, ResourceKind::Skill);
+    assert!(found.iter().all(|resource| resource.name != "hollow"));
+}
+
+/// A hook is named by the script it runs, never by an option or its
+/// value, and a quoted path is named without its quotes.
+#[test]
+fn a_hook_without_a_script_path_is_named_by_its_program_and_quotes_are_dropped() {
+    let root = uze_testkit::temp::TempDir::new("claude-inventory-hook-names");
+    write(
+        &root.join(".claude/settings.json"),
+        r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"bash -c lint"}]}],
+            "PreToolUse":[{"hooks":[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR/hooks/check\""}]}]}}"#,
+    );
+    let found = inventory_of(root.path());
+    named(&found, "bash");
+    named(&found, "check");
+}

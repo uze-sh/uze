@@ -948,6 +948,21 @@ mod claude_native_coverage_tests {
         let _ = fs::remove_dir_all(_root);
     }
 
+    /// A path field may name one path as a string rather than a list.
+    #[test]
+    fn a_skills_field_written_as_one_path_adds_that_directory() {
+        let (_root, pkg) =
+            make_package_with_plugin("single-path", r#"{"name":"test-pkg","skills":"./extra"}"#);
+        let declared = skill_at(
+            &pkg,
+            pkg.root.join("extra/deep/SKILL.md"),
+            "---\nname: deep\n---\n",
+        );
+        let covered = claude_exact_coverage(&pkg, &[&declared]);
+        assert_eq!(covered, BTreeSet::from([declared.identity()]));
+        let _ = fs::remove_dir_all(_root);
+    }
+
     #[test]
     fn a_nested_skill_is_loaded_only_when_its_directory_is_declared() {
         let (_root, pkg) = make_package_with_plugin(
@@ -1307,7 +1322,7 @@ mod explicit_marketplace_tests {
 
     use uze_core::{
         home::UzeHome,
-        integration::{AttachmentReceipt, ManagedArtifact},
+        integration::{AttachmentReceipt, IntegrationPort, ManagedArtifact},
         store::{PackageId, StoredPackage},
     };
 
@@ -1407,6 +1422,12 @@ mod explicit_marketplace_tests {
         }
         assert!(!marketplace::receipt_serves::<ClaudeMarketplace>(&retired));
         assert!(marketplace::receipt_serves::<ClaudeMarketplace>(&moved));
+        let claude = crate::claude::ClaudeIntegration::new(
+            root.join("claude"),
+            UzeHome::at(root.join("uze")),
+        );
+        assert!(!claude.package_receipt_serves(&retired));
+        assert!(claude.package_receipt_serves(&moved));
     }
 
     /// A package with its own envelope and one without are two plugins of
@@ -1466,6 +1487,219 @@ mod explicit_marketplace_tests {
             .filter_map(|entry| entry["name"].as_str())
             .collect();
         assert_eq!(names, ["flow", "kit"]);
+    }
+}
+
+#[cfg(test)]
+mod catalogue_tests {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
+    use uze_core::{home::UzeHome, integration::PublicationStatus, store::StoredPackage};
+
+    use super::ClaudeMarketplace;
+    use crate::shared::marketplace::{self, MarketplaceDialect};
+
+    /// A package of one Skill and no envelope of its own, named `name`.
+    fn package(root: &Path, name: &str) -> StoredPackage {
+        let package_root = root.join("store/plugins/local").join(name);
+        fs::create_dir_all(package_root.join("skills/commit")).unwrap();
+        fs::write(
+            package_root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: Commit.\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            package_root.join("plugin.json"),
+            format!(r#"{{"name":"{name}"}}"#),
+        )
+        .unwrap();
+        crate::shared::test_support::stored_at(&package_root, name)
+    }
+
+    fn catalogue_path(home: &UzeHome) -> PathBuf {
+        marketplace::marketplace_root::<ClaudeMarketplace>(home)
+            .join(ClaudeMarketplace::CATALOGUE_PATH)
+    }
+
+    fn listed(home: &UzeHome) -> Vec<String> {
+        let catalogue: serde_json::Value =
+            serde_json::from_slice(&fs::read(catalogue_path(home)).unwrap()).unwrap();
+        catalogue["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["name"].as_str().map(str::to_owned))
+            .collect()
+    }
+
+    fn republish(root: &Path, home: &UzeHome, packages: &[StoredPackage]) {
+        marketplace::republish::<ClaudeMarketplace>(
+            Path::new("claude-absent"),
+            root,
+            home,
+            "claude",
+            packages,
+        )
+        .unwrap();
+    }
+
+    fn publication(home: &UzeHome, packages: &[StoredPackage]) -> PublicationStatus {
+        marketplace::publication::<ClaudeMarketplace>(home, "claude", packages)
+    }
+
+    fn unpublished(status: PublicationStatus) -> String {
+        match status {
+            PublicationStatus::Unpublished(reason) => reason,
+            other => panic!("expected Unpublished, got {other:?}"),
+        }
+    }
+
+    /// The catalogue lists the builds of the packages it is handed and no
+    /// other, down to none: a package being removed leaves it.
+    #[test]
+    fn the_catalogue_lists_exactly_the_packages_it_is_handed() {
+        let scratch = uze_testkit::temp::TempDir::new("catalogue-set");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        let (kept, leaving) = (package(root, "kept"), package(root, "leaving"));
+        for package in [&kept, &leaving] {
+            marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", package);
+        }
+        republish(root, &home, &[kept.clone(), leaving.clone()]);
+        assert_eq!(listed(&home), ["kept", "leaving"]);
+
+        republish(root, &home, std::slice::from_ref(&kept));
+        assert_eq!(listed(&home), ["kept"]);
+        assert_eq!(
+            publication(&home, std::slice::from_ref(&kept)),
+            PublicationStatus::Published
+        );
+
+        republish(root, &home, &[]);
+        assert!(listed(&home).is_empty(), "the last package stayed listed");
+    }
+
+    /// Published means the catalogue lists exactly the installed set and
+    /// every build it lists is there; anything else names what is off.
+    #[test]
+    fn publication_holds_the_catalogue_to_the_installed_set() {
+        let scratch = uze_testkit::temp::TempDir::new("catalogue-publication");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        assert_eq!(publication(&home, &[]), PublicationStatus::Published);
+        fs::create_dir_all(catalogue_path(&home)).unwrap();
+        assert!(matches!(
+            publication(&home, &[]),
+            PublicationStatus::Unpublished(_)
+        ));
+        fs::remove_dir(catalogue_path(&home)).unwrap();
+
+        // Its own envelope, of metadata only: the catalogue entry reads the
+        // same with the build's manifest gone, so only the build is off.
+        let kit = package(root, "kit");
+        fs::create_dir_all(kit.root.join(".claude-plugin")).unwrap();
+        fs::write(
+            kit.root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"kit"}"#,
+        )
+        .unwrap();
+        let receipt = marketplace::publish_for_test::<ClaudeMarketplace>(&home, "claude", &kit);
+        let installed = std::slice::from_ref(&kit);
+        assert!(
+            unpublished(publication(&home, installed)).contains("has been written"),
+            "a build with no catalogue yet"
+        );
+        republish(root, &home, installed);
+        assert_eq!(publication(&home, installed), PublicationStatus::Published);
+
+        let written = fs::read(catalogue_path(&home)).unwrap();
+        let mut catalogue: serde_json::Value = serde_json::from_slice(&written).unwrap();
+        catalogue["plugins"].as_array_mut().unwrap().clear();
+        fs::write(catalogue_path(&home), catalogue.to_string()).unwrap();
+        assert!(unpublished(publication(&home, installed)).contains("does not match"));
+        fs::write(catalogue_path(&home), &written).unwrap();
+
+        let build = crate::shared::build::RecordedBuild::of(&receipt)
+            .unwrap()
+            .root;
+        fs::remove_file(
+            build
+                .join(ClaudeMarketplace::ENVELOPE_DIR)
+                .join("plugin.json"),
+        )
+        .unwrap();
+        let reason = unpublished(publication(&home, installed));
+        assert!(reason.contains("whose build is gone"), "{reason}");
+    }
+
+    /// A vendor that records every command it is asked to run.
+    // It is a POSIX shell script.
+    #[cfg(unix)]
+    fn recording_vendor(root: &Path) -> (PathBuf, PathBuf) {
+        let log = root.join("asked.log");
+        let program = root.join("claude");
+        uze_testkit::process::install_executable(
+            &program,
+            format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display()).as_bytes(),
+        );
+        (program, log)
+    }
+
+    // Read only by the test below, whose vendor is a POSIX shell script.
+    #[cfg(unix)]
+    fn plugin_receipt(selector: &str) -> uze_core::integration::AttachmentReceipt {
+        uze_core::integration::AttachmentReceipt {
+            package_id: "kit@local".to_owned(),
+            resource_identity: None,
+            integration: "claude".to_owned(),
+            artifact: uze_core::integration::ManagedArtifact::IntegrationOwned {
+                kind: ClaudeMarketplace::EXPLICIT_KIND.to_owned(),
+                selector: selector.to_owned(),
+                detail: Default::default(),
+            },
+        }
+    }
+
+    /// Removing a plugin never unregisters the marketplace it came from,
+    /// except the retired one, once nothing else was installed through it.
+    // The recording vendor is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn only_the_last_plugin_through_the_retired_marketplace_unregisters_it() {
+        let scratch = uze_testkit::temp::TempDir::new("detach-retired");
+        let root = scratch.path();
+        let home = UzeHome::at(root.join("uze"));
+        let (program, log) = recording_vendor(root);
+        let asked = || fs::read_to_string(&log).unwrap_or_default();
+
+        let current = plugin_receipt("kit@uze-store");
+        marketplace::detach_package::<ClaudeMarketplace>(
+            &program,
+            root,
+            &home,
+            &current,
+            "kit@uze-store",
+        )
+        .unwrap();
+        assert_eq!(asked(), "plugin uninstall kit@uze-store\n");
+
+        fs::remove_file(&log).unwrap();
+        let retired = plugin_receipt("kit@uze-local");
+        marketplace::detach_package::<ClaudeMarketplace>(
+            &program,
+            root,
+            &home,
+            &retired,
+            "kit@uze-local",
+        )
+        .unwrap();
+        assert_eq!(
+            asked(),
+            "plugin uninstall kit@uze-local\nplugin marketplace remove uze-local\n"
+        );
     }
 }
 
@@ -1639,6 +1873,63 @@ mod recorded_state_tests {
         let _ = fs::remove_dir_all(home);
     }
 
+    /// A plugin Claude's CLI lists as enabled is matched without a word
+    /// about being switched off.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_claudes_cli_lists_as_enabled_is_not_called_switched_off() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let home = home_with("claude-cli-enabled", &[]);
+        let claude = home.join("claude");
+        uze_testkit::process::install_executable(
+            &claude,
+            b"#!/bin/sh\ncase \"$2\" in\n  marketplace) echo '[{\"name\":\"uze-store\",\"path\":\"/uze/generated\"}]' ;;\n  list) echo '[{\"id\":\"git@uze-store\",\"enabled\":true}]' ;;\nesac\n",
+        );
+
+        let inspection = super::inspect_claude_plugin(
+            &claude,
+            &home,
+            "git@uze-store",
+            Path::new("/uze/generated"),
+        );
+
+        assert_eq!(
+            inspection.state,
+            uze_core::integration::AttachmentState::Matched
+        );
+        assert!(
+            !inspection.reason.contains("switched off"),
+            "{}",
+            inspection.reason
+        );
+        assert!(!super::plugin_switched_off(&claude, &home, "git@uze-store"));
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// Switching a plugin off is Claude's own `plugin disable`.
+    // The stand-in for Claude's CLI is a POSIX shell script, which only Unix runs as a program.
+    #[cfg(unix)]
+    #[test]
+    fn switching_a_plugin_off_asks_claude_to_disable_it() {
+        let home = home_with("claude-cli-disable", &[]);
+        let claude = home.join("claude");
+        let log = home.join("argv.log");
+        uze_testkit::process::install_executable(
+            &claude,
+            format!("#!/bin/sh\necho \"$@\" >> '{}'\n", log.display()).as_bytes(),
+        );
+
+        super::switch_off_plugin(&claude, &home, "git@uze-store").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&log).unwrap().trim(),
+            "plugin disable git@uze-store"
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
     /// A record in a shape this does not know answers nothing, so the CLI
     /// is asked as before.
     #[test]
@@ -1655,5 +1946,191 @@ mod recorded_state_tests {
         assert!(recorded_marketplaces(&home).is_none());
         assert!(recorded_user_install(&home, "git@uze-store").is_none());
         let _ = fs::remove_dir_all(home);
+    }
+}
+
+#[cfg(test)]
+mod unreadable_tests {
+    use std::fs;
+    use std::path::PathBuf;
+
+    use uze_core::capability::{Capability, CapabilityKind, Resource};
+
+    use super::plugin_unreadable;
+
+    struct Fixture {
+        root: PathBuf,
+        home: PathBuf,
+        source: PathBuf,
+        cache: PathBuf,
+        skill: Resource,
+        agent: Resource,
+    }
+
+    /// Claude records `kit@uze-store` installed at user scope with its
+    /// cached copy at `cache`; the plugin UZE delivered serves the skill
+    /// `review` and the agent `reviewer`.
+    fn fixture(label: &str) -> Fixture {
+        let root = uze_testkit::temp::scratch(label);
+        let home = root.join("home");
+        let cache = root.join("cache/kit");
+        let source = root.join("source/kit");
+        fs::create_dir_all(home.join(".claude/plugins")).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(source.join(".claude-plugin")).unwrap();
+        fs::write(
+            source.join(".claude-plugin/plugin.json"),
+            r#"{"name":"kit"}"#,
+        )
+        .unwrap();
+        fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            serde_json::json!({
+                "version": 2,
+                "plugins": {"kit@uze-store": [{"scope": "user", "installPath": cache}]},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let package = crate::shared::test_support::stored_at(&source, "kit");
+        let resource = |kind, relative: &str| {
+            Resource::from_package(
+                package.id.clone(),
+                package.root.clone(),
+                Capability {
+                    kind,
+                    path: package.root.join(relative),
+                    payload: Vec::new(),
+                },
+            )
+        };
+        let skill = resource(CapabilityKind::AgentSkill, "skills/review/SKILL.md");
+        let agent = resource(CapabilityKind::Agent, "agents/reviewer.md");
+        Fixture {
+            root,
+            home,
+            source,
+            cache,
+            skill,
+            agent,
+        }
+    }
+
+    impl Fixture {
+        fn cached(&self, relative: &str) {
+            let path = self.cache.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "cached").unwrap();
+        }
+
+        fn unreadable(&self) -> Vec<String> {
+            let mut flagged: Vec<String> = plugin_unreadable(
+                &self.home,
+                self.source.clone(),
+                "kit@uze-store",
+                &[&self.skill, &self.agent],
+            )
+            .into_iter()
+            .map(|finding| finding.capability)
+            .collect();
+            flagged.sort();
+            flagged
+        }
+
+        fn both(&self) -> Vec<String> {
+            let mut both = vec![self.skill.identity(), self.agent.identity()];
+            both.sort();
+            both
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn a_cached_copy_holding_every_served_resource_is_readable() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-whole");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+    }
+
+    /// A skill is its `SKILL.md` in a directory of its name, and an agent
+    /// its file under `agents/`: a neighbour's or a stray file of the same
+    /// name is not them.
+    #[test]
+    fn a_cached_copy_missing_what_was_served_flags_it() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-hollow");
+        fixture.cached("skills/other/SKILL.md");
+        fixture.cached("review/notes.txt");
+        fixture.cached("agents/other.md");
+
+        assert_eq!(fixture.unreadable(), fixture.both());
+    }
+
+    #[test]
+    fn an_agent_file_outside_agents_is_not_the_agent() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-stray-agent");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("reviewer.md");
+
+        assert_eq!(fixture.unreadable(), vec![fixture.agent.identity()]);
+    }
+
+    /// Without Claude's record of an install there is no cached copy to
+    /// judge, so nothing is said.
+    #[test]
+    fn no_record_of_the_install_says_nothing() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-unrecorded");
+        fs::remove_file(fixture.home.join(".claude/plugins/installed_plugins.json")).unwrap();
+
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_plugin_gone_from_its_source_flags_everything_it_served() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-gone");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+        fs::remove_file(fixture.source.join(".claude-plugin/plugin.json")).unwrap();
+
+        assert_eq!(fixture.unreadable(), fixture.both());
+    }
+
+    /// The cached copy is the plugin author's content, and links in it may
+    /// lead back into itself: the walk still ends, and soon.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn links_looping_back_into_the_cached_copy_still_end_the_walk() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("CLAUDE_CONFIG_DIR");
+        let fixture = fixture("claude-unreadable-loop");
+        fixture.cached("skills/review/SKILL.md");
+        fixture.cached("agents/reviewer.md");
+        std::os::unix::fs::symlink(".", fixture.cache.join("again")).unwrap();
+        std::os::unix::fs::symlink(".", fixture.cache.join("and-again")).unwrap();
+
+        let started = std::time::Instant::now();
+        assert_eq!(fixture.unreadable(), Vec::<String>::new());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the walk took {:?}",
+            started.elapsed()
+        );
     }
 }

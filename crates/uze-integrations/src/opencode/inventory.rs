@@ -367,6 +367,81 @@ mod tests {
         assert!(inventory(root.path(), &root.join("opencode.json")).is_empty());
     }
 
+    /// A link whose target is gone still names a skill, and reads as
+    /// broken; a link to a directory that holds no `SKILL.md` names none.
+    // Unix: a symlink is made without privilege.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_skill_is_listed_only_when_it_names_one() {
+        let root = uze_testkit::temp::TempDir::new("opencode-inventory-linked-skills");
+        let skills = root.join("skills");
+        fs::create_dir_all(&skills).unwrap();
+        fs::create_dir_all(root.join("elsewhere/not-a-skill")).unwrap();
+        std::os::unix::fs::symlink(root.join("vanished"), skills.join("gone")).unwrap();
+        std::os::unix::fs::symlink(root.join("elsewhere/not-a-skill"), skills.join("linked"))
+            .unwrap();
+
+        let found = inventory(root.path(), &root.join("opencode.json"));
+        assert_eq!(names(&found, ResourceKind::Skill), ["gone"]);
+    }
+
+    /// A server is an entry that says how it runs: a `type`, a `command`
+    /// or a `url`, any one of them.
+    #[test]
+    fn any_one_field_that_says_how_a_server_runs_makes_it_a_server() {
+        let root = uze_testkit::temp::TempDir::new("opencode-inventory-mcp-fields");
+        let config = root.join("opencode.json");
+        write(
+            &config,
+            r#"{"mcp":{"servers":{"a":{"command":["a-mcp"]},"b":{"type":"local"},"c":{"enabled":true}}}}"#,
+        );
+        let found = inventory(root.path(), &config);
+        assert_eq!(names(&found, ResourceKind::Mcp), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_command_written_as_one_word_is_the_program_the_server_runs() {
+        let root = uze_testkit::temp::TempDir::new("opencode-inventory-mcp-command");
+        let config = root.join("opencode.json");
+        write(&config, r#"{"mcp":{"servers":{"s":{"command":"s-mcp"}}}}"#);
+        let found = inventory(root.path(), &config);
+        let server = found.iter().find(|f| f.name == "s").unwrap();
+        assert_eq!(server.runs, Some(Runs::Program("s-mcp".into())));
+    }
+
+    /// A stand-in for `opencode` that prints `stdout` and exits with
+    /// `code`, whatever it is asked.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    fn stand_in(root: &Path, name: &str, stdout: &str, code: i32) -> PathBuf {
+        let answer = root.join(format!("{name}.answer"));
+        write(&answer, stdout);
+        let executable = root.join(name);
+        uze_testkit::process::install_executable(
+            &executable,
+            format!("#!/bin/sh\ncat '{}'\nexit {code}\n", answer.display()).as_bytes(),
+        );
+        executable
+    }
+
+    /// The count is what the harness's own statistics answer, and an
+    /// answer it gave with a failure is no count at all.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn the_sessions_counted_are_the_ones_the_harness_reports() {
+        let root = uze_testkit::temp::TempDir::new("opencode-inventory-stats");
+        let answer = r#"{"sessions":7,"subagents":3}"#;
+        let answering = stand_in(root.path(), "answering", answer, 0);
+        let failing = stand_in(root.path(), "failing", answer, 1);
+
+        assert_eq!(
+            session_counts(&answering, root.path()).map(|counts| counts.total),
+            Some(7)
+        );
+        assert_eq!(session_counts(&failing, root.path()), None);
+    }
+
     #[test]
     fn sessions_come_from_the_stats_answer_and_leave_subagents_out() {
         let payload = br#"{"range":{"from":1,"to":2},"sessions":12,"subagents":30,"prompts":40}"#;

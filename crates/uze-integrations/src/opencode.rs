@@ -1392,4 +1392,705 @@ mod lifecycle_tests {
         );
         fs::remove_dir_all(root).unwrap();
     }
+
+    const HOOK_GROUPS: &str = r#"{"hooks":{"PreToolUse":[
+        {"id":"observe-first","matcher":"shell","hooks":[{"type":"command","command":{"posix":"first","windows":"first"}}]},
+        {"id":"observe-second","matcher":"shell","hooks":[{"type":"command","command":{"posix":"second","windows":"second"}}]}
+    ]}}"#;
+
+    /// A stored package of two observing hook groups, where installation
+    /// leaves it: what attach, inspection and detach all read.
+    fn hook_package(integration: &OpenCodeIntegration) -> Vec<Resource> {
+        let id = PackageId::from_plugin_name("hook-demo", Path::new("plugin.json")).unwrap();
+        let root = integration.uze_home.plugin_dir(&id);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("plugin.json"),
+            r#"{"name":"hook-demo","version":"1.0.0","description":"Hooks fixture"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("hooks.json"), HOOK_GROUPS).unwrap();
+        uze_core::engine::package_resources_at(&id, &root).unwrap()
+    }
+
+    fn group<'a>(resources: &'a [Resource], id: &str) -> &'a Resource {
+        resources
+            .iter()
+            .find(|resource| resource.resource_name.as_deref() == Some(id))
+            .unwrap_or_else(|| panic!("hook group `{id}` was discovered"))
+    }
+
+    /// Attaches `resource` and records its receipt, as an install does.
+    fn attached(integration: &OpenCodeIntegration, resource: &Resource) -> AttachmentReceipt {
+        let receipt = integration.attach_receipt(resource).unwrap().unwrap();
+        state::record_receipt(&integration.uze_home, receipt.clone()).unwrap();
+        receipt
+    }
+
+    fn document_of(receipt: &AttachmentReceipt) -> PathBuf {
+        let ManagedArtifact::ManagedHookFile { path } = &receipt.artifact else {
+            panic!("an OpenCode hook receipt is a ManagedHookFile");
+        };
+        path.clone()
+    }
+
+    fn set_up(integration: &OpenCodeIntegration) {
+        integration
+            .install(
+                &integration.uze_home,
+                &HarnessDetection {
+                    present: true,
+                    version: None,
+                },
+            )
+            .unwrap();
+    }
+
+    /// The hook document is UZE's while it holds what UZE would write: an
+    /// edit is drift doctor reports, and a path that cannot be read is
+    /// neither absent nor UZE's.
+    #[test]
+    fn a_hook_document_edited_or_unreadable_is_not_matched() {
+        let root = uze_testkit::temp::scratch("opencode-hook-document-drift");
+        let integration = integration(&root);
+        let resources = hook_package(&integration);
+        let receipt = attached(&integration, group(&resources, "observe-first"));
+        let document = document_of(&receipt);
+        assert_eq!(
+            integration.inspect_receipt(&receipt).state,
+            AttachmentState::Matched
+        );
+
+        fs::write(&document, "{ edited by hand }").unwrap();
+        assert_eq!(
+            integration.inspect_receipt(&receipt).state,
+            AttachmentState::Drifted
+        );
+
+        fs::remove_file(&document).unwrap();
+        fs::create_dir(&document).unwrap();
+        assert_eq!(
+            integration.inspect_receipt(&receipt).state,
+            AttachmentState::Blocked
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Removing the last group's document can fail, and then the detach
+    /// fails: a document left behind still runs the package's hooks.
+    // Unix: mode bits are what make the file unreadable or unremovable here.
+    #[cfg(unix)]
+    #[test]
+    fn a_hook_document_that_cannot_be_removed_fails_the_detach() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = uze_testkit::temp::scratch("opencode-hook-document-remove");
+        let integration = integration(&root);
+        let resources = hook_package(&integration);
+        let receipt = attached(&integration, group(&resources, "observe-first"));
+        let document = document_of(&receipt);
+        let directory = document.parent().unwrap().to_path_buf();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o500)).unwrap();
+        // Root ignores the mode, and then the file can be removed after all.
+        if fs::write(directory.join("probe"), "").is_err() {
+            let detached = integration.detach_receipt(&receipt);
+            assert!(
+                matches!(detached, Err(UzeError::Write { .. })),
+                "{detached:?}"
+            );
+            assert!(document.exists());
+        }
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A receipt an earlier release recorded for its bridge, still there,
+    /// takes that bridge out: left, it would run the package's groups
+    /// beside the document.
+    #[test]
+    fn an_earlier_bridge_still_there_is_what_its_receipt_detaches() {
+        let root = uze_testkit::temp::scratch("opencode-hook-legacy-place");
+        let integration = integration(&root);
+        let resources = hook_package(&integration);
+        set_up(&integration);
+        let first = attached(&integration, group(&resources, "observe-first"));
+        attached(&integration, group(&resources, "observe-second"));
+        let document = document_of(&first);
+        let written: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&document).unwrap()).unwrap();
+        let bridge = earlier::hook_bridge_path(integration.config_root(), &first.package_id);
+        fs::write(
+            &bridge,
+            format!(
+                "{}\nconst GROUPS = {};\nexport default {{}};\n",
+                hook_projection::BRIDGE_HEADER,
+                written["groups"]
+            ),
+        )
+        .unwrap();
+        let legacy = AttachmentReceipt {
+            artifact: ManagedArtifact::ManagedHookFile {
+                path: bridge.clone(),
+            },
+            ..first
+        };
+        state::record_receipt(&integration.uze_home, legacy.clone()).unwrap();
+
+        assert_eq!(
+            integration.detach_receipt(&legacy).unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!bridge.exists(), "the earlier bridge is taken out");
+        let left = fs::read_to_string(&document).unwrap();
+        assert!(left.contains("observe-second"), "{left}");
+        assert!(!left.contains("observe-first"), "{left}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Hooks reach OpenCode through UZE's adapter, and what the harness
+    /// declares it can take says so.
+    #[test]
+    fn hooks_are_declared_adaptable_as_their_plan_routes_them() {
+        let root = uze_testkit::temp::scratch("opencode-hook-capabilities");
+        let integration = integration(&root);
+        let resources = hook_package(&integration);
+        assert_eq!(
+            integration
+                .exposure_plan(group(&resources, "observe-first"))
+                .route,
+            uze_core::router::CompatibilityRoute::Adaptable
+        );
+        assert!(
+            integration
+                .capabilities()
+                .adaptable
+                .contains(&CapabilityKind::Hook)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A project's agents reach OpenCode only through UZE's plugin; its
+    /// skills OpenCode reads itself.
+    #[test]
+    fn project_agents_wait_for_uzes_plugin_and_project_skills_do_not() {
+        let root = uze_testkit::temp::scratch("opencode-project-shortfall");
+        let integration = integration(&root);
+        let plugin = runtime_plugin::path(integration.config_root());
+        let agents = AgentsDirectoryResource::Agents;
+        assert_eq!(
+            integration.project_resource_shortfall(agents),
+            Some(SetupShortfall::Missing)
+        );
+        assert_eq!(
+            integration.project_resource_shortfall(AgentsDirectoryResource::Skills),
+            None
+        );
+
+        fs::create_dir_all(plugin.parent().unwrap()).unwrap();
+        fs::write(&plugin, "// the operator's own plugin").unwrap();
+        assert_eq!(
+            integration.project_resource_shortfall(agents),
+            Some(SetupShortfall::Blocked(plugin.clone()))
+        );
+
+        fs::remove_file(&plugin).unwrap();
+        runtime_plugin::ensure(integration.config_root(), &integration.runtime_plugin()).unwrap();
+        assert_eq!(integration.project_resource_shortfall(agents), None);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The context channel is UZE's plugin: unavailable until it is in
+    /// place, and fed a document where the plugin reads it.
+    #[test]
+    fn a_conversations_context_reaches_it_through_uzes_plugin() {
+        let root = uze_testkit::temp::scratch("opencode-context-channel");
+        let integration = integration(&root);
+        assert!(integration.context_channel_unavailable().is_some());
+        runtime_plugin::ensure(integration.config_root(), &integration.runtime_plugin()).unwrap();
+        assert_eq!(integration.context_channel_unavailable(), None);
+
+        let session = uze_core::session::SessionId::parse("ses_1").unwrap();
+        let home = integration.uze_home.clone();
+        integration
+            .deliver_context(
+                &home,
+                &uze_core::integration::AgentContext {
+                    dir: &root.join("agent"),
+                    file: &root.join("agent/context.md"),
+                    text: "facts",
+                    instructions: "",
+                    notes: Some("facts"),
+                    checkout: &root,
+                    link: &root.join("link"),
+                    launch: "l",
+                    session: Some(&session),
+                },
+            )
+            .unwrap();
+        let directory = home.session_context_dir("opencode");
+        let document = directory.join("ses_1.md");
+        assert!(document.is_absolute(), "{}", document.display());
+        assert_eq!(fs::read_to_string(&document).unwrap(), "facts");
+        let named = serde_json::to_string(&directory.to_string_lossy()).unwrap();
+        assert!(
+            integration.runtime_plugin().contains(&named),
+            "the plugin reads the directory the document is written to"
+        );
+
+        integration.withdraw_context(&home, Some(&session));
+        assert!(!document.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn agent_file(root: &Path, name: &str, color: &str) -> PathBuf {
+        let path = root.join(format!("agents/{name}.md"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!("---\ndescription: d\nmode: subagent\ncolor: \"{color}\"\n---\nBody\n"),
+        )
+        .unwrap();
+        path
+    }
+
+    /// OpenCode V2 drops an agent whose color is not `#rrggbb` without a
+    /// word, so doctor says so, and of a valid color says nothing.
+    #[test]
+    fn an_agent_color_that_is_not_rrggbb_is_reported() {
+        let root = uze_testkit::temp::scratch("opencode-agent-color");
+        assert_eq!(
+            opencode_agent_unreadable(&agent_file(&root, "valid", "#a0b1c2")),
+            None
+        );
+        for (name, color) in [
+            ("unmarked", "aa0b1c2"),
+            ("short", "#a0b1c"),
+            ("not-hex", "#zzzzzz"),
+        ] {
+            let finding = opencode_agent_unreadable(&agent_file(&root, name, color));
+            assert!(
+                finding.as_deref().is_some_and(|f| f.contains("`color`")),
+                "{color}: {finding:?}"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn agent_resource(root: &Path, frontmatter: &str) -> Resource {
+        let package = crate::shared::test_support::stored_at(root, "flow");
+        Resource::from_package(
+            package.id.clone(),
+            package.root.clone(),
+            uze_core::capability::Capability {
+                kind: CapabilityKind::Agent,
+                path: root.join("agents/planner.md"),
+                payload: format!(
+                    "---\nname: planner\ndescription: plans\n{frontmatter}---\nBody\n"
+                )
+                .into_bytes(),
+            },
+        )
+    }
+
+    /// A root field OpenCode is not given is named, with where to write it
+    /// for OpenCode; `model` and `tools` the common layer speaks for.
+    #[test]
+    fn a_root_field_not_carried_to_opencode_is_named() {
+        let root = uze_testkit::temp::scratch("opencode-agent-root-fields");
+        let integration = integration(&root);
+        let names_root_loss = |warnings: &[String], field: &str| {
+            warnings.iter().any(|warning| {
+                warning.contains(&format!("`{field}`"))
+                    && warning.contains("not carried to OpenCode")
+                    && warning.contains("harness.opencode")
+            })
+        };
+
+        let colored = integration.check_capability(&agent_resource(&root, "color: red\n"));
+        assert!(
+            names_root_loss(&colored.warnings, "color"),
+            "{:?}",
+            colored.warnings
+        );
+        let modeled = integration.check_capability(&agent_resource(&root, "model: haiku\n"));
+        assert!(
+            !names_root_loss(&modeled.warnings, "model"),
+            "{:?}",
+            modeled.warnings
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_machine_inventory_lists_what_opencodes_own_locations_hold() {
+        let root = uze_testkit::temp::scratch("opencode-machine-inventory");
+        let integration = integration(&root);
+        let skill = integration.config_root().join("skills/review/SKILL.md");
+        fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        fs::write(&skill, "---\nname: review\n---\n").unwrap();
+
+        let found = integration.machine_inventory().unwrap();
+        assert!(
+            found.iter().any(
+                |found| found.kind == uze_core::inventory::ResourceKind::Skill
+                    && found.name == "review"
+            ),
+            "{found:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// What an earlier layout staged for OpenCode and nothing names any
+    /// more goes when packages are republished.
+    #[test]
+    fn republishing_retires_what_an_earlier_layout_left_unnamed() {
+        let root = uze_testkit::temp::scratch("opencode-republish");
+        let integration = integration(&root);
+        let stale = integration
+            .uze_home
+            .generated_attachments_dir("opencode")
+            .join("plugins");
+        fs::create_dir_all(&stale).unwrap();
+
+        integration.republish_packages(&[]).unwrap();
+        assert!(!stale.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// An entry an earlier build linked to a wrapper it generated takes
+    /// that wrapper with it once nothing links to it.
+    // A symbolic link, which Windows lets an ordinary account make only in developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn detaching_an_earlier_skill_link_removes_the_wrapper_it_pointed_at() {
+        use std::os::unix::fs::symlink;
+        let root = uze_testkit::temp::scratch("opencode-earlier-wrapper");
+        let integration = integration(&root);
+        let wrapper = crate::shared::earlier::skill_wrapper_root(&integration.uze_home, "opencode")
+            .join("flow@local")
+            .join("flow:review");
+        fs::create_dir_all(&wrapper).unwrap();
+        fs::write(wrapper.join("SKILL.md"), "---\nname: flow:review\n---\n").unwrap();
+        fs::create_dir_all(&integration.skills_dir).unwrap();
+        let reference = integration.skills_dir.join("flow:review");
+        symlink(&wrapper, &reference).unwrap();
+        let receipt = AttachmentReceipt {
+            package_id: "flow@local".to_owned(),
+            resource_identity: Some("skill:flow:review".to_owned()),
+            integration: "opencode".to_owned(),
+            artifact: ManagedArtifact::SymlinkReference {
+                path: reference,
+                target: wrapper.clone(),
+            },
+        };
+
+        assert_eq!(
+            integration.detach_receipt(&receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!wrapper.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// OpenCode is told the conversation UZE named at every launch, and
+    /// the first turn rides as one word.
+    #[test]
+    fn every_launch_names_the_assigned_conversation_and_the_first_turn_is_one_word() {
+        let root = uze_testkit::temp::scratch("opencode-launch-words");
+        let integration = integration(&root);
+        let session = integration.new_session_id();
+        let named = std::ffi::OsString::from(session.as_str());
+        for words in [
+            integration.start_session_args(&session),
+            integration.resume_session_args(&session),
+        ] {
+            assert!(words.contains(&named), "{words:?}");
+            assert!(words.iter().all(|word| !word.is_empty()), "{words:?}");
+        }
+        let turn = integration.first_turn_args("read your briefing");
+        assert!(
+            turn.contains(&std::ffi::OsString::from("read your briefing")),
+            "{turn:?}"
+        );
+        assert!(turn.iter().all(|word| !word.is_empty()), "{turn:?}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The variables that move OpenCode's configuration and data off the
+    /// directories UZE delivered to are not an override's to set.
+    #[test]
+    fn where_opencode_keeps_its_configuration_and_data_is_managed() {
+        let root = uze_testkit::temp::scratch("opencode-managed-environment");
+        let managed = integration(&root).managed_environment();
+        for variable in ["XDG_CONFIG_HOME", "XDG_DATA_HOME"] {
+            assert!(managed.contains(&variable), "{variable} in {managed:?}");
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A skill is invoked as a mention, the form the Lab types.
+    #[test]
+    fn a_skill_is_invoked_as_a_mention() {
+        let root = uze_testkit::temp::scratch("opencode-invocation");
+        let prefix = integration(&root).invocation_prefix();
+        assert_eq!(format!("{prefix}flow:review"), "@flow:review");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// `worktree_create` makes its checkouts under OpenCode's data
+    /// directory, `~/.local/share/opencode/worktree`.
+    #[test]
+    fn opencodes_own_worktrees_are_under_its_data_directory() {
+        let root = uze_testkit::temp::scratch("opencode-worktrees");
+        assert_eq!(
+            integration(&root).own_worktree_places(),
+            [uze_core::integration::WorktreePlace::Outside(
+                root.join(".local/share/opencode/worktree")
+            )]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A package's `rules/` reaches OpenCode by the project's rules, never
+    /// machine-wide, and inspect says so.
+    #[test]
+    fn a_packages_rules_are_reported_withheld() {
+        let root = uze_testkit::temp::scratch("opencode-withheld");
+        let package_root = root.join("pkg");
+        fs::create_dir_all(package_root.join("rules")).unwrap();
+        let package = crate::shared::test_support::stored_at(&package_root, "flow");
+        let withheld = integration(&root).withheld_paths(&package);
+        assert!(
+            withheld.iter().any(|path| path.path == "rules"),
+            "{withheld:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A skill waits for setup, and then lands in the root OpenCode
+    /// discovers skills in.
+    #[test]
+    fn a_skill_lands_where_opencode_discovers_skills_once_set_up() {
+        let root = uze_testkit::temp::scratch("opencode-skill-plan");
+        let integration = integration(&root);
+        let package_root = root.join("pkg");
+        fs::create_dir_all(package_root.join("skills/commit")).unwrap();
+        fs::write(
+            package_root.join("skills/commit/SKILL.md"),
+            "---\nname: commit\ndescription: commits\n---\nBody\n",
+        )
+        .unwrap();
+        let package = crate::shared::test_support::stored_at(&package_root, "flow");
+        let skill = crate::shared::test_support::skill_resource(&package);
+        assert!(
+            matches!(
+                integration.exposure_plan(&skill).mechanism,
+                ExposureMechanism::Unsupported { .. }
+            ),
+            "before setup"
+        );
+
+        state::record(
+            &integration.uze_home,
+            "opencode",
+            state::IntegrationRecord {
+                version: None,
+                strategy: "test".to_owned(),
+            },
+        )
+        .unwrap();
+        let ExposureMechanism::Managed(ManagedArtifact::GeneratedTree { path, .. }) =
+            integration.exposure_plan(&skill).mechanism
+        else {
+            panic!("a skill is a managed tree once set up");
+        };
+        let discovered = integration.skill_discovery_root().unwrap();
+        assert_eq!(path.parent(), Some(discovered.as_path()), "{path:?}");
+
+        // Only a skill withheld from the model is said to be withheld.
+        let said_withheld =
+            |plan: &ExposurePlan| plan.evidence.contains("opencode/autoinvoke: false");
+        assert!(!said_withheld(&integration.exposure_plan(&skill)));
+        let user_only = Resource {
+            skill_policy: Some(uze_core::capability::skill::SkillInvocationPolicy {
+                model: false,
+                user: true,
+            }),
+            ..skill.clone()
+        };
+        assert!(said_withheld(&integration.exposure_plan(&user_only)));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A stand-in for the installed `opencode`, answering what UZE asks it
+    /// as 2.2.5 does.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    fn installed_harness(root: &Path) -> PathBuf {
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let answers = root.join("answers");
+        fs::create_dir_all(&answers).unwrap();
+        let answer = |name: &str, body: String| {
+            let path = answers.join(name);
+            fs::write(&path, body).unwrap();
+            path.display().to_string()
+        };
+        let stats = answer("stats", r#"{"sessions":7,"subagents":3}"#.to_owned());
+        let sessions = answer(
+            "sessions",
+            serde_json::json!([
+                {"id": "ses_new", "time": {"updated": 2_000_000_u64}},
+                {"id": "ses_old", "time": {"updated": 1_000_u64}},
+            ])
+            .to_string(),
+        );
+        let export = answer(
+            "export",
+            serde_json::json!({"info": {"id": "ses_new"}, "messages": [
+                {"type": "assistant", "time": {"created": 1}, "content": [
+                    {"type": "tool", "name": "github_search", "state": {"status": "completed", "input": {}}},
+                ]},
+            ]})
+            .to_string(),
+        );
+        let listing = answer(
+            "listing",
+            serde_json::json!({"data": [
+                {"id": "ses_new", "location": {"directory": "/work/slot"}, "time": {"created": 200_000_u64}},
+            ]})
+            .to_string(),
+        );
+        let gone = answer(
+            "gone",
+            r#"{"_tag":"SessionNotFoundError","sessionID":"ses_gone"}"#.to_owned(),
+        );
+        let held = answer("held", r#"{"data":{"id":"ses_new"}}"#.to_owned());
+        uze_testkit::process::install_executable(
+            &bin.join("opencode"),
+            format!(
+                "#!/bin/sh\ncase \"$*\" in\n\
+                 'stats --json') cat '{stats}' ;;\n\
+                 'api session.list '*) cat '{sessions}' ;;\n\
+                 'session export ses_new') cat '{export}' ;;\n\
+                 'api GET /api/session') cat '{listing}' ;;\n\
+                 'api GET /api/session/ses_gone') cat '{gone}'; exit 1 ;;\n\
+                 'api GET /api/session/'*) cat '{held}' ;;\n\
+                 *) exit 2 ;;\nesac\n"
+            )
+            .as_bytes(),
+        );
+        bin
+    }
+
+    /// Conversations, session counts and uses are what the installed
+    /// harness answers, found on `PATH`.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn what_the_installed_harness_answers_reaches_the_workspace_and_the_overview() {
+        let root = uze_testkit::temp::scratch("opencode-installed-answers");
+        let integration = integration(&root);
+        let bin = installed_harness(&root);
+        // A server and a skill: only a server can own a tool.
+        fs::create_dir_all(integration.config_root()).unwrap();
+        fs::write(
+            &integration.config_path,
+            r#"{"mcp":{"servers":{"github":{"type":"local","command":["gh-mcp"]}}}}"#,
+        )
+        .unwrap();
+        let skill = integration.config_root().join("skills/review/SKILL.md");
+        fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        fs::write(&skill, "---\nname: review\n---\n").unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("PATH", uze_testkit::process::path_with(&[&bin]));
+
+        assert_eq!(
+            integration.session_counts().map(|counts| counts.total),
+            Some(7)
+        );
+        let records = integration
+            .usage_records(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000))
+            .unwrap();
+        assert_eq!(
+            records.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["ses_new"]
+        );
+        let read = integration
+            .read_usage(&records[0], uze_core::usage::Resume::Start)
+            .unwrap();
+        let credited: Vec<_> = read
+            .uses
+            .iter()
+            .map(|found| (found.kind, found.target.clone()))
+            .collect();
+        assert_eq!(
+            credited,
+            [(
+                uze_core::inventory::ResourceKind::Mcp,
+                uze_core::usage::Target::Name("github".to_owned())
+            )]
+        );
+        assert_eq!(
+            integration.observe_session(&uze_core::integration::ObservationContext {
+                cwd: Path::new("/work/slot"),
+                since_unix: 50,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            }),
+            Some(uze_core::session::SessionId::parse("ses_new").unwrap())
+        );
+        let gone = uze_core::session::SessionId::parse("ses_gone").unwrap();
+        let held = uze_core::session::SessionId::parse("ses_new").unwrap();
+        assert!(!integration.session_exists(&gone, &root));
+        assert!(integration.session_exists(&held, &root));
+        drop(env);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// With no harness to ask, a recorded conversation is kept: an
+    /// uninstalled harness is not evidence that it is gone.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn an_uninstalled_harness_keeps_every_recorded_conversation() {
+        let root = uze_testkit::temp::scratch("opencode-uninstalled");
+        let integration = integration(&root);
+        let empty = root.join("empty");
+        fs::create_dir_all(&empty).unwrap();
+        let mut env = uze_testkit::env::scope();
+        env.set("PATH", &empty);
+
+        let session = uze_core::session::SessionId::parse("ses_x").unwrap();
+        assert!(integration.session_exists(&session, &root));
+        assert_eq!(integration.session_counts(), None);
+        drop(env);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Detection may resolve either name OpenCode installs as, and each is
+    /// a name the detection cache watches.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn every_name_opencode_is_detected_as_is_a_detection_candidate() {
+        let root = uze_testkit::temp::scratch("opencode-detection-candidates");
+        let integration = integration(&root);
+        for name in ["opencode", "opencode2"] {
+            let bin = root.join(format!("bin-{name}"));
+            fs::create_dir_all(&bin).unwrap();
+            uze_testkit::process::install_executable(
+                &bin.join(name),
+                format!("#!/bin/sh\necho '{name} v2.2.5'\n").as_bytes(),
+            );
+            let mut env = uze_testkit::env::scope();
+            env.set("PATH", uze_testkit::process::path_with(&[&bin]));
+            assert!(integration.detect().present, "{name} is detected");
+            drop(env);
+            assert!(
+                integration.detection_program_candidates().contains(&name),
+                "{name}"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
 }

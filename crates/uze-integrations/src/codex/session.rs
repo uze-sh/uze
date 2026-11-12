@@ -263,7 +263,12 @@ mod tests {
     #[test]
     fn a_conversation_from_before_the_launch_is_never_adopted() {
         let root = scratch("codex-session-previous");
-        rollout(&root, "previous-tenant", "/work/slot", 100);
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000001",
+            "/work/slot",
+            100,
+        );
 
         assert_eq!(
             observe(
@@ -277,6 +282,67 @@ mod tests {
             ),
             None
         );
+    }
+
+    /// A rollout filed in the launch's own second belongs to that launch:
+    /// the floor is the second the launch began, not the one after it.
+    #[test]
+    fn a_conversation_filed_in_the_launchs_own_second_is_adopted() {
+        let root = scratch("codex-session-same-second");
+        rollout(
+            &root,
+            "019a0000-0000-7000-8000-000000000001",
+            "/work/slot",
+            500,
+        );
+
+        assert_eq!(
+            observe(
+                &root,
+                &ObservationContext {
+                    cwd: Path::new("/work/slot"),
+                    since_unix: 500,
+                    preceded_by: None,
+                    claimed_elsewhere: &[],
+                },
+            ),
+            Some(SessionId::parse("019a0000-0000-7000-8000-000000000001").unwrap())
+        );
+    }
+
+    #[test]
+    fn the_newest_conversation_wins_wherever_the_directory_lists_it() {
+        let ids = [
+            "019a0000-0000-7000-8000-00000000000a",
+            "019a0000-0000-7000-8000-00000000000b",
+            "019a0000-0000-7000-8000-00000000000c",
+        ];
+        for newest in 0..ids.len() {
+            let root = scratch(&format!("codex-session-order-{newest}"));
+            for (position, id) in ids.iter().enumerate() {
+                let at = if position == newest {
+                    300
+                } else {
+                    100 + position as u64
+                };
+                rollout(&root, id, "/work/slot", at);
+            }
+
+            assert_eq!(
+                observe(
+                    &root,
+                    &ObservationContext {
+                        cwd: Path::new("/work/slot"),
+                        since_unix: 50,
+                        preceded_by: None,
+                        claimed_elsewhere: &[],
+                    },
+                ),
+                Some(SessionId::parse(ids[newest]).unwrap()),
+                "the newest is {}",
+                ids[newest]
+            );
+        }
     }
 
     #[test]

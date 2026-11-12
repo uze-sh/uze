@@ -45,6 +45,8 @@ mod plugin;
 mod runtime;
 mod session;
 mod skills;
+#[cfg(test)]
+mod tests;
 mod usage;
 
 pub(crate) use hooks::{HOOKS, RULES};
