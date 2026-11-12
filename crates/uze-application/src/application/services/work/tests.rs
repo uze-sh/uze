@@ -618,3 +618,27 @@ fn a_split_is_refused_once_the_project_has_every_checkout_it_allows() {
         "the agent's own checkout is the only one the project allows"
     );
 }
+
+/// Another agent's work in the same project is that agent's to deliver,
+/// never a reason to hold this one back.
+#[test]
+fn another_agents_work_does_not_hold_an_agents_delivery_back() {
+    let world = World::new("work-delivery-other-agent");
+    std::fs::write(
+        world.root().join("agents.yaml"),
+        "workspace:\n  delivery: merge\n",
+    )
+    .unwrap();
+    let agent = world.agent();
+    world.commit(&agent.1, "feature.rs", "fn feature() {}\n");
+    let other = world.agent();
+    world.commit(&other.1, "other.rs", "fn other() {}\n");
+
+    let report = world
+        .app
+        .workspace()
+        .deliver_task(world.root(), &agent.0)
+        .unwrap();
+
+    assert_eq!(report.outcome, DeliveryOutcome::Merged, "{report:?}");
+}
