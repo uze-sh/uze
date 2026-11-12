@@ -435,4 +435,15 @@ mod tests {
             assert!(!entry.is_leftover(), "{finding:?}");
         }
     }
+
+    /// A declared directory nothing else is declared under is the owner's
+    /// own: the walk does not look inside it.
+    #[test]
+    fn a_declared_directory_holding_nothing_declared_is_not_walked() {
+        let (home, root) = home("schema-leaf-directory");
+        std::fs::create_dir_all(home.themes_dir()).unwrap();
+        std::fs::write(home.themes_dir().join("mine.json"), "{}").unwrap();
+        assert_eq!(compare(&home, false), []);
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

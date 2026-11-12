@@ -224,7 +224,7 @@ mod tests {
     use super::*;
 
     /// A collector registered from outside, as the binary registers its
-    /// own: it claims nothing, so it disturbs no other test's pass.
+    /// journals': it removes nothing, so it disturbs no other test's pass.
     struct Outside;
 
     impl Collectable for Outside {
@@ -232,7 +232,7 @@ mod tests {
             "outside collector of the collection tests"
         }
         fn roots(&self) -> &'static [&'static str] {
-            &[]
+            &["logs_dir"]
         }
         fn collect(&self, _home: &UzeHome) -> Collected {
             Collected::removed(self.name(), Vec::new())
@@ -251,7 +251,7 @@ mod tests {
             .filter(|collector| collector.name() == Outside.name())
             .collect();
         assert_eq!(outside.len(), 1, "registered again, it replaces itself");
-        assert!(outside[0].roots().is_empty());
+        assert_eq!(outside[0].roots(), ["logs_dir"]);
         assert_eq!(
             outside[0].collect(&app.home).collector,
             Outside.name(),

@@ -1667,14 +1667,50 @@ mod removal_tests {
         fs::remove_dir_all(&home_root).unwrap();
     }
 
-    /// Removing a marketplace takes its own plugins with it and leaves
-    /// another marketplace's alone.
+    /// A harness whose derived view is rebuilt on every republish, counted.
+    struct Republishing(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl uze_core::integration::IntegrationPort for Republishing {
+        fn id(&self) -> &'static str {
+            "republishing"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn republish_packages(
+            &self,
+            _packages: &[uze_core::StoredPackage],
+        ) -> uze_core::Result<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// Removing a marketplace takes its own plugins with it, leaves
+    /// another marketplace's alone, and rebuilds the views that listed
+    /// what went.
     #[test]
     fn removing_a_marketplace_takes_only_its_own_plugins() {
         let home_root = uze_testkit::temp::scratch("market-remove-own");
         let (repository, _first) = marketplace("market-remove-own-src");
         let other = plugin_repository("market-remove-own-other", "other");
-        let app = UzeApplication::new(UzeHome::at(home_root.join("uze")), Vec::new());
+        let republished = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let app = UzeApplication::new(
+            UzeHome::at(home_root.join("uze")),
+            vec![Box::new(Republishing(republished.clone()))],
+        );
         for source in [repository.root(), other.as_path()] {
             app.marketplace().add(&source.to_string_lossy()).unwrap();
         }
@@ -1684,8 +1720,13 @@ mod removal_tests {
                 .unwrap();
         }
 
+        let before = republished.load(std::sync::atomic::Ordering::SeqCst);
         let report = app.marketplace().remove("mkt").unwrap();
         assert_eq!(report.removed, ["flow@mkt"]);
+        assert!(
+            republished.load(std::sync::atomic::Ordering::SeqCst) > before,
+            "the views were rebuilt without what went"
+        );
         assert!(report.record_removed);
         let left: Vec<String> = app
             .plugins()
@@ -1724,6 +1765,25 @@ mod removal_tests {
                 .checkout
                 .map(|path| uze_platform::path::canonical(&path).unwrap()),
             Some(uze_platform::path::canonical(&plain).unwrap())
+        );
+
+        let travelling = plugin_repository("market-register-travelling", "travelling");
+        uze_testkit::git::isolated_git_in(
+            &travelling,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.com/acme/travelling",
+            ],
+        );
+        let registered = app
+            .marketplace()
+            .register(&travelling.to_string_lossy())
+            .unwrap();
+        assert!(
+            !registered.resolves_here_only,
+            "a checkout with an origin resolves wherever the origin does"
         );
 
         let local = plugin_repository("market-register-local", "local");
