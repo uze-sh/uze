@@ -1042,6 +1042,74 @@ mod tests {
         fs::remove_dir_all(&base).ok();
     }
 
+    /// A harness whose skills are discovered in `root`.
+    struct Discovering {
+        root: std::path::PathBuf,
+    }
+
+    impl IntegrationPort for Discovering {
+        fn id(&self) -> &'static str {
+            "discovering"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
+            Some(self.root.clone())
+        }
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in
+    // developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_reference_into_the_home_at_something_gone_is_dangling_unless_a_receipt_claims_it() {
+        let base = uze_testkit::temp::scratch("doctor-dangling");
+        let home = UzeHome::at(base.join("home"));
+        let skills = base.join("skills");
+        fs::create_dir_all(&skills).unwrap();
+        fs::create_dir_all(home.root()).unwrap();
+        let app = UzeApplication::new(
+            home.clone(),
+            vec![Box::new(Discovering {
+                root: skills.clone(),
+            })],
+        );
+        let stale = skills.join("stale");
+        std::os::unix::fs::symlink(home.root().join("gone"), &stale).unwrap();
+
+        let found = app.health().dangling_references();
+        assert_eq!(
+            found
+                .iter()
+                .map(|reference| reference.path.clone())
+                .collect::<Vec<_>>(),
+            vec![stale.clone()]
+        );
+
+        state::record_receipt(
+            &home,
+            AttachmentReceipt {
+                package_id: "flow@local".to_owned(),
+                resource_identity: None,
+                integration: "discovering".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path: stale.clone(),
+                    target: home.root().join("gone"),
+                },
+            },
+        )
+        .unwrap();
+        assert!(
+            app.health().dangling_references().is_empty(),
+            "a reference a receipt claims is the receipt's to judge"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn matched_inspection_is_cached_across_instances() {
         let base = uze_testkit::temp::scratch("fast-vs-deep");

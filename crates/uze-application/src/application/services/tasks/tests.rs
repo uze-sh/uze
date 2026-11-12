@@ -4440,3 +4440,43 @@ mod facade_tests {
         );
     }
 }
+
+mod root_standing_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    /// An agent in the root reads the branch the root is on and how far it
+    /// is ahead of the target.
+    #[test]
+    fn an_agent_in_the_root_reads_the_roots_branch_and_its_commits_ahead() {
+        let repository = uze_testkit::git::Repository::new("root-standing");
+        let root = repository.root().canonical().unwrap();
+        let target = repository
+            .git(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .trim()
+            .to_owned();
+        std::fs::write(
+            root.join("agents.yaml"),
+            format!("workspace:\n  target: {target}\n"),
+        )
+        .unwrap();
+        repository.git(&["switch", "--quiet", "-c", "feature"]);
+        repository.commit_file("feature.txt", "feature\n");
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("root-standing-home")),
+            Vec::new(),
+        );
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::InPlace), "fixture", &[])
+            .unwrap();
+
+        let listed = app.workspace().tasks(&root);
+        let view = listed
+            .iter()
+            .find(|view| view.id == placed.placement.agent().as_str())
+            .expect("the agent is listed");
+        assert_eq!(view.branch, "feature");
+        assert_eq!(view.ahead, 1);
+    }
+}
