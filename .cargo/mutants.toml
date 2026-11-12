@@ -292,4 +292,9 @@ exclude_re = [
   'uze-application/src/application/extensions/runner\.rs.*replace \+ with [*-] in ExtensionRunner::media$',
   # How long a listing is kept changes what a question costs, never its answer.
   'uze-application/src/application/extensions/runner\.rs.*replace < with (<=|==) in ExtensionRunner::installed$',
+  # uze-application environment
+  # The prefetch only warms mirrors: each read after it fetches what it lacks itself.
+  'uze-application/src/application/project_environment\.rs.*replace Project<._>::prefetch_install_sources with \(\)$',
+  # A collector's name labels the report; any non-empty label behaves the same.
+  'uze-application/src/application/rules_engine\.rs.*replace <impl super::Collectable for RuleSessions>::name -> &.static str with "xyzzy"$',
 ]
