@@ -1646,6 +1646,181 @@ fn an_update_keeps_a_plugin_the_person_switched_off_switched_off() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// The person's own choice to keep a plugin on survives an update too: only
+/// a harness where it was switched off is switched off again.
+// Uses the linking stand-in integration above, Unix only.
+#[cfg(unix)]
+#[test]
+fn an_update_leaves_a_plugin_the_person_kept_on_switched_on() {
+    let root = uze_testkit::temp::scratch("update-kept-on");
+    let attached = root.join("attached");
+    fs::create_dir_all(&attached).unwrap();
+    let off = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let switched_off_again = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        UzeHome::at(root.join("home")),
+        vec![Box::new(SwitchedOffIntegration {
+            envelope: EnvelopingIntegration {
+                root: attached.clone(),
+            },
+            off: off.clone(),
+            switched_off_again: switched_off_again.clone(),
+        })],
+    );
+    let added = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+
+    let updated = app
+        .plugins()
+        .update(&added.plugin.id, &uze_core::trust::AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(updated, UpdatePluginReport::Updated { .. }),
+        "{updated:?}"
+    );
+    assert_eq!(switched_off_again.load(Ordering::SeqCst), 0);
+    assert!(!off.load(Ordering::SeqCst));
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Counts every time the operator is asked, and grants.
+#[derive(Default)]
+struct CountingAuthority {
+    asked: AtomicUsize,
+}
+
+impl uze_core::trust::TrustAuthority for CountingAuthority {
+    fn authorize(&self, _request: &uze_core::trust::TrustRequest) -> uze_core::trust::TrustOutcome {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        uze_core::trust::TrustOutcome::Granted
+    }
+}
+
+/// A revision that runs exactly what the installed one already ran asks
+/// nobody again, even from a source that crosses the trust boundary.
+#[test]
+fn replacing_a_plugin_with_bytes_that_run_nothing_new_asks_no_one() {
+    let root = uze_testkit::temp::scratch("replace-nothing-new");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let added = app
+        .plugins()
+        .add(
+            uze_core::PackageSource::local(multi_mcp_fixture()),
+            &uze_core::trust::AlwaysTrust,
+        )
+        .unwrap();
+    let same_bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+    let authority = CountingAuthority::default();
+
+    app.plugins()
+        .replace_with(
+            &added.plugin.id,
+            same_bytes,
+            &authority,
+            uze_core::trust::SourceOrigin::Project,
+        )
+        .unwrap();
+
+    assert_eq!(authority.asked.load(Ordering::SeqCst), 0);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The same bytes from a declared source, installed fresh, are asked about.
+#[test]
+fn installing_a_plugin_that_runs_something_from_a_declared_source_asks_once() {
+    let root = uze_testkit::temp::scratch("install-declared-asks");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+    let authority = CountingAuthority::default();
+
+    app.plugins()
+        .install_materialized(
+            bytes,
+            "local",
+            None,
+            &authority,
+            &uze_core::naming::NoNameCollisionAuthority,
+            uze_core::trust::SourceOrigin::Project,
+        )
+        .unwrap();
+
+    assert_eq!(authority.asked.load(Ordering::SeqCst), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// What the operator is shown for a server whose command names no file of
+/// the package lists no code for it.
+#[test]
+fn the_detail_of_a_trust_question_names_code_only_where_a_command_names_some() {
+    struct Unavailable;
+    impl uze_core::trust::TrustAuthority for Unavailable {
+        fn authorize(
+            &self,
+            _request: &uze_core::trust::TrustRequest,
+        ) -> uze_core::trust::TrustOutcome {
+            uze_core::trust::TrustOutcome::Unavailable
+        }
+    }
+    let root = uze_testkit::temp::scratch("trust-detail-code");
+    let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+    let bytes =
+        uze_core::acquisition::acquire(&uze_core::PackageSource::local(multi_mcp_fixture()))
+            .unwrap();
+
+    let refused = app.plugins().install_materialized(
+        bytes,
+        "local",
+        None,
+        &Unavailable,
+        &uze_core::naming::NoNameCollisionAuthority,
+        uze_core::trust::SourceOrigin::Project,
+    );
+
+    let Err(UzeError::TrustRequired { detail, .. }) = &refused else {
+        panic!("not a trust question: {refused:?}");
+    };
+    assert!(detail.contains("/bin/github-mcp"), "{detail}");
+    assert!(!detail.contains("[code"), "{detail}");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_commit_is_read_by_its_first_twelve_characters() {
+    assert_eq!(
+        super::lifecycle::update::short_commit("0123456789abcdef0123"),
+        "0123456789ab"
+    );
+    assert_eq!(super::lifecycle::update::short_commit("abc"), "abc");
+}
+
+#[test]
+fn opening_the_workspace_applies_a_pending_official_update() {
+    let root = uze_testkit::temp::scratch("catch-up-applies");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    app.ensure_default_plugins().unwrap();
+    let package = app.package_by_name("uze").unwrap();
+    let manifest = package.root.join("plugin.json");
+    let pristine = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, "{\"name\":\"uze\",\"stale\":true}").unwrap();
+
+    let outcomes = app.plugins().catch_up();
+
+    assert_eq!(outcomes.len(), 1, "{outcomes:?}");
+    assert!(outcomes[0].applied, "{outcomes:?}");
+    assert_eq!(fs::read_to_string(&manifest).unwrap(), pristine);
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn remove_is_idempotent_without_claiming_history_for_absent_state() {
     let root = uze_testkit::temp::scratch("remove-twice");

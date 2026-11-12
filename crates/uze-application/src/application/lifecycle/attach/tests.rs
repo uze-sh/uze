@@ -1,6 +1,6 @@
-//! Delivery to one harness against a scripted integration: what is
-//! attached, what an earlier build left is retired, what is held back,
-//! and which name each capability is given.
+//! Delivering a package against scripted harnesses: what is attached,
+//! what an earlier build or a failed attempt left is taken back, what is
+//! held back, and which name each capability is given.
 
 use std::{
     collections::BTreeMap,
@@ -34,6 +34,11 @@ struct Script {
     declines: bool,
     /// Refuses every capability's name as held by something else.
     name_held: bool,
+    /// Attaches each capability as a link of its own name under this
+    /// directory, offering that name alone.
+    attaches_each_at: Option<PathBuf>,
+    /// Capabilities whose delivery fails for a reason about the machine.
+    fails_on: Vec<String>,
     package_plan: Option<PackageExposurePlan>,
     /// Selectors of package receipts from a route this build no longer
     /// takes.
@@ -92,6 +97,9 @@ impl IntegrationPort for Scripted {
     }
 
     fn exposure_name_candidates(&self, resource: &Resource) -> Vec<String> {
+        if self.script().attaches_each_at.is_some() {
+            return vec![resource.name()];
+        }
         let candidates = self.script().candidates.clone();
         if candidates.is_empty() {
             uze_core::integration::default_exposure_name_candidates(resource)
@@ -104,6 +112,17 @@ impl IntegrationPort for Scripted {
         let script = self.script();
         if script.name_held {
             return Err(UzeError::ManagedEntryConflict(PathBuf::from("held")));
+        }
+        if script.fails_on.contains(&resource.name()) {
+            return Err(UzeError::ExposureUnavailable("the disk is full".to_owned()));
+        }
+        if let Some(dir) = &script.attaches_each_at {
+            return Ok(Some(AttachmentReceipt {
+                package_id: resource.package_id.as_str().to_owned(),
+                resource_identity: Some(resource.identity()),
+                integration: self.id.to_owned(),
+                artifact: linked(dir.join(resource.name())),
+            }));
         }
         let Some(artifact) = script.plan.clone().filter(|_| !script.declines) else {
             return Ok(None);
@@ -233,23 +252,19 @@ struct Machine {
 
 impl Machine {
     fn new(label: &str, harnesses: &[&'static str]) -> Self {
+        Self::holding(label, crate::application::tests::fixture(), harnesses)
+    }
+
+    /// The package at `source`, installed before any harness was known.
+    fn holding(label: &str, source: PathBuf, harnesses: &[&'static str]) -> Self {
         let root = uze_testkit::temp::scratch(label);
         let home = UzeHome::at(root.join("uze"));
         let installer = UzeApplication::new(home.clone(), Vec::new());
-        installer
+        let added = installer
             .plugins()
-            .add(
-                PackageSource::local(crate::application::tests::fixture()),
-                &trust::AlwaysTrust,
-            )
+            .add(PackageSource::local(source), &trust::AlwaysTrust)
             .unwrap();
-        let package = installer
-            .store
-            .packages()
-            .unwrap()
-            .into_iter()
-            .find(|package| package.id.plugin_name() == "uze-agent-skill-conformance")
-            .unwrap();
+        let package = installer.package_by_name(&added.plugin.id).unwrap();
         let scripts: Vec<Arc<Mutex<Script>>> = harnesses
             .iter()
             .map(|_| Arc::new(Mutex::new(Script::default())))
@@ -284,6 +299,13 @@ impl Machine {
 
     fn asked(&self, at: usize) -> Vec<String> {
         self.script(at).asked.clone()
+    }
+
+    fn detached(&self, at: usize) -> Vec<String> {
+        self.asked(at)
+            .into_iter()
+            .filter(|asked| asked.starts_with("detach"))
+            .collect()
     }
 
     fn resource(&self) -> Resource {
@@ -344,6 +366,17 @@ impl Machine {
             provided_resource_identities: [identity].into_iter().collect(),
             evidence: "scripted".to_owned(),
         });
+    }
+
+    fn resources(&self) -> Vec<Resource> {
+        uze_core::engine::package_resources(&self.package).unwrap()
+    }
+
+    fn install_again(&self) -> Result<AddPluginReport> {
+        self.app.plugins().add(
+            self.package.provenance.requested.clone(),
+            &trust::AlwaysTrust,
+        )
     }
 
     fn skills(&self) -> PathBuf {
@@ -1260,4 +1293,116 @@ fn the_plan_names_a_capability_delivered_on_its_own() {
         planned.capabilities[0].exposed_name.as_deref(),
         Some("review")
     );
+}
+
+/// Two servers, the second of which `harness` cannot deliver.
+fn fails_on_the_second_server(machine: &Machine, at: usize, dir: &str) -> Vec<Resource> {
+    let servers = machine.resources();
+    let mut script = machine.script(at);
+    script.attaches_each_at = Some(machine.root.join(dir));
+    script.fails_on = vec![servers[1].name()];
+    servers
+}
+
+fn delivered_at(
+    machine: &Machine,
+    integration: &str,
+    dir: &str,
+    server: &Resource,
+) -> AttachmentReceipt {
+    AttachmentReceipt {
+        package_id: machine.package.id.as_str().to_owned(),
+        resource_identity: Some(server.identity()),
+        integration: integration.to_owned(),
+        artifact: linked(machine.root.join(dir).join(server.name())),
+    }
+}
+
+#[test]
+fn what_a_failed_attempt_attached_is_taken_back_whatever_another_harness_held() {
+    let machine = Machine::holding(
+        "install-take-back-attempt",
+        crate::application::tests::multi_mcp_fixture(),
+        &["alpha", "beta"],
+    );
+    let servers = fails_on_the_second_server(&machine, 0, "alpha");
+    machine.script(1).attaches_each_at = Some(machine.root.join("beta"));
+    for server in &servers {
+        machine.deliver(delivered_at(&machine, "beta", "beta", server));
+    }
+    let attempted = delivered_at(&machine, "alpha", "alpha", &servers[0]);
+
+    machine.install_again().unwrap();
+
+    assert_eq!(machine.detached(0), vec![detach(&attempted.artifact)]);
+    let receipts = machine.receipts();
+    assert!(!receipts.contains(&attempted), "{receipts:?}");
+    for server in &servers {
+        assert!(receipts.contains(&delivered_at(&machine, "beta", "beta", server)));
+    }
+}
+
+#[test]
+fn a_failed_attempt_leaves_what_the_harness_held_before_it() {
+    let machine = Machine::holding(
+        "install-take-back-held",
+        crate::application::tests::multi_mcp_fixture(),
+        &["alpha"],
+    );
+    let servers = fails_on_the_second_server(&machine, 0, "alpha");
+    let held = machine.deliver(delivered_at(&machine, "alpha", "alpha", &servers[0]));
+
+    let failed = machine.install_again();
+
+    assert!(
+        matches!(failed, Err(UzeError::DeliveryFailed(_))),
+        "{failed:?}"
+    );
+    assert!(machine.detached(0).is_empty(), "{:?}", machine.asked(0));
+    assert!(machine.receipts().contains(&held));
+}
+
+#[test]
+fn a_view_that_failed_to_publish_is_named_as_why_its_harness_went_capability_by_capability() {
+    let machine = Machine::new("install-route-unpublished", &["alpha", "beta"]);
+    machine.script(0).republish_fails = true;
+
+    let report = machine.install_again().unwrap();
+
+    let alpha = report
+        .deliveries
+        .iter()
+        .find(|delivery| delivery.integration == "alpha")
+        .unwrap();
+    let HarnessDeliveryOutcome::Delivered {
+        route: DeliveryRoute::CapabilityByCapability { reason },
+        ..
+    } = &alpha.outcome
+    else {
+        panic!(
+            "not delivered capability by capability: {:?}",
+            alpha.outcome
+        );
+    };
+    assert!(reason.contains("view refused"), "{reason}");
+}
+
+#[test]
+fn removing_a_plugin_detaches_what_a_harness_holds_through_that_harness() {
+    let machine = Machine::new("remove-detaches", &["alpha"]);
+    let held = machine
+        .deliver(machine.capability_receipt("alpha", linked(machine.skills().join("review"))));
+
+    let removed = machine
+        .app
+        .plugins()
+        .remove(machine.package.id.as_str())
+        .unwrap();
+
+    assert!(
+        matches!(removed, RemovePluginReport::Removed { .. }),
+        "{removed:?}"
+    );
+    assert_eq!(machine.detached(0), vec![detach(&held.artifact)]);
+    assert!(machine.receipts().is_empty());
 }
