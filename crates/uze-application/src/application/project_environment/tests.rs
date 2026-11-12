@@ -1326,3 +1326,94 @@ fn a_plan_names_a_bridge_left_in_a_harnesss_file_and_not_one_edited_by_hand() {
     let edited = app.project().plan(&world.project).unwrap();
     assert!(edited.stale_projection.is_none(), "{edited:?}");
 }
+
+#[test]
+fn a_linked_marketplace_is_followed_unpinned_and_its_pin_comes_back_after_unlink() {
+    let world = World::new("project-linked");
+    let app = world.registered("home");
+    world.add(&app);
+    let locked = world.lock().unwrap();
+    app.marketplace().link(MARKET, &world.market).unwrap();
+
+    let unchanged = app
+        .project()
+        .update(&world.project, None, false, &AlwaysTrust)
+        .unwrap();
+    assert!(
+        matches!(unchanged.outcomes[..], [UpdateOutcome::Held { .. }]),
+        "a working copy pins nothing: {:?}",
+        unchanged.outcomes
+    );
+
+    fs::write(
+        world
+            .market
+            .join(PLUGIN)
+            .join("skills")
+            .join("flow")
+            .join("SKILL.md"),
+        "---\nname: flow\ndescription: The flow.\n---\nEdited, never committed\n",
+    )
+    .unwrap();
+    let edited = app
+        .project()
+        .update(&world.project, None, false, &AlwaysTrust)
+        .unwrap();
+    match &edited.outcomes[..] {
+        [UpdateOutcome::FollowedLink { linked_source, .. }] => assert_eq!(
+            uze_platform::path::canonical(linked_source).unwrap(),
+            uze_platform::path::canonical(&world.market).unwrap()
+        ),
+        other => panic!("expected FollowedLink, got {other:?}"),
+    }
+    assert_eq!(world.lock().unwrap(), locked, "nothing was pinned");
+
+    assert!(app.marketplace().unlink(MARKET).unwrap());
+    let restored = app.project().install(&world.project, &AlwaysTrust).unwrap();
+    assert!(
+        matches!(&restored, InstallReport::Installed { plugins, .. } if plugins == &[PLUGIN]),
+        "the commit pinned before the link is put back: {restored:?}"
+    );
+}
+
+#[test]
+fn a_machine_whose_built_in_bytes_are_not_this_uzes_is_brought_to_them() {
+    let world = World::new("project-built-in-replaced");
+    let app = world.machine("home");
+    world.add_built_in(&app);
+    let stored = app
+        .plugins()
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|plugin| plugin.id == "workspace@uze")
+        .expect("the built-in plugin is installed")
+        .store_path;
+    let manifest = stored.join("plugin.json");
+    let original = fs::read(&manifest).unwrap();
+    let mut permissions = fs::metadata(&manifest).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    fs::set_permissions(&manifest, permissions).unwrap();
+    fs::write(
+        &manifest,
+        b"{\"name\": \"workspace\", \"description\": \"another build\"}",
+    )
+    .unwrap();
+
+    let report = app.project().install(&world.project, &AlwaysTrust).unwrap();
+
+    assert!(
+        matches!(&report, InstallReport::Installed { plugins, .. } if plugins == &["workspace"]),
+        "{report:?}"
+    );
+    let now = app
+        .plugins()
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|plugin| plugin.id == "workspace@uze")
+        .unwrap()
+        .store_path;
+    assert_eq!(fs::read(now.join("plugin.json")).unwrap(), original);
+}
