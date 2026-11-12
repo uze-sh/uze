@@ -1749,6 +1749,9 @@ mod tests {
         assert_eq!(plan.provisioned, vec!["Alpha".to_owned()]);
     }
 
+    // Unix reads a link's target back as it was written; a Windows junction
+    // reads back in its verbatim form, which this comparison does not model.
+    #[cfg(unix)]
     #[test]
     fn a_project_is_listed_by_the_links_it_holds_into_the_home() {
         let machine = Machine::new("uninstall-projects", &[]);
