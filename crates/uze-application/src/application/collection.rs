@@ -216,3 +216,137 @@ fn tier_bytes(home: &UzeHome, tier: Tier) -> u64 {
         .map(|path| super::services::disk::measure(&path, &[]).0)
         .sum()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    /// A collector registered from outside, as the binary registers its
+    /// own: it claims nothing, so it disturbs no other test's pass.
+    struct Outside;
+
+    impl Collectable for Outside {
+        fn name(&self) -> &'static str {
+            "outside collector of the collection tests"
+        }
+        fn roots(&self) -> &'static [&'static str] {
+            &[]
+        }
+        fn collect(&self, _home: &UzeHome) -> Collected {
+            Collected::removed(self.name(), Vec::new())
+        }
+    }
+
+    #[test]
+    fn a_registered_collector_runs_with_the_applications_own_once() {
+        register_collector(Arc::new(Outside));
+        register_collector(Arc::new(Outside));
+        let root = uze_testkit::temp::scratch("collection-registered");
+        let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+        let collectors = app.collectors();
+        let outside: Vec<_> = collectors
+            .iter()
+            .filter(|collector| collector.name() == Outside.name())
+            .collect();
+        assert_eq!(outside.len(), 1, "registered again, it replaces itself");
+        assert!(outside[0].roots().is_empty());
+        assert_eq!(
+            outside[0].collect(&app.home).collector,
+            Outside.name(),
+            "its own pass answers"
+        );
+        assert!(
+            collectors.len() > 1,
+            "the application's own collectors run too"
+        );
+
+        let collected = app.health().collect();
+        let names: Vec<&str> = collected.iter().map(|each| each.collector).collect();
+        let expected: Vec<&str> = collectors.iter().map(|each| each.name()).collect();
+        assert_eq!(names, expected, "every collector answers, once, in order");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The crate's half of `every_disposable_root_has_one_collector`: the
+    /// application's own collectors answer for every disposable path but
+    /// the log journals, which only the binary writes and collects, and
+    /// claim nothing else.
+    #[test]
+    fn the_applications_collectors_answer_for_every_disposable_path() {
+        let root = uze_testkit::temp::scratch("collection-own");
+        let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+        let mut claimed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for collector in app.own_collectors() {
+            for path in collector.roots() {
+                claimed.entry(path).or_default().push(collector.name());
+            }
+        }
+        let uncollected: Vec<&str> = UzeHome::owned_paths()
+            .iter()
+            .filter(|owned| owned.disposable && owned.name != "logs_dir")
+            .filter(|owned| !claimed.contains_key(owned.name))
+            .map(|owned| owned.name)
+            .collect();
+        assert!(uncollected.is_empty(), "unclaimed: {uncollected:?}");
+        let twice: Vec<_> = claimed.iter().filter(|(_, by)| by.len() > 1).collect();
+        assert!(twice.is_empty(), "claimed twice: {twice:?}");
+        let not_disposable: Vec<&&str> = claimed
+            .keys()
+            .filter(|name| !UzeHome::owned_path(name).is_some_and(|owned| owned.disposable))
+            .collect();
+        assert!(
+            not_disposable.is_empty(),
+            "not disposable: {not_disposable:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_skipped_collection_removed_nothing_and_says_why() {
+        let skipped = Collected::skipped("mirrors", "its lock is held");
+        assert_eq!(skipped.collector, "mirrors");
+        assert!(skipped.removed.is_empty());
+        assert_eq!(skipped.skipped.as_deref(), Some("its lock is held"));
+    }
+
+    /// A measure gives every tier its bytes, the tier that holds something
+    /// more than nothing and an empty tier nothing, and is remembered
+    /// for the next plain `doctor`.
+    #[test]
+    fn a_measure_counts_each_tier_and_is_remembered() {
+        let root = uze_testkit::temp::scratch("collection-measure");
+        let home = UzeHome::at(&root);
+        assert_eq!(CollectionRecord::read(&home), None);
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        std::fs::write(home.state_dir().join("record.json"), vec![b'x'; 8192]).unwrap();
+
+        let record = CollectionRecord::measure(&home);
+        assert!(record.measured_at_unix > 0);
+        assert_eq!(record.tiers.len(), Tier::ALL.len());
+        let bytes = |tier: Tier| {
+            record
+                .tiers
+                .iter()
+                .find(|(label, _)| label == tier.label())
+                .map(|(_, bytes)| *bytes)
+                .unwrap()
+        };
+        assert!(bytes(Tier::Record) > 0, "{record:?}");
+        assert_eq!(bytes(Tier::Bytes), 0, "{record:?}");
+        assert_eq!(bytes(Tier::Store), 0, "{record:?}");
+        assert_eq!(record.total(), bytes(Tier::Record), "{record:?}");
+        assert_eq!(CollectionRecord::read(&home), Some(record));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_records_total_is_every_tier_together() {
+        let record = CollectionRecord {
+            measured_at_unix: 1,
+            tiers: vec![("store".to_owned(), 2), ("record".to_owned(), 3)],
+        };
+        assert_eq!(record.total(), 5);
+    }
+}

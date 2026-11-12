@@ -3123,3 +3123,65 @@ fn a_plugin_from_git_carries_its_commit() {
     assert_eq!(listed[0].commit.as_deref(), Some(head.as_str()));
     fs::remove_dir_all(root).unwrap();
 }
+
+/// Installed means in the Store under the default's own id: another
+/// package already there does not make a refused default count as
+/// installed, and a default already there is not installed again.
+#[test]
+fn a_default_plugin_is_installed_once_and_only_counted_when_it_is() {
+    let root = uze_testkit::temp::scratch("bootstrap-counted");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let refuse_at = Arc::new(AtomicUsize::new(usize::MAX));
+    let app = UzeApplication::new(
+        UzeHome::at(&root),
+        vec![Box::new(PreparationRefusedOnce {
+            calls: calls.clone(),
+            refuse_at: refuse_at.clone(),
+        })],
+    );
+    install_conformance_fixture(&app, "alpha");
+    refuse_at.store(calls.load(Ordering::SeqCst), Ordering::SeqCst);
+    let id = bootstrap::DEFAULT_PLUGIN_IDS[0];
+    assert!(
+        !app.ensure_default_plugin_installed(id).unwrap(),
+        "refused, and the other package does not stand in for it"
+    );
+
+    refuse_at.store(usize::MAX, Ordering::SeqCst);
+    assert!(app.ensure_default_plugin_installed(id).unwrap());
+    assert!(
+        !app.ensure_default_plugin_installed(id).unwrap(),
+        "already there, so not installed again"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A settled machine's bootstrap writes nothing, not even the mutation
+/// lock's holder, and still prepares a harness detected since.
+#[test]
+fn a_settled_bootstrap_takes_no_lock_and_still_prepares_harnesses() {
+    let root = uze_testkit::temp::scratch("bootstrap-settled");
+    let home = UzeHome::at(&root);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let app = UzeApplication::new(
+        home.clone(),
+        vec![Box::new(PreparationRefusedOnce {
+            calls: calls.clone(),
+            refuse_at: Arc::new(AtomicUsize::new(usize::MAX)),
+        })],
+    );
+    assert!(app.ensure_default_plugins().unwrap());
+    let _ = fs::remove_file(home.mutation_lock_path());
+    let prepared = calls.load(Ordering::SeqCst);
+
+    assert!(!app.ensure_default_plugins().unwrap());
+    assert!(
+        !home.mutation_lock_path().exists(),
+        "a warm bootstrap took the lock"
+    );
+    assert!(
+        calls.load(Ordering::SeqCst) > prepared,
+        "the detected harness was prepared"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
