@@ -276,4 +276,20 @@ exclude_re = [
   'uze-application/src/application/marketplace_catalogue\.rs.*replace <impl super::Collectable for MarketplaceMirrors>::name -> &.static str with ',
   # Only spares a second fetch of a mirror already fetched in the same operation; what is installed is the same.
   'uze-application/src/application/marketplace\.rs.*delete ! in MarketplaceRequest::materialize_plugin$',
+  # uze-application extensions
+  # A collector's name only labels what the report says it removed.
+  'uze-application/src/application/extensions/(compiled|mcp|program)\.rs.*Collectable for (CompiledViews<.*>|DeliveredPackages|ExtensionScratch|ExtensionPictures)>::name -> ',
+  # A Debug rendering for a developer's eyes; nothing reads it.
+  'uze-application/src/application/extensions/(mcp|reach|runner)\.rs.*std::fmt::Debug for (McpSessions|CheckoutReach|Running)>::fmt ',
+  # Where secrets are kept is uze-workspace's wording, passed through.
+  'uze-application/src/application/extensions/report\.rs.*replace secrets_kept_in -> ',
+  # A test's own cleanup of its scratch directory.
+  'uze-application/src/application/extensions/fetch\.rs.*replace tests::<impl Drop for World>::drop with \(\)$',
+  # Two cached revisions never tie: each has its own path.
+  'uze-application/src/application/extensions/compiled\.rs.*replace > with >= in pruned_compiled_cache$',
+  # A loaded extension holds at most LOAD_BYTES in all, which is IMAGE_FILE_MAX,
+  # so no file of it reaches the bound the slice cuts at.
+  'uze-application/src/application/extensions/runner\.rs.*replace \+ with [*-] in ExtensionRunner::media$',
+  # How long a listing is kept changes what a question costs, never its answer.
+  'uze-application/src/application/extensions/runner\.rs.*replace < with (<=|==) in ExtensionRunner::installed$',
 ]
