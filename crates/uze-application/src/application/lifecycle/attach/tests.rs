@@ -1406,3 +1406,27 @@ fn removing_a_plugin_detaches_what_a_harness_holds_through_that_harness() {
     assert_eq!(machine.detached(0), vec![detach(&held.artifact)]);
     assert!(machine.receipts().is_empty());
 }
+
+#[test]
+fn another_capabilitys_receipt_at_the_entry_is_no_co_holder_to_release() {
+    let machine = Machine::new("attach-co-holder-other-capability", &["alpha", "beta"]);
+    names(&machine, "review", "review-2");
+    let new_shape = tree(machine.skills().join("review"));
+    machine.script(0).plan = Some(new_shape.clone());
+    machine.script(1).plan = Some(new_shape);
+    let shared = linked(machine.skills().join("review"));
+    let old = machine.deliver(machine.capability_receipt("alpha", shared.clone()));
+    let other = machine.deliver(claim("beta", shared));
+
+    machine
+        .app
+        .retire_superseded_receipts(&machine.resource(), machine.harness(0))
+        .unwrap();
+
+    assert!(machine.detached(0).is_empty(), "{:?}", machine.asked(0));
+    let receipts = machine.receipts();
+    assert!(
+        receipts.contains(&other) && !receipts.contains(&old),
+        "{receipts:?}"
+    );
+}
