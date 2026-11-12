@@ -11,6 +11,8 @@ use super::*;
 
 const MARKET: &str = "acme";
 const PLUGIN: &str = "flow";
+/// A second plugin of the same marketplace.
+const SECOND: &str = "tide";
 const RULE: &str = "---\ntrigger: always_on\n---\nWrite tests first.\n";
 
 fn version() -> &'static str {
@@ -292,9 +294,13 @@ impl World {
         fs::create_dir_all(plugin.join("rules")).unwrap();
         fs::write(
             world.market.join("marketplace.json"),
-            r#"{"name": "acme", "plugins": [{"name": "flow", "source": "flow"}]}"#,
+            r#"{"name": "acme", "plugins": [{"name": "flow", "source": "flow"}, {"name": "tide", "source": "tide"}]}"#,
         )
         .unwrap();
+        let second = world.market.join(SECOND);
+        fs::create_dir_all(second.join("rules")).unwrap();
+        fs::write(second.join("plugin.json"), r#"{"name": "tide"}"#).unwrap();
+        fs::write(second.join("rules").join("tide.md"), RULE).unwrap();
         fs::write(plugin.join("plugin.json"), r#"{"name": "flow"}"#).unwrap();
         fs::write(
             plugin.join("skills").join("flow").join("SKILL.md"),
@@ -326,15 +332,42 @@ impl World {
     }
 
     fn add(&self, app: &UzeApplication) -> AddPluginReport {
+        self.add_named(app, PLUGIN)
+    }
+
+    fn add_named(&self, app: &UzeApplication, plugin: &str) -> AddPluginReport {
         app.project()
             .add(
-                PLUGIN,
+                plugin,
                 MARKET,
                 &self.project,
                 &AlwaysTrust,
                 &uze_core::naming::NoNameCollisionAuthority,
             )
             .unwrap()
+    }
+
+    fn add_built_in(&self, app: &UzeApplication) -> AddPluginReport {
+        app.project()
+            .add(
+                "workspace",
+                built_in(),
+                &self.project,
+                &AlwaysTrust,
+                &uze_core::naming::NoNameCollisionAuthority,
+            )
+            .unwrap()
+    }
+
+    fn declare_at(&self, path: &Path) {
+        fs::write(
+            self.project.join("agents.yaml"),
+            format!(
+                "marketplaces:\n  {MARKET}:\n    path: {}\n    plugins:\n      - {PLUGIN}\n",
+                path.display()
+            ),
+        )
+        .unwrap();
     }
 
     fn lock(&self) -> Option<ProjectLock> {
@@ -362,6 +395,11 @@ impl World {
         fs::write(
             self.market.join(PLUGIN).join("rules").join("tests.md"),
             "---\ntrigger: always_on\n---\nWrite the test before the fix.\n",
+        )
+        .unwrap();
+        fs::write(
+            self.market.join(SECOND).join("rules").join("tide.md"),
+            "---\ntrigger: always_on\n---\nThe tide moved.\n",
         )
         .unwrap();
         uze_testkit::git::commit_everything_in(&self.market);
@@ -856,4 +894,435 @@ fn install_settles_a_declared_built_in_plugin_and_says_so_once() {
     assert_eq!(lock.uze.as_deref(), Some(version()));
     let again = app.project().install(&world.project, &AlwaysTrust).unwrap();
     assert!(matches!(again, InstallReport::NoChanges), "{again:?}");
+}
+
+fn plugins_of(report: &UpdateReport) -> Vec<&str> {
+    report.outcomes.iter().map(UpdateOutcome::plugin).collect()
+}
+
+#[test]
+fn a_second_machine_installing_intact_copies_reports_the_plugins_it_installed() {
+    let world = World::new("project-install-second");
+    world.add(&world.registered("author"));
+    let second = world.machine("second");
+
+    let report = second
+        .project()
+        .install(&world.project, &AlwaysTrust)
+        .unwrap();
+
+    match report {
+        InstallReport::Installed {
+            plugins,
+            rules,
+            skipped,
+            reconciled,
+            ..
+        } => {
+            assert_eq!(plugins, [PLUGIN]);
+            assert!(rules.is_empty() && skipped.is_empty() && !reconciled);
+        }
+        other => panic!("expected Installed, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_marketplace_declared_where_this_machine_has_nothing_is_skipped_and_named() {
+    let world = World::new("project-install-skipped");
+    world.declare_at(&world.base.join("not-here"));
+    let app = world.machine("home");
+
+    let report = app.project().install(&world.project, &AlwaysTrust).unwrap();
+
+    match report {
+        InstallReport::Installed {
+            plugins, skipped, ..
+        } => {
+            assert!(plugins.is_empty());
+            assert_eq!(skipped.len(), 1);
+            assert_eq!(skipped[0].plugin, PLUGIN);
+            assert!(
+                skipped[0].reason.contains("does not have"),
+                "{}",
+                skipped[0].reason
+            );
+        }
+        other => panic!("expected Installed, got {other:?}"),
+    }
+}
+
+// A directory another account owns is what this is about, and the root
+// directory is one on Unix (Linux, macOS); Windows ownership is another model.
+#[cfg(unix)]
+#[test]
+fn a_marketplace_declared_in_a_directory_another_account_owns_is_skipped() {
+    let foreign = Path::new("/");
+    if project_root::owned_here(foreign) {
+        return;
+    }
+    let world = World::new("project-install-foreign");
+    world.declare_at(foreign);
+    let app = world.machine("home");
+
+    let report = app.project().install(&world.project, &AlwaysTrust).unwrap();
+
+    match report {
+        InstallReport::Installed { skipped, .. } => {
+            assert_eq!(skipped.len(), 1);
+            assert!(
+                skipped[0].reason.contains("another account"),
+                "{}",
+                skipped[0].reason
+            );
+        }
+        other => panic!("expected Installed, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_install_that_only_takes_out_an_earlier_region_says_it_reconciled() {
+    let world = World::new("project-install-reconcile");
+    let app = world.registered("home");
+    world.add(&app);
+    uze_core::text_region::attach(
+        &world.project.join("AGENTS.md"),
+        "package:greet:tools:instructions",
+        "hi\n",
+    )
+    .unwrap();
+
+    let report = app.project().install(&world.project, &AlwaysTrust).unwrap();
+
+    match report {
+        InstallReport::Installed {
+            plugins,
+            reconciled,
+            ..
+        } => {
+            assert!(plugins.is_empty());
+            assert!(reconciled);
+        }
+        other => panic!("expected Installed, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_machine_update_says_what_moved_and_what_was_already_current() {
+    let world = World::new("project-update-machine");
+    let app = world.registered("home");
+    world.add(&app);
+
+    let current = app
+        .project()
+        .update(&world.project, None, true, &AlwaysTrust)
+        .unwrap();
+    assert_eq!(current.scope, UpdateScope::Machine);
+    assert!(
+        current
+            .outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, UpdateOutcome::AlreadyCurrent { .. })),
+        "{:?}",
+        current.outcomes
+    );
+
+    world.move_market();
+    let moved = app
+        .project()
+        .update(&world.project, Some("flow@acme"), true, &AlwaysTrust)
+        .unwrap();
+    assert!(
+        matches!(&moved.outcomes[..], [UpdateOutcome::Moved { plugin, .. }] if plugin == "flow@acme"),
+        "{:?}",
+        moved.outcomes
+    );
+}
+
+#[test]
+fn install_raises_a_machine_behind_the_lock_and_leaves_it_level_after() {
+    let world = World::new("project-rise");
+    let author = world.registered("author");
+    world.add(&author);
+    let behind = world.machine("behind");
+    behind
+        .project()
+        .install(&world.project, &AlwaysTrust)
+        .unwrap();
+    world.move_market();
+    author
+        .project()
+        .update(&world.project, None, false, &AlwaysTrust)
+        .unwrap();
+
+    let report = behind
+        .project()
+        .install(&world.project, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        matches!(&report, InstallReport::Installed { plugins, .. } if plugins == &[PLUGIN]),
+        "{report:?}"
+    );
+    match behind.project().lock_status(&world.project) {
+        ProjectLockStatus::Present { plugins } => assert!(!plugins[0].differs_from_lock),
+        other => panic!("expected Present, got {other:?}"),
+    }
+    let again = behind
+        .project()
+        .install(&world.project, &AlwaysTrust)
+        .unwrap();
+    assert!(matches!(again, InstallReport::NoChanges), "{again:?}");
+}
+
+#[test]
+fn two_plugins_of_one_marketplace_both_move_in_one_update() {
+    let world = World::new("project-update-two");
+    let app = world.registered("home");
+    world.add(&app);
+    world.add_named(&app, SECOND);
+    world.move_market();
+
+    let report = app
+        .project()
+        .update(&world.project, None, false, &AlwaysTrust)
+        .unwrap();
+
+    assert!(
+        report
+            .outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, UpdateOutcome::Moved { .. })),
+        "{:?}",
+        report.outcomes
+    );
+    assert_eq!(report.outcomes.len(), 2);
+}
+
+#[test]
+fn updating_one_plugin_considers_that_plugin_alone() {
+    let world = World::new("project-update-one");
+    let app = world.registered("home");
+    world.add(&app);
+    world.add_built_in(&app);
+
+    let report = app
+        .project()
+        .update(&world.project, Some(PLUGIN), false, &AlwaysTrust)
+        .unwrap();
+
+    assert_eq!(plugins_of(&report), [PLUGIN]);
+}
+
+#[test]
+fn a_built_in_plugin_locked_at_other_bytes_differs_and_is_brought_back() {
+    let world = World::new("project-built-in-other-bytes");
+    let app = world.machine("home");
+    world.add_built_in(&app);
+    let pinned = world.lock().unwrap().plugins["workspace"].integrity.clone();
+    let tamper = || {
+        let mut lock = world.lock().unwrap();
+        lock.plugins.get_mut("workspace").unwrap().integrity = Some("sha256:other".to_owned());
+        project_lock::save_lock(&world.project, &lock).unwrap();
+    };
+    tamper();
+
+    match app.project().lock_status(&world.project) {
+        ProjectLockStatus::Present { plugins } => assert!(plugins[0].differs_from_lock),
+        other => panic!("expected Present, got {other:?}"),
+    }
+    let installed = app.project().install(&world.project, &AlwaysTrust).unwrap();
+    assert!(
+        matches!(&installed, InstallReport::Installed { plugins, .. } if plugins == &["workspace"]),
+        "{installed:?}"
+    );
+    assert_eq!(world.lock().unwrap().plugins["workspace"].integrity, pinned);
+
+    tamper();
+    let updated = app
+        .project()
+        .update(&world.project, None, false, &AlwaysTrust)
+        .unwrap();
+    assert!(
+        matches!(updated.outcomes[..], [UpdateOutcome::Moved { .. }]),
+        "{:?}",
+        updated.outcomes
+    );
+    assert_eq!(world.lock().unwrap().plugins["workspace"].integrity, pinned);
+}
+
+#[test]
+fn a_bundled_plugin_is_installed_for_the_machine_and_never_declared() {
+    let world = World::new("project-add-bundled");
+    let app = world.machine("home");
+
+    let report = app
+        .project()
+        .add(
+            "uze",
+            built_in(),
+            &world.project,
+            &AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+        .unwrap();
+
+    assert!(!report.declared);
+    assert!(world.declared().is_empty());
+    assert!(world.lock().is_none());
+}
+
+#[test]
+fn a_plugin_the_lock_draws_from_another_marketplace_is_not_added_over_it() {
+    let world = World::new("project-add-mismatch");
+    let app = world.registered("home");
+    let mut lock = ProjectLock::default();
+    lock.plugins
+        .insert(PLUGIN.to_owned(), locked_at("elsewhere", None));
+    project_lock::save_lock(&world.project, &lock).unwrap();
+
+    let refused = app.project().add(
+        PLUGIN,
+        MARKET,
+        &world.project,
+        &AlwaysTrust,
+        &uze_core::naming::NoNameCollisionAuthority,
+    );
+
+    assert!(
+        matches!(refused, Err(UzeError::MarketplaceMismatch { .. })),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_marketplace_the_lock_records_at_another_repository_is_a_conflict() {
+    let world = World::new("project-add-conflict");
+    let app = world.registered("home");
+    let mut lock = ProjectLock::default();
+    lock.marketplaces.insert(
+        MARKET.to_owned(),
+        LockedMarketplace {
+            git: "https://example.com/another.git".to_owned(),
+            r#ref: None,
+            subdirectory: None,
+            revision: "abc".to_owned(),
+        },
+    );
+    project_lock::save_lock(&world.project, &lock).unwrap();
+
+    let refused = app.project().add(
+        PLUGIN,
+        MARKET,
+        &world.project,
+        &AlwaysTrust,
+        &uze_core::naming::NoNameCollisionAuthority,
+    );
+
+    assert!(
+        matches!(refused, Err(UzeError::MarketplaceSourceConflict { .. })),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_declaration_no_lock_answers_for_is_still_removed() {
+    let world = World::new("project-remove-declared-only");
+    world.declare_at(&world.market);
+    let app = world.machine("home");
+
+    let report = app.project().remove(PLUGIN, &world.project).unwrap();
+
+    assert!(
+        matches!(report, RemoveProjectPluginReport::Removed { .. }),
+        "{report:?}"
+    );
+    assert!(world.declared().is_empty());
+    assert!(world.lock().is_none());
+}
+
+#[test]
+fn a_locked_plugin_the_manifest_no_longer_declares_is_still_removed() {
+    let world = World::new("project-remove-locked-only");
+    let app = world.registered("home");
+    world.add(&app);
+    fs::write(world.project.join("agents.yaml"), "").unwrap();
+
+    let report = app.project().remove(PLUGIN, &world.project).unwrap();
+
+    assert!(
+        matches!(report, RemoveProjectPluginReport::Removed { .. }),
+        "{report:?}"
+    );
+    assert!(!world.lock().unwrap().plugins.contains_key(PLUGIN));
+}
+
+/// A harness an earlier release bridged `AGENTS.md` into.
+struct Bridged;
+
+impl IntegrationPort for Bridged {
+    fn id(&self) -> &'static str {
+        "bridged"
+    }
+
+    fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+        uze_core::router::HarnessCapabilities::default()
+    }
+
+    fn exposure_plan(
+        &self,
+        _resource: &uze_core::capability::Resource,
+    ) -> uze_core::exposure::ExposurePlan {
+        uze_core::exposure::ExposurePlan {
+            route: uze_core::router::CompatibilityRoute::Adaptable,
+            mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                rationale: "context only".to_owned(),
+            },
+            evidence: "test".to_owned(),
+        }
+    }
+
+    fn attach_receipt(
+        &self,
+        _resource: &uze_core::capability::Resource,
+    ) -> Result<Option<uze_core::integration::AttachmentReceipt>> {
+        Ok(None)
+    }
+
+    fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
+        uze_core::integration::ContextDelivery::Bridge {
+            file_name: "VENDOR.md",
+        }
+    }
+}
+
+#[test]
+fn a_plan_names_a_bridge_left_in_a_harnesss_file_and_not_one_edited_by_hand() {
+    let world = World::new("project-plan-bridge");
+    let app = UzeApplication::new(
+        UzeHome::at(world.base.join("home")),
+        vec![Box::new(Bridged)],
+    );
+    let vendor = world.project.join("VENDOR.md");
+    uze_core::text_region::attach(
+        &vendor,
+        uze_core::project_earlier::INSTRUCTION_BRIDGE,
+        uze_core::project_earlier::INSTRUCTION_BRIDGE_CONTENT,
+    )
+    .unwrap();
+
+    let plan = app.project().plan(&world.project).unwrap();
+    let stale = plan.stale_projection.expect("the bridge is named");
+    assert_eq!(
+        stale.projected_identity,
+        uze_core::project_earlier::INSTRUCTION_BRIDGE
+    );
+
+    let text = fs::read_to_string(&vendor).unwrap();
+    fs::write(
+        &vendor,
+        text.replace("@AGENTS.md", "@AGENTS.md\n@docs/more.md"),
+    )
+    .unwrap();
+    let edited = app.project().plan(&world.project).unwrap();
+    assert!(edited.stale_projection.is_none(), "{edited:?}");
 }
