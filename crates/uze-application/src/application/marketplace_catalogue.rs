@@ -1474,7 +1474,7 @@ mod tests {
             collected.collector,
             crate::application::Collectable::name(&MarketplaceMirrors)
         );
-        assert_eq!(collected.removed, [old.clone()]);
+        assert_eq!(collected.removed, std::slice::from_ref(&old));
         assert!(!old.exists());
         fs::remove_dir_all(&root).unwrap();
     }
