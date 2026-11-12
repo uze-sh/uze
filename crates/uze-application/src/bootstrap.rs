@@ -266,6 +266,28 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    /// A stored copy equal to the snapshot has no update; one file
+    /// rewritten in place, its length unchanged, is one.
+    #[test]
+    fn a_file_changed_at_the_same_length_is_an_update() {
+        let id = DEFAULT_PLUGIN_IDS[0];
+        let materialized = materialize(id).unwrap();
+        let stored = uze_testkit::temp::scratch("bootstrap-has-update");
+        uze_testkit::fixtures::copy_tree(materialized.root(), &stored);
+        assert!(!has_update(id, &stored).unwrap());
+
+        let (_, file) = stored_files(&stored)
+            .unwrap()
+            .into_iter()
+            .find(|(_, path)| fs::metadata(path).is_ok_and(|meta| meta.len() > 0))
+            .expect("the plugin carries a file with something in it");
+        let mut bytes = fs::read(&file).unwrap();
+        bytes[0] = bytes[0].wrapping_add(1);
+        fs::write(&file, &bytes).unwrap();
+        assert!(has_update(id, &stored).unwrap());
+        let _ = fs::remove_dir_all(stored);
+    }
+
     /// The official marketplace is the reference every author is pointed
     /// at, so it is held to its own check with nothing left to say: no
     /// finding, no warning — a describing field drifting back onto its

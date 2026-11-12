@@ -377,4 +377,62 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(root);
     }
+
+    /// An earlier name whose path carries a placeholder is stranded too
+    /// once its current record, spelled the same way, is on disk.
+    #[test]
+    fn an_earlier_name_of_a_projects_record_beside_it_is_stranded() {
+        let (home, root) = home("schema-stranded-project");
+        let current = home.tasks_path("p1");
+        assert_ne!(current, home.retired_tasks_path("p1"));
+        std::fs::create_dir_all(current.parent().unwrap()).unwrap();
+        std::fs::write(&current, "newer").unwrap();
+        std::fs::write(home.retired_tasks_path("p1"), "older").unwrap();
+
+        let entries = compare(&home, false);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].finding, SchemaFinding::Stranded);
+        assert_eq!(entries[0].path, home.retired_tasks_path("p1"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// Only an empty directory in a tier whose emptiness means nothing is
+    /// removed as one: an unknown directory with something in it, or an
+    /// empty one among the operator's own files, is unknown and kept.
+    #[test]
+    fn only_an_empty_directory_of_a_kept_tier_is_removed_as_one() {
+        let (home, root) = home("schema-empty-directories");
+        std::fs::create_dir_all(home.state_dir().join("full")).unwrap();
+        std::fs::write(home.state_dir().join("full").join("inside"), "x").unwrap();
+        std::fs::create_dir_all(home.root().join("mine")).unwrap();
+
+        let entries = compare(&home, false);
+        assert_eq!(
+            findings(&entries),
+            [
+                (SchemaFinding::Unknown, "mine".to_owned(), false),
+                (SchemaFinding::Unknown, "full".to_owned(), false),
+            ]
+        );
+        assert!(home.root().join("mine").is_dir());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn what_is_unknown_or_retired_is_no_leftover() {
+        for finding in [
+            SchemaFinding::Unknown,
+            SchemaFinding::Retired,
+            SchemaFinding::EmptyDirectory,
+        ] {
+            let entry = SchemaEntry {
+                path: PathBuf::from("x"),
+                tier: "record",
+                finding,
+                bytes: None,
+                removed: false,
+            };
+            assert!(!entry.is_leftover(), "{finding:?}");
+        }
+    }
 }

@@ -3185,3 +3185,23 @@ fn a_settled_bootstrap_takes_no_lock_and_still_prepares_harnesses() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A bundled plugin is compared with this binary's own snapshot, so the
+/// comparison is dated now.
+#[test]
+fn a_bundled_plugins_freshness_is_established_now() {
+    let root = uze_testkit::temp::scratch("bundled-freshness");
+    let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    app.ensure_default_plugins().unwrap();
+    let listed = app.plugins().list().unwrap();
+    let established = listed[0].freshness.established_at_unix.expect("compared");
+    assert!(
+        established >= before && established <= before + 3600,
+        "{established} against {before}"
+    );
+    fs::remove_dir_all(root).unwrap();
+}

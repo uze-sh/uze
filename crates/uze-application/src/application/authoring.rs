@@ -247,3 +247,134 @@ pub struct PluginCreated {
     pub market: String,
     pub root: PathBuf,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{UzeApplication, UzeHome};
+    use uze_core::integration::IntegrationPort;
+    use uze_core::{PackageSource, UzeError};
+
+    /// A harness this build knows as `known`.
+    struct Known;
+
+    impl IntegrationPort for Known {
+        fn id(&self) -> &'static str {
+            "known"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+    }
+
+    /// A name already registered is refused before anything is written,
+    /// with a way forward; the bundled marketplace's name is reserved.
+    #[test]
+    fn a_marketplace_is_not_scaffolded_under_a_taken_name() {
+        let root = uze_testkit::temp::scratch("authoring-taken-name");
+        let home = UzeHome::at(root.join("uze"));
+        uze_core::state::marketplace_add(
+            &home,
+            "taken",
+            PackageSource::Local {
+                path: root.join("elsewhere"),
+            },
+        )
+        .unwrap();
+        let app = UzeApplication::new(home, Vec::new());
+        let at = root.join("new-market");
+
+        let refused = app
+            .project()
+            .create_marketplace("taken", None, &at)
+            .expect_err("the name is taken");
+        assert!(
+            matches!(refused, UzeError::MarketplaceScaffold(_)),
+            "{refused:?}"
+        );
+        assert!(!at.exists(), "nothing was written");
+        let reserved = app
+            .project()
+            .create_marketplace(uze_core::manifest::BUILT_IN_MARKETPLACE, None, &at)
+            .expect_err("the bundled name is reserved");
+        assert!(
+            matches!(reserved, UzeError::ReservedMarketplace(_)),
+            "{reserved:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A plugin is scaffolded inside the checkout its marketplace is
+    /// linked to.
+    #[test]
+    fn a_plugin_is_scaffolded_in_the_linked_checkout() {
+        let root = uze_testkit::temp::scratch("authoring-plugin-create");
+        let checkout = root.join("market");
+        std::fs::create_dir_all(&checkout).unwrap();
+        std::fs::write(
+            checkout.join("marketplace.json"),
+            r#"{"name":"market","plugins":[]}"#,
+        )
+        .unwrap();
+        uze_testkit::git::commit_everything_in(&checkout);
+        let home = UzeHome::at(root.join("uze"));
+        uze_core::state::marketplace_add(
+            &home,
+            "market",
+            PackageSource::Local {
+                path: checkout.clone(),
+            },
+        )
+        .unwrap();
+        uze_core::state::marketplace_link(&home, "market", &checkout, Default::default()).unwrap();
+        let app = UzeApplication::new(home, Vec::new());
+
+        let created = app
+            .project()
+            .create_plugin("market", "flow", None, None, Default::default())
+            .unwrap();
+        assert_eq!(
+            uze_platform::path::canonical(&created.root).unwrap(),
+            uze_platform::path::canonical(&checkout.join("plugins").join("flow")).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A per-harness block naming a harness this build does not deliver to
+    /// is warned about and left unused; one naming a known harness is not.
+    #[test]
+    fn a_harness_block_for_an_unknown_harness_is_warned_about() {
+        let root = uze_testkit::temp::scratch("authoring-harness-keys");
+        let plugin = root.join("flow");
+        std::fs::create_dir_all(plugin.join("skills/flow")).unwrap();
+        std::fs::write(plugin.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+        std::fs::write(
+            plugin.join("skills/flow/SKILL.md"),
+            "---\nname: flow\ndescription: d\nharness:\n  known:\n    model: a\n  elsewhere:\n    model: b\n---\n\nFlow.\n",
+        )
+        .unwrap();
+        let app = UzeApplication::new(UzeHome::at(root.join("uze")), vec![Box::new(Known)]);
+
+        let report = app.project().check(&plugin, false).unwrap();
+        let about = |key: &str| {
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains(&format!("harness.{key}")))
+        };
+        assert!(about("elsewhere"), "{:?}", report.warnings);
+        assert!(!about("known"), "{:?}", report.warnings);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
