@@ -152,3 +152,27 @@ fn a_path_is_read_relative_to_the_checkout_and_never_outside_it() {
         assert_eq!(within(root, "/work/other/rules"), None);
     }
 }
+
+#[test]
+fn an_entry_whose_path_is_empty_or_spans_lines_is_no_entry() {
+    let text = r#"{"entries": [{"path": ""}, {"path": ".agents/rules/a\nb"}, {"path": ".agents/rules/kept"}]}"#;
+    let root = checkout("rules-manifest-unclean", Some(text));
+    let Manifest::Read(document) = load(&root) else {
+        panic!("the manifest parses");
+    };
+    let paths: Vec<String> = document
+        .entries()
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect();
+    assert_eq!(paths, [".agents/rules/kept"]);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_manifest_that_cannot_be_read_is_unreadable_not_absent() {
+    let root = checkout("rules-manifest-a-directory", None);
+    fs::create_dir_all(root.join(MANIFEST_FILE)).unwrap();
+    assert!(matches!(load(&root), Manifest::Unreadable(_)));
+    fs::remove_dir_all(root).unwrap();
+}

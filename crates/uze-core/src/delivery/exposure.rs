@@ -886,6 +886,45 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    #[test]
+    fn a_reference_is_in_place_only_while_it_points_at_its_target() {
+        let root = uze_testkit::temp::scratch("reference-in-place");
+        let discovery_root = root.join("skills");
+        let source = root.join("store-entry");
+        fs::create_dir_all(&source).unwrap();
+        let artifact = managed_reference(&discovery_root, &source);
+        assert!(!artifact.is_in_place());
+
+        artifact.attach_standard().unwrap();
+        assert!(artifact.is_in_place());
+
+        let link = discovery_root.join("uze-example");
+        fs::remove_file(&link).unwrap();
+        crate::persistence::create_symlink(&root.join("elsewhere"), &link).unwrap();
+        assert!(!artifact.is_in_place());
+    }
+
+    /// POSIX answers a path through a regular file as not a directory, an
+    /// error that is not absence; Windows answers it as not found.
+    #[test]
+    fn a_generated_path_that_cannot_be_read_is_blocked_rather_than_missing() {
+        let root = uze_testkit::temp::scratch("generated-unreadable");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("a-file");
+        fs::write(&file, "x").unwrap();
+
+        let tree = ManagedArtifact::GeneratedTree {
+            path: file.join("tree"),
+            digest: "digest".to_owned(),
+        };
+        let generated = ManagedArtifact::GeneratedFile {
+            path: file.join("agent.md"),
+            content: "agent".to_owned(),
+        };
+        assert_eq!(tree.inspect_standard().state, AttachmentState::Blocked);
+        assert_eq!(generated.inspect_standard().state, AttachmentState::Blocked);
+    }
+
     /// Two threads of one process probing the same tree at once: each must
     /// compare what it built, not a directory the other is writing into.
     #[test]
@@ -1017,5 +1056,241 @@ mod generated_file_tests {
             wrapper: PathBuf::from("hooks/exec"),
         };
         assert!(entry.is_named("flow@local:watch"));
+    }
+
+    fn one_of_each_kind() -> Vec<ManagedArtifact> {
+        vec![
+            ManagedArtifact::SymlinkReference {
+                path: PathBuf::from("link"),
+                target: PathBuf::from("target"),
+            },
+            ManagedArtifact::VendorConfigEntry {
+                entry_name: "entry".to_owned(),
+                transport: "stdio".to_owned(),
+                command: PathBuf::from("command"),
+                args: Vec::new(),
+                cwd: None,
+                environment: Vec::new(),
+                enabled: None,
+            },
+            ManagedArtifact::ManagedTextRegion {
+                target_file: PathBuf::from("NOTES.md"),
+                region_identity: "region".to_owned(),
+                expected_content: String::new(),
+            },
+            ManagedArtifact::IntegrationOwned {
+                kind: "kind".to_owned(),
+                selector: "selector".to_owned(),
+                detail: BTreeMap::new(),
+            },
+            ManagedArtifact::HookConfigEntry {
+                config_file: PathBuf::from("hooks.json"),
+                entry_name: "hook".to_owned(),
+                event: HookEvent::PreToolUse,
+                expected: String::new(),
+                wrapper: PathBuf::from("wrapper"),
+            },
+            ManagedArtifact::ManagedHookFile {
+                path: PathBuf::from("bridge.js"),
+            },
+            ManagedArtifact::GeneratedFile {
+                path: PathBuf::from("agent.md"),
+                content: String::new(),
+            },
+            ManagedArtifact::GeneratedTree {
+                path: PathBuf::from("skill"),
+                digest: String::new(),
+            },
+        ]
+    }
+
+    #[test]
+    fn every_artifact_names_its_own_kind_from_the_catalogue() {
+        let kinds: BTreeSet<&str> = one_of_each_kind()
+            .iter()
+            .map(ManagedArtifact::kind)
+            .collect();
+        assert_eq!(kinds, ManagedArtifact::KINDS.into_iter().collect());
+    }
+
+    /// A locator is for a person to find the artifact by: one per artifact,
+    /// and a file's is its path.
+    #[test]
+    fn every_artifact_has_a_locator_of_its_own() {
+        let artifacts = one_of_each_kind();
+        let locations: BTreeSet<PathBuf> =
+            artifacts.iter().map(ManagedArtifact::location).collect();
+        assert_eq!(locations.len(), artifacts.len());
+        assert_eq!(
+            ManagedArtifact::GeneratedFile {
+                path: PathBuf::from("agent.md"),
+                content: String::new(),
+            }
+            .location(),
+            PathBuf::from("agent.md")
+        );
+    }
+
+    #[test]
+    fn a_text_region_is_attached_inspected_and_detached_as_a_standard_artifact() {
+        let root = uze_testkit::temp::scratch("standard-region");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("NOTES.md");
+        fs::write(&target, "kept\n").unwrap();
+        let region = ManagedArtifact::ManagedTextRegion {
+            target_file: target.clone(),
+            region_identity: "uze-test".to_owned(),
+            expected_content: "delivered".to_owned(),
+        };
+        assert_eq!(region.inspect_standard().state, AttachmentState::Missing);
+
+        region.attach_standard().unwrap();
+        assert_eq!(region.inspect_standard().state, AttachmentState::Matched);
+        assert!(fs::read_to_string(&target).unwrap().contains("delivered"));
+
+        assert_eq!(
+            region.detach_standard().unwrap().state,
+            AttachmentState::Missing
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "kept\n");
+    }
+
+    /// The fingerprint is the freshness half of the inspection cache: it
+    /// moves when what is on disk does.
+    #[test]
+    fn a_generated_artifact_fingerprint_moves_with_what_is_on_disk() {
+        let root = uze_testkit::temp::scratch("fingerprints");
+        let file = ManagedArtifact::GeneratedFile {
+            path: root.join("agent.md"),
+            content: "agent".to_owned(),
+        };
+        let absent = file.fingerprint().unwrap();
+        file.attach_standard().unwrap();
+        let written = file.fingerprint().unwrap();
+        assert_ne!(absent, written);
+        fs::write(root.join("agent.md"), "edited by hand").unwrap();
+        assert_ne!(file.fingerprint().unwrap(), written);
+
+        let path = root.join("skill");
+        let tree = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest: "digest".to_owned(),
+        };
+        let missing = tree.fingerprint().unwrap();
+        fs::create_dir_all(&path).unwrap();
+        let empty = tree.fingerprint().unwrap();
+        assert_ne!(missing, empty, "an empty directory is not an absent one");
+        fs::write(path.join("SKILL.md"), "one").unwrap();
+        let filled = tree.fingerprint().unwrap();
+        assert_ne!(empty, filled);
+        fs::write(path.join("SKILL.md"), "longer").unwrap();
+        assert_ne!(tree.fingerprint().unwrap(), filled);
+
+        let link = ManagedArtifact::SymlinkReference {
+            path: root.join("absent-link"),
+            target: root.join("target"),
+        };
+        assert!(link.fingerprint().is_some(), "a missing link is a state");
+        assert_eq!(one_of_each_kind()[3].fingerprint(), None);
+    }
+
+    #[test]
+    fn a_generated_artifact_is_in_place_only_while_it_matches_its_receipt() {
+        let root = uze_testkit::temp::scratch("generated-in-place");
+        let file = ManagedArtifact::GeneratedFile {
+            path: root.join("agent.md"),
+            content: "agent".to_owned(),
+        };
+        assert!(!file.is_in_place());
+        file.attach_standard().unwrap();
+        assert!(file.is_in_place());
+        fs::write(root.join("agent.md"), "edited").unwrap();
+        assert!(!file.is_in_place());
+
+        let path = root.join("skill");
+        let digest = attach_generated_tree(&path, None, |dir: &Path| {
+            fs::write(dir.join("SKILL.md"), "one").map_err(UzeError::write(dir))
+        })
+        .unwrap();
+        let tree = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest,
+        };
+        assert!(tree.is_in_place());
+        fs::write(path.join("SKILL.md"), "edited").unwrap();
+        assert!(!tree.is_in_place());
+
+        assert!(!one_of_each_kind()[3].is_in_place());
+    }
+
+    /// A file that appears between the read and the write is someone
+    /// else's: `create_new` refuses it as a conflict.
+    #[test]
+    fn a_new_file_never_replaces_one_already_there() {
+        let root = uze_testkit::temp::scratch("create-new");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("agent.md");
+        fs::write(&path, "theirs").unwrap();
+
+        assert!(matches!(
+            create_new_file(&path, "ours"),
+            Err(UzeError::ManagedEntryConflict(_))
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "theirs");
+        assert!(matches!(
+            create_new_file(&root.join("absent").join("agent.md"), "ours"),
+            Err(UzeError::Write { .. })
+        ));
+    }
+
+    #[test]
+    fn a_file_where_a_tree_belongs_is_a_conflict_and_is_kept() {
+        let root = uze_testkit::temp::scratch("tree-over-file");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("skill");
+        fs::write(&path, "theirs").unwrap();
+        let tree = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest: "digest".to_owned(),
+        };
+
+        assert_eq!(tree.inspect_standard().state, AttachmentState::Conflict);
+        let outcome = attach_generated_tree(&path, Some("digest"), |_: &Path| Ok(()));
+        assert!(matches!(outcome, Err(UzeError::ManagedEntryConflict(_))));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "theirs");
+
+        let missing = ManagedArtifact::GeneratedTree {
+            path: root.join("absent"),
+            digest: "digest".to_owned(),
+        };
+        assert_eq!(missing.inspect_standard().state, AttachmentState::Missing);
+    }
+
+    #[test]
+    fn a_package_plan_provides_only_the_resources_it_lists() {
+        let root = uze_testkit::temp::scratch("package-plan");
+        let id = PackageId::from_marketplace_plugin("market", "flow", &root.join("plugin.json"))
+            .unwrap();
+        let resource = |name: &str| {
+            Resource::from_package(
+                id.clone(),
+                root.clone(),
+                crate::capability::Capability {
+                    kind: crate::capability::CapabilityKind::AgentSkill,
+                    path: root.join("skills").join(name).join("SKILL.md"),
+                    payload: Vec::new(),
+                },
+            )
+        };
+        let listed = resource("review");
+        let plan = PackageExposurePlan {
+            package_id: id.clone(),
+            route: CompatibilityRoute::Native,
+            envelope: PackageEnvelope::Own,
+            provided_resource_identities: [listed.identity()].into_iter().collect(),
+            evidence: String::new(),
+        };
+        assert!(plan.provides(&listed));
+        assert!(!plan.provides(&resource("write")));
     }
 }

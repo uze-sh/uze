@@ -715,4 +715,118 @@ mod tests {
             provenance
         );
     }
+
+    #[test]
+    fn a_request_reads_as_its_url_reference_and_subdirectory() {
+        let source = PackageSource::Git {
+            url: "https://github.com/hiukky/ai".to_owned(),
+            reference: Some("v2".to_owned()),
+            subdirectory: Some(PathBuf::from("plugins")),
+        };
+        assert_eq!(
+            source.display(),
+            "https://github.com/hiukky/ai@v2 (plugins)"
+        );
+        assert_eq!(
+            PackageSource::git("https://github.com/hiukky/ai").display(),
+            "https://github.com/hiukky/ai"
+        );
+    }
+
+    #[test]
+    fn a_resolution_reads_as_its_url_at_its_commit() {
+        let resolved = ResolvedSource::Git {
+            url: "https://github.com/hiukky/ai".to_owned(),
+            commit: "0123abc".to_owned(),
+            subdirectory: None,
+        };
+        assert_eq!(resolved.display(), "https://github.com/hiukky/ai@0123abc");
+        assert_eq!(
+            ResolvedSource::Embedded {
+                id: "uze".to_owned()
+            }
+            .display(),
+            "embedded:uze"
+        );
+    }
+
+    /// A lock pins what makes reproduction possible, and a directory has
+    /// nothing that can.
+    #[test]
+    fn a_lock_pins_a_commit_an_embedded_marker_and_nothing_for_a_directory() {
+        let git = ResolvedSource::Git {
+            url: "https://github.com/hiukky/ai".to_owned(),
+            commit: "0123abc".to_owned(),
+            subdirectory: None,
+        };
+        assert_eq!(git.lock_revision().as_deref(), Some("0123abc"));
+        assert_eq!(
+            ResolvedSource::Embedded {
+                id: "uze".to_owned()
+            }
+            .lock_revision()
+            .as_deref(),
+            Some("embedded")
+        );
+        assert_eq!(
+            ResolvedSource::Local {
+                path: PathBuf::from("/srv/ai")
+            }
+            .lock_revision(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_digest_counts_the_unmade_links_as_links() {
+        let root = temporary("digest-links");
+        fs::write(root.join("l"), "a").unwrap();
+        fs::write(root.join("a"), "target").unwrap();
+        let as_file = MaterializedPackage::borrowed(root.clone(), Provenance::of_local_path(&root));
+        let mut as_link =
+            MaterializedPackage::borrowed(root.clone(), Provenance::of_local_path(&root));
+        let links: crate::digest::Links = [(PathBuf::from("l"), PathBuf::from("a"))]
+            .into_iter()
+            .collect();
+        as_link.links = links.clone();
+
+        assert_eq!(as_link.links(), &links);
+        assert!(as_file.links().is_empty());
+        assert_ne!(as_file.digest().unwrap(), as_link.digest().unwrap());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The scratch is what cleanup owns, so narrowing the root to a
+    /// subdirectory still removes the whole of it.
+    #[test]
+    fn a_directory_uze_created_goes_whole_even_once_narrowed() {
+        let scratch = scratch_directory().unwrap();
+        fs::create_dir_all(scratch.join("checkout/plugins/demo")).unwrap();
+        {
+            let mut materialized =
+                MaterializedPackage::owned(scratch.clone(), Provenance::of_local_path(&scratch));
+            let narrowed = scratch.join("checkout/plugins/demo");
+            materialized.retarget(narrowed.clone(), Provenance::of_local_path(&narrowed));
+            assert_eq!(materialized.root(), narrowed);
+            assert_eq!(
+                materialized.provenance(),
+                &Provenance::of_local_path(&narrowed)
+            );
+        }
+        assert!(!scratch.exists(), "the scratch outlived its package");
+    }
+
+    #[test]
+    fn every_acquisition_gets_a_fresh_directory_of_its_own() {
+        let first = scratch_directory().unwrap();
+        let second = scratch_directory().unwrap();
+        assert_ne!(first, second);
+        for directory in [&first, &second] {
+            assert!(directory.is_absolute(), "{}", directory.display());
+            assert!(directory.is_dir(), "{}", directory.display());
+            assert_eq!(fs::read_dir(directory).unwrap().count(), 0);
+        }
+        let _ = fs::remove_dir_all(first);
+        let _ = fs::remove_dir_all(second);
+    }
 }

@@ -799,4 +799,164 @@ mod tests {
         ));
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn an_optional_subpath_is_the_root_when_absent_and_parsed_when_given() {
+        let root = MarketplaceSubpath::of(None).unwrap();
+        assert!(root.is_root());
+        assert_eq!(root.to_string(), ".");
+        let given = MarketplaceSubpath::of(Some(Path::new("./aikit"))).unwrap();
+        assert!(!given.is_root());
+        assert_eq!(given.to_string(), "aikit");
+    }
+
+    #[test]
+    fn a_directory_inside_a_checkout_is_its_subpath_and_one_outside_is_refused() {
+        let root = uze_testkit::temp::scratch("within-checkout");
+        let checkout = root.join("checkout");
+        fs::create_dir_all(checkout.join("aikit")).unwrap();
+        fs::create_dir_all(root.join("outside")).unwrap();
+
+        assert_eq!(
+            MarketplaceSubpath::within_checkout(&checkout, &checkout.join("aikit"))
+                .unwrap()
+                .as_path(),
+            Some(PathBuf::from("aikit"))
+        );
+        assert!(
+            MarketplaceSubpath::within_checkout(&checkout, &checkout)
+                .unwrap()
+                .is_root()
+        );
+        assert!(matches!(
+            MarketplaceSubpath::within_checkout(&checkout, &root.join("outside")),
+            Err(UzeError::MarketplaceSubpathEscapes { .. })
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_linked_plugin_is_read_from_the_catalogue_its_working_tree_carries() {
+        let root = uze_testkit::temp::scratch("linked-plugin-path");
+        let checkout = root.join("checkout");
+        fs::create_dir_all(checkout.join("aikit")).unwrap();
+        write_manifest(
+            &checkout.join("aikit"),
+            r#"{"name":"flow","source":"./flow"},{"name":"whole","source":"."}"#,
+        );
+        let subpath = MarketplaceSubpath::parse(Path::new("aikit")).unwrap();
+
+        assert_eq!(
+            subpath.linked_plugin_path(&checkout, "flow").unwrap(),
+            "aikit/flow"
+        );
+        assert_eq!(
+            subpath.linked_plugin_dir(&checkout, "flow").unwrap(),
+            checkout.join("aikit/flow")
+        );
+        assert_eq!(
+            subpath.linked_plugin_dir(&checkout, "whole").unwrap(),
+            checkout.join("aikit")
+        );
+
+        let whole = root.join("whole");
+        fs::create_dir_all(&whole).unwrap();
+        write_manifest(&whole, r#"{"name":"whole","source":"."}"#);
+        assert_eq!(
+            MarketplaceSubpath::root()
+                .linked_plugin_dir(&whole, "whole")
+                .unwrap(),
+            whole
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_checkout_is_vacant_when_absent_or_empty_and_not_otherwise() {
+        let root = uze_testkit::temp::scratch("checkout-vacant");
+        assert!(checkout_is_vacant(&root.join("absent")));
+        fs::create_dir_all(root.join("empty")).unwrap();
+        assert!(checkout_is_vacant(&root.join("empty")));
+        fs::create_dir_all(root.join("held")).unwrap();
+        fs::write(root.join("held/marketplace.json"), "{}").unwrap();
+        assert!(!checkout_is_vacant(&root.join("held")));
+        fs::write(root.join("file"), "x").unwrap();
+        assert!(!checkout_is_vacant(&root.join("file")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_local_marketplace_is_its_repository_at_the_subpath_it_sits_in() {
+        let root = uze_testkit::temp::scratch("repository-of");
+        let market = root.join("market");
+        fs::create_dir_all(market.join("aikit")).unwrap();
+        write_manifest(&market.join("aikit"), r#"{"name":"flow","source":"."}"#);
+        uze_testkit::git::commit_everything_in(&market);
+
+        let repository = repository_of(&PackageSource::local(market.join("aikit"))).unwrap();
+        assert_eq!(
+            Path::new(&repository.fetch).canonical().unwrap(),
+            market.canonical().unwrap()
+        );
+        assert_eq!(
+            repository.identity, repository.fetch,
+            "a checkout with no remote answers for itself"
+        );
+        assert_eq!(
+            repository.subpath,
+            MarketplaceSubpath::parse(Path::new("aikit")).unwrap()
+        );
+
+        uze_testkit::git::isolated_git_in(
+            &market,
+            &["remote", "add", "origin", "git@github.com:acme/market.git"],
+        );
+        assert_eq!(
+            repository_of(&PackageSource::local(&market))
+                .unwrap()
+                .identity,
+            "https://github.com/acme/market"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_directory_that_is_no_repository_or_has_no_commit_is_refused() {
+        let root = uze_testkit::temp::scratch("repository-of-refused");
+        let plain = root.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        let unborn = root.join("unborn");
+        fs::create_dir_all(&unborn).unwrap();
+        uze_testkit::git::isolated_git_in(&unborn, &["init", "--quiet"]);
+        for refused in [&plain, &unborn] {
+            assert!(
+                matches!(
+                    repository_of(&PackageSource::local(refused)),
+                    Err(UzeError::MarketplaceNotARepository { .. })
+                ),
+                "{}",
+                refused.display()
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_marketplace_with_no_working_copy_here_is_cloned() {
+        let root = uze_testkit::temp::scratch("clone-checkout");
+        let market = root.join("market");
+        fs::create_dir_all(&market).unwrap();
+        write_manifest(&market, r#"{"name":"flow","source":"."}"#);
+        uze_testkit::git::commit_everything_in(&market);
+        let home = root.join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut environment = uze_testkit::env::scope();
+        environment.home(&home);
+
+        let checkout = root.join("links/market");
+        clone_checkout(&PackageSource::local(&market), &checkout).unwrap();
+        assert!(checkout.join("marketplace.json").is_file());
+        drop(environment);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

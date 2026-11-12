@@ -1248,3 +1248,340 @@ fn an_icon_names_the_hosts_or_one_the_manifest_declares() {
     let dir = plugin("icon-declared", &[("board", &gsd_files(&declared, board))]);
     compile_in(dir.path(), "board").expect("a declared icon and one the data names both compile");
 }
+
+fn png_head(width: u32, height: u32) -> Vec<u8> {
+    let mut head = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    head.extend(width.to_be_bytes());
+    head.extend(height.to_be_bytes());
+    head.extend([8, 6, 0, 0, 0]);
+    head
+}
+
+/// `MANIFEST` with a 32x32 sprite of `columns` columns whose last state
+/// plays `last` as its final frame, and a sheet of `sheet` bytes.
+fn compile_sprite(
+    label: &str,
+    columns: u32,
+    last: u32,
+    sheet: &[u8],
+) -> Result<(), Vec<Diagnostic>> {
+    let manifest = format!(
+        r#"{MANIFEST}sprite "pet" sheet="pet.png" frame="32x32" columns={columns} fallback="idle" {{
+    state "idle" frames="0-1" fps=4
+    state "working" frames="2,{last}" fps=12
+}}
+"#
+    );
+    let dir = plugin(label, &[("gsd-band", &gsd_files(&manifest, BOARD))]);
+    let extension = dir.join(EXTENSIONS_DIR).join("gsd-band");
+    std::fs::write(extension.join("pet.png"), sheet).unwrap();
+    let from_disk = compile_in(dir.path(), "gsd-band").map(|_| ());
+    let loaded = Loaded::read(&extension).expect("within the bounds");
+    let from_memory = compile_loaded(identity("gsd-band"), &loaded).map(|_| ());
+    assert_eq!(
+        from_disk, from_memory,
+        "the disk and the loaded bytes agree"
+    );
+    from_disk
+}
+
+fn sprite_refusal(label: &str, columns: u32, last: u32, sheet: &[u8]) -> String {
+    let errors = compile_sprite(label, columns, last, sheet).expect_err("refused");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    errors[0].message.clone()
+}
+
+/// A 128x64 sheet of 32x32 frames holds four columns of two rows: frames
+/// 0 to 7.
+#[test]
+fn a_sprite_plays_only_frames_its_sheet_holds() {
+    assert_eq!(
+        compile_sprite("sprite-fits", 4, 7, &png_head(128, 64)),
+        Ok(())
+    );
+    assert_eq!(
+        compile_sprite("sprite-narrow", 3, 5, &png_head(128, 64)),
+        Ok(())
+    );
+    assert!(
+        sprite_refusal("sprite-beyond", 4, 8, &png_head(128, 64))
+            .contains("plays frame 8, and `pet.png` holds 8")
+    );
+    assert!(
+        sprite_refusal("sprite-beyond-narrow", 3, 6, &png_head(128, 64))
+            .contains("plays frame 6, and `pet.png` holds 6")
+    );
+}
+
+#[test]
+fn a_sprites_frames_divide_its_sheet_and_its_columns_fit_across() {
+    for (width, height) in [(100, 64), (128, 50)] {
+        let message = sprite_refusal("sprite-undivided", 3, 5, &png_head(width, height));
+        assert!(
+            message.contains(&format!(
+                "is {width}x{height}, which 32x32 frames do not divide"
+            )),
+            "{message}"
+        );
+    }
+    assert!(
+        sprite_refusal("sprite-columns", 4, 5, &png_head(96, 64))
+            .contains("holds 3 columns of frames, not 4")
+    );
+    assert!(sprite_refusal("sprite-gif", 4, 5, b"GIF89a").contains("is not a PNG"));
+}
+
+#[test]
+fn a_diagnostic_about_the_whole_file_reads_as_file_and_message() {
+    assert_eq!(
+        Diagnostic::whole("board.uze", "holds no `<view>`", None).to_string(),
+        "board.uze: holds no `<view>`"
+    );
+}
+
+/// A component's `<view>` is held to the bound on its own, which a view of
+/// exactly that size meets.
+#[test]
+fn a_view_of_exactly_the_bound_is_read_and_one_byte_more_is_not() {
+    let component = |size: usize| format!("<view>\n{}\n</view>\n", "a".repeat(size - 1));
+    assert!(super::view_text("board.uze", component(bounded::FILE_MAX)).is_ok());
+    let refused = super::view_text("board.uze", component(bounded::FILE_MAX + 1)).unwrap_err();
+    assert!(
+        refused[0]
+            .message
+            .contains("larger than the 64 KiB a view may be"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_test_file_is_read_from_the_extension_or_the_editor_holding_it() {
+    let scratch = TempDir::new("test-file-read");
+    std::fs::create_dir_all(scratch.path().join("tests")).unwrap();
+    std::fs::write(scratch.path().join("tests/panel.test.kdl"), A_TEST).unwrap();
+
+    let read =
+        compile_test(scratch.path(), "tests/panel.test.kdl", &Overlay::new()).expect("decodes");
+    assert_eq!(read.tests[0].name, "the next step is offered");
+
+    let held = Overlay::from([(
+        "tests/panel.test.kdl".to_owned(),
+        A_TEST.replace("the next step is offered", "held by the editor"),
+    )]);
+    let read = compile_test(scratch.path(), "tests/panel.test.kdl", &held).expect("decodes");
+    assert_eq!(read.tests[0].name, "held by the editor");
+}
+
+#[test]
+fn a_program_an_action_runs_must_exist() {
+    let manifest = MANIFEST.replace(
+        "source \"board\"",
+        "action \"go\" label=\"Go\" on=\"board\" { run \"./bin/go\"; }\nsource \"board\"",
+    );
+    let dir = plugin(
+        "extension-action-program",
+        &[("gsd-band", &gsd_files(&manifest, BOARD))],
+    );
+    let missing = compile_in(dir.path(), "gsd-band").unwrap_err();
+    assert!(
+        missing
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("the program `bin/go`")),
+        "{missing:?}"
+    );
+}
+
+/// A failing test or step is reported where it is written.
+#[test]
+fn a_test_and_its_steps_point_back_at_the_file() {
+    let file = super::decode_test("tests/panel.test.kdl", A_TEST).expect("decodes");
+    let test = &file.tests[0];
+    assert_eq!(test.span.offset, 0);
+    assert_eq!(test.span.len, "test".len());
+    let step = &test.steps[0];
+    assert_eq!(step.span.offset, A_TEST.find("expect-text").unwrap());
+    assert!(
+        step.span.len >= "expect-text \"Fases\"".len(),
+        "{:?}",
+        step.span
+    );
+}
+
+#[test]
+fn a_snapshot_is_named_by_letters_digits_hyphens_and_underscores() {
+    let with = |name: &str| A_TEST.replace("snapshot \"panel\"", &format!("snapshot \"{name}\""));
+    let file = super::decode_test("tests/panel.test.kdl", &with("panel-2_dark")).expect("decodes");
+    assert_eq!(
+        file.tests[0].steps.last().map(|step| step.kind.clone()),
+        Some(uze_contract::StepKind::Snapshot("panel-2_dark".into()))
+    );
+    for name in ["", "a/b", "a.b"] {
+        let refused = super::decode_test("tests/panel.test.kdl", &with(name)).expect_err(name);
+        assert!(
+            refused
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("becomes a file name")),
+            "{name:?}: {refused:?}"
+        );
+    }
+}
+
+#[test]
+fn a_lookups_locale_is_two_or_three_lowercase_letters() {
+    for locale in ["english", "p"] {
+        let said = the_one(&format!(
+            "lookup \"t\" locale=\"{locale}\" {{ next \"x\"; }}\nText \"{{t::next}}\""
+        ));
+        assert!(
+            said.message.contains("is not a language"),
+            "{locale}: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_view_of_declarations_alone_draws_nothing() {
+    let said = the_one(r#"template "t" { Text "a"; }"#);
+    assert!(said.message.contains("draws nothing"), "{said:?}");
+}
+
+#[test]
+fn a_block_on_a_leaf_without_a_string_is_not_read_as_a_pasted_string() {
+    let said = the_one(r#"Pips done=1 total=2 { Text "a"; }"#);
+    assert!(
+        said.message.contains("`Pips` holds no other nodes"),
+        "{said:?}"
+    );
+    // A leaf whose required argument is a name, not a string.
+    let said = refused(r#"Sprite { pet; }"#);
+    assert!(
+        said.iter()
+            .all(|diagnostic| !diagnostic.message.contains("takes a string")),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|diagnostic| diagnostic.message.contains("`Sprite` takes one argument")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_block_holding_more_than_a_bare_name_is_not_suggested_as_a_reference() {
+    let said = the_one(r#"Text { id 1; }"#);
+    assert!(said.message.contains("takes a string"), "{said:?}");
+    assert_eq!(said.suggestion.as_deref(), Some("write `Text \"…\"`"));
+}
+
+#[test]
+fn when_and_unless_are_told_apart() {
+    for (prop, expected) in [
+        ("when", Condition::When(path(Scope::Item, &["done"]))),
+        ("unless", Condition::Unless(path(Scope::Item, &["done"]))),
+    ] {
+        let parsed = view(&format!("Text \"a\" {prop}=\"done\"")).unwrap();
+        assert_eq!(first_node(&parsed).condition, Some(expected), "{prop}");
+    }
+}
+
+#[test]
+fn every_pair_a_show_any_names_is_a_declared_choice() {
+    let refused = the_one(
+        r#"Tabs id="tab" { Tab "a" value="phases"; Tab "b" value="log"; }
+Text "a" show-any="ui.tab=phases,ui.tab=notes""#,
+    );
+    assert!(refused.message.contains("no choice `notes`"), "{refused:?}");
+}
+
+#[test]
+fn a_size_or_number_that_is_neither_is_said_in_its_own_words() {
+    let size = the_one(r#"Box width="wide" { Text "a"; }"#);
+    assert!(
+        size.message.contains("a number of cells or `N%`"),
+        "{size:?}"
+    );
+    assert!(!size.message.contains("not a percentage"), "{size:?}");
+    let number = the_one(r#"Progress ratio="half""#);
+    assert!(number.message.contains("is a number:"), "{number:?}");
+}
+
+#[test]
+fn a_flag_is_told_how_to_be_written() {
+    assert_eq!(
+        the_one(r#"Text "a" strong=1"#).suggestion.as_deref(),
+        Some("write `#true`, `#false` or a lone reference")
+    );
+    assert_eq!(
+        the_one(r#"Text "a" strong="yes""#).suggestion.as_deref(),
+        Some("write `#true` or \"{field}\"")
+    );
+}
+
+/// A tab whose label is bound to data names no choice that can be checked.
+#[test]
+fn a_tab_labelled_from_data_leaves_the_choices_open() {
+    assert!(
+        view(
+            r#"Tabs id="tab" { Tab "{name}"; }
+Text "a" show="ui.tab=phases""#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_template_is_named_like_a_field() {
+    let said = the_one(
+        r#"template "Bad Name" { Text "a"; }
+Text "b""#,
+    );
+    assert!(said.message.contains("is not a template name"), "{said:?}");
+}
+
+#[test]
+fn each_may_nest_exactly_twice_through_a_template() {
+    assert!(
+        view(
+            r#"template "inner" { List each="b" { Text "x"; }; }
+List each="a" { use "inner"; }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_view_expanding_to_exactly_the_bound_compiles() {
+    let mut source = "template \"t0\" {\n    Text \"a\"\n}\ntemplate \"t1\" {\n".to_owned();
+    source.push_str(&"    use \"t0\"\n".repeat(100));
+    source.push_str("}\ntemplate \"t2\" {\n");
+    source.push_str(&"    use \"t1\"\n".repeat(99));
+    source.push_str("}\nRow {\n    use \"t2\"\n}\n");
+    source.push_str(&"Text \"a\"\n".repeat(99));
+    let compiled = view(&source).expect("at the bound");
+    assert_eq!(compiled.expansion(), uze_contract::EXPANSION_MAX);
+}
+
+/// A template used inside another is placed where the outer one is used.
+#[test]
+fn a_part_reached_through_two_templates_is_judged_where_it_lands() {
+    assert!(
+        view(
+            r#"template "seg" { Segment weight=1; }
+template "parts" { use "seg"; }
+Progress { use "parts"; }"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn a_show_compares_with_a_value() {
+    let said = the_one(
+        r#"Tabs id="tab" { Tab "a" value="phases"; }
+Text "a" show="ui.tab=""#,
+    );
+    assert!(
+        said.message.contains("does not compare a UI value"),
+        "{said:?}"
+    );
+}

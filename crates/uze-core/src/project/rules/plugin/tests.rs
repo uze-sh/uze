@@ -377,3 +377,106 @@ fn a_plugin_with_no_rules_writes_no_manifest() {
     assert!(done.is_empty(), "{done:?}");
     assert!(!root.join(".agents").exists());
 }
+
+#[test]
+fn a_namespace_names_its_plugin_and_its_marketplace() {
+    assert_eq!(acme().plugin(), "acme-conventions");
+    assert_eq!(acme().marketplace(), "acme");
+}
+
+#[test]
+fn a_copy_state_is_printed_as_its_report_names_it() {
+    for state in [
+        CopyState::Current,
+        CopyState::Drifted,
+        CopyState::Missing,
+        CopyState::Extra,
+    ] {
+        assert_eq!(
+            serde_json::to_value(state).unwrap().as_str(),
+            Some(state.as_str())
+        );
+    }
+}
+
+#[test]
+fn only_markdown_files_named_beyond_their_extension_are_copies() {
+    let root = checkout("plugin-rules-not-copies");
+    let installed = [rule("ui.md", UI)];
+    converge_copies(&root, &acme(), &installed, &installed).unwrap();
+    let folder = root.join(acme().folder());
+    fs::write(folder.join(".md"), "no name").unwrap();
+    fs::write(folder.join("notes.txt"), "not a rule").unwrap();
+
+    let findings = inspect_copies(&root, &acme(), &installed).unwrap();
+
+    let rules: Vec<&str> = findings
+        .iter()
+        .map(|finding| finding.rule.as_str())
+        .collect();
+    assert_eq!(rules, ["ui.md"]);
+}
+
+#[test]
+fn a_convergence_is_empty_only_when_nothing_happened() {
+    assert!(Convergence::default().is_empty());
+    let one = || vec![acme().copy_identity("ui.md")];
+    for done in [
+        Convergence {
+            written: one(),
+            ..Convergence::default()
+        },
+        Convergence {
+            removed: one(),
+            ..Convergence::default()
+        },
+        Convergence {
+            drifted: one(),
+            ..Convergence::default()
+        },
+        Convergence {
+            extra: one(),
+            ..Convergence::default()
+        },
+        Convergence {
+            manifest: ManifestChange::Registered,
+            ..Convergence::default()
+        },
+    ] {
+        assert!(!done.is_empty(), "{done:?}");
+    }
+}
+
+#[test]
+fn removing_a_plugin_whose_folder_is_gone_still_takes_its_entry_back() {
+    let root = checkout("plugin-rules-remove-gone-folder");
+    let installed = [rule("ui.md", UI)];
+    converge_copies(&root, &acme(), &installed, &installed).unwrap();
+    fs::remove_dir_all(root.join(acme().folder())).unwrap();
+
+    let done = converge_copies(&root, &acme(), &installed, &[]).unwrap();
+
+    assert_eq!(done.manifest, ManifestChange::Removed);
+    assert!(!root.join(super::manifest::MANIFEST_FILE).exists());
+}
+
+#[test]
+fn an_unreadable_manifest_is_reported_only_when_the_removal_emptied_a_folder() {
+    let broken = "{ \"entries\": [ ";
+
+    let emptied = checkout("plugin-rules-remove-unreadable-emptied");
+    let installed = [rule("ui.md", UI)];
+    converge_copies(&emptied, &acme(), &installed, &installed).unwrap();
+    fs::write(emptied.join(super::manifest::MANIFEST_FILE), broken).unwrap();
+    let done = converge_copies(&emptied, &acme(), &installed, &[]).unwrap();
+    assert!(
+        matches!(done.manifest, ManifestChange::Unreadable(_)),
+        "{done:?}"
+    );
+
+    let never = checkout("plugin-rules-remove-unreadable-never");
+    fs::create_dir_all(never.join(".agents")).unwrap();
+    fs::write(never.join(super::manifest::MANIFEST_FILE), broken).unwrap();
+    let done = converge_copies(&never, &acme(), &installed, &[]).unwrap();
+    assert_eq!(done.manifest, ManifestChange::Unchanged);
+}

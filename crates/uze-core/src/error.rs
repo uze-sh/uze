@@ -483,3 +483,34 @@ impl From<uze_document::DocumentError> for UzeError {
 }
 
 pub type Result<T> = std::result::Result<T, UzeError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_projection_conflict_names_the_entry_and_both_capabilities() {
+        let message = UzeError::ProjectionConflict(Box::new(ProjectionConflictDetails {
+            entry: PathBuf::from("review"),
+            requested: "kit:review".to_owned(),
+            requested_integration: "first".to_owned(),
+            requested_target: PathBuf::from("requested-target"),
+            existing: "other:review".to_owned(),
+            existing_integration: "second".to_owned(),
+            existing_target: PathBuf::from("existing-target"),
+        }))
+        .to_string();
+
+        for part in [
+            "review",
+            "kit:review",
+            "first",
+            "requested-target",
+            "other:review",
+            "second",
+            "existing-target",
+        ] {
+            assert!(message.contains(part), "{part} missing from: {message}");
+        }
+    }
+}

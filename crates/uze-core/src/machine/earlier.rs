@@ -749,4 +749,116 @@ mod tests {
             "[appearance\n"
         );
     }
+
+    #[test]
+    fn a_remembered_release_answer_left_beside_its_record_is_removed() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("carry-rebuilt").join("uze"));
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        let current = home.names_only().release_path();
+        std::fs::write(&current, "asked again").unwrap();
+        std::fs::write(home.retired_release_path(), "asked before").unwrap();
+
+        carry_all(&home);
+
+        assert!(!home.retired_release_path().exists());
+        assert_eq!(std::fs::read_to_string(&current).unwrap(), "asked again");
+    }
+
+    #[test]
+    fn a_projection_with_only_the_earlier_marker_is_carried_to_todays_name() {
+        let scratch = uze_testkit::temp::scratch("carry-marker-only-earlier");
+        let project = scratch.join("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        let home = crate::UzeHome::at(scratch.join("uze"));
+        let dir = home.runtime_project_dir(&crate::harness_runtime::project_id_for(&project));
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = serde_json::json!({ "root": project }).to_string();
+        std::fs::write(dir.join(PROJECTION_MARKER), &marker).unwrap();
+
+        carry_all(&home);
+
+        assert!(!dir.join(PROJECTION_MARKER).exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(crate::harness_runtime::PROJECTION_MARKER)).unwrap(),
+            marker
+        );
+    }
+
+    #[test]
+    fn a_retired_file_the_collector_declines_is_kept() {
+        let home =
+            crate::UzeHome::at(uze_testkit::temp::scratch("loose-logs-declined").join("uze"));
+        std::fs::create_dir_all(home.logs_dir()).unwrap();
+        let (taken, declined) = (
+            home.loose_gate_log_path("a1"),
+            home.loose_gate_log_path("a2"),
+        );
+        for path in [&taken, &declined] {
+            std::fs::write(path, "x").unwrap();
+        }
+
+        let removed =
+            remove_retired_files(&home, &home.logs_dir(), &["loose_gate_log_path"], |path| {
+                path != declined.as_path()
+            });
+
+        assert_eq!(removed, vec![taken]);
+        assert!(declined.exists());
+    }
+
+    #[test]
+    fn a_move_that_cannot_link_never_renames_over_a_name_taken_meanwhile() {
+        let scratch = uze_testkit::temp::scratch("carry-move-no-links-taken");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let (was, now) = (scratch.join("was.json"), scratch.join("now.json"));
+        std::fs::write(&was, "older").unwrap();
+        std::fs::write(&now, "newer").unwrap();
+        let unsupported = |_: &Path, _: &Path| Err(std::io::ErrorKind::Unsupported.into());
+
+        assert!(move_with(&was, &now, unsupported).is_err());
+
+        assert_eq!(std::fs::read_to_string(&now).unwrap(), "newer");
+        assert_eq!(std::fs::read_to_string(&was).unwrap(), "older");
+    }
+
+    #[test]
+    fn the_memory_setting_is_native_or_else_the_key_it_was() {
+        let setting = |label: &str, config: &str| {
+            let home = crate::UzeHome::at(uze_testkit::temp::scratch(label).join("uze"));
+            std::fs::create_dir_all(home.root()).unwrap();
+            std::fs::write(home.config_path(), config).unwrap();
+            memory_native_setting(&home)
+        };
+
+        assert_eq!(setting("memory-unset", ""), None);
+        assert_eq!(
+            setting("memory-earlier", "[memory]\nharness = \"off\"\n").as_deref(),
+            Some("off")
+        );
+        assert_eq!(
+            setting(
+                "memory-native",
+                "[memory]\nharness = \"off\"\nnative = \"on\"\n"
+            )
+            .as_deref(),
+            Some("on")
+        );
+    }
+
+    #[test]
+    fn a_stale_earlier_marker_is_rewritten_while_records_are_uncarried() {
+        let home = crate::UzeHome::at(uze_testkit::temp::scratch("marker-rewritten").join("uze"));
+        std::fs::create_dir_all(home.state_dir()).unwrap();
+        std::fs::write(home.retired_release_path(), "{}").unwrap();
+        let dir = home.runtime_project_dir("p1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(PROJECTION_MARKER), "stale").unwrap();
+
+        write_projection_marker(&home, &dir, b"fresh").unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join(PROJECTION_MARKER)).unwrap(),
+            "fresh"
+        );
+    }
 }

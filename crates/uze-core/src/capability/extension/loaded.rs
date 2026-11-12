@@ -214,4 +214,23 @@ mod tests {
         fs::remove_file(outside).unwrap();
         fs::remove_dir_all(dir).unwrap();
     }
+
+    #[test]
+    fn a_directory_at_exactly_its_bounds_is_read() {
+        let dir = extension("loaded-at-bounds");
+        for n in 2..LOAD_FILES {
+            fs::write(dir.join(format!("f{n}")), "").unwrap();
+        }
+        let loaded = Loaded::read(&dir).expect("as many files as allowed");
+        assert_eq!(loaded.paths().count(), LOAD_FILES);
+        fs::remove_dir_all(dir).unwrap();
+
+        let dir = extension("loaded-at-size");
+        let used = fs::metadata(dir.join("extension.kdl")).unwrap().len()
+            + fs::metadata(dir.join("views/board.uze")).unwrap().len();
+        let blob = fs::File::create(dir.join("blob.bin")).unwrap();
+        blob.set_len(LOAD_BYTES - used).unwrap();
+        assert!(Loaded::read(&dir).is_ok(), "as many bytes as allowed");
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

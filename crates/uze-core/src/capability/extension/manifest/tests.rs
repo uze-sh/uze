@@ -936,6 +936,32 @@ fn agent_events_actions_and_the_agents_source_need_their_grants() {
 }
 
 #[test]
+fn a_sprites_frame_sides_and_columns_stay_within_their_bounds() {
+    let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
+    let sprite = |frame: &str, columns: &str| {
+        format!(
+            r#"sprite "pet" sheet="pet.png" frame="{frame}" columns={columns} fallback="idle" {{
+    state "idle" frames="0-3" fps=4
+}}"#
+        )
+    };
+    decoded(&with(&sprite("1x1024", "256")));
+    for frame in ["0x32", "32x0", "1025x32", "32x1025"] {
+        assert!(
+            first_message(&with(&sprite(frame, "4"))).contains("is not a frame size"),
+            "{frame}"
+        );
+    }
+    for columns in ["0", "257"] {
+        assert!(
+            first_message(&with(&sprite("32x32", columns)))
+                .contains("`columns` is a whole number from 1 to 256"),
+            "{columns}"
+        );
+    }
+}
+
+#[test]
 fn a_sprite_and_a_resident_source_are_declared_and_checked() {
     let with = |rest: &str| GSD.replace("source \"board\"", &format!("{rest}\nsource \"board\""));
     let sprite = r#"sprite "pet" sheet="pet.png" frame="32x32" columns=4 fallback="idle" {
@@ -1251,4 +1277,302 @@ fn an_action_runs_code_only_by_calling_a_function() {
             .starts_with("write `call \"<fn>\" in=\"archive.uze\"`"),
         "{refused:?}"
     );
+}
+
+#[test]
+fn a_bar_item_is_aligned_and_opens_a_view_or_drawer_of_its_own() {
+    let with =
+        |bar: &str| GSD.replace("source \"board\" {", &format!("{bar}\nsource \"board\" {{"));
+    let manifest = decoded(&with(
+        r#"surface "meter" slot="bar" view="board.uze" source="board" align="right" opens="board""#,
+    ));
+    assert_eq!(
+        manifest.surface("meter").unwrap().bar,
+        Some(uze_contract::BarDecl {
+            align: uze_contract::BarAlign::Right,
+            opens: Some("board".into()),
+        })
+    );
+    assert_eq!(manifest.surface("board").unwrap().bar, None);
+
+    let opens_a_section = the_message(&with(
+        r#"surface "meter" slot="bar" view="board.uze" source="board" opens="summary""#,
+    ));
+    assert!(
+        opens_a_section.contains("opens `summary`, which is no view or drawer"),
+        "{opens_a_section}"
+    );
+    let on_a_section = the_message(&GSD.replace(
+        r#"source="board" title="GSD""#,
+        r#"source="board" title="GSD" align="right""#,
+    ));
+    assert_eq!(on_a_section, "only a bar item takes `align` and `opens`");
+}
+
+#[test]
+fn an_exec_is_declared_once_per_program() {
+    let wants = r#"wants "exec:nvidia-smi" "exec:gh""#;
+    let execs = |second: &str| {
+        running(
+            r#"run "nvidia-smi""#,
+            wants,
+            &format!(
+                "exec \"nvidia-smi\" {{ reads \"/dev/null\"; }}\nexec \"{second}\" {{ reads \"/dev/zero\"; }}\naction \"go\" label=\"Go\" on=\"board\" {{ run \"gh\"; }}"
+            ),
+        )
+    };
+    let manifest = decoded(&execs("gh"));
+    assert_eq!(manifest.reads_of("gh"), ["/dev/zero"]);
+    assert!(the_message(&execs("nvidia-smi")).contains("`exec \"nvidia-smi\"` is declared twice"));
+}
+
+#[test]
+fn a_protocol_other_than_this_builds_says_which_side_to_move() {
+    let newer = refusals(&GSD.replace("protocol 1", "protocol 2"));
+    assert_eq!(
+        newer[0].suggestion.as_deref(),
+        Some("update UZE to install this extension")
+    );
+    let older = refusals(&GSD.replace("protocol 1", "protocol 0"));
+    assert_eq!(
+        older[0].suggestion.as_deref(),
+        Some("port the extension to protocol 1")
+    );
+}
+
+#[test]
+fn a_surface_names_its_source_by_an_id() {
+    let message = first_message(&GSD.replace(r#"source="board" title"#, r#"source="Board" title"#));
+    assert!(message.contains("`Board` is not a source id"), "{message}");
+}
+
+#[test]
+fn every_later_argument_of_a_program_is_a_template() {
+    let message = first_message(&running(r#"run "./bin/archive" "--" "{name""#, "", ""));
+    assert!(message.contains("with no closing"), "{message}");
+}
+
+#[test]
+fn a_program_may_take_exactly_the_longest_time_limit() {
+    let limit = uze_contract::PROGRAM_TIME_LIMIT.as_secs();
+    let manifest = decoded(&running(
+        &format!(r#"run "./bin/meter" timeout="{limit}s""#),
+        "",
+        "",
+    ));
+    let SourceKind::Run(program) = &manifest.source("board").unwrap().kind else {
+        panic!("not a program");
+    };
+    assert_eq!(program.timeout, Some(uze_contract::PROGRAM_TIME_LIMIT));
+}
+
+#[test]
+fn a_misspelled_child_of_a_block_is_named_with_the_nearest_spelling() {
+    let sprite = r#"sprite "pet" sheet="pet.png" frame="32x32" columns=4 fallback="idle" {
+    state "idle" frames="0-3" fps=4
+    stat "working" frames="4" fps=4
+}"#;
+    let diagnostics =
+        refusals(&GSD.replace("source \"board\"", &format!("{sprite}\nsource \"board\"")));
+    let unknown = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message == "a `sprite` holds no `stat`")
+        .unwrap_or_else(|| panic!("{diagnostics:?}"));
+    assert_eq!(unknown.suggestion.as_deref(), Some("did you mean `state`?"));
+}
+
+#[test]
+fn an_action_running_a_bare_program_needs_its_exec_grant() {
+    let action = GSD.replace(
+        "source \"board\"",
+        "action \"go\" label=\"Go\" on=\"board\" { run \"nvidia-smi\"; }\nsource \"board\"",
+    );
+    assert_eq!(
+        first_message(&action),
+        "the action `go` runs `nvidia-smi`, which needs `exec:nvidia-smi`"
+    );
+}
+
+#[test]
+fn a_source_refreshed_by_agent_events_needs_to_observe_agents() {
+    let source = GSD.replace(
+        "source \"board\" { fixture \"fixtures/board.json\"; }",
+        "source \"board\" { fixture \"fixtures/board.json\"; refresh-on \"agent.turn.finished\"; }",
+    );
+    assert!(first_message(&source).contains("which needs `agent:observe`"));
+}
+
+#[test]
+fn an_action_takes_one_with_and_one_then() {
+    let action = |body: &str| {
+        format!(
+            "{GSD}wants \"agent:prompt\"\naction \"review\" label=\"Review\" on=\"board\" {{\n    run \"./bin/next.sh\"\n{body}\n}}\n"
+        )
+    };
+    let withs = refusals(&action("    with \"ui.sort\"\n    with \"form.*\""));
+    assert!(
+        withs
+            .iter()
+            .any(|diagnostic| diagnostic.message == "an action takes one `with`"),
+        "{withs:?}"
+    );
+    let thens = refusals(&action(
+        "    then { agent-prompt \"a\" target=\"self\"; }\n    then { agent-prompt \"b\" target=\"self\"; }",
+    ));
+    assert!(
+        thens
+            .iter()
+            .any(|diagnostic| diagnostic.message == "an action takes one `then`"),
+        "{thens:?}"
+    );
+}
+
+#[test]
+fn an_agent_target_is_self_or_a_field_holding_an_id() {
+    let manifest = decoded(&GSD.replace(
+        "source \"board\"",
+        "wants \"agent:prompt\"\naction \"next\" label=\"Next\" on=\"board\" { agent-prompt \"Go\" target=\"{agent}\"; }\nsource \"board\"",
+    ));
+    let uze_contract::Does::AgentPrompt { target, .. } = &manifest.action("next").unwrap().does
+    else {
+        panic!("a prompt");
+    };
+    assert_eq!(target, &uze_contract::AgentTarget::Named("{agent}".into()));
+}
+
+/// An unattended prompt is fixed, a skill's arguments as much as a text.
+#[test]
+fn an_unattended_skill_prompt_reads_no_field() {
+    let with = |args: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!("wants \"agent:prompt:auto\"\naction \"nudge\" label=\"Nudge\" on=\"board\" {{ agent-prompt skill=\"gsd:execute-phase\" \"{args}\" target=\"self\" when=\"agent.turn.finished\"; }}\nsource \"board\""),
+        )
+    };
+    decoded(&with("43"));
+    assert!(first_message(&with("{number}")).contains("a prompt sent unattended is fixed"));
+}
+
+#[test]
+fn a_call_names_a_function_by_letters_digits_and_underscores() {
+    let call = |function: &str| {
+        GSD.replace(
+            "source \"board\"",
+            &format!("action \"go\" label=\"Go\" on=\"board\" {{ call \"{function}\" in=\"next.uze\"; }}\nsource \"board\""),
+        )
+    };
+    decoded(&call("next_phase"));
+    decoded(&call("_next"));
+    assert!(first_message(&call("1st")).contains("`1st` is not a function's name"));
+    assert!(first_message(&call("next-phase")).contains("`next-phase` is not a function's name"));
+}
+
+#[test]
+fn an_unknown_grant_far_from_every_name_lists_what_is_offered() {
+    let refused =
+        refusals(&GSD.replace("source \"board\"", "wants \"zzzzzzzzzz\"\nsource \"board\""));
+    let suggestion = refused[0].suggestion.as_deref().unwrap_or_default();
+    assert!(
+        suggestion.starts_with("this version offers "),
+        "{suggestion}"
+    );
+    for offered in [
+        "`read:checkout`",
+        "`clipboard`",
+        "`exec:<program>`",
+        "`net:<host>`",
+    ] {
+        assert!(
+            suggestion.contains(offered),
+            "{offered} missing from {suggestion}"
+        );
+    }
+}
+
+/// Each child but `refresh-on` is written once in a source.
+#[test]
+fn a_source_takes_each_child_once() {
+    for (child, once) in [
+        ("preferences", "preferences"),
+        ("applies-when \".planning\"", "applies-when"),
+        ("deliver \"each\"", "deliver"),
+        ("input phase=\"1\"", "input"),
+        ("every \"30s\"", "every"),
+        ("output \"json\"", "output"),
+        ("fields \"name\"", "fields"),
+        ("store", "store"),
+    ] {
+        let source = running(
+            &format!("run \"./bin/meter\"\n    {child}\n    {child}"),
+            "",
+            "",
+        );
+        let said = format!("a source takes one `{once}`");
+        let diagnostics = refusals(&source);
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message == said),
+            "{child}: {diagnostics:?}"
+        );
+    }
+}
+
+#[test]
+fn a_source_is_refreshed_once_per_event() {
+    let refreshed = |events: &str| {
+        GSD.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            &format!("source \"board\" {{\n    fixture \"fixtures/board.json\"\n{events}\n}}"),
+        )
+    };
+    let manifest = decoded(&refreshed(
+        "    refresh-on \"checkout.changed\"\n    refresh-on \"paths.changed\" \".planning\"",
+    ));
+    assert_eq!(manifest.source("board").unwrap().refresh_on.len(), 2);
+    assert!(
+        the_message(&refreshed(
+            "    refresh-on \"checkout.changed\"\n    refresh-on \"checkout.changed\""
+        ))
+        .contains("refreshed on `checkout.changed` twice")
+    );
+}
+
+#[test]
+fn json_needs_no_fields_and_fields_need_lines() {
+    let manifest = decoded(&running("run \"./bin/meter\"\n    output \"json\"", "", ""));
+    assert_eq!(
+        manifest.source("board").unwrap().output,
+        uze_contract::Output::Json
+    );
+    assert!(
+        first_message(&running("run \"./bin/meter\"\n    fields \"name\"", "", ""))
+            .contains("`fields` names the parts of a line")
+    );
+    assert!(
+        first_message(&running(
+            "run \"./bin/meter\"\n    output \"json\"\n    fields \"name\"",
+            "",
+            ""
+        ))
+        .contains("`fields` names the parts of a line")
+    );
+}
+
+#[test]
+fn a_separator_is_one_mark_and_only_for_lines() {
+    for output in [
+        "output \"json\" separator=\",\"",
+        "output \"lines\" separator=\"a\"",
+    ] {
+        assert!(
+            first_message(&running(
+                &format!("run \"./bin/meter\"\n    {output}\n    fields \"name\""),
+                "",
+                ""
+            ))
+            .contains("`separator` is one character that is not a letter or a digit"),
+            "{output}"
+        );
+    }
 }

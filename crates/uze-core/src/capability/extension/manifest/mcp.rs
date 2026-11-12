@@ -72,3 +72,24 @@ fn is_plugin_reference(written: &str) -> bool {
         .split_once('@')
         .is_some_and(|(plugin, marketplace)| name(plugin) && name(marketplace))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plugin_reference_is_two_package_names_around_an_at() {
+        assert!(is_plugin_reference("std@cardinal"));
+        assert!(is_plugin_reference("std-2.0_x@market.place"));
+        for refused in [
+            "std",
+            "@cardinal",
+            "std@",
+            "Std@cardinal",
+            "std@Cardinal",
+            "std@car dinal",
+        ] {
+            assert!(!is_plugin_reference(refused), "{refused}");
+        }
+    }
+}

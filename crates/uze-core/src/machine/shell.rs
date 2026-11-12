@@ -340,4 +340,76 @@ mod tests {
     fn an_unknown_platform_key_is_refused() {
         assert!(serde_json::from_str::<ShellCommand>(r#"{"macos": "x"}"#).is_err());
     }
+
+    #[test]
+    fn what_runs_is_the_line_as_written() {
+        assert_eq!(Runs::Portable("pnpm build").line(), "pnpm build");
+        assert_eq!(Runs::Native("make").line(), "make");
+    }
+
+    #[test]
+    fn only_a_plain_line_the_portable_shell_refuses_says_why() {
+        assert!(
+            ShellCommand::from("for f in *; do :; done")
+                .not_portable()
+                .is_some()
+        );
+        assert_eq!(ShellCommand::from("pnpm install").not_portable(), None);
+        assert_eq!(ShellCommand::from("  ").not_portable(), None);
+        assert_eq!(
+            ShellCommand::spelled("for f in *; do :; done", "Get-ChildItem").not_portable(),
+            None
+        );
+    }
+
+    #[test]
+    fn this_platforms_key_names_the_spelling_it_runs() {
+        let text = serde_json::json!({ ShellCommand::platform(): "here" }).to_string();
+        let command: ShellCommand = serde_json::from_str(&text).unwrap();
+        assert_eq!(command.here(), Some("here"));
+    }
+
+    #[test]
+    fn a_command_displays_as_its_label() {
+        let pair = ShellCommand::spelled("make", "make.exe");
+        assert_eq!(pair.to_string(), pair.label());
+        assert_eq!(ShellCommand::from("pnpm build").to_string(), "pnpm build");
+    }
+
+    fn observe(home: &crate::home::UzeHome, refusal: Option<&str>, age_secs: u64) {
+        let path = home.shell_observation_cache_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let observed = Observed {
+            refusal: refusal.map(str::to_owned),
+            observed_at_unix_secs: uze_platform::clock::since_epoch().as_secs() - age_secs,
+        };
+        std::fs::write(path, serde_json::to_vec(&observed).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn an_observation_of_the_shell_stands_for_a_day() {
+        let home = crate::home::UzeHome::at(uze_testkit::temp::scratch("shell-observed"));
+        observe(&home, Some("remembered"), 23 * 3600);
+        assert_eq!(refusal(&home).as_deref(), Some("remembered"));
+
+        observe(&home, Some("remembered"), 24 * 3600);
+        assert_ne!(
+            refusal(&home).as_deref(),
+            Some("remembered"),
+            "a day old, the shell is asked again"
+        );
+    }
+
+    #[test]
+    fn a_remembered_refusal_is_what_was_last_observed_however_old() {
+        let home = crate::home::UzeHome::at(uze_testkit::temp::scratch("shell-remembered"));
+        assert_eq!(remembered_refusal(&home), None, "nothing observed yet");
+        observe(&home, Some("policy refuses scripts"), 400 * 24 * 3600);
+        assert_eq!(
+            remembered_refusal(&home).as_deref(),
+            Some("policy refuses scripts")
+        );
+        observe(&home, None, 0);
+        assert_eq!(remembered_refusal(&home), None);
+    }
 }

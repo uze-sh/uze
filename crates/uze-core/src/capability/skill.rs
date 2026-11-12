@@ -173,8 +173,8 @@ pub fn split_frontmatter(text: &str) -> Option<(&str, &str)> {
         .or_else(|| text.strip_prefix("---\r\n"))?;
     let mut offset = 0;
     for line in rest.split_inclusive('\n') {
-        if offset > 0 && line.ends_with('\n') && line.trim_end_matches(['\r', '\n']) == "---" {
-            let head = &rest[..offset - 1];
+        if line.ends_with('\n') && line.trim_end_matches(['\r', '\n']) == "---" {
+            let head = rest[..offset].strip_suffix('\n').unwrap_or_default();
             return Some((
                 head.strip_suffix('\r').unwrap_or(head),
                 &rest[offset + line.len()..],
@@ -196,6 +196,13 @@ fn parse_bool(value: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_frontmatter_closes_at_the_line_after_it_opens() {
+        let text = "---\n---\nbody\n\n---\nmore\n";
+        assert_eq!(split_frontmatter(text), Some(("", "body\n\n---\nmore\n")));
+        assert_eq!(split_frontmatter("---\r\n---\r\nbody"), Some(("", "body")));
+    }
 
     #[test]
     fn absent_invoke_block_is_none_and_defaults_to_model_and_user() {
@@ -325,6 +332,31 @@ mod tests {
         assert_eq!(
             parse_skill_invocation(&bytes),
             Some(SkillInvocationPolicy::USER_ONLY)
+        );
+    }
+
+    #[test]
+    fn only_model_and_user_together_are_the_default_and_neither_is_invalid() {
+        assert!(SkillInvocationPolicy::MODEL_AND_USER.is_default());
+        assert!(!SkillInvocationPolicy::MODEL_ONLY.is_default());
+        assert!(!SkillInvocationPolicy::USER_ONLY.is_default());
+        assert!(!SkillInvocationPolicy::INVALID.is_default());
+
+        assert!(SkillInvocationPolicy::INVALID.is_invalid());
+        assert!(!SkillInvocationPolicy::MODEL_ONLY.is_invalid());
+        assert!(!SkillInvocationPolicy::USER_ONLY.is_invalid());
+        assert!(!SkillInvocationPolicy::MODEL_AND_USER.is_invalid());
+    }
+
+    #[test]
+    fn the_frontmatter_head_ends_before_its_closing_line() {
+        assert_eq!(
+            split_frontmatter("---\nname: demo\n---\nbody\n"),
+            Some(("name: demo", "body\n"))
+        );
+        assert_eq!(
+            split_frontmatter("---\r\nname: demo\r\n---\r\nbody\r\n"),
+            Some(("name: demo", "body\r\n"))
         );
     }
 }

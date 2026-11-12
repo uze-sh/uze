@@ -215,6 +215,45 @@ mod tests {
         fs::remove_dir_all(home.root()).unwrap();
     }
 
+    /// Only a matched receipt has something to detach; a missing one is
+    /// already gone and is only forgotten.
+    #[test]
+    fn a_safe_removal_detaches_the_matched_and_forgets_the_missing() {
+        let report = ReconciliationReport {
+            package_id: "plugin".to_owned(),
+            receipts: [
+                ("matched", AttachmentState::Matched),
+                ("missing", AttachmentState::Missing),
+            ]
+            .into_iter()
+            .map(|(key, state)| ReconciledReceipt {
+                ledger_key: key.to_owned(),
+                receipt: AttachmentReceipt {
+                    package_id: "plugin".to_owned(),
+                    resource_identity: Some(key.to_owned()),
+                    integration: "test".to_owned(),
+                    artifact: crate::integration::ManagedArtifact::GeneratedFile {
+                        path: key.into(),
+                        content: String::new(),
+                    },
+                },
+                inspection: AttachmentInspection {
+                    state,
+                    reason: String::new(),
+                },
+            })
+            .collect(),
+            ledger_error: None,
+        };
+        assert_eq!(
+            plan_remove(&report),
+            PackageRemovalPlan::Safe {
+                detachable_receipts: vec!["matched".to_owned()],
+                already_missing_receipts: vec!["missing".to_owned()],
+            }
+        );
+    }
+
     #[test]
     fn corrupt_ledger_blocks_removal_planning() {
         let home = home("corrupt");

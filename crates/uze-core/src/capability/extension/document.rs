@@ -252,4 +252,17 @@ mod tests {
         assert_eq!(position(source, 9), (2, 5));
         assert_eq!(position(source, 999), (2, 6));
     }
+
+    #[test]
+    fn an_offset_inside_a_character_is_placed_at_its_start() {
+        assert_eq!(position("a\nééé b", 3), (2, 1));
+    }
+
+    /// One edit for a name of four characters or fewer, two beyond.
+    #[test]
+    fn a_short_name_reaches_one_edit_and_a_longer_one_two() {
+        let nodes = ["Stack", "Table", "Tabs", "Text"];
+        assert_eq!(nearest("Tazz", &nodes), None);
+        assert_eq!(nearest("Stxcx", &nodes), Some("Stack"));
+    }
 }

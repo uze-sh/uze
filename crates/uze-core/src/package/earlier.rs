@@ -296,4 +296,31 @@ mod tests {
         assert!(!home.store_dir().join("plugins").exists());
         fs::remove_dir_all(home.root()).unwrap();
     }
+
+    /// A package already on the new side is that revision whole: nothing of
+    /// the one left behind is carried into it.
+    #[test]
+    fn a_package_on_both_sides_is_never_mixed_with_the_older_revision() {
+        let home = home("never-mixed");
+        old_package(&home, "ai", "kit");
+        let old_kit = home.store_dir().join("plugins/ai/kit");
+        fs::write(old_kit.join("old-only.md"), "old").unwrap();
+        let superseded = home.store_dir().join("superseded/kit@ai");
+        fs::create_dir_all(&superseded).unwrap();
+        fs::write(superseded.join("old-only.md"), "old").unwrap();
+        let kept = home.plugins_dir().join("ai/kit");
+        fs::create_dir_all(&kept).unwrap();
+        fs::write(kept.join("plugin.json"), "new revision").unwrap();
+        let kept_superseded = home.sources_dir().join("superseded/kit@ai");
+        fs::create_dir_all(&kept_superseded).unwrap();
+
+        carry_into_sources(&home).unwrap();
+
+        assert!(!kept.join("old-only.md").exists(), "a package was mixed");
+        assert!(
+            !kept_superseded.join("old-only.md").exists(),
+            "a superseded revision was mixed"
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
 }

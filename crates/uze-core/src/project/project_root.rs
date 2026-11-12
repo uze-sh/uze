@@ -118,6 +118,18 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn a_marker_this_user_wrote_is_owned_and_a_missing_one_is_not() {
+        let root = uze_testkit::temp::scratch("owned-here");
+        fs::create_dir_all(&root).unwrap();
+        let mine = root.join(MANIFEST_FILE_NAME);
+        fs::write(&mine, "workspace: {}\n").unwrap();
+
+        assert!(owned_here(&mine));
+        assert!(!owned_here(&root.join("never-written")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn cwd_with_a_manifest_is_root() {
         let root = uze_testkit::temp::scratch("manifest-root");
         fs::create_dir_all(&root).unwrap();

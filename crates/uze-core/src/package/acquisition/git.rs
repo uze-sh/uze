@@ -1828,4 +1828,598 @@ mod tests {
 
         let _ = fs::remove_dir_all(root);
     }
+
+    /// An operator whose Git reads only `gitconfig`, from a home of the
+    /// test's own, with a netrc file of that name there when one is given.
+    fn operator(
+        label: &str,
+        gitconfig: &str,
+        netrc: Option<&str>,
+    ) -> (uze_testkit::env::ProcessEnvGuard<'static>, PathBuf) {
+        let home = uze_testkit::temp::scratch(label);
+        fs::write(home.join(".gitconfig"), gitconfig).unwrap();
+        if let Some(name) = netrc {
+            fs::write(home.join(name), "machine example.invalid\n").unwrap();
+        }
+        let mut environment = uze_testkit::env::scope();
+        environment
+            .home(&home)
+            .set("XDG_CONFIG_HOME", home.join("xdg"))
+            .set("GIT_CONFIG_NOSYSTEM", "1")
+            .remove("GIT_CONFIG_GLOBAL")
+            .remove("GIT_CONFIG_SYSTEM");
+        (environment, home)
+    }
+
+    #[test]
+    fn https_credentials_are_a_helper_or_a_netrc() {
+        for (label, gitconfig, netrc, holds) in [
+            ("credentials-none", "", None, false),
+            (
+                "credentials-username",
+                "[credential]\n\tusername = me\n",
+                None,
+                false,
+            ),
+            (
+                "credentials-empty-helper",
+                "[credential]\n\thelper =\n",
+                None,
+                false,
+            ),
+            (
+                "credentials-helper",
+                "[credential \"https://github.com\"]\n\thelper = store\n",
+                None,
+                true,
+            ),
+            ("credentials-netrc", "", Some(".netrc"), true),
+            ("credentials-underscore-netrc", "", Some("_netrc"), true),
+        ] {
+            let (environment, home) = operator(label, gitconfig, netrc);
+            assert_eq!(holds_https_credentials(), holds, "{label}");
+            drop(environment);
+            let _ = fs::remove_dir_all(home);
+        }
+    }
+
+    /// Reaches an HTTPS identity through every transport, answering each
+    /// attempt by its label, and says which attempts were made.
+    fn reach_with(
+        remembered: Option<&Transport>,
+        answer: impl Fn(&str) -> Result<()>,
+    ) -> (Vec<&'static str>, Result<((), Transport)>) {
+        let mut asked = Vec::new();
+        let outcome = through(
+            "https://example.invalid/acme/plugins",
+            remembered,
+            |transport| {
+                asked.push(transport.label());
+                answer(transport.label())
+            },
+        );
+        (asked, outcome)
+    }
+
+    fn offline() -> UzeError {
+        UzeError::RepositoryOffline {
+            detail: "Could not resolve host: example.invalid".to_owned(),
+        }
+    }
+
+    fn failed(reason: &str) -> UzeError {
+        UzeError::AcquisitionFailed(reason.to_owned())
+    }
+
+    /// The operator's `~/.ssh/config` may name a host DNS has never heard
+    /// of, so SSH is still asked; the repository is offline only when no
+    /// transport resolved it.
+    #[test]
+    fn a_host_unresolved_over_https_is_still_asked_over_ssh() {
+        let (environment, home) = operator("through-offline", "", Some(".netrc"));
+        let (asked, outcome) = reach_with(None, |_| Err(offline()));
+        assert_eq!(asked, ["https (anonymous)", "ssh"]);
+        assert!(
+            matches!(outcome, Err(UzeError::RepositoryOffline { .. })),
+            "{outcome:?}"
+        );
+
+        let (asked, outcome) = reach_with(None, |label| match label {
+            "ssh" => Err(UzeError::RepositoryAccessRefused {
+                detail: "Permission denied (publickey).".to_owned(),
+            }),
+            _ => Err(offline()),
+        });
+        assert_eq!(asked, ["https (anonymous)", "ssh"]);
+        assert!(
+            matches!(outcome, Err(UzeError::RepositoryAccessRefused { .. })),
+            "{outcome:?}"
+        );
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn an_anonymous_failure_of_another_kind_is_asked_again_with_credentials() {
+        let (environment, home) = operator("through-failed", "", Some(".netrc"));
+        let (asked, outcome) = reach_with(None, |_| Err(failed("fatal: the answer made no sense")));
+        assert_eq!(asked, ["https (anonymous)", "https (credentials)", "ssh"]);
+        assert!(
+            matches!(outcome, Err(UzeError::AcquisitionFailed(_))),
+            "{outcome:?}"
+        );
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// With no helper and no netrc, HTTPS "with credentials" would only ask
+    /// the anonymous question a second time.
+    #[test]
+    fn https_is_asked_once_when_there_is_no_credential_to_carry() {
+        let (environment, home) = operator("through-no-credentials", "", None);
+        let (asked, outcome) = reach_with(None, |label| match label {
+            "ssh" => Ok(()),
+            _ => Err(failed("fatal: the answer made no sense")),
+        });
+        assert_eq!(asked, ["https (anonymous)", "ssh"]);
+        assert_eq!(outcome.unwrap().1.label(), "ssh");
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn a_host_that_never_answers_over_https_is_not_asked_again_with_credentials() {
+        let (environment, home) = operator("through-unreachable", "", Some(".netrc"));
+        let (asked, outcome) = reach_with(None, |label| match label {
+            "ssh" => Ok(()),
+            _ => Err(failed(
+                "fatal: unable to access: Failed to connect to example.invalid port 443",
+            )),
+        });
+        assert_eq!(asked, ["https (anonymous)", "ssh"]);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn the_transport_that_worked_last_time_is_asked_first() {
+        let ssh = Transport {
+            url: "git@example.invalid:acme/plugins.git".to_owned(),
+            access: Access::Credentialed,
+        };
+        let (asked, outcome) = reach_with(Some(&ssh), |_| Ok(()));
+        assert_eq!(asked, ["ssh"]);
+        assert_eq!(outcome.unwrap().1, ssh);
+    }
+
+    #[test]
+    fn a_failure_reads_as_git_s_own_complaint() {
+        let https = Transport {
+            url: "https://example.invalid/acme/plugins".to_owned(),
+            access: Access::Anonymous,
+        };
+        let complaint = failed(
+            "Cloning into 'plugins'...\nfatal: repository not found\n\
+             Please make sure you have the correct access rights",
+        );
+        assert_eq!(reason_of(&complaint, &https), "repository not found");
+
+        let quiet = UzeError::RepositoryOffline {
+            detail: "first line\nlast line\n\n".to_owned(),
+        };
+        assert_eq!(reason_of(&quiet, &https), "last line");
+
+        let ssh = Transport {
+            url: "git@example.invalid:acme/plugins.git".to_owned(),
+            access: Access::Credentialed,
+        };
+        let unknown_host = UzeError::RepositoryAccessRefused {
+            detail: "Host key verification failed.".to_owned(),
+        };
+        assert_eq!(
+            reason_of(&unknown_host, &ssh),
+            "Host key verification failed. (accept the host once with `ssh -T git@example.invalid`)"
+        );
+    }
+
+    #[test]
+    fn a_complaint_is_sorted_into_offline_refused_or_failed() {
+        assert!(matches!(
+            failure(
+                &["clone"],
+                b"ssh: Could not resolve hostname example.invalid: Name or service not known\n\
+                  fatal: Could not read from remote repository."
+            ),
+            UzeError::RepositoryOffline { .. }
+        ));
+        assert!(matches!(
+            failure(
+                &["clone"],
+                b"git@example.invalid: Permission denied (publickey).\n\
+                  fatal: Could not read from remote repository."
+            ),
+            UzeError::RepositoryAccessRefused { .. }
+        ));
+        assert!(matches!(
+            failure(&["clone"], b"fatal: not a git repository"),
+            UzeError::AcquisitionFailed(_)
+        ));
+    }
+
+    #[test]
+    fn only_an_attempt_that_leaves_this_machine_takes_the_operators_network() {
+        let (mut environment, home) = operator(
+            "network-reach",
+            "[http]\n\tproxy = http://proxy.example.invalid:3128\n",
+            None,
+        );
+        environment.set("https_proxy", "http://proxy.example.invalid:3128");
+        let anonymous = Reach::of(&Transport {
+            url: "https://example.invalid/acme/plugins".to_owned(),
+            access: Access::Anonymous,
+        });
+        let carries_proxy = |reach: Reach| {
+            git_command(reach, &["status"], None)
+                .get_envs()
+                .any(|(key, value)| key == "https_proxy" && value.is_some())
+        };
+        assert!(carries_proxy(anonymous));
+        assert!(!carries_proxy(Reach::LOCAL));
+        let configures_proxy = |reach: Reach| {
+            pushed_config(reach)
+                .iter()
+                .any(|(key, _)| key == "http.proxy")
+        };
+        assert!(configures_proxy(anonymous));
+        assert!(!configures_proxy(Reach::LOCAL));
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn a_credentialed_attempt_carries_no_git_variable_of_the_operators() {
+        let (mut environment, home) = operator("credentialed-environment", "", None);
+        environment.set("GIT_DIR", home.join("elsewhere"));
+        let credentialed = Reach::of(&Transport {
+            url: "https://example.invalid/acme/plugins".to_owned(),
+            access: Access::Credentialed,
+        });
+        let command = git_command(credentialed, &["status"], None);
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| key == "GIT_DIR" && value.is_none()),
+            "GIT_DIR reached the attempt"
+        );
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    /// A certificate authority is a path; a credential helper is a command,
+    /// handed over as the operator wrote it.
+    #[test]
+    fn only_a_certificate_path_is_expanded_from_the_home_directory() {
+        let (environment, home) = operator(
+            "helper-as-written",
+            "[credential]\n\thelper = ~/bin/helper\n",
+            None,
+        );
+        assert_eq!(
+            operator_config(CREDENTIAL_KEYS),
+            vec![("credential.helper".to_owned(), "~/bin/helper".to_owned())]
+        );
+        drop(environment);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn ssh_neither_prompts_nor_offers_a_key_to_an_unknown_host() {
+        let command = pushed_config(Reach::LOCAL)
+            .into_iter()
+            .find(|(key, _)| key == "core.sshCommand")
+            .expect("an ssh command is always handed over")
+            .1;
+        for option in ["BatchMode=yes", "StrictHostKeyChecking=yes"] {
+            assert!(command.contains(option), "{command}");
+        }
+        assert!(command.starts_with(&ssh_program()), "{command}");
+    }
+
+    #[test]
+    fn git_is_handed_the_ssh_the_operators_path_names() {
+        let bin = uze_testkit::temp::scratch("ssh-on-path");
+        let ssh = bin.join(uze_platform::executable::file_name("ssh"));
+        uze_platform::executable::install(&ssh, b"").unwrap();
+        let nothing = uze_testkit::temp::scratch("ssh-off-path");
+        let mut environment = uze_testkit::env::scope();
+
+        environment.set("PATH", &nothing);
+        assert!(!ssh_available());
+        assert_eq!(ssh_program(), "ssh");
+
+        environment.set("PATH", &bin);
+        assert!(ssh_available());
+        let program = ssh_program();
+        assert!(
+            program.starts_with('"') && program.ends_with('"') && !program.contains('\\'),
+            "{program}"
+        );
+        assert_eq!(Path::new(program.trim_matches('"')), ssh);
+        drop(environment);
+        let _ = fs::remove_dir_all(bin);
+        let _ = fs::remove_dir_all(nothing);
+    }
+
+    /// A repository with one commit and no branch of its own beyond it, as
+    /// a test arranges its remote-tracking refs.
+    fn committed(label: &str) -> (PathBuf, String) {
+        let root = uze_testkit::temp::scratch(label);
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["commit", "--quiet", "--allow-empty", "-m", "first"]);
+        let commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        (root, commit)
+    }
+
+    #[test]
+    fn the_sole_remote_branch_answers_only_when_it_is_alone() {
+        let _env = uze_testkit::env::scope();
+        let (root, commit) = committed("sole-remote-branch");
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        assert_eq!(sole_remote_branch(&root), None, "no remote branch at all");
+
+        git(&["update-ref", "refs/remotes/origin/trunk", &commit]);
+        git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/trunk",
+        ]);
+        let sole = sole_remote_branch(&root).expect("one branch is the default");
+        assert!(sole.starts_with("refs/remotes/origin/trunk^"), "{sole}");
+        assert_eq!(git(&["rev-parse", "--verify", &sole]).trim(), commit);
+
+        git(&["update-ref", "refs/remotes/origin/other", &commit]);
+        assert_eq!(
+            sole_remote_branch(&root),
+            None,
+            "two branches and no advertised default have no honest answer"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_reference_resolves_as_given_as_a_tag_or_as_a_remote_branch() {
+        let _env = uze_testkit::env::scope();
+        let (root, commit) = committed("resolve-commit");
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["update-ref", "refs/remotes/origin/feature", &commit]);
+        git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/feature",
+        ]);
+        git(&["tag", "v1"]);
+
+        assert_eq!(resolve_commit(None, &root).unwrap(), commit);
+        assert_eq!(resolve_commit(Some("feature"), &root).unwrap(), commit);
+        assert_eq!(resolve_commit(Some("v1"), &root).unwrap(), commit);
+        assert!(resolve_commit(Some("absent"), &root).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_answer_holding_no_commit_is_no_repository() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("holds-a-commit");
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let transport = Transport {
+            url: root.to_string_lossy().into_owned(),
+            access: Access::Local,
+        };
+        assert!(holds_a_commit(&root, &transport).is_err());
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["commit", "--quiet", "--allow-empty", "-m", "first"]);
+        assert!(holds_a_commit(&root, &transport).is_ok());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Where links cannot be made, Git writes each as a file holding its
+    /// target while its index still says it is a link.
+    #[test]
+    fn a_link_the_checkout_wrote_as_a_file_is_named_and_nothing_else_is() {
+        let _env = uze_testkit::env::scope();
+        let root = checkout_with(
+            "unmade-links",
+            &[("skills-link", "skills"), ("plain", "skills")],
+        );
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let blob = run(&["hash-object", "-w", "skills-link"], Some(&root)).unwrap();
+        run(
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("120000,{},skills-link", blob.trim()),
+            ],
+            Some(&root),
+        )
+        .unwrap();
+        run(&["update-index", "--add", "plain"], Some(&root)).unwrap();
+
+        assert_eq!(
+            unmade_links(&root).unwrap(),
+            links(&[("skills-link", "skills")])
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_unmade_link_to_a_file_is_replaced_by_its_bytes() {
+        let root = checkout_with("stand-in-file", &[("a.md", "body"), ("b.md", "a.md")]);
+        stand_in_for_links(&root, &links(&[("b.md", "a.md")]), u64::MAX).unwrap();
+        assert_eq!(fs::read_to_string(root.join("b.md")).unwrap(), "body");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bytes_are_counted_up_to_the_budget_and_refused_past_it() {
+        let root = checkout_with("size-within", &[("a/f", "0123456789"), ("g", "01234")]);
+        assert_eq!(size_within(&root.join("g"), 5).unwrap(), 5);
+        assert_eq!(size_within(&root, 15).unwrap(), 15);
+        assert!(size_within(&root, 14).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A file longer than the disk it takes: Unix filesystems give one to
+    /// `set_len`, and NTFS only to a file marked sparse.
+    #[cfg(unix)]
+    #[test]
+    fn a_checkout_past_the_byte_budget_is_refused() {
+        let root = uze_testkit::temp::scratch("checkout-over-budget");
+        let file = fs::File::create(root.join("large")).unwrap();
+        file.set_len(MAX_MATERIALIZED_BYTES + 1).unwrap();
+        drop(file);
+        assert!(assert_within_size_budget(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_tree_of_exactly_the_file_budget_is_accepted() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-entries-at");
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let tree = repeated_tree(&root, 0, MAX_MATERIALIZED_ENTRIES as usize, 8);
+        let accepted = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(accepted.is_ok(), "{accepted:?}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tree_of_exactly_the_byte_budget_is_accepted() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes-at");
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let mebibyte = 1024 * 1024;
+        let entries = (MAX_MATERIALIZED_BYTES / mebibyte) as usize;
+        let tree = repeated_tree(&root, mebibyte as usize, entries, 8);
+        let accepted = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(accepted.is_ok(), "{accepted:?}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A repository holding one file `depth` names deep, committed.
+    fn nested(label: &str, depth: u64) -> (PathBuf, String) {
+        let root = uze_testkit::temp::scratch(label);
+        let directory = (1..depth).fold(root.clone(), |path, _| path.join("d"));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("leaf"), "x").unwrap();
+        let git = |arguments: &[&str]| run(arguments, Some(&root)).unwrap();
+        git(&["init", "--quiet"]);
+        git(&["config", "user.email", "t@example.invalid"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["add", "-A"]);
+        git(&["commit", "--quiet", "-m", "nested"]);
+        let commit = git(&["rev-parse", "HEAD"]).trim().to_owned();
+        (root, commit)
+    }
+
+    #[test]
+    fn a_tree_nested_exactly_as_deep_as_the_budget_is_accepted_and_one_more_is_not() {
+        let _env = uze_testkit::env::scope();
+        let (at, commit) = nested("tree-depth-at", MAX_MATERIALIZED_DEPTH);
+        let accepted = assert_tree_within_size_budget(Reach::LOCAL, &at, &commit, None);
+        assert!(accepted.is_ok(), "{accepted:?}");
+        let (past, commit) = nested("tree-depth-past", MAX_MATERIALIZED_DEPTH + 1);
+        let refused = assert_tree_within_size_budget(Reach::LOCAL, &past, &commit, None);
+        assert!(
+            matches!(&refused, Err(UzeError::AcquisitionFailed(reason)) if reason.contains("deeper")),
+            "{refused:?}"
+        );
+        let _ = fs::remove_dir_all(at);
+        let _ = fs::remove_dir_all(past);
+    }
+
+    /// A path at the depth budget is within it, so whatever the tree lists
+    /// after it still counts.
+    #[test]
+    fn a_tree_reaching_the_depth_budget_is_still_weighed_to_the_end() {
+        use std::io::Write;
+        let _env = uze_testkit::env::scope();
+        let (root, _) = nested("tree-depth-then-bytes", MAX_MATERIALIZED_DEPTH);
+        let mebibyte = 1024 * 1024;
+        fs::write(root.join("blob"), vec![b'x'; mebibyte]).unwrap();
+        let blob = run(&["hash-object", "-w", "blob"], Some(&root)).unwrap();
+        let mut listing = String::new();
+        for index in 0..=(MAX_MATERIALIZED_BYTES / mebibyte as u64) {
+            listing.push_str(&format!("100644 {}\tz{index:04}\n", blob.trim()));
+        }
+        let mut index_info = Command::new("git")
+            .args(["update-index", "--index-info"])
+            .current_dir(&root)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        index_info
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(listing.as_bytes())
+            .unwrap();
+        assert!(index_info.wait().unwrap().success());
+        let tree = run(&["write-tree"], Some(&root)).unwrap().trim().to_owned();
+
+        let refused = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(
+            matches!(&refused, Err(UzeError::AcquisitionFailed(reason)) if reason.contains("exceeds")),
+            "{refused:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The links a checkout lists name their targets from where they sit,
+    /// `./` included.
+    #[test]
+    fn an_unmade_link_spelled_from_the_current_directory_is_replaced() {
+        let root = checkout_with("stand-in-dot", &[("a/f", "body"), ("b", "./a")]);
+        stand_in_for_links(&root, &links(&[("b", "./a")]), u64::MAX).unwrap();
+        assert_eq!(fs::read_to_string(root.join("b/f")).unwrap(), "body");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The output cap is a backstop against a hostile remote, far past
+    /// anything an ordinary invocation prints.
+    #[test]
+    fn output_of_a_few_megabytes_is_read_whole() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("output-within-cap");
+        let length = 2 * 1024 * 1024;
+        fs::write(root.join("large"), vec![b'x'; length]).unwrap();
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let blob = run(&["hash-object", "-w", "large"], Some(&root)).unwrap();
+        assert_eq!(
+            run(&["cat-file", "-p", blob.trim()], Some(&root))
+                .unwrap()
+                .len(),
+            length
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The byte budget keeps a repository from filling the disk; it is no
+    /// package-size policy, so a package of a few megabytes is within it.
+    #[test]
+    fn a_tree_of_a_few_megabytes_is_within_the_budget() {
+        let _env = uze_testkit::env::scope();
+        let root = uze_testkit::temp::scratch("tree-bytes-few");
+        run(&["init", "--quiet"], Some(&root)).unwrap();
+        let tree = repeated_tree(&root, 1024 * 1024, 4, 8);
+        let accepted = assert_tree_within_size_budget(Reach::LOCAL, &root, &tree, None);
+        assert!(accepted.is_ok(), "{accepted:?}");
+        let _ = fs::remove_dir_all(root);
+    }
 }

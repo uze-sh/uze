@@ -578,4 +578,82 @@ mod tests {
         let refusal = read(&path, "big.kdl").unwrap_err();
         assert!(refusal.message.contains("64 KiB"), "{refusal}");
     }
+
+    #[test]
+    fn a_v1_spelling_is_named_with_more_of_the_file_after_it() {
+        let mut report = Report::new(
+            "view.uze",
+            "Toggle \"x\" id=\"x\" on=true\nText \"after\"\n",
+        );
+        assert!(parse(&mut report).is_none());
+        let diagnostic = &report.diagnostics()[0];
+        assert_eq!(diagnostic.suggestion.as_deref(), Some("write `#true`"));
+    }
+
+    #[test]
+    fn a_v1_raw_string_is_answered_without_its_r() {
+        let (message, suggestion) = v1_spelling("r\"raw\"").expect("a v1 raw string");
+        assert!(message.contains("without the `r`"), "{message}");
+        assert_eq!(suggestion, "write `\"raw\"`");
+        assert_eq!(
+            v1_spelling("r#\"raw\"#").map(|(_, suggestion)| suggestion),
+            Some("write `#\"raw\"#`".to_owned())
+        );
+        assert_eq!(v1_spelling("row"), None);
+    }
+
+    /// A node ends at `;` or at a line break, and so does the `/-` that
+    /// comments it out; a `/-` followed only by blanks waits for its node.
+    #[test]
+    fn a_slashdash_comments_out_one_node_and_no_more() {
+        let nested_after = |head: &str| format!("{head}b {{\n /-c {{\n }}\n}}");
+        assert_eq!(scan(&nested_after("/-a; ")), Ok(()));
+        assert_eq!(scan(&nested_after("/-a\n")), Ok(()));
+        assert_eq!(scan(&nested_after("/-a \\\n\n")), Ok(()));
+        assert_eq!(scan(&nested_after("/-a \\\r\n\r\n")), Ok(()));
+        assert!(refused(&nested_after("/- \n")).message.contains("/-"));
+    }
+
+    #[test]
+    fn a_multiline_string_ends_only_at_three_quotes() {
+        assert_eq!(scan("a \"\"\"\nsays \" {\n\"\"\"\nb { }"), Ok(()));
+        let after = refused("a \"\"\"\nx\n\"\"\" }");
+        assert!(
+            after.message.contains("closes no block"),
+            "{}",
+            after.message
+        );
+    }
+
+    #[test]
+    fn a_brace_after_a_keyword_or_raw_string_still_counts() {
+        let after = refused("a #true {");
+        assert!(after.message.contains("never closed"), "{}", after.message);
+        let after = refused("ab ##\"x\"## }");
+        assert!(
+            after.message.contains("closes no block"),
+            "{}",
+            after.message
+        );
+        // Text that opens with a hash is the raw string's own, not its close.
+        let after = refused("a #\"#x\"# }");
+        assert!(
+            after.message.contains("closes no block"),
+            "{}",
+            after.message
+        );
+    }
+
+    #[test]
+    fn text_at_exactly_the_cap_is_held_and_one_byte_more_is_not() {
+        assert_eq!(held("Text \"a\"", "view.kdl"), Ok("Text \"a\"".to_owned()));
+        let at_cap = "a".repeat(FILE_MAX);
+        assert_eq!(held(&at_cap, "view.kdl").as_deref(), Ok(at_cap.as_str()));
+        assert!(held(&format!("{at_cap}a"), "view.kdl").is_err());
+        assert_eq!(
+            decoded(at_cap.clone().into_bytes(), "view.kdl").as_deref(),
+            Ok(at_cap.as_str())
+        );
+        assert!(decoded(format!("{at_cap}a").into_bytes(), "view.kdl").is_err());
+    }
 }

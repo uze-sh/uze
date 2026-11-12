@@ -156,6 +156,28 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn a_resource_directory_is_answered_only_for_the_kind_the_project_carries() {
+        let root = uze_testkit::temp::scratch("agents-resource-directory");
+        uze_testkit::git::mark_repository(&root);
+        fs::create_dir_all(root.join(".agents/skills")).unwrap();
+        let context = resolve(&root);
+
+        let skills = context
+            .resource_directory(AgentsDirectoryResource::Skills)
+            .expect("the project carries skills");
+        assert!(skills.is_dir());
+        assert_eq!(
+            skills.file_name().and_then(|name| name.to_str()),
+            Some("skills")
+        );
+        assert_eq!(
+            context.resource_directory(AgentsDirectoryResource::Agents),
+            None
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn agents_directory_alone_is_still_project_context() {
         // The regression this module exists for: the runtime projection
         // used to abort before looking at `.agents/` whenever `AGENTS.md`

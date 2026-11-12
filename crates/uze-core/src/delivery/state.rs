@@ -944,6 +944,264 @@ mod tests {
         fs::remove_dir_all(home.root()).unwrap();
     }
 
+    /// One receipt per package, integration and resource: recording the
+    /// same attachment again replaces it, and another integration's
+    /// attachment of the same resource is its own.
+    #[test]
+    fn a_receipt_is_one_per_attachment() {
+        let home = temp_home("receipt-per-attachment");
+        record_receipt(&home, receipt("plugin-a", "left", "uze-a")).unwrap();
+        record_receipt(&home, receipt("plugin-a", "right", "uze-a")).unwrap();
+        let mut replaced = receipt("plugin-a", "left", "uze-a");
+        replaced.artifact = ManagedArtifact::GeneratedFile {
+            path: PathBuf::from("agent.md"),
+            content: "replaced".to_owned(),
+        };
+        record_receipt(&home, replaced.clone()).unwrap();
+
+        let recorded = receipts(&home, None).unwrap();
+        assert_eq!(recorded.len(), 2, "{recorded:?}");
+        assert!(recorded.contains(&replaced));
+        assert!(recorded.contains(&receipt("plugin-a", "right", "uze-a")));
+
+        forget_receipt(&home, &replaced).unwrap();
+        assert_eq!(
+            receipts(&home, None).unwrap(),
+            [receipt("plugin-a", "right", "uze-a")]
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_tree_is_owned_only_where_a_receipt_put_it() {
+        let home = temp_home("owned-tree");
+        let path = home.root().join("skills").join("review");
+        assert_eq!(owned_tree_digest(&home, &path).unwrap(), None);
+
+        record_receipt(&home, receipt("plugin-a", "left", "uze-a")).unwrap();
+        let mut tree = receipt("plugin-a", "left", "review");
+        tree.artifact = ManagedArtifact::GeneratedTree {
+            path: path.clone(),
+            digest: "recorded".to_owned(),
+        };
+        record_receipt(&home, tree).unwrap();
+
+        assert_eq!(
+            owned_tree_digest(&home, &path).unwrap().as_deref(),
+            Some("recorded")
+        );
+        assert_eq!(
+            owned_tree_digest(&home, &home.root().join("skills").join("other")).unwrap(),
+            None
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    /// A project's registration stays the project's until the operator
+    /// adds the marketplace themselves; then it is theirs for good.
+    #[test]
+    fn a_marketplace_a_project_declared_becomes_the_operators_once_they_add_it() {
+        let home = temp_home("marketplace-declared");
+        let source = crate::PackageSource::local(home.root());
+        let declared = |home: &UzeHome| {
+            marketplace_get(home, "ai")
+                .unwrap()
+                .expect("registered")
+                .declared_by_project
+        };
+
+        assert!(marketplace_add_declared(&home, "ai", source.clone()).unwrap());
+        assert!(declared(&home));
+        assert!(!marketplace_add_declared(&home, "ai", source.clone()).unwrap());
+        assert!(declared(&home), "declaring it again changes nothing");
+
+        assert!(!marketplace_add(&home, "ai", source.clone()).unwrap());
+        assert!(!declared(&home));
+        assert!(!marketplace_add_declared(&home, "ai", source).unwrap());
+        assert!(!declared(&home), "a project never takes it back");
+
+        assert_eq!(
+            marketplace_list(&home).unwrap().keys().collect::<Vec<_>>(),
+            ["ai"]
+        );
+        assert!(marketplace_get(&home, "other").unwrap().is_none());
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    #[test]
+    fn a_marketplace_added_again_from_another_source_is_a_conflict() {
+        let home = temp_home("marketplace-conflict");
+        let first = home.root().join("first");
+        let second = home.root().join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        marketplace_add(&home, "ai", crate::PackageSource::local(&first)).unwrap();
+
+        let refused = marketplace_add(&home, "ai", crate::PackageSource::local(&second));
+        assert!(
+            matches!(refused, Err(UzeError::MarketplaceConflict { .. })),
+            "{refused:?}"
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
+    /// A checkout holding the marketplace's own repository, at its root or
+    /// at the marketplace's directory, with plugins under `plugins/`.
+    fn marketplace_checkout(home: &UzeHome) -> PathBuf {
+        let checkout = home.root().join("checkout");
+        fs::create_dir_all(checkout.join("plugins")).unwrap();
+        fs::write(checkout.join("plugins").join("README.md"), "plugins").unwrap();
+        fs::create_dir_all(checkout.join("elsewhere")).unwrap();
+        fs::write(checkout.join("elsewhere").join("README.md"), "elsewhere").unwrap();
+        uze_testkit::git::commit_everything_in(&checkout);
+        checkout
+    }
+
+    #[test]
+    fn a_link_records_the_checkout_and_keeps_the_first_pin() {
+        let home = temp_home("marketplace-link");
+        let checkout = marketplace_checkout(&home);
+        marketplace_add(&home, "ai", crate::PackageSource::local(&checkout)).unwrap();
+        let pins = |entries: &[(&str, &str)]| -> BTreeMap<String, String> {
+            entries
+                .iter()
+                .map(|(plugin, commit)| ((*plugin).to_owned(), (*commit).to_owned()))
+                .collect()
+        };
+
+        marketplace_link(&home, "ai", &checkout, pins(&[("flow", "first")])).unwrap();
+        marketplace_link(
+            &home,
+            "ai",
+            &checkout,
+            pins(&[("flow", "second"), ("other", "third")]),
+        )
+        .unwrap();
+        let record = marketplace_get(&home, "ai").unwrap().unwrap();
+        assert!(record.link.is_some());
+        assert_eq!(
+            record.pinned_before_link,
+            pins(&[("flow", "first"), ("other", "third")])
+        );
+
+        marketplace_forget_pin(&home, "ai", "flow").unwrap();
+        assert_eq!(
+            marketplace_get(&home, "ai")
+                .unwrap()
+                .unwrap()
+                .pinned_before_link,
+            pins(&[("other", "third")])
+        );
+
+        assert!(marketplace_unlink(&home, "ai").unwrap());
+        assert!(
+            marketplace_get(&home, "ai")
+                .unwrap()
+                .unwrap()
+                .link
+                .is_none()
+        );
+        assert!(
+            !marketplace_unlink(&home, "ai").unwrap(),
+            "nothing left to unlink"
+        );
+        let _ = fs::remove_dir_all(home.root());
+    }
+
+    /// Linking the checkout or its marketplace directory is the same link;
+    /// another directory of the same repository is another marketplace.
+    #[test]
+    fn a_link_reads_the_marketplace_at_its_registered_directory() {
+        let home = temp_home("marketplace-link-subpath");
+        let checkout = marketplace_checkout(&home);
+        marketplace_add(
+            &home,
+            "ai",
+            crate::PackageSource::local(checkout.join("plugins")),
+        )
+        .unwrap();
+
+        marketplace_link(&home, "ai", &checkout, BTreeMap::new()).unwrap();
+        marketplace_link(&home, "ai", &checkout.join("plugins"), BTreeMap::new()).unwrap();
+        let refused = marketplace_link(&home, "ai", &checkout.join("elsewhere"), BTreeMap::new());
+        assert!(
+            matches!(refused, Err(UzeError::MarketplaceConflict { .. })),
+            "{refused:?}"
+        );
+        let _ = fs::remove_dir_all(home.root());
+    }
+
+    #[test]
+    fn a_checkout_of_another_repository_is_never_linked() {
+        let home = temp_home("marketplace-link-foreign");
+        let checkout = marketplace_checkout(&home);
+        let other = home.root().join("other");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join("README.md"), "other").unwrap();
+        uze_testkit::git::commit_everything_in(&other);
+        marketplace_add(&home, "ai", crate::PackageSource::local(&checkout)).unwrap();
+
+        let refused = marketplace_link(&home, "ai", &other, BTreeMap::new());
+        assert!(
+            matches!(refused, Err(UzeError::MarketplaceConflict { .. })),
+            "{refused:?}"
+        );
+        assert!(
+            marketplace_get(&home, "ai")
+                .unwrap()
+                .unwrap()
+                .link
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(home.root());
+    }
+
+    /// A marketplace goes only once none of its plugins is installed; one
+    /// installed from another marketplace does not hold it.
+    #[test]
+    fn a_marketplace_is_removed_only_once_nothing_installed_comes_from_it() {
+        let home = temp_home("marketplace-remove");
+        let source = home.root().join("flow");
+        fs::create_dir_all(source.join("skills").join("review")).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "flow" }).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("skills").join("review").join("SKILL.md"),
+            "# Review\n",
+        )
+        .unwrap();
+        crate::UzeStore::new(home.clone())
+            .ingest(
+                &crate::MaterializedPackage::borrowed(
+                    source.clone(),
+                    crate::Provenance::of_local_path(&source),
+                ),
+                "busy",
+                None,
+            )
+            .unwrap();
+        marketplace_add(&home, "busy", crate::PackageSource::local(home.root())).unwrap();
+        marketplace_add(&home, "idle", crate::PackageSource::local(home.root())).unwrap();
+
+        assert!(matches!(
+            marketplace_remove(&home, "unknown"),
+            Err(UzeError::UnknownMarketplace(_))
+        ));
+        assert!(matches!(
+            marketplace_remove(&home, "busy"),
+            Err(UzeError::MarketplaceInUse(_))
+        ));
+        marketplace_remove(&home, "idle").unwrap();
+        assert_eq!(
+            marketplace_list(&home).unwrap().keys().collect::<Vec<_>>(),
+            ["busy"]
+        );
+        fs::remove_dir_all(home.root()).unwrap();
+    }
+
     #[test]
     fn corrupt_receipt_ledger_is_an_error_not_an_empty_ledger() {
         let home = temp_home("corrupt-ledger");

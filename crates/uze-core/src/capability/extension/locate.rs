@@ -361,4 +361,96 @@ mod tests {
         );
         assert_eq!(at_cursor("// a comm|").at, At::Nothing);
     }
+
+    fn node_name(prefix: &str) -> At {
+        At::NodeName {
+            prefix: prefix.into(),
+        }
+    }
+
+    #[test]
+    fn a_cursor_inside_a_character_stands_before_it() {
+        let text = "Text \"é";
+        assert_eq!(
+            locate(text, text.len() - 1).at,
+            At::Value {
+                prop: None,
+                prefix: String::new()
+            }
+        );
+    }
+
+    /// Block comments nest, and only `*` then `/` closes one.
+    #[test]
+    fn a_block_comment_ends_where_its_own_close_is() {
+        for marked in [
+            "/* x */ Ro|",
+            "/* 2 * 3 */ Ro|",
+            "/* a/b */ Ro|",
+            "/* a /* b */ c */ Ro|",
+        ] {
+            let found = at_cursor(marked);
+            assert_eq!(found.at, node_name("Ro"), "{marked}");
+            assert!(found.path.is_empty(), "{marked}");
+        }
+        assert_eq!(at_cursor("/* a /* b */ c|").at, At::Nothing);
+    }
+
+    #[test]
+    fn a_slashdash_is_not_a_comment_of_the_rest() {
+        assert_eq!(at_cursor("/-Text \"x\"\nRo|").at, node_name("Ro"));
+        assert_eq!(at_cursor("/-Text |").node.as_deref(), Some("Text"));
+    }
+
+    /// A raw string closes only at a quote followed by all of its hashes,
+    /// and a backslash in it escapes nothing.
+    #[test]
+    fn a_raw_string_closes_only_at_its_own_quote_and_hashes() {
+        for marked in [
+            "given json=#\"a\" { b\"#\nRo|",
+            "given json=#\"a\\\"#\nRo|",
+            "given json=##\"a\"# b\"##\nRo|",
+        ] {
+            let found = at_cursor(marked);
+            assert_eq!(found.at, node_name("Ro"), "{marked}");
+            assert!(found.path.is_empty(), "{marked}");
+        }
+        for (marked, hashes) in [("given json=#\"ab|", 1), ("given json=##\"ab|", 2)] {
+            assert_eq!(
+                at_cursor(marked).at,
+                At::Value {
+                    prop: Some("json".into()),
+                    prefix: "ab".into()
+                },
+                "{hashes} hashes"
+            );
+        }
+    }
+
+    #[test]
+    fn a_keyword_value_is_read_as_written() {
+        assert_eq!(
+            at_cursor("Toggle on=#tr|").at,
+            At::PropName {
+                prefix: "#tr".into()
+            }
+        );
+    }
+
+    /// Right after `=` the value has not begun: nothing is offered.
+    #[test]
+    fn after_an_equals_sign_nothing_is_offered() {
+        assert_eq!(at_cursor("Text role=|").at, At::Nothing);
+    }
+
+    #[test]
+    fn a_doubled_brace_opens_no_reference() {
+        assert_eq!(
+            at_cursor("Text \"{{|").at,
+            At::Value {
+                prop: None,
+                prefix: "{{".into()
+            }
+        );
+    }
 }

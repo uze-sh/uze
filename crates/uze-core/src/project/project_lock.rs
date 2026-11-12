@@ -535,6 +535,59 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_lock_loads_back_and_no_lock_loads_as_none() {
+        let scratch = uze_testkit::temp::TempDir::new("lock-load");
+        let root = scratch.path();
+        assert_eq!(load_lock(root).unwrap(), None);
+
+        let mut lock = ProjectLock::default();
+        lock.plugins.insert("flow".to_owned(), locked("ai"));
+        save_lock(root, &lock).unwrap();
+
+        assert_eq!(load_lock(root).unwrap(), Some(lock));
+    }
+
+    #[test]
+    fn removing_the_lock_deletes_it_and_a_missing_lock_is_already_removed() {
+        let scratch = uze_testkit::temp::TempDir::new("lock-remove");
+        let root = scratch.path();
+        save_lock(root, &ProjectLock::default()).unwrap();
+
+        remove_lock(root).unwrap();
+        assert!(!lock_path_for(root).exists());
+        remove_lock(root).unwrap();
+    }
+
+    #[test]
+    fn a_lock_that_cannot_be_removed_is_reported() {
+        let scratch = uze_testkit::temp::TempDir::new("lock-remove-refused");
+        let root = scratch.path();
+        fs::create_dir_all(lock_path_for(root)).unwrap();
+
+        assert!(remove_lock(root).is_err());
+    }
+
+    #[test]
+    fn a_resolved_plugin_keeps_its_marketplace_and_its_pin() {
+        let resolved = LockedPlugin::resolved("ai", Some("sha256:abc".to_owned()));
+        assert_eq!(resolved.marketplace, "ai");
+        assert_eq!(resolved.integrity.as_deref(), Some("sha256:abc"));
+    }
+
+    #[test]
+    fn a_locked_marketplace_is_displayed_with_its_ref_and_subdirectory() {
+        let marketplace = LockedMarketplace {
+            git: "https://example.invalid/ai".to_owned(),
+            r#ref: Some("v1".to_owned()),
+            subdirectory: Some(PathBuf::from("plugins")),
+            revision: "abc123".to_owned(),
+        };
+        let shown = marketplace.display();
+        assert!(shown.starts_with("https://example.invalid/ai"), "{shown}");
+        assert!(shown.contains("v1") && shown.contains("plugins"), "{shown}");
+    }
+
+    #[test]
     fn lock_round_trips_deterministically() {
         let mut lock = ProjectLock::default();
         lock.marketplaces.insert(

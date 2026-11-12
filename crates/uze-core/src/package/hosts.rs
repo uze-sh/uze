@@ -281,4 +281,30 @@ mod tests {
         }
         define(&home, "local", "http://127.0.0.1:8080").unwrap();
     }
+
+    #[test]
+    fn the_table_lists_built_ins_and_the_operators_own_with_one_default() {
+        let home = home("hosts-entries");
+        define(&home, "work-2", "https://git.acme.io").unwrap();
+        set_default(&home, "work-2").unwrap();
+        let hosts = load(&home).unwrap();
+        let entries = hosts.entries();
+
+        let work = entries
+            .iter()
+            .find(|entry| entry.alias == "work-2")
+            .expect("the operator's alias is listed");
+        assert!(!work.built_in && work.default, "{work:?}");
+        let github = entries
+            .iter()
+            .find(|entry| entry.alias == "github")
+            .expect("a built-in is listed");
+        assert!(github.built_in && !github.default, "{github:?}");
+        assert_eq!(entries.iter().filter(|entry| entry.default).count(), 1);
+
+        let aliases = hosts.aliases();
+        for alias in ["github", "gitlab", "work-2"] {
+            assert!(aliases.contains(&alias.to_owned()), "{alias}: {aliases:?}");
+        }
+    }
 }

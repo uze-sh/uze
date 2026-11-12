@@ -264,6 +264,32 @@ mod tests {
         assert_eq!(serde_json::to_string(&read).unwrap(), "\"ses_1\"");
     }
 
+    /// An identifier is written into a harness's command line as itself.
+    #[test]
+    fn an_identifier_displays_as_itself() {
+        assert_eq!(SessionId::parse("ses_1").unwrap().to_string(), "ses_1");
+    }
+
+    #[test]
+    fn a_refused_value_is_named_in_the_refusal() {
+        let refused = SessionId::parse("--resume").unwrap_err();
+        assert!(refused.to_string().contains("--resume"), "{refused}");
+    }
+
+    /// RFC 4122: the version nibble is 4 and the variant bits are 10,
+    /// whatever the random bytes were.
+    #[test]
+    fn the_version_and_variant_bits_are_set_whatever_the_bytes() {
+        for byte in [0x00, 0xff] {
+            let text = format_uuid_v4([byte; 16]);
+            assert_eq!(&text[14..15], "4", "version nibble: {text}");
+            assert!(
+                matches!(&text[19..20], "8" | "9" | "a" | "b"),
+                "variant nibble: {text}"
+            );
+        }
+    }
+
     #[test]
     fn only_the_hyphenated_form_is_a_uuid() {
         let uuid = |text: &str| SessionId::parse(text).unwrap().is_uuid();

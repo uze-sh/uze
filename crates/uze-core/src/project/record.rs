@@ -331,6 +331,65 @@ mod tests {
     }
 
     #[test]
+    fn a_marker_that_does_not_read_is_written_again() {
+        let (home, scratch) = home("project-marker-unreadable");
+        let project = scratch.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let id = project_id_for(&project.canonical().unwrap());
+        let marker = home.project_marker_path(&id);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, b"not a marker").unwrap();
+
+        ensure(&home, &project).unwrap();
+
+        assert_eq!(roots(&home), vec![project.canonical().unwrap()]);
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_marker_naming_another_root_is_corrected() {
+        let (home, scratch) = home("project-marker-elsewhere");
+        let project = scratch.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let id = project_id_for(&project.canonical().unwrap());
+        let marker = home.project_marker_path(&id);
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        let elsewhere = ProjectMarker {
+            root: scratch.join("elsewhere"),
+        };
+        fs::write(&marker, serde_json::to_vec(&elsewhere).unwrap()).unwrap();
+
+        ensure(&home, &project).unwrap();
+
+        assert_eq!(roots(&home), vec![project.canonical().unwrap()]);
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn forgetting_a_project_with_no_records_is_not_an_error() {
+        let (home, scratch) = home("project-forget-unknown");
+        let project = scratch.join("never-opened");
+        fs::create_dir_all(&project).unwrap();
+
+        forget(&home, &project).unwrap();
+
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn records_that_cannot_be_removed_are_reported() {
+        let (home, scratch) = home("project-forget-refused");
+        let project = scratch.join("demo");
+        fs::create_dir_all(&project).unwrap();
+        let directory = home.project_dir(&project_id_for(&project.canonical().unwrap()));
+        fs::create_dir_all(directory.parent().unwrap()).unwrap();
+        fs::write(&directory, b"not a directory").unwrap();
+
+        assert!(forget(&home, &project).is_err());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
     fn marking_a_project_twice_is_one_marker() {
         let (home, scratch) = home("project-idempotent");
         let project = scratch.join("demo");

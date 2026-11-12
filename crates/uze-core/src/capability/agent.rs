@@ -262,4 +262,46 @@ mod tests {
         assert_eq!(document.frontmatter.len(), 4);
         assert_eq!(document.body.trim(), "Prompt");
     }
+
+    #[test]
+    fn an_empty_name_or_a_lone_dot_is_not_a_file_name() {
+        assert!(unsafe_name(""));
+        assert!(unsafe_name("."));
+        assert!(!unsafe_name(".reviewer"));
+    }
+
+    #[test]
+    fn a_definition_without_frontmatter_is_all_prompt() {
+        let document = AgentDocument::parse(b"Review the change.\n").unwrap();
+        assert_eq!(document.name, None);
+        assert_eq!(document.body, "Review the change.\n");
+    }
+
+    #[test]
+    fn an_empty_frontmatter_is_a_definition_with_no_metadata() {
+        let document = AgentDocument::parse(b"---\n\n---\nPrompt\n").expect("an empty head parses");
+        assert!(document.frontmatter.is_empty());
+        assert_eq!(document.body.trim(), "Prompt");
+    }
+
+    #[test]
+    fn a_field_the_render_sets_wins_over_the_authored_one() {
+        let document =
+            AgentDocument::parse(b"---\nname: reviewer\nmodel: haiku\n---\nPrompt\n").unwrap();
+        let rendered = document.render(
+            None,
+            &[("model", "sonnet")],
+            |_| true,
+            &serde_yaml::Mapping::new(),
+            "Prompt\n",
+        );
+        let reparsed = AgentDocument::parse(rendered.as_bytes()).unwrap();
+        assert_eq!(
+            reparsed
+                .frontmatter
+                .get("model")
+                .and_then(serde_yaml::Value::as_str),
+            Some("sonnet")
+        );
+    }
 }

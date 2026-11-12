@@ -1566,6 +1566,210 @@ mod tests {
     }
 
     #[test]
+    fn a_region_takes_the_line_ending_most_of_the_file_uses() {
+        let root = uze_testkit::temp::scratch("region-majority-ending");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("NOTES.md");
+        fs::write(&file, "a\r\nb\r\n").unwrap();
+
+        attach(&file, "id", "managed").unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "a\r\nb\r\n<!-- uze:begin id -->\r\nmanaged\r\n<!-- uze:end id -->\r\n"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_target_that_cannot_be_read_is_blocked_not_missing() {
+        let root = uze_testkit::temp::scratch("region-unreadable-target");
+        let file = root.join("NOTES.md");
+        fs::create_dir_all(&file).unwrap();
+
+        assert_eq!(inspect(&file, "id", "x").state, AttachmentState::Blocked);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn content_holding_an_ordinary_html_comment_is_attached() {
+        let root = uze_testkit::temp::scratch("region-html-comment");
+        let file = root.join("NOTES.md");
+
+        attach(&file, "id", "<!-- a note for the reader -->").unwrap();
+
+        assert_eq!(
+            inspect(&file, "id", "<!-- a note for the reader -->").state,
+            AttachmentState::Matched
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn one_read_of_an_unreadable_file_names_an_invalid_identity_as_such() {
+        let root = uze_testkit::temp::scratch("region-read-unreadable");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("NOTES.md");
+        fs::write(&file, b"\xff\xfe not text").unwrap();
+        let read = RegionsRead::of(&file);
+
+        let valid = read.inspect("id", "x");
+        assert_eq!(valid.state, AttachmentState::Blocked);
+        assert!(!valid.reason.contains("identity"), "{}", valid.reason);
+
+        let invalid = read.inspect("has spaces", "x");
+        assert_eq!(invalid.state, AttachmentState::Blocked);
+        assert!(invalid.reason.contains("identity"), "{}", invalid.reason);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stale_regions_are_the_owned_ones_nothing_desires_any_more() {
+        let root = uze_testkit::temp::scratch("region-stale");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("NOTES.md");
+        fs::write(&file, "mine\n").unwrap();
+        for identity in ["package:b:x", "package:a:x", "package:kept:x", "other:z"] {
+            attach(&file, identity, "content").unwrap();
+        }
+        let owns = |identity: &str| identity.starts_with("package:");
+
+        let expected = vec!["package:a:x".to_owned(), "package:b:x".to_owned()];
+        assert_eq!(stale_regions(&file, owns, ["package:kept:x"]), expected);
+        assert_eq!(
+            RegionsRead::of(&file).stale(owns, ["package:kept:x"]),
+            expected
+        );
+        assert!(stale_regions(&root.join("ABSENT.md"), owns, []).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconcile_reports_a_refused_write_and_leaves_drift_named_as_drift() {
+        let root = uze_testkit::temp::scratch("reconcile-refusals");
+        let file = root.join("NOTES.md");
+
+        let refused = reconcile(&file, "id", "<!-- uze:end other -->", true);
+        assert_eq!(
+            refused.state,
+            AttachmentState::Blocked,
+            "{}",
+            refused.reason
+        );
+
+        attach(&file, "id", "original").unwrap();
+        let edited = fs::read_to_string(&file)
+            .unwrap()
+            .replace("original", "edited by hand");
+        fs::write(&file, &edited).unwrap();
+        let drifted = reconcile(&file, "id", "original", true);
+        assert_eq!(drifted.state, AttachmentState::Drifted);
+        assert_eq!(fs::read_to_string(&file).unwrap(), edited);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converge_writes_a_new_region_when_nothing_was_stale() {
+        let root = uze_testkit::temp::scratch("converge-only-new");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("NOTES.md");
+        fs::write(&file, "user text\n").unwrap();
+
+        let convergence = converge(&file, |_| false, &[("id".to_owned(), "new".to_owned())]);
+
+        assert_eq!(
+            convergence.desired[0].inspection.state,
+            AttachmentState::Matched
+        );
+        assert_eq!(inspect(&file, "id", "new").state, AttachmentState::Matched);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converge_creates_a_missing_file_and_reports_what_it_holds() {
+        let root = uze_testkit::temp::scratch("converge-creates");
+        let file = root.join("NOTES.md");
+
+        let convergence = converge(&file, |_| true, &[("id".to_owned(), "new".to_owned())]);
+
+        assert_eq!(
+            convergence.desired[0].inspection.state,
+            AttachmentState::Matched
+        );
+        assert!(convergence.desired[0].write_failure.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn converge_reports_drift_without_calling_it_a_write_failure() {
+        let root = uze_testkit::temp::scratch("converge-drift");
+        let file = root.join("NOTES.md");
+        attach(&file, "id", "original").unwrap();
+        let edited = fs::read_to_string(&file)
+            .unwrap()
+            .replace("original", "edited by hand");
+        fs::write(&file, &edited).unwrap();
+
+        let convergence = converge(&file, |_| true, &[("id".to_owned(), "original".to_owned())]);
+
+        assert_eq!(
+            convergence.desired[0].inspection.state,
+            AttachmentState::Drifted
+        );
+        assert!(convergence.desired[0].write_failure.is_none());
+        assert_eq!(fs::read_to_string(&file).unwrap(), edited);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // POSIX permissions: a directory without write permission refuses a new
+    // file in it, which Windows does not do for a directory marked read-only.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_converge_could_not_make_is_charged_to_the_regions_it_would_have_added() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = uze_testkit::temp::scratch("converge-write-refused");
+        let directory = root.join("project");
+        fs::create_dir_all(&directory).unwrap();
+        let file = directory.join("NOTES.md");
+        attach(&file, "kept", "kept").unwrap();
+        let absent = directory.join("ABSENT.md");
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o555)).unwrap();
+        // An account that writes regardless of permissions cannot be refused.
+        let probe = directory.join("probe");
+        if fs::write(&probe, b"").is_ok() {
+            let _ = fs::remove_file(probe);
+            fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+            return;
+        }
+
+        let desired = [
+            ("kept".to_owned(), "kept".to_owned()),
+            ("new".to_owned(), "new".to_owned()),
+        ];
+        let convergence = converge(&file, |_| true, &desired);
+        let created = converge(&absent, |_| true, &[("new".to_owned(), "new".to_owned())]);
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let kept = &convergence.desired[0];
+        assert_eq!(kept.inspection.state, AttachmentState::Matched);
+        assert!(kept.write_failure.is_none(), "{:?}", kept.write_failure);
+        let new = &convergence.desired[1];
+        assert_eq!(new.inspection.state, AttachmentState::Missing);
+        assert!(new.write_failure.is_some());
+
+        let never = &created.desired[0];
+        assert_eq!(never.inspection.state, AttachmentState::Missing);
+        assert!(
+            never.inspection.reason.contains("does not exist"),
+            "{}",
+            never.inspection.reason
+        );
+        assert!(never.write_failure.is_some());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn invalid_region_identity_is_rejected_not_sanitized() {
         let root = uze_testkit::temp::scratch("invalid-id");
         let file = root.join("NOTES.md");

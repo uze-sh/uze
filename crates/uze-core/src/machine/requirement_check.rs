@@ -538,6 +538,68 @@ mod tests {
     }
 
     #[test]
+    fn a_store_alias_that_fails_saying_nothing_is_a_stub() {
+        // Spelled with `/`, which every platform reads as a separator.
+        let alias = Path::new("C:/Users/me/AppData/Local/Microsoft/WindowsApps/python3.exe");
+        assert_eq!(classify(alias, Some(&said(Some(1), "", ""))), Answer::Stub);
+    }
+
+    #[test]
+    fn a_version_at_the_minimum_is_met() {
+        let jq = Requirement {
+            executable: "jq".to_owned(),
+            version: Some(">=1.7".to_owned()),
+            purpose: None,
+        };
+        let at_minimum = Answer::Answered {
+            version: Some("1.7".to_owned()),
+        };
+        assert!(status_of(&jq, Some(&at_minimum)).is_met());
+    }
+
+    #[test]
+    fn java_and_go_are_asked_their_version_their_own_way() {
+        assert_eq!(version_arguments("java"), ["-version"]);
+        assert_eq!(version_arguments("go"), ["version"]);
+        assert_eq!(version_arguments("jq"), ["--version"]);
+    }
+
+    #[test]
+    fn every_executable_a_requirement_names_often_has_a_suggestion() {
+        for executable in [
+            "jq", "python3", "python", "node", "pwsh", "git", "uv", "bun",
+        ] {
+            assert!(
+                install_command(executable, &[PackageManager::Homebrew]).is_some(),
+                "{executable}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_manager_is_looked_for_by_a_program_of_its_own() {
+        let programs: std::collections::BTreeSet<_> = PackageManager::PREFERENCE
+            .iter()
+            .map(|manager| manager.program())
+            .collect();
+        assert_eq!(programs.len(), PackageManager::PREFERENCE.len());
+        assert!(!programs.contains(""));
+    }
+
+    /// A Linux runner has `apt-get`, a Mac `brew`, Windows `winget`.
+    #[test]
+    fn a_manager_this_machine_has_is_offered() {
+        let offered = available_managers();
+        for manager in PackageManager::PREFERENCE {
+            if manager.serves(uze_platform::shell::FAMILY)
+                && uze_platform::executable::on_path(manager.program()).is_some()
+            {
+                assert!(offered.contains(&manager), "{manager:?}");
+            }
+        }
+    }
+
+    #[test]
     fn winget_is_never_offered_outside_windows_and_apt_never_on_it() {
         use crate::shell::Family;
         assert!(!PackageManager::Winget.serves(Family::Posix));

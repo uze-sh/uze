@@ -265,4 +265,16 @@ mod tests {
         let ids: Vec<&str> = available.iter().map(|(id, _)| id.as_str()).collect();
         assert_eq!(ids, ["dawn", "nocturne"]);
     }
+
+    // POSIX reports listing a file as a directory as not a directory; Windows
+    // reports it as a missing path, which is the case already listed empty.
+    #[cfg(unix)]
+    #[test]
+    fn a_themes_directory_that_cannot_be_listed_is_an_error() {
+        let home = home("theme-unlistable");
+        fs::create_dir_all(home.themes_dir().parent().unwrap()).expect("parent");
+        fs::write(home.themes_dir(), "").expect("a file in its place");
+
+        assert!(available(&home).is_err());
+    }
 }

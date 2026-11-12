@@ -267,4 +267,21 @@ mod tests {
     fn an_unreadable_process_table_holds_everything() {
         assert!(Presence::Unknown.inside(Path::new("/anywhere")));
     }
+
+    /// A table entry may spell a directory as the process was told it,
+    /// unresolved: it still holds that directory, and holds no other.
+    #[test]
+    fn an_occupant_holds_its_directory_however_it_is_spelled_and_nothing_else() {
+        let scratch = uze_testkit::temp::scratch("process-cwd-spelled");
+        let (a, b, elsewhere) = (scratch.join("a"), scratch.join("b"), scratch.join("c"));
+        for directory in [&a, &b, &elsewhere] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        let spelled = a.join("..").join("b");
+        let presence = Presence::Known(vec![Occupant::daemon(spelled.join("sub"))]);
+
+        assert!(presence.anyone_inside(&spelled));
+        assert!(!presence.anyone_inside(&elsewhere));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
 }
