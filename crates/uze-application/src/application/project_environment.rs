@@ -2402,3 +2402,6 @@ impl UzeApplication {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests;
