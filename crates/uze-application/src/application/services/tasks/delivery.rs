@@ -343,3 +343,25 @@ pub(super) fn deliver_one(
         Err(other) => DeliveryOutcome::Refused(other.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refusing_gates_output_is_kept_where_its_agent_is_pointed_and_replaced_next_time() {
+        let home = UzeHome::at(uze_testkit::temp::scratch("gate-output"));
+        let id = AgentId::adopted("agent-1");
+
+        let first = keep_gate_output(&home, &id, "first refusal").expect("the log is written");
+        assert_eq!(first, home.gate_log_path(id.as_str()));
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "first refusal");
+
+        let second = keep_gate_output(&home, &id, "second refusal").expect("written again");
+        assert_eq!(
+            std::fs::read_to_string(second).unwrap(),
+            "second refusal",
+            "the last refusal is the one kept"
+        );
+    }
+}

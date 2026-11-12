@@ -259,3 +259,51 @@ fn the_disk_view_skips_a_project_whose_root_is_gone() {
 
     assert_eq!(app.workspace().disk().checkouts, 0);
 }
+
+/// A subagent's checkout is listed under its agent, with its topic, its
+/// commits counted against the agent's branch it delivers into, and not
+/// offered to join while that agent runs, since a running agent joins its
+/// own.
+#[test]
+fn a_subagents_checkout_is_listed_under_its_running_agent() {
+    let repository = Repository::new("checkouts-subagent");
+    let root = primary(&repository);
+    let app = application("checkouts-subagent-home");
+    let placement = app
+        .workspace()
+        .place_new_agent(&root, Some(PlacementKind::Isolated), "keeper", &[])
+        .unwrap();
+    let agent = placement.placement.agent().as_str().to_owned();
+    let commit = |checkout: &Path, file: &str| {
+        std::fs::write(checkout.join(file), "written\n").unwrap();
+        repository.git_in(checkout, &["add", "--", file]);
+        repository.git_in(checkout, &["commit", "-qm", file]);
+    };
+    commit(&placement.cwd, "plan.md");
+    let claim = uze_workspace::conversation::Claim {
+        id: &agent,
+        key: &placement.launch_key,
+        cwd: &placement.cwd,
+    };
+    let child = app.workspace().split_work(claim, "parser", &[]).unwrap();
+    commit(&child.path, "parser.rs");
+
+    let view = app.workspace().checkouts(&root).unwrap();
+    let listed = row(&view, &child.path);
+    let CheckoutOwner::Subagent {
+        parent_id,
+        topic,
+        joinable,
+        ..
+    } = &listed.owner
+    else {
+        panic!("the split checkout is a subagent's: {listed:?}");
+    };
+    assert_eq!(parent_id, &agent);
+    assert_eq!(topic.as_deref(), Some("parser"));
+    assert!(!joinable, "a running agent joins its own subagents");
+    assert_eq!(
+        listed.ahead, 1,
+        "only the subagent's own commit is ahead of its agent's branch"
+    );
+}
