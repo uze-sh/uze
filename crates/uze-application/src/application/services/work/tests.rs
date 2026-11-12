@@ -581,3 +581,26 @@ fn the_operators_join_names_an_agent_that_is_no_longer_recorded() {
         .contains("no longer recorded")
     );
 }
+
+/// A subagent that holds nothing its agent's branch lacks leaves no work
+/// behind, so it does not stand in the way of its agent's delivery.
+#[test]
+fn a_subagent_holding_nothing_does_not_hold_its_agents_delivery_back() {
+    let world = World::new("work-delivery-clean-child");
+    std::fs::write(
+        world.root().join("agents.yaml"),
+        "workspace:\n  delivery: merge\n",
+    )
+    .unwrap();
+    let agent = world.agent();
+    world.commit(&agent.1, "feature.rs", "fn feature() {}\n");
+    world.split(&agent, "tests").unwrap();
+
+    let report = world
+        .app
+        .workspace()
+        .deliver_task(world.root(), &agent.0)
+        .unwrap();
+
+    assert_eq!(report.outcome, DeliveryOutcome::Merged, "{report:?}");
+}
