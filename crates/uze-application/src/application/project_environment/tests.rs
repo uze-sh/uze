@@ -13,6 +13,8 @@ const MARKET: &str = "acme";
 const PLUGIN: &str = "flow";
 /// A second plugin of the same marketplace.
 const SECOND: &str = "tide";
+/// A plugin of the same marketplace that ships no rules.
+const RULELESS: &str = "calm";
 const RULE: &str = "---\ntrigger: always_on\n---\nWrite tests first.\n";
 
 fn version() -> &'static str {
@@ -294,13 +296,21 @@ impl World {
         fs::create_dir_all(plugin.join("rules")).unwrap();
         fs::write(
             world.market.join("marketplace.json"),
-            r#"{"name": "acme", "plugins": [{"name": "flow", "source": "flow"}, {"name": "tide", "source": "tide"}]}"#,
+            r#"{"name": "acme", "plugins": [{"name": "flow", "source": "flow"}, {"name": "tide", "source": "tide"}, {"name": "calm", "source": "calm"}]}"#,
         )
         .unwrap();
         let second = world.market.join(SECOND);
         fs::create_dir_all(second.join("rules")).unwrap();
         fs::write(second.join("plugin.json"), r#"{"name": "tide"}"#).unwrap();
         fs::write(second.join("rules").join("tide.md"), RULE).unwrap();
+        let ruleless = world.market.join(RULELESS);
+        fs::create_dir_all(ruleless.join("skills").join("calm")).unwrap();
+        fs::write(ruleless.join("plugin.json"), r#"{"name": "calm"}"#).unwrap();
+        fs::write(
+            ruleless.join("skills").join("calm").join("SKILL.md"),
+            "---\nname: calm\ndescription: Calm.\n---\nBody\n",
+        )
+        .unwrap();
         fs::write(plugin.join("plugin.json"), r#"{"name": "flow"}"#).unwrap();
         fs::write(
             plugin.join("skills").join("flow").join("SKILL.md"),
@@ -1416,4 +1426,105 @@ fn a_machine_whose_built_in_bytes_are_not_this_uzes_is_brought_to_them() {
         .unwrap()
         .store_path;
     assert_eq!(fs::read(now.join("plugin.json")).unwrap(), original);
+}
+
+fn findings(report: &PluginRulesReport) -> Vec<(&str, Vec<&str>)> {
+    report
+        .plugins
+        .iter()
+        .map(|status| {
+            (
+                status.plugin.as_str(),
+                status.files.iter().map(|finding| finding.state).collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_machine_past_the_lock_judges_the_copies_against_the_locked_revision() {
+    let world = World::new("project-rules-past-lock");
+    let app = world.registered("home");
+    world.add(&app);
+    world.move_market();
+    app.project()
+        .update(&world.project, Some("flow@acme"), true, &AlwaysTrust)
+        .unwrap();
+
+    let judged = app.project().plugin_rules(&world.project);
+    assert_eq!(judged.plugins.len(), 1, "{judged:?}");
+    assert_eq!(judged.plugins[0].unverified, None, "{judged:?}");
+    assert!(judged.plugins[0].files.is_empty(), "{judged:?}");
+
+    fs::remove_file(world.copy()).unwrap();
+    let missing = app.project().plugin_rules(&world.project);
+    assert_eq!(findings(&missing), [("flow@acme", vec!["missing"])]);
+}
+
+#[test]
+fn a_plugin_shipping_no_rules_is_judged_only_when_its_namespace_holds_something() {
+    let world = World::new("project-rules-ruleless");
+    let app = world.registered("home");
+    world.add_named(&app, RULELESS);
+    assert!(
+        app.project()
+            .plugin_rules(&world.project)
+            .plugins
+            .is_empty()
+    );
+
+    let mut lock = world.lock().unwrap();
+    lock.plugins.get_mut(RULELESS).unwrap().integrity = Some("sha256:other".to_owned());
+    project_lock::save_lock(&world.project, &lock).unwrap();
+    assert!(
+        app.project()
+            .plugin_rules(&world.project)
+            .plugins
+            .is_empty(),
+        "nothing to judge, so nothing is fetched to judge it"
+    );
+
+    let mut lock = world.lock().unwrap();
+    lock.plugins.get_mut(RULELESS).unwrap().integrity = None;
+    project_lock::save_lock(&world.project, &lock).unwrap();
+    let namespace = world
+        .project
+        .join(".agents")
+        .join("rules")
+        .join("calm@acme");
+    fs::create_dir_all(&namespace).unwrap();
+    fs::write(namespace.join("stray.md"), RULE).unwrap();
+    let stray = app.project().plugin_rules(&world.project);
+    assert_eq!(findings(&stray), [("calm@acme", vec!["extra"])]);
+}
+
+#[test]
+fn a_built_in_plugin_shipping_rules_copies_them_and_can_be_added_again() {
+    let world = World::new("project-built-in-rules");
+    let app = world.machine("home");
+    let add = || {
+        app.project().add(
+            "pingpong",
+            built_in(),
+            &world.project,
+            &AlwaysTrust,
+            &uze_core::naming::NoNameCollisionAuthority,
+        )
+    };
+
+    let first = add().unwrap();
+    let written = first.rules.expect("its rules are copied").written;
+    assert!(!written.is_empty());
+    assert!(
+        world
+            .project
+            .join(".agents")
+            .join("rules")
+            .join("pingpong@uze")
+            .is_dir()
+    );
+
+    let again = add().unwrap();
+    assert!(again.declared);
+    assert!(again.rules.is_none(), "{:?}", again.rules);
 }
