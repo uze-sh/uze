@@ -2020,7 +2020,7 @@ fn the_heading_says_where_a_picked_box_leads() {
 fn the_screen_shows_the_drawing_on_its_grid() {
     let mut state = drawing(vec![Artifact::read(
         "a.mmd",
-        "flowchart TD\n  a --> m --> z\n  subgraph region [Region]\n  m\n  end\n",
+        "flowchart TD\n  a --> m --> z\n  subgraph region [Region]\n  m[M]\n  p[P]\n  q[Q]\n  r[R]\n  end\n",
     )]);
     let wide = Size {
         width: 160,
