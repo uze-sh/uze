@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use super::*;
 
 const SPACE: Size = Size {
@@ -1114,6 +1116,161 @@ mod hosted {
         }
         assert!(!reading(&extension));
     }
+
+    use crate::contract::SurfaceSlot;
+    use crate::view::{ScrollTarget, View};
+
+    /// An extension open on `/project`, its artifacts read from `host`.
+    fn opened_on(host: &dyn Host) -> ArchitectExtension {
+        let mut extension = ArchitectExtension::default();
+        extension.open(SURFACE, &checkout("/project"));
+        for answer in run(&mut extension, host) {
+            extension.absorb(answer);
+        }
+        extension
+    }
+
+    fn two() -> Written {
+        Written(vec![
+            ("first.mmd", "flowchart LR\n  a[A] --> b[B]\n"),
+            ("second.mmd", "flowchart LR\n  c[C] --> d[D]\n"),
+        ])
+    }
+
+    fn corner_of(extension: &ArchitectExtension) -> Option<(i32, i32)> {
+        extension
+            .place(SURFACE)
+            .and_then(|place| place.downcast::<ArchitectPlace>())
+            .expect("a place")
+            .corner
+    }
+
+    fn selected_of(view: View) -> Vec<String> {
+        view.navigator
+            .unwrap()
+            .rows
+            .into_iter()
+            .filter_map(|row| match row {
+                crate::view::NavigatorRow::Item {
+                    name,
+                    selected: true,
+                    ..
+                } => Some(name),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_extension_names_its_one_board() {
+        let extension = ArchitectExtension::default();
+        assert_eq!(extension.identity(), CATALOG.id);
+        let surfaces = extension.surfaces();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].id, SURFACE);
+        assert_eq!(surfaces[0].slot, SurfaceSlot::View);
+        assert_eq!(surfaces[0].title, CATALOG.name);
+        assert!(
+            extension.section(SURFACE, false).is_none(),
+            "a board, not a section"
+        );
+        assert_eq!(extension.layout(SURFACE), Layout::Board);
+        assert!(extension.drags(SURFACE), "a board is moved by dragging");
+    }
+
+    #[test]
+    fn a_command_reaches_the_board_it_names_and_no_other() {
+        let mut extension = opened_on(&two());
+        extension.command("elsewhere", Command::NextView, SPACE);
+        assert_eq!(
+            selected_of(extension.view(SURFACE, SPACE).unwrap()),
+            ["First"]
+        );
+        extension.command(SURFACE, Command::NextView, SPACE);
+        assert_eq!(
+            selected_of(extension.view(SURFACE, SPACE).unwrap()),
+            ["Second"]
+        );
+    }
+
+    #[test]
+    fn the_board_moves_by_wheel_drag_pan_and_scroll() {
+        let mut extension = opened_on(&two());
+        assert_eq!(corner_of(&extension), None, "home");
+        extension.scroll(
+            SURFACE,
+            ScrollTarget::Navigator,
+            ScrollDirection::Down,
+            SPACE,
+        );
+        assert_eq!(
+            corner_of(&extension),
+            None,
+            "the list scrolls, not the board"
+        );
+        extension.scroll(SURFACE, ScrollTarget::Content, ScrollDirection::Down, SPACE);
+        let scrolled = corner_of(&extension).expect("moved");
+
+        let mut extension = opened_on(&two());
+        extension.drag(SURFACE, 3, 0, SPACE);
+        assert!(corner_of(&extension).is_some(), "dragged");
+
+        let mut extension = opened_on(&two());
+        extension.pan(SURFACE, 3, SPACE);
+        assert!(corner_of(&extension).is_some(), "panned");
+
+        let mut extension = opened_on(&two());
+        extension.scroll_to(SURFACE, scrolled.1 as usize, SPACE);
+        assert_eq!(
+            corner_of(&extension).map(|corner| corner.1),
+            Some(scrolled.1)
+        );
+    }
+
+    #[test]
+    fn a_press_that_misses_shuts_an_open_list() {
+        let mut extension = opened_on(&two());
+        extension.command(SURFACE, Command::ChooseItem, SPACE);
+        let choosing = |extension: &ArchitectExtension| {
+            extension
+                .view(SURFACE, SPACE)
+                .unwrap()
+                .navigator
+                .unwrap()
+                .choosing
+        };
+        assert!(choosing(&extension).is_some());
+        assert!(extension.hover(SURFACE, Some(ViewHit::SelectItem(1))));
+        extension.missed(SURFACE, SPACE);
+        assert_eq!(choosing(&extension), None);
+    }
+
+    #[test]
+    fn the_source_on_show_is_copied_as_text() {
+        let mut extension = opened_on(&two());
+        extension.hit(SURFACE, ViewHit::SelectMode(2), SPACE);
+        assert_eq!(extension.text(SURFACE, 0..1), ["flowchart LR"]);
+    }
+
+    #[test]
+    fn a_resumed_board_opens_where_the_viewer_left_it() {
+        let mut extension = ArchitectExtension::default();
+        extension.open(SURFACE, &checkout("/project"));
+        extension.resume(
+            SURFACE,
+            Opaque::new(ArchitectPlace {
+                artifact: "second.mmd".to_owned(),
+                ..ArchitectPlace::default()
+            }),
+        );
+        for answer in run(&mut extension, &two()) {
+            extension.absorb(answer);
+        }
+        assert_eq!(
+            selected_of(extension.view(SURFACE, SPACE).unwrap()),
+            ["Second"]
+        );
+    }
 }
 
 fn drawing(artifacts: Vec<Artifact>) -> ArchitectView {
@@ -1301,4 +1458,752 @@ fn the_repositorys_own_c4_views_follow_the_notation() {
             "{origin}"
         );
     }
+}
+
+/// A tree of directories and files, served from memory: the listing of
+/// each directory it knows, and the files it holds by their full path.
+/// A directory it does not know cannot be listed.
+struct Tree {
+    directories: Vec<(&'static str, Vec<(&'static str, bool)>)>,
+    files: Vec<(&'static str, &'static str)>,
+}
+
+impl Host for Tree {
+    fn git(&self, _: &std::path::Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+        Err("not asked".to_owned())
+    }
+    fn repository_root(&self, _: &std::path::Path) -> Result<PathBuf, String> {
+        Err("not asked".to_owned())
+    }
+    fn read_file(&self, path: &std::path::Path) -> Result<String, crate::Unreadable> {
+        self.files
+            .iter()
+            .find(|(written, _)| Path::new(written) == path)
+            .map(|(_, source)| (*source).to_owned())
+            .ok_or_else(|| crate::Unreadable::Failed("no such file".to_owned()))
+    }
+    fn list_dir(&self, path: &std::path::Path) -> Result<Vec<crate::DirEntry>, String> {
+        self.directories
+            .iter()
+            .find(|(listed, _)| Path::new(listed) == path)
+            .map(|(_, entries)| {
+                entries
+                    .iter()
+                    .map(|&(name, directory)| crate::DirEntry {
+                        directory,
+                        name: name.to_owned(),
+                    })
+                    .collect()
+            })
+            .ok_or_else(|| "permission denied".to_owned())
+    }
+    fn write_file(
+        &self,
+        _root: &std::path::Path,
+        _: &std::path::Path,
+        _: &str,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    fn delete_file(&self, _root: &std::path::Path, _: &std::path::Path) -> Result<(), String> {
+        Ok(())
+    }
+    fn restore_to_head(&self, _: &std::path::Path, _: &[std::path::PathBuf]) -> Result<(), String> {
+        Ok(())
+    }
+    fn syntax_theme(&self) -> String {
+        String::new()
+    }
+}
+
+const FLOW: &str = "flowchart TD\n  a --> b\n";
+
+#[test]
+fn a_directory_that_cannot_be_listed_is_named_with_its_reason() {
+    let locked = Tree {
+        directories: Vec::new(),
+        files: Vec::new(),
+    };
+    let answer = read_artifacts(&locked, Path::new("/project"), declared());
+    let Artifacts::Nothing { text, hint } = answer.artifacts else {
+        panic!("nothing could be read");
+    };
+    assert!(
+        text.contains("`docs/architecture` could not be read"),
+        "{text}"
+    );
+    assert!(hint.contains("permission denied"), "{hint}");
+    assert!(hint.contains("workspace.artifacts"), "{hint}");
+
+    let Checkup::Unusable { text, hint } = check(&locked, declared()) else {
+        panic!("a directory that cannot be read is somebody's to fix");
+    };
+    assert!(text.contains("docs/architecture"), "{text}");
+    assert!(hint.contains("permission denied"), "{hint}");
+}
+
+#[test]
+fn a_directory_of_diagrams_is_read_into_artifacts() {
+    let answer = read_artifacts(
+        &Written(vec![("overview.mmd", FLOW)]),
+        Path::new("/project"),
+        declared(),
+    );
+    let Artifacts::Found { artifacts, project } = answer.artifacts else {
+        panic!("a diagram was found");
+    };
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(project, PathBuf::from("/project"));
+}
+
+/// The walk goes a few directories deep and no further, and only the
+/// declared directory itself failing to list is a failure.
+#[test]
+fn diagrams_are_found_a_few_directories_down_and_no_deeper() {
+    let tree = Tree {
+        directories: vec![
+            (
+                "/d",
+                vec![("top.mmd", false), ("1", true), ("locked", true)],
+            ),
+            ("/d/1", vec![("2", true)]),
+            ("/d/1/2", vec![("3", true)]),
+            ("/d/1/2/3", vec![("4", true)]),
+            ("/d/1/2/3/4", vec![("deep.mmd", false), ("5", true)]),
+            ("/d/1/2/3/4/5", vec![("deeper.mmd", false)]),
+        ],
+        files: vec![
+            ("/d/top.mmd", FLOW),
+            ("/d/1/2/3/4/deep.mmd", FLOW),
+            ("/d/1/2/3/4/5/deeper.mmd", FLOW),
+        ],
+    };
+    let found = catalog::read(&tree, Path::new("/d")).expect("the directory lists");
+    let mut names: Vec<String> = found
+        .iter()
+        .map(|artifact| {
+            Path::new(&artifact.origin)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    assert_eq!(names, ["deep.mmd", "top.mmd"]);
+
+    assert_eq!(
+        catalog::read(&tree, Path::new("/elsewhere")),
+        Err("permission denied".to_owned())
+    );
+}
+
+/// A box may stand for a module's directory, which the code surface opens;
+/// a path that names nothing is still broken, whatever sits beside it.
+#[test]
+fn a_link_to_a_directory_opens_something() {
+    let diagram =
+        "flowchart TD\n  a --> b\n  click a href \"src/module\"\n  click b href \"src/missing\"\n";
+    let tree = Tree {
+        directories: vec![
+            ("/project/docs/architecture", vec![("links.mmd", false)]),
+            ("/project/src", vec![("module", true), ("other", true)]),
+        ],
+        files: vec![("/project/docs/architecture/links.mmd", diagram)],
+    };
+    let Checkup::Checked { artifacts, .. } = check(&tree, declared()) else {
+        panic!("a directory of diagrams is checked");
+    };
+    assert_eq!(
+        artifacts[0].broken_links,
+        ["`src/missing` is not a file in the project"]
+    );
+}
+
+/// Only a C4 view is held to C4's notation: a flowchart's bare arrow is
+/// not a line missing its label.
+#[test]
+fn a_flowchart_is_held_to_no_notation() {
+    assert_eq!(
+        notes_of(vec![("flow.mmd", FLOW)], "flow.mmd"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn the_list_of_areas_goes_round_both_ways_and_steps_over_to_the_artifacts() {
+    let mut state = showing("Crate layering");
+    let areas = state.areas();
+    assert_eq!(areas.len(), 3);
+    handle_command(&mut state, Command::ChooseGroup, SPACE);
+    assert_eq!(state.choosing, Some(Choosing::Group(areas[2])));
+    handle_command(&mut state, Command::Pan(PanDirection::Up), SPACE);
+    assert_eq!(state.choosing, Some(Choosing::Group(areas[1])));
+    handle_command(&mut state, Command::Pan(PanDirection::Down), SPACE);
+    assert_eq!(state.choosing, Some(Choosing::Group(areas[2])));
+    handle_command(&mut state, Command::Pan(PanDirection::Down), SPACE);
+    assert_eq!(state.choosing, Some(Choosing::Group(areas[0])), "round");
+    handle_command(&mut state, Command::Pan(PanDirection::Right), SPACE);
+    assert_eq!(
+        state.choosing,
+        Some(Choosing::Item(state.selected)),
+        "right is the artifacts"
+    );
+}
+
+#[test]
+fn the_areas_are_listed_by_name_with_the_artifact_on_show_selected() {
+    let mut state = opened();
+    handle_command(&mut state, Command::NextView, SPACE);
+    let rows = view(&state, SPACE).navigator.unwrap().rows;
+    let groups: Vec<&str> = rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Group { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(groups, ["C4", "Sequence", "Flowchart"]);
+    let selected: Vec<usize> = rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item {
+                id, selected: true, ..
+            } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(selected, [1]);
+}
+
+/// A view with no other way down to its place is a label, not a selector.
+#[test]
+fn a_step_with_nothing_else_to_offer_is_not_a_selector() {
+    let step = view(&showing(CONTAINERS), SPACE)
+        .trail
+        .pop()
+        .expect("a way down");
+    assert!(step.choices.is_empty(), "{:?}", step.choices.len());
+}
+
+#[test]
+fn pressing_the_step_on_show_stays_there() {
+    let mut state = showing(CORE);
+    handle_mouse(&mut state, Some(ViewHit::SelectTrail(2)), SPACE);
+    assert_eq!(here(&state), CORE);
+    handle_mouse(&mut state, Some(ViewHit::SelectTrail(1)), SPACE);
+    assert_eq!(here(&state), CONTAINERS);
+}
+
+#[test]
+fn hovering_an_area_of_the_open_list_highlights_it() {
+    let mut state = opened();
+    let areas = state.areas();
+    handle_command(&mut state, Command::ChooseGroup, SPACE);
+    assert!(handle_hover(
+        &mut state,
+        Some(ViewHit::ToggleGroup(areas[1]))
+    ));
+    assert_eq!(state.choosing, Some(Choosing::Group(areas[1])));
+    assert!(!handle_hover(
+        &mut state,
+        Some(ViewHit::ToggleGroup(areas[1]))
+    ));
+    assert_eq!(state.selected, 0, "hovering chooses nothing");
+}
+
+/// A source long enough to scroll: a comment a line, then the diagram.
+fn long_source() -> String {
+    let mut source = String::new();
+    for line in 0..100 {
+        source.push_str(&format!("%% line {line}\n"));
+    }
+    source.push_str("flowchart TD\n  a[Alpha] --> b[Beta]\n");
+    source
+}
+
+#[test]
+fn the_source_is_read_as_numbered_lines_and_copied_as_written() {
+    let source = "flowchart TD\n  a[A] --> b[B]\n  b --> c[C]\n";
+    let mut state = drawing(vec![Artifact::read("a.mmd", source)]);
+    assert!(text(&state, 0..2).is_empty(), "a drawing has no text");
+    handle_mouse(&mut state, Some(ViewHit::SelectMode(2)), SPACE);
+    let Content::Lines {
+        lines,
+        total,
+        medium,
+        ..
+    } = view(&state, SPACE).content
+    else {
+        panic!("the source is lines");
+    };
+    assert_eq!((total, medium), (3, Medium::Text));
+    let numbered: Vec<(String, String)> = lines
+        .iter()
+        .map(|line| {
+            let text: String = line.spans.iter().map(|span| span.text.clone()).collect();
+            (line.number.clone(), text)
+        })
+        .collect();
+    assert_eq!(
+        numbered,
+        [
+            ("1".to_owned(), "flowchart TD".to_owned()),
+            ("2".to_owned(), "  a[A] --> b[B]".to_owned()),
+            ("3".to_owned(), "  b --> c[C]".to_owned()),
+        ]
+    );
+    assert_eq!(text(&state, 1..3), ["  a[A] --> b[B]", "  b --> c[C]"]);
+}
+
+#[test]
+fn the_ways_of_drawing_go_round_with_the_one_on_show_marked() {
+    let mut state = opened();
+    let active = |state: &ArchitectView| {
+        view(state, SPACE)
+            .modes
+            .into_iter()
+            .filter(|mode| mode.active)
+            .map(|mode| mode.label)
+            .collect::<Vec<_>>()
+    };
+    let labels: Vec<String> = view(&state, SPACE)
+        .modes
+        .into_iter()
+        .map(|mode| mode.label)
+        .collect();
+    assert_eq!(labels, ["Unicode", "ASCII", "Source"]);
+    for next in ["Unicode", "ASCII", "Source", "Unicode"] {
+        assert_eq!(active(&state), [next]);
+        handle_command(&mut state, Command::NextMode, SPACE);
+    }
+}
+
+/// The source is a document: it scrolls down to its last line and no
+/// further, and not sideways.
+#[test]
+fn the_source_scrolls_like_a_document() {
+    let mut state = drawing(vec![Artifact::read("long.mmd", long_source())]);
+    state.show(Showing::Source);
+    let lines = 102;
+    let first = |state: &ArchitectView| match view(state, SPACE).content {
+        Content::Lines { first, .. } => first,
+        _ => panic!("the source is lines"),
+    };
+    scroll_to(&mut state, 500, SPACE);
+    assert_eq!(first(&state), lines - 30, "the last line at the foot");
+    scroll_to(&mut state, 10, SPACE);
+    assert_eq!(first(&state), 10);
+    handle_scroll(&mut state, ScrollDirection::Up, SPACE);
+    assert!(first(&state) < 10);
+    handle_scroll(&mut state, ScrollDirection::Down, SPACE);
+    assert_eq!(first(&state), 10);
+    handle_command(&mut state, Command::Pan(PanDirection::Right), SPACE);
+    assert_eq!(
+        state.corner(SPACE).0,
+        0,
+        "a document does not move sideways"
+    );
+    scroll_to(&mut state, 0, SPACE);
+    handle_command(&mut state, Command::Pan(PanDirection::Up), SPACE);
+    assert_eq!(first(&state), 0, "nor above its first line");
+}
+
+#[test]
+fn a_drawing_shorter_than_the_screen_opens_in_the_middle_of_it_down() {
+    let state = showing(CONTEXT);
+    let tall = Size {
+        width: 300,
+        height: 120,
+    };
+    let board = state.board_size();
+    assert!(board.1 < 120);
+    let above = -state.corner(tall).1;
+    let below = 120 - board.1 - above;
+    assert!((above - below).abs() <= 1, "{above} above, {below} below");
+}
+
+#[test]
+fn a_click_on_the_minimap_centres_the_screen_on_the_part_clicked() {
+    let mut state = opened();
+    let map = state.minimap(SPACE).expect("the screen has room for a map");
+    let (x, y) = (map.frame.x + map.frame.w / 2, map.frame.y + map.frame.h / 2);
+    let target = map.board_cell_at(x, y).expect("inside the map");
+    handle_mouse(
+        &mut state,
+        Some(ViewHit::PlaceCaret {
+            line: y as usize,
+            cell: x as usize,
+        }),
+        SPACE,
+    );
+    let corner = state.corner(SPACE);
+    assert_eq!((corner.0 + 50, corner.1 + 15), target);
+}
+
+/// A cell of `node`'s box on the screen that is neither of its marks.
+fn plain_cell_of(state: &ArchitectView, node: usize) -> ViewHit {
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let frame = scene.placement.nodes[node];
+    let leads = state.leads(scene, node);
+    let corner = state.corner(SPACE);
+    let mark = paint::mark_cells(frame);
+    let code = paint::code_mark_cells(frame, leads);
+    for y in frame.y + 1..frame.y + frame.h - 1 {
+        for x in frame.x + 1..frame.x + frame.w - 1 {
+            let on_code = code.is_some_and(|cells| cells.contains(x, y));
+            let on_screen = (0..100).contains(&(x - corner.0)) && (0..30).contains(&(y - corner.1));
+            if !mark.contains(x, y) && !on_code && on_screen {
+                return ViewHit::PlaceCaret {
+                    line: (y - corner.1) as usize,
+                    cell: (x - corner.0) as usize,
+                };
+            }
+        }
+    }
+    panic!("the box has a plain cell on the screen");
+}
+
+/// A double click is a second click on a picked box: it goes where the
+/// box leads, and the first only picks it.
+#[test]
+fn a_second_click_on_a_box_that_leads_inside_goes_inside() {
+    let mut state = showing(CONTEXT);
+    let uze = node_named_in(&state, "uze").unwrap();
+    let hit = plain_cell_of(&state, uze);
+    handle_mouse(&mut state, Some(hit), SPACE);
+    assert_eq!(
+        (here(&state), state.picked),
+        (CONTEXT.to_owned(), Some(uze))
+    );
+    handle_mouse(&mut state, Some(hit), SPACE);
+    assert_eq!(here(&state), CONTAINERS);
+}
+
+/// Going back up stands the viewer on the box that led down, in the middle
+/// of the screen.
+#[test]
+fn coming_back_brings_the_box_that_led_down_to_the_middle() {
+    let mut state = showing(CORE);
+    handle_command(&mut state, Command::Back, SPACE);
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let frame = scene.placement.nodes[state.picked.expect("the box is picked")];
+    let corner = state.corner(SPACE);
+    assert!(
+        frame.contains(corner.0 + 50, corner.1 + 15),
+        "{frame:?} from {corner:?}"
+    );
+}
+
+fn fully_visible(frame: Frame, corner: (i32, i32)) -> bool {
+    frame.x >= corner.0
+        && frame.y >= corner.1
+        && frame.x + frame.w <= corner.0 + 100
+        && frame.y + frame.h <= corner.1 + 30
+}
+
+/// Walking the boxes moves the board only when the box walked to is not
+/// already wholly on the screen, and then it brings it wholly on.
+#[test]
+fn walking_to_a_box_out_of_view_brings_it_into_view_and_only_then() {
+    let (mut stayed, mut moved) = (0, 0);
+    for name in [CONTEXT, CONTAINERS, CORE, WORKSPACE, "Crate layering"] {
+        for direction in [
+            PanDirection::Down,
+            PanDirection::Right,
+            PanDirection::Up,
+            PanDirection::Left,
+        ] {
+            let mut state = showing(name);
+            for _ in 0..8 {
+                let before = state.corner(SPACE);
+                let was = state.picked;
+                handle_command(&mut state, Command::SelectToward(direction), SPACE);
+                let Some(picked) = state.picked.filter(|&picked| Some(picked) != was) else {
+                    break;
+                };
+                let Drawing::Graph(scene) = &state.drawing else {
+                    panic!("a graph is on show");
+                };
+                let frame = scene.placement.nodes[picked];
+                let after = state.corner(SPACE);
+                if fully_visible(frame, before) {
+                    assert_eq!(after, before, "{name}: {frame:?} was in view");
+                    stayed += 1;
+                } else {
+                    assert!(
+                        fully_visible(frame, after),
+                        "{name}: {frame:?} from {after:?}"
+                    );
+                    moved += 1;
+                }
+            }
+        }
+    }
+    assert!(stayed > 0 && moved > 0, "{stayed} stayed, {moved} moved");
+}
+
+/// With nothing picked, the first step picks the box in the middle of the
+/// screen.
+#[test]
+fn with_nothing_picked_the_box_in_the_middle_of_the_screen_is_picked() {
+    let mut state = showing(CONTAINERS);
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let centres: Vec<(i32, i32)> = scene.placement.nodes.iter().map(|f| f.center()).collect();
+    for (node, centre) in centres.into_iter().enumerate() {
+        state.picked = None;
+        state.corner = Some((centre.0 - 50, centre.1 - 15));
+        handle_command(&mut state, Command::SelectToward(PanDirection::Down), SPACE);
+        assert_eq!(state.picked, Some(node));
+    }
+}
+
+fn heading_of(state: &ArchitectView) -> String {
+    match view(state, SPACE).content {
+        Content::Lines { heading, .. } => heading,
+        _ => panic!("a drawing is lines"),
+    }
+}
+
+/// The heading counts what is drawn, or says of the box picked what joins
+/// it, and names the file it all came from.
+#[test]
+fn the_heading_counts_the_drawing_and_names_its_file() {
+    let source = "flowchart TD\n  a[Alpha] --> b[Beta]\n  a --> c[Gamma]\n";
+    let mut state = drawing(vec![Artifact::read("a.mmd", source)]);
+    assert_eq!(heading_of(&state), "3 boxes · 2 edges · a.mmd");
+    pick(&mut state, "a");
+    assert_eq!(heading_of(&state), "Alpha · 0 in · 2 out · a.mmd");
+    pick(&mut state, "b");
+    assert_eq!(heading_of(&state), "Beta · 1 in · 0 out · a.mmd");
+    state.show(Showing::Source);
+    assert_eq!(heading_of(&state), "Beta · 1 in · 0 out · a.mmd");
+
+    let mut dense = String::from("flowchart TD\n");
+    for from in 0..7 {
+        for to in 0..7 {
+            if from != to {
+                dense.push_str(&format!("  n{from} --> n{to}\n"));
+            }
+        }
+    }
+    let state = drawing(vec![Artifact::read("dense.mmd", dense)]);
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let unrouted = scene.routes.unrouted;
+    assert!(unrouted > 0);
+    assert_eq!(
+        heading_of(&state),
+        format!("7 boxes · 42 edges · {unrouted} not routed · dense.mmd")
+    );
+}
+
+#[test]
+fn the_heading_says_where_a_picked_box_leads() {
+    let mut state = showing(CONTEXT);
+    pick(&mut state, "uze");
+    let heading = heading_of(&state);
+    assert!(heading.ends_with(" · enter goes inside"), "{heading}");
+}
+
+/// The screen is the board under it: every cell the drawing wrote, the
+/// grid in the empty space around it — regular, and moving with the
+/// board — and no grid inside a region.
+#[test]
+fn the_screen_shows_the_drawing_on_its_grid() {
+    let mut state = drawing(vec![Artifact::read(
+        "a.mmd",
+        "flowchart TD\n  a --> m --> z\n  subgraph region [Region]\n  m\n  end\n",
+    )]);
+    let wide = Size {
+        width: 160,
+        height: 60,
+    };
+    let dots = |state: &ArchitectView| {
+        let screen = state.screen(wide).expect("a screen");
+        let corner = state.corner(wide);
+        let mut dots = Vec::new();
+        for y in 0..60 {
+            for x in 0..160 {
+                let cell = screen.cell(x, y).unwrap();
+                if cell.glyph == '·' && cell.role == Role::Faint {
+                    dots.push((x + corner.0, y + corner.1));
+                }
+            }
+        }
+        dots
+    };
+    let screen = state.screen(wide).expect("a screen");
+    let corner = state.corner(wide);
+    let board = state.canvas.as_ref().unwrap();
+    for y in 0..60 {
+        for x in 0..160 {
+            if let Some(cell) = board.cell(x + corner.0, y + corner.1)
+                && cell.solid
+            {
+                assert_eq!(screen.cell(x, y), Some(cell), "({x},{y})");
+            }
+        }
+    }
+
+    let on_board = dots(&state);
+    assert!(!on_board.is_empty(), "the grid shows");
+    let columns: BTreeSet<i32> = on_board.iter().map(|&(x, _)| x).collect();
+    let rows: BTreeSet<i32> = on_board.iter().map(|&(_, y)| y).collect();
+    let gaps = |set: &BTreeSet<i32>| {
+        set.iter()
+            .zip(set.iter().skip(1))
+            .map(|(a, b)| b - a)
+            .collect::<BTreeSet<i32>>()
+    };
+    assert_eq!(gaps(&columns).len(), 1, "evenly spaced across");
+    assert_eq!(gaps(&rows).len(), 1, "evenly spaced down");
+    assert!(gaps(&columns).iter().all(|&gap| gap > 1));
+    assert!(gaps(&rows).iter().all(|&gap| gap > 1));
+    assert!(
+        on_board
+            .iter()
+            .any(|&(x, y)| x >= 0 && y >= 0 && x < board.width && y < board.height),
+        "the grid shows through the empty parts of the board itself"
+    );
+
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let region = scene.placement.clusters[0];
+    assert!(
+        !on_board.iter().any(|&(x, y)| region.contains(x, y)),
+        "a region stands on its own ground"
+    );
+
+    let before = state.corner(wide);
+    drag_by(&mut state, 1, 0, wide);
+    let after = state.corner(wide);
+    assert_ne!(before, after);
+    let both = before.0.max(after.0)..before.0.min(after.0) + 160;
+    let shared = |dots: Vec<(i32, i32)>| {
+        dots.into_iter()
+            .filter(|(x, _)| both.contains(x))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        shared(dots(&state)),
+        shared(on_board),
+        "the grid is the board's"
+    );
+}
+
+/// The map over the board shows the boxes as well as the screen's outline.
+#[test]
+fn the_minimap_shows_the_boxes() {
+    let state = showing(CONTAINERS);
+    let map = state.minimap(SPACE).expect("room for a map");
+    let screen = state.screen(SPACE).expect("a screen");
+    let boxes = (map.frame.y + 1..map.frame.y + map.frame.h - 1)
+        .flat_map(|y| (map.frame.x + 1..map.frame.x + map.frame.w - 1).map(move |x| (x, y)))
+        .filter(|&(x, y)| screen.cell(x, y).unwrap().role == Role::Secondary)
+        .count();
+    assert!(boxes > 0);
+}
+
+#[test]
+fn the_arrows_move_the_board_the_way_they_point() {
+    let mut state = opened();
+    let start = state.corner(SPACE);
+    let moved = |state: &mut ArchitectView, command: Command| {
+        let before = state.corner(SPACE);
+        handle_command(state, command, SPACE);
+        let after = state.corner(SPACE);
+        (after.0 - before.0, after.1 - before.1)
+    };
+    let right = moved(&mut state, Command::Pan(PanDirection::Right));
+    assert!(right.0 > 0 && right.1 == 0, "{right:?}");
+    let left = moved(&mut state, Command::Pan(PanDirection::Left));
+    assert_eq!(left, (-right.0, 0));
+    let down = moved(&mut state, Command::Pan(PanDirection::Down));
+    assert!(down.0 == 0 && down.1 > 0, "{down:?}");
+    let up = moved(&mut state, Command::Pan(PanDirection::Up));
+    assert_eq!(up, (0, -down.1));
+    let page = moved(&mut state, Command::ScrollPageDown);
+    assert!(page.0 == 0 && page.1 > down.1, "{page:?}");
+    let back = moved(&mut state, Command::ScrollPageUp);
+    assert_eq!(back, (0, -page.1));
+    assert_eq!(state.corner(SPACE), start);
+    pan(&mut state, 4, SPACE);
+    assert_eq!(state.corner(SPACE), (start.0 + 4, start.1));
+}
+
+#[test]
+fn the_close_button_closes() {
+    let mut state = opened();
+    assert_eq!(
+        handle_mouse(&mut state, Some(ViewHit::Close), SPACE),
+        ArchitectOutcome::Close
+    );
+}
+
+#[test]
+fn a_selector_pressed_while_its_own_list_is_open_shuts_it() {
+    let mut state = showing(CORE);
+    handle_mouse(&mut state, Some(ViewHit::ChooseGroup), SPACE);
+    assert!(state.choosing.is_some());
+    handle_mouse(&mut state, Some(ViewHit::ChooseGroup), SPACE);
+    assert_eq!(state.choosing, None);
+    handle_mouse(&mut state, Some(ViewHit::ChooseItem), SPACE);
+    assert!(state.choosing.is_some());
+    handle_mouse(&mut state, Some(ViewHit::ChooseItem), SPACE);
+    assert_eq!(state.choosing, None);
+}
+
+#[test]
+fn a_way_of_drawing_pressed_while_a_list_is_open_only_shuts_the_list() {
+    let mut state = showing(CORE);
+    handle_mouse(&mut state, Some(ViewHit::ChooseItem), SPACE);
+    handle_mouse(&mut state, Some(ViewHit::SelectMode(2)), SPACE);
+    assert_eq!((state.choosing, state.showing), (None, Showing::Unicode));
+    handle_mouse(&mut state, Some(ViewHit::SelectMode(2)), SPACE);
+    assert_eq!(state.showing, Showing::Source);
+}
+
+/// The source is text: a click on it picks no box, wherever the boxes
+/// would be on the board.
+#[test]
+fn a_click_on_the_source_picks_no_box() {
+    let mut state = showing("Crate layering");
+    let hit = plain_cell_of(&state, 0);
+    let ViewHit::PlaceCaret { line, .. } = hit else {
+        panic!("a cell");
+    };
+    let number = ViewHit::LineNumber {
+        line,
+        extend: false,
+    };
+    state.show(Showing::Source);
+    handle_mouse(&mut state, Some(hit), SPACE);
+    handle_mouse(&mut state, Some(number), SPACE);
+    assert_eq!(state.picked, None);
+}
+
+/// A press at the board's left edge reaches the board like any other.
+#[test]
+fn a_press_at_the_left_edge_of_a_board_picks_the_box_there() {
+    let mut state = showing("Crate layering");
+    let Drawing::Graph(scene) = &state.drawing else {
+        panic!("a graph is on show");
+    };
+    let frame = scene.placement.nodes[0];
+    state.corner = Some((frame.x, frame.y - 5));
+    let hit = ViewHit::LineNumber {
+        line: 6,
+        extend: false,
+    };
+    handle_mouse(&mut state, Some(hit), SPACE);
+    assert_eq!(state.picked, Some(0));
 }
