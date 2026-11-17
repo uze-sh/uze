@@ -307,4 +307,15 @@ exclude_re = [
   # uze-application lifecycle
   # Removal returns NotFound only when the path vanished between its stat and its removal.
   'uze-application/src/application/uninstall\.rs.*replace match guard error\.kind\(\) != std::io::ErrorKind::NotFound with true in remove_path$',
+  # uze-extensions architect
+  # `reach` pins the source's corner to column 0 and rows from 0, so `home` is clamped to (0, 0) either way.
+  'uze-extensions/src/architect\.rs.*delete match arm Showing::Source in ArchitectView::home$',
+  # The minimap is asked only of a board: a click on the source never reaches `click`, and the source is not a screen.
+  'uze-extensions/src/architect\.rs.*delete match arm Showing::Source in ArchitectView::minimap$',
+  # The heading is empty only for an unreadable drawing, which shows a message and never a caption.
+  'uze-extensions/src/architect\.rs.*replace match guard heading\.is_empty\(\) with false in ArchitectView::caption$',
+  # The board's layout is always `Layout::Board`, so it always drags.
+  'uze-extensions/src/architect/extension\.rs.*replace <impl Extension for ArchitectExtension>::drags -> bool with true$',
+  # A rank already one past its source is set to that same value again: only a bounded pass more.
+  'uze-extensions/src/architect/layout\.rs.*replace < with <= in rank_by_longest_path$',
 ]
