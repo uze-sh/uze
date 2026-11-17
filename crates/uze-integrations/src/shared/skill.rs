@@ -495,6 +495,15 @@ mod tests {
                 Some(name),
                 "{rendered}"
             );
+            // What a harness's YAML parser reads, not only a line reader.
+            let (frontmatter, _) = rendered
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---\n"))
+                .expect("the wrapper opens with frontmatter");
+            let parsed: uze_core::capability::harness::yaml::Value =
+                uze_core::capability::harness::yaml::from_str(frontmatter)
+                    .unwrap_or_else(|error| panic!("{rendered}: {error}"));
+            assert_eq!(parsed["name"].as_str(), Some(name), "{rendered}");
         }
     }
 
@@ -519,6 +528,35 @@ mod tests {
     fn escapes_backslash_quote_and_control_characters() {
         let escaped = escape_yaml_double_quoted("a \\ b \" c\nd\te");
         assert_eq!(escaped, "a \\\\ b \\\" c\\nd\\te");
+    }
+
+    /// YAML refuses a raw C0 control character even inside quotes, and a
+    /// harness drops the Skill over it: each one is escaped.
+    #[test]
+    fn every_other_control_character_is_escaped() {
+        assert_eq!(escape_yaml_double_quoted("a\u{1b}b\u{7}"), "a\\x1bb\\x07");
+    }
+
+    /// Codex's explicit-only policy is the sidecar's
+    /// `allow_implicit_invocation: false`, and nothing else in it.
+    #[test]
+    fn only_a_sidecar_refusing_implicit_invocation_is_explicit_only() {
+        let skill = uze_testkit::temp::TempDir::new("explicit-only-sidecar");
+        assert!(!has_explicit_only_sidecar(skill.path()), "no sidecar");
+        std::fs::create_dir_all(skill.path().join("agents")).unwrap();
+        let sidecar = skill.path().join("agents/openai.yaml");
+        fs::write(
+            &sidecar,
+            "interface:\n  x: y\nallow_implicit_invocation: true\n",
+        )
+        .unwrap();
+        assert!(!has_explicit_only_sidecar(skill.path()));
+        fs::write(
+            &sidecar,
+            "interface:\n  x: y\nallow_implicit_invocation: false\n",
+        )
+        .unwrap();
+        assert!(has_explicit_only_sidecar(skill.path()));
     }
 
     #[test]

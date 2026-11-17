@@ -225,8 +225,52 @@ mod tests {
     fn a_floor_keeps_only_what_was_said_since() {
         let since = transcript::unix_seconds("2026-10-06T00:00:05Z");
         let digest = read(&rollout("codex-digest-since", &conversation()), since).unwrap();
-        assert_eq!(digest.turns.len(), 2);
+        let said: Vec<&str> = digest.turns.iter().map(|turn| turn.text.as_str()).collect();
+        assert_eq!(
+            said,
+            [
+                "also cover the root case",
+                "The root case now names the label."
+            ]
+        );
         assert_eq!(digest.goal.as_deref(), Some("make branch names short"));
+    }
+
+    /// A summary Codex wrote before the floor speaks for turns the briefing
+    /// already leaves out, so it neither stands as the summary nor clears
+    /// what was said since.
+    #[test]
+    fn a_compaction_before_the_floor_leaves_the_recent_turns_alone() {
+        let mut records = conversation();
+        records.insert(
+            3,
+            json!({"timestamp":"2026-10-06T00:00:02Z","type":"compacted",
+                   "payload":{"message":"Earlier: the namer was rewritten.","replacement_history":[]}}),
+        );
+        let since = transcript::unix_seconds("2026-10-06T00:00:05Z");
+        let digest = read(&rollout("codex-digest-old-compact", &records), since).unwrap();
+        assert_eq!(digest.summary, None);
+        assert_eq!(digest.turns.len(), 2);
+    }
+
+    /// Codex records an item when it starts and again when it completes;
+    /// only the completed one is the turn, so a turn is never told twice.
+    #[test]
+    fn a_turn_is_read_once_from_its_completed_item() {
+        let mut records = conversation();
+        records.insert(
+            2,
+            json!({"timestamp":"2026-10-06T00:00:01Z","type":"event_msg","payload":{"type":"item_started",
+                "item":{"type":"UserMessage","id":"u1",
+                "content":[{"type":"text","text":"make branch names short","text_elements":[]}]}}}),
+        );
+        let digest = read(&rollout("codex-digest-started", &records), None).unwrap();
+        let operator = digest
+            .turns
+            .iter()
+            .filter(|turn| turn.speaker == Speaker::Operator)
+            .count();
+        assert_eq!(operator, 2, "{:?}", digest.turns);
     }
 
     /// The transcript the real binary wrote in the Lab, replayed

@@ -27,3 +27,24 @@ impl Notifications<'_> {
         notifications::set_agent_finished(&self.0.home, chime)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{UzeApplication, UzeHome};
+    use uze_workspace::notifications::Chime;
+
+    #[test]
+    fn the_chime_chosen_is_the_one_in_force() {
+        let root = uze_testkit::temp::scratch("notifications-chime");
+        let app = UzeApplication::new(UzeHome::at(root.join("uze")), Vec::new());
+        assert_eq!(app.notifications().agent_finished().unwrap(), Chime::Silent);
+        app.notifications()
+            .set_agent_finished(Chime::OutOfSight)
+            .unwrap();
+        assert_eq!(
+            app.notifications().agent_finished().unwrap(),
+            Chime::OutOfSight
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

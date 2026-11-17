@@ -419,6 +419,140 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    /// A plugin receipt is UZE's to remove only while the file is UZE's:
+    /// one the operator has put there instead is theirs, and stays.
+    #[test]
+    fn a_plugin_the_operator_replaced_is_never_removed() {
+        let root = uze_testkit::temp::scratch("opencode-runtime-plugin-detach-foreign");
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        fs::write(path(&root), "export default {}").unwrap();
+
+        assert_eq!(
+            detach(&path(&root)).unwrap().state,
+            uze_core::integration::AttachmentState::Drifted
+        );
+        assert_eq!(
+            fs::read_to_string(path(&root)).unwrap(),
+            "export default {}"
+        );
+
+        fs::remove_file(path(&root)).unwrap();
+        ensure(&root, &source(&sections())).unwrap();
+        assert_eq!(
+            detach(&path(&root)).unwrap().state,
+            uze_core::integration::AttachmentState::Missing,
+            "UZE's own is removed"
+        );
+        assert!(!path(&root).exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Absent is missing; a path that cannot be read is neither absent
+    /// nor UZE's, so it blocks rather than invites a write.
+    #[test]
+    fn an_absent_plugin_is_missing_and_an_unreadable_one_blocks() {
+        use uze_core::integration::AttachmentState;
+        let root = uze_testkit::temp::scratch("opencode-runtime-plugin-unreadable");
+        assert_eq!(inspect(&path(&root)).state, AttachmentState::Missing);
+
+        fs::create_dir_all(path(&root)).unwrap();
+        assert_eq!(inspect(&path(&root)).state, AttachmentState::Blocked);
+        assert_eq!(
+            state(&root, &source(&sections())),
+            PluginState::Foreign(path(&root))
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A file that cannot be read at all is not proven UZE's, so it is
+    /// never written over.
+    // Unix: mode bits are what make the file unreadable or unremovable here.
+    #[cfg(unix)]
+    #[test]
+    fn a_plugin_that_cannot_be_read_is_never_written_over() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = uze_testkit::temp::scratch("opencode-runtime-plugin-unreadable-file");
+        fs::create_dir_all(root.join("plugins")).unwrap();
+        fs::write(path(&root), "// the operator's").unwrap();
+        fs::set_permissions(path(&root), fs::Permissions::from_mode(0o200)).unwrap();
+        // Root reads whatever the mode says, and then the file is readable.
+        if fs::read(path(&root)).is_err() {
+            let wanted = source(&sections());
+            assert_eq!(state(&root, &wanted), PluginState::Foreign(path(&root)));
+            ensure(&root, &wanted).unwrap();
+            fs::set_permissions(path(&root), fs::Permissions::from_mode(0o600)).unwrap();
+            assert_eq!(
+                fs::read_to_string(path(&root)).unwrap(),
+                "// the operator's"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A key that is not an identifier is quoted, or the whole plugin
+    /// fails to load; one that is stays bare.
+    #[test]
+    fn a_key_is_quoted_unless_it_is_an_identifier() {
+        let written = literal(
+            &serde_json::json!({"a-b": 1, "1a": 2, "_x": 3, "top_p": 4}),
+            1,
+        );
+        for expected in [r#""a-b": 1"#, r#""1a": 2"#, "_x: 3", "top_p: 4"] {
+            assert!(written.contains(expected), "{expected} in {written}");
+        }
+        assert!(!written.contains(r#""_x""#), "{written}");
+        assert!(!written.contains(r#""top_p""#), "{written}");
+    }
+
+    /// A multi-line literal read back as JSON: each bare key quoted again,
+    /// and the comma JavaScript allows before a closing bracket dropped.
+    fn as_json(literal: &str) -> serde_json::Value {
+        let lines: Vec<&str> = literal.lines().collect();
+        let mut json = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            let trimmed = line.trim_start();
+            let indent = &line[..line.len() - trimmed.len()];
+            let mut line = match trimmed.split_once(": ") {
+                Some((key, rest)) if !key.starts_with('"') => format!("{indent}\"{key}\": {rest}"),
+                _ => (*line).to_owned(),
+            };
+            // `\u{7d}` is the closing brace: a bare one would unbalance the
+            // braces the architecture suite counts to find this module's end.
+            let closes = lines
+                .get(index + 1)
+                .is_some_and(|next| next.trim_start().starts_with(['\u{7d}', ']']));
+            if closes && line.ends_with(',') {
+                line.pop();
+            }
+            json.push(line);
+        }
+        let json = json.join("\n");
+        serde_json::from_str(&json).unwrap_or_else(|error| panic!("{error}: {json}"))
+    }
+
+    /// What fits on a line is written on one; what does not is one entry
+    /// per line, the same value either way.
+    #[test]
+    fn a_literal_too_wide_for_a_line_is_one_entry_per_line() {
+        let short = serde_json::json!({"a": 1});
+        assert_eq!(literal(&short, 1).lines().count(), 1);
+
+        let entries: serde_json::Map<String, serde_json::Value> = (0..10)
+            .map(|index| (format!("key{index}"), serde_json::json!("x".repeat(10))))
+            .collect();
+        let object = serde_json::Value::Object(entries);
+        let items = serde_json::Value::Array(vec![serde_json::json!("y".repeat(40)); 4]);
+        for wide in [object, items] {
+            let written = literal(&wide, 1);
+            assert!(written.lines().count() > 1, "{written}");
+            assert!(
+                written.lines().all(|line| line.len() <= 100 + 4),
+                "{written}"
+            );
+            assert_eq!(as_json(&written), wide, "{written}");
+        }
+    }
+
     // Runs the plugin under Bun, as the sibling plugin checks do on Unix.
     #[cfg(unix)]
     #[test]

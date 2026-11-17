@@ -270,9 +270,11 @@ mod tests {
 
     /// Answers each download from `served` by URL, and unpacks by writing
     /// the binary where `tar` was told to, after recording the archive it
-    /// was handed and what it held at that moment.
+    /// was handed and what it held at that moment. A package that
+    /// `unpacks_a_directory` holds a directory where its binary should be.
     struct Registry {
         served: Vec<(String, Vec<u8>)>,
+        unpacks_a_directory: bool,
         downloads: std::sync::Mutex<Vec<PathBuf>>,
         unpacked: std::sync::Mutex<Vec<(PathBuf, Vec<u8>)>>,
     }
@@ -305,12 +307,13 @@ mod tests {
                 let held = std::fs::read(&archive).unwrap();
                 self.unpacked.lock().unwrap().push((archive, held));
                 let bin = argument(3).join("package/bin");
-                std::fs::create_dir_all(&bin).unwrap();
-                std::fs::write(
-                    bin.join(uze_platform::executable::file_name("opencode")),
-                    b"exe",
-                )
-                .unwrap();
+                let binary = bin.join(uze_platform::executable::file_name("opencode"));
+                if self.unpacks_a_directory {
+                    std::fs::create_dir_all(&binary).unwrap();
+                } else {
+                    std::fs::create_dir_all(&bin).unwrap();
+                    std::fs::write(&binary, b"exe").unwrap();
+                }
             }
             Ok(uze_core::provisioning::ProcessResult {
                 success: true,
@@ -319,10 +322,8 @@ mod tests {
         }
     }
 
-    /// The archive `tar` unpacks holds the bytes whose integrity was
-    /// checked, whatever happens to the download afterwards.
-    #[test]
-    fn what_is_unpacked_is_what_was_verified() {
+    /// A registry serving one published, verifiable tarball of 2.0.22.
+    fn registry(unpacks_a_directory: bool) -> (Registry, Vec<u8>) {
         let tarball = b"the published tarball".to_vec();
         let integrity = format!("sha512-{}", base64(&Sha512::digest(&tarball)));
         let registry = Registry {
@@ -339,9 +340,18 @@ mod tests {
                 ),
                 ("https://t/x.tgz".to_owned(), tarball.clone()),
             ],
+            unpacks_a_directory,
             downloads: Default::default(),
             unpacked: Default::default(),
         };
+        (registry, tarball)
+    }
+
+    /// The archive `tar` unpacks holds the bytes whose integrity was
+    /// checked, whatever happens to the download afterwards.
+    #[test]
+    fn what_is_unpacked_is_what_was_verified() {
+        let (registry, tarball) = registry(false);
         let scratch = uze_core::acquisition::scratch_directory().unwrap();
 
         let built = unpack(&registry, "linux-x64", &scratch).expect("unpacked");
@@ -355,6 +365,24 @@ mod tests {
             unpacked[0].0.display()
         );
         assert!(built.starts_with(&scratch), "{}", built.display());
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// What is placed on the person's PATH is a regular file the package
+    /// carries, never whatever else stands at that name.
+    #[test]
+    fn a_package_without_a_regular_binary_is_refused() {
+        let (registry, _) = registry(true);
+        let scratch = uze_core::acquisition::scratch_directory().unwrap();
+
+        let unpacked = unpack(&registry, "linux-x64", &scratch);
+
+        assert!(
+            unpacked
+                .as_ref()
+                .is_err_and(|reason| reason.contains("no regular file")),
+            "{unpacked:?}"
+        );
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

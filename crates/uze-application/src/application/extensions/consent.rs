@@ -709,3 +709,420 @@ fn quoted_list(wanted: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::application::extensions::runner::tests::World;
+
+    fn accept(world: &World, identity: &Identity) -> Result<Consented> {
+        let extensions = world.app.extensions();
+        extensions.consent(
+            identity,
+            &extensions.digest(identity).unwrap(),
+            Asker::Operator,
+        )
+    }
+
+    fn panel(world: &World) -> Identity {
+        Identity {
+            id: "gsd-panel".to_owned(),
+            ..world.band()
+        }
+    }
+
+    /// Rewrites the `wants` line of the manifest in `dir`, adding one when
+    /// it has none.
+    fn wants(dir: &Path, grants: &str) {
+        let manifest = dir.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        let wanted = if grants.is_empty() {
+            String::new()
+        } else {
+            format!("wants {grants}")
+        };
+        let edited = if text.lines().any(|line| line.starts_with("wants ")) {
+            text.lines()
+                .map(|line| {
+                    if line.starts_with("wants ") {
+                        wanted.clone()
+                    } else {
+                        line.to_owned()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            format!("{text}\n{wanted}")
+        };
+        fs::write(manifest, edited + "\n").unwrap();
+    }
+
+    /// Has the band want `exec:sh`, declared to read `reads`.
+    fn sh_reads(band: &Path, reads: &str) {
+        wants(band, "\"read:checkout\" \"exec:sh\"");
+        let manifest = band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        let text = text.split("exec \"sh\"").next().unwrap_or_default();
+        fs::write(
+            manifest,
+            format!("{text}exec \"sh\" {{\n    reads {reads}\n}}\n"),
+        )
+        .unwrap();
+    }
+
+    /// Adds a source to the band that runs `file`, a program packaged with
+    /// it, which no grant names.
+    fn packaged_program(band: &Path, source: &str, file: &str) {
+        fs::create_dir_all(band.join("bin")).unwrap();
+        fs::write(band.join(file), b"\x7fELF\x02\x01").unwrap();
+        let manifest = band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            manifest,
+            format!("{text}source \"{source}\" {{\n    run \"./{file}\"\n}}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn only_an_enabled_extension_runs_its_scripts() {
+        assert!(ExtensionState::Enabled.runs_scripts());
+        assert!(!ExtensionState::NeedsEnabling.runs_scripts());
+        assert!(!ExtensionState::FixturesOnly.runs_scripts());
+        assert!(
+            !ExtensionState::NeedsConsent {
+                grants: BTreeSet::new()
+            }
+            .runs_scripts()
+        );
+    }
+
+    /// What the operator accepts is recorded for that extension alone, with
+    /// the digest they were shown and when, and pins nothing for one that
+    /// runs no program.
+    #[test]
+    fn consent_is_recorded_for_the_extension_accepted_and_no_other() {
+        let world = World::new("consent-recorded");
+        let extensions = world.app.extensions();
+        assert_ne!(consent_key(&world.band()), consent_key(&panel(&world)));
+        let states = |extensions: &Extensions| -> Vec<(String, bool, bool)> {
+            extensions
+                .standings(&world.checkout)
+                .into_iter()
+                .map(|standing| {
+                    (
+                        standing.installed.identity.id,
+                        matches!(standing.state, Ok(ExtensionState::NeedsConsent { .. })),
+                        standing.consent.is_some(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            states(&extensions),
+            [
+                ("gsd-band".to_owned(), true, false),
+                ("gsd-panel".to_owned(), false, false)
+            ]
+        );
+        assert_eq!(extensions.consent_record(&world.band()), None);
+
+        let before = uze_platform::clock::since_epoch().as_secs();
+        let consented = accept(&world, &world.band()).unwrap();
+        assert!(consented.accepted_at >= before, "{consented:?}");
+        assert_eq!(consented.digest, extensions.digest(&world.band()).unwrap());
+
+        let recorded = extensions.consent_record(&world.band()).expect("recorded");
+        assert_eq!(recorded.accepted_digest, consented.digest);
+        assert_eq!(recorded.accepted_at, consented.accepted_at);
+        assert_eq!(recorded.exec_paths, None, "it runs no program");
+        assert_eq!(recorded.enforced_at_accept, None);
+        assert_eq!(extensions.consent_record(&panel(&world)), None);
+        assert_eq!(
+            states(&extensions),
+            [
+                ("gsd-band".to_owned(), false, true),
+                ("gsd-panel".to_owned(), false, false)
+            ]
+        );
+    }
+
+    /// Consent and resolving programs again are the operator's: an agent's
+    /// pane is refused both, and nothing is recorded.
+    #[test]
+    fn an_agents_pane_can_neither_consent_nor_resolve_programs_again() {
+        let world = World::new("consent-agent-pane");
+        sh_reads(&world.band, "\"/etc/gsd\"");
+        let extensions = world.app.extensions();
+        let digest = extensions.digest(&world.band()).unwrap();
+
+        assert!(
+            extensions
+                .consent(&world.band(), &digest, Asker::AgentPane)
+                .is_err()
+        );
+        assert_eq!(extensions.consent_record(&world.band()), None);
+
+        accept(&world, &world.band()).unwrap();
+        assert!(
+            extensions
+                .resolve_again(&world.band(), Asker::AgentPane)
+                .is_err()
+        );
+    }
+
+    /// An extension runs code, and so needs consent, when it wants any
+    /// grant or reads anything but fixtures; one that only draws them
+    /// needs none.
+    #[test]
+    fn a_grant_or_a_script_each_need_consent() {
+        let world = World::new("consent-needed");
+        let extensions = world.app.extensions();
+        let panel_dir = world.band.with_file_name("gsd-panel");
+        let per_project = |identity: &Identity| {
+            let installed = extensions
+                .installed()
+                .into_iter()
+                .find(|installed| installed.identity == *identity)
+                .unwrap();
+            crate::enabled_per_project(&extensions.compile(&installed).unwrap())
+        };
+        assert_eq!(
+            extensions.state(&panel(&world), &world.checkout).unwrap(),
+            ExtensionState::FixturesOnly
+        );
+        assert!(!per_project(&panel(&world)));
+        assert!(per_project(&world.band()));
+
+        wants(&panel_dir, "\"clipboard\"");
+        assert!(matches!(
+            extensions.state(&panel(&world), &world.checkout).unwrap(),
+            ExtensionState::NeedsConsent { .. }
+        ));
+        assert!(per_project(&panel(&world)), "a grant alone");
+
+        wants(&world.band, "");
+        fs::write(
+            world.band.join("state.uze"),
+            "fn answer(input, context) { #{ data: #{} } }\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::NeedsConsent { .. }
+        ));
+        assert!(accept(&world, &world.band()).is_ok(), "a script alone");
+    }
+
+    /// A program an `exec:` grant names is pinned where it was found when
+    /// consented to, listed with what it reads, and an update widening its
+    /// reads holds the extension until someone accepts it.
+    #[test]
+    fn a_program_is_pinned_at_consent_and_a_wider_read_holds_the_update() {
+        let world = World::new("consent-program");
+        sh_reads(&world.band, "\"/etc/gsd\"");
+        let extensions = world.app.extensions();
+        let to_pin = extensions.programs_to_pin(&world.band()).unwrap();
+        let listed: Vec<_> = to_pin
+            .iter()
+            .map(|pin| {
+                (
+                    pin.name.as_str(),
+                    pin.reads.clone(),
+                    pin.runs_anything,
+                    pin.packaged,
+                )
+            })
+            .collect();
+        assert_eq!(listed, [("sh", vec!["/etc/gsd".to_owned()], true, false)]);
+        assert!(
+            extensions
+                .resolve_again(&world.band(), Asker::Operator)
+                .is_err(),
+            "nothing is pinned before consent"
+        );
+
+        accept(&world, &world.band()).unwrap();
+        let recorded = extensions.consent_record(&world.band()).unwrap();
+        assert!(recorded.exec_paths.is_some(), "{recorded:?}");
+        assert!(recorded.enforced_at_accept.is_some());
+        let pinned = extensions.pinned_programs(&world.band()).unwrap();
+        assert_eq!(pinned.len(), 1);
+        assert_eq!(pinned[0].name, "sh");
+        assert_eq!(pinned[0].path, to_pin[0].path, "pinned where it was found");
+        assert_eq!(
+            extensions
+                .resolve_again(&world.band(), Asker::Operator)
+                .unwrap(),
+            to_pin
+        );
+
+        extensions
+            .enable(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap();
+        assert_eq!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::Enabled
+        );
+
+        sh_reads(&world.band, "\"/etc/gsd\" \"/home/op/.ssh\"");
+        assert_eq!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::Held {
+                new_grants: BTreeSet::new(),
+                widened: vec!["exec:sh reads /home/op/.ssh".to_owned()],
+            }
+        );
+        let refused = extensions
+            .enable(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refused.contains("wants `exec:sh reads /home/op/.ssh`, which nobody accepted"),
+            "{refused}"
+        );
+    }
+
+    /// A program packaged with the extension is listed for consent by its
+    /// file and makes the consent record whether it ran confined; an update
+    /// adding another holds the extension.
+    #[test]
+    fn a_packaged_program_is_listed_and_one_added_holds_the_update() {
+        let world = World::new("consent-packaged");
+        packaged_program(&world.band, "meter", "bin/meter");
+        let extensions = world.app.extensions();
+        let listed: Vec<_> = extensions
+            .programs_to_pin(&world.band())
+            .unwrap()
+            .into_iter()
+            .map(|pin| (pin.name, pin.packaged))
+            .collect();
+        assert_eq!(listed, [("./bin/meter".to_owned(), true)]);
+
+        accept(&world, &world.band()).unwrap();
+        let recorded = extensions.consent_record(&world.band()).unwrap();
+        assert!(recorded.enforced_at_accept.is_some(), "{recorded:?}");
+        assert_eq!(recorded.exec_paths, Some(BTreeMap::new()), "never pinned");
+        extensions
+            .enable(&world.band(), &world.checkout, Asker::Operator)
+            .unwrap();
+
+        packaged_program(&world.band, "upload", "bin/upload");
+        assert_eq!(
+            extensions.state(&world.band(), &world.checkout).unwrap(),
+            ExtensionState::Held {
+                new_grants: BTreeSet::new(),
+                widened: vec!["run ./bin/upload".to_owned()],
+            }
+        );
+    }
+
+    /// A preference is set to a value it may hold and read back as the
+    /// extension reads it; one it does not declare is refused.
+    #[test]
+    fn a_declared_preference_is_set_and_read_back() {
+        let world = World::new("consent-preferences");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!(
+                "{text}\npreferences {{\n    number \"warn-at\" label=\"Warn at\" default=70 min=1 max=100\n}}\n"
+            ),
+        )
+        .unwrap();
+        let extensions = world.app.extensions();
+        assert_eq!(
+            extensions.preferences(&world.band()).unwrap(),
+            serde_json::json!({ "warn-at": 70 })
+        );
+        assert_eq!(
+            extensions
+                .set_preference(&world.band(), "warn-at", 40.into())
+                .unwrap(),
+            serde_json::json!({ "warn-at": 40 })
+        );
+        assert_eq!(
+            extensions.preferences(&world.band()).unwrap(),
+            serde_json::json!({ "warn-at": 40 })
+        );
+        assert!(
+            extensions
+                .set_preference(&world.band(), "absent", 1.into())
+                .is_err()
+        );
+    }
+
+    /// A secret is kept when it is one line of text, forgotten when nothing
+    /// was typed, and anything else is refused.
+    // Only where a secret is kept in a file: on macOS storing one writes the
+    // operator's own Keychain, and on Windows the Credential Manager, each
+    // the machine's own.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_secret_is_kept_as_one_line_and_forgotten_when_emptied() {
+        let world = World::new("consent-secret");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!("{text}\npreferences {{\n    secret \"token\" label=\"Token\"\n}}\n"),
+        )
+        .unwrap();
+        wants(&world.band, "\"read:checkout\" \"net:api.github.com\"");
+        let extensions = world.app.extensions();
+        let set = || {
+            uze_workspace::extensions::secrets::set_names(
+                &world.app.home,
+                &plugin_key(&world.band()),
+                "gsd-band",
+            )
+        };
+
+        extensions
+            .set_preference(&world.band(), "token", "ghp_x".into())
+            .unwrap();
+        assert!(set().contains("token"));
+        for refused in [
+            serde_json::json!("two\nlines"),
+            serde_json::json!("a".repeat(4097)),
+            serde_json::json!(5),
+        ] {
+            assert!(
+                extensions
+                    .set_preference(&world.band(), "token", refused.clone())
+                    .is_err(),
+                "{refused}"
+            );
+        }
+        assert!(set().contains("token"), "a refused value keeps the secret");
+        extensions
+            .set_preference(&world.band(), "token", "".into())
+            .unwrap();
+        assert!(set().is_empty());
+    }
+
+    /// A plugin leaving the machine forgets what was accepted for each of
+    /// its extensions, and names them.
+    #[test]
+    fn a_plugin_leaving_forgets_its_extensions_consent() {
+        let world = World::new("consent-forget");
+        let extensions = world.app.extensions();
+        accept(&world, &world.band()).unwrap();
+
+        assert_eq!(
+            extensions.forget_plugin("gsd", "studio").unwrap(),
+            [consent_key(&world.band())]
+        );
+        assert_eq!(extensions.consent_record(&world.band()), None);
+        assert!(
+            extensions
+                .forget_plugin("gsd", "studio")
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

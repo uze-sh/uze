@@ -649,6 +649,144 @@ mod runtime_projection_tests {
 }
 
 #[cfg(test)]
+mod agent_context_tests {
+    use std::ffi::OsString;
+
+    use uze_core::home::UzeHome;
+    use uze_core::integration::{AgentContext, IntegrationPort};
+
+    use crate::claude::ClaudeIntegration;
+
+    /// The launch's instructions reach Claude as a `CLAUDE.md` in a
+    /// directory the launch adds, which Claude reads only with the
+    /// variable set.
+    #[test]
+    fn an_agents_context_reaches_claude_as_an_added_directorys_instructions() {
+        let root = uze_testkit::temp::scratch("claude-agent-context");
+        let dir = root.join("agent");
+        std::fs::create_dir_all(&dir).unwrap();
+        let home = UzeHome::at(root.join("uze-home"));
+        let integration = ClaudeIntegration::new(root.join("claude-home"), home.clone());
+
+        let contribution = integration
+            .deliver_context(
+                &home,
+                &AgentContext {
+                    dir: &dir,
+                    file: &dir.join("context.md"),
+                    text: "hello agent",
+                    instructions: "hello agent",
+                    notes: None,
+                    checkout: &root,
+                    link: &root.join("link"),
+                    launch: "launch",
+                    session: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("CLAUDE.md")).unwrap(),
+            "hello agent"
+        );
+        let add_dir = contribution
+            .args
+            .iter()
+            .position(|arg| arg == "--add-dir")
+            .expect("the directory is added to the launch");
+        assert_eq!(contribution.args[add_dir + 1], dir.as_os_str());
+        assert!(contribution.env.contains(&(
+            OsString::from("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD"),
+            OsString::from("1")
+        )));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+// Symbolic links and modes as Unix has them.
+#[cfg(all(test, unix))]
+mod stale_projection_tests {
+    use std::path::{Path, PathBuf};
+    use uze_core::path::Canonical as _;
+
+    use uze_core::harness_runtime::RuntimeContext;
+    use uze_core::home::UzeHome;
+    use uze_core::integration::IntegrationPort;
+
+    use crate::claude::ClaudeIntegration;
+
+    fn project_with_skills(root: &Path) -> PathBuf {
+        let project = root.join("project");
+        std::fs::create_dir_all(project.join(".agents/skills/demo")).unwrap();
+        std::fs::create_dir_all(project.join(".agents/agents")).unwrap();
+        uze_testkit::git::mark_repository(&project);
+        project
+    }
+
+    /// A link an earlier layout or someone else left pointing elsewhere is
+    /// put back on the project's own `.agents/skills`.
+    #[test]
+    fn a_projected_link_pointing_elsewhere_is_pointed_back_at_the_project() {
+        let root = uze_testkit::temp::scratch("claude-projection-elsewhere");
+        let project = project_with_skills(&root);
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let home = UzeHome::at(root.join("uze-home"));
+        let integration = ClaudeIntegration::new(root.join("claude-home"), home.clone());
+        let ctx = RuntimeContext {
+            cwd: &project,
+            home: &home,
+        };
+        let runtime_dir = PathBuf::from(&integration.runtime_contribution(&ctx).extra_args[1]);
+        let projected = runtime_dir.join(".claude/skills");
+        std::fs::remove_file(&projected).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &projected).unwrap();
+
+        let contribution = integration.runtime_contribution(&ctx);
+
+        assert!(contribution.note.is_none(), "{:?}", contribution.note);
+        assert_eq!(
+            std::fs::read_link(&projected).unwrap(),
+            project.join(".agents/skills").canonical().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A stale link that cannot be taken out is a reason the launch is
+    /// told about, never silently left dangling.
+    #[test]
+    fn a_stale_link_that_cannot_be_removed_is_reported() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = uze_testkit::temp::scratch("claude-projection-stale");
+        let project = project_with_skills(&root);
+        let home = UzeHome::at(root.join("uze-home"));
+        let integration = ClaudeIntegration::new(root.join("claude-home"), home.clone());
+        let ctx = RuntimeContext {
+            cwd: &project,
+            home: &home,
+        };
+        let runtime_dir = PathBuf::from(&integration.runtime_contribution(&ctx).extra_args[1]);
+        let claude_dir = runtime_dir.join(".claude");
+        std::fs::remove_dir_all(project.join(".agents/skills")).unwrap();
+        std::fs::set_permissions(&claude_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let enforced = std::fs::write(claude_dir.join("probe"), "").is_err();
+
+        let contribution = enforced.then(|| integration.runtime_contribution(&ctx));
+
+        std::fs::set_permissions(&claude_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Permissions bind nothing for a privileged account, so there is
+        // nothing to prove there.
+        if let Some(contribution) = contribution {
+            assert!(contribution.is_passthrough());
+            assert!(contribution.note.is_some(), "the failure is reported");
+            assert!(claude_dir.join("skills").is_symlink());
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
 mod reporter_tests {
     use super::*;
 

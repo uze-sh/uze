@@ -183,3 +183,50 @@ pub fn unanchored_checkout(path: &std::path::Path) -> Option<String> {
 pub fn project_root_of(cwd: &std::path::Path) -> std::path::PathBuf {
     anchor_root_or_self(&slot_key(cwd))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    fn slot() -> PathBuf {
+        Path::new("work")
+            .join("acme")
+            .join(uze_workspace::worktree::WORKTREES_DIRECTORY)
+            .join("a1")
+    }
+
+    /// A directory inside a slot is in an isolated checkout, whose own
+    /// directory is the slot's; the operator's own tree is in none.
+    #[test]
+    fn a_slot_is_an_isolated_checkout_and_the_primary_is_not() {
+        let inside = slot().join("src");
+        assert!(super::is_isolated_checkout(&inside));
+        assert_eq!(super::isolated_checkout_root(&inside), Some(slot()));
+        let own = Path::new("work").join("acme").join("src");
+        assert!(!super::is_isolated_checkout(&own));
+        assert_eq!(super::isolated_checkout_root(&own), None);
+    }
+
+    /// Only a slot whose `.git` names something other than the project's
+    /// repository is refused, and the refusal says why; the operator's own
+    /// tree and a slot with no `.git` are not.
+    #[test]
+    fn a_slot_whose_git_names_another_repository_is_refused() {
+        let root = uze_testkit::temp::scratch("unanchored-checkout");
+        let slot = root.join(slot());
+        std::fs::create_dir_all(&slot).unwrap();
+        assert_eq!(super::unanchored_checkout(&slot), None, "no .git at all");
+        assert_eq!(super::unanchored_checkout(&root), None, "not a slot");
+
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(
+            slot.join(".git"),
+            format!("gitdir: {}\n", elsewhere.display()),
+        )
+        .unwrap();
+        let refused = super::unanchored_checkout(&slot).expect("refused");
+        assert!(!refused.trim().is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

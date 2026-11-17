@@ -275,13 +275,15 @@ impl crate::application::Collectable for DeliveredPackages {
 mod tests {
     use super::*;
 
-    /// A stdio MCP server in POSIX `sh`: it answers `initialize`, and every
-    /// `tools/call` with its own process id as JSON text.
+    /// A stdio MCP server in POSIX `sh`: it answers `initialize`, a call of
+    /// the tool `refuse` with a tool error, and every other `tools/call`
+    /// with its own process id as JSON text.
     #[cfg(unix)]
     const SERVER: &str = r#"while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{}}}\n' "$id" ;;
+    *'"refuse"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"isError":true,"content":[{"type":"text","text":"refused"}]}}\n' "$id" ;;
     *'"tools/call"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"{\\"pid\\":%s}"}]}}\n' "$id" "$$" ;;
   esac
 done
@@ -446,5 +448,91 @@ done
         let live = sessions.live.lock().unwrap();
         assert_eq!(live[&key("old")].lock().unwrap().used, None);
         assert!(live[&key("new")].lock().unwrap().used.is_some());
+    }
+
+    /// Installs the plugin `tracker`, which delivers the MCP server `rtc`,
+    /// into `home`.
+    // The server is the POSIX `sh` stand-in above.
+    #[cfg(unix)]
+    fn tracker_installed(root: &Path, home: &UzeHome) {
+        let source = root.join("tracker");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("plugin.json"), r#"{"name":"tracker"}"#).unwrap();
+        std::fs::write(source.join("server.sh"), SERVER).unwrap();
+        std::fs::write(
+            source.join("mcp.json"),
+            r#"{"mcpServers":{"rtc":{"command":"/bin/sh","args":["${PLUGIN_ROOT}/server.sh"]}}}"#,
+        )
+        .unwrap();
+        UzeStore::new(home.clone())
+            .ingest(
+                &uze_core::acquisition::acquire(&uze_core::PackageSource::local(source)).unwrap(),
+                "local",
+                None,
+            )
+            .unwrap();
+    }
+
+    // Used only by the tests the POSIX `sh` server above runs.
+    #[cfg(unix)]
+    fn manifest_naming(mcp: Vec<uze_contract::McpDecl>) -> Manifest {
+        Manifest {
+            protocol: 1,
+            id: "timesheet".into(),
+            name: "Timesheet".into(),
+            description: String::new(),
+            surfaces: Vec::new(),
+            wants: Vec::new(),
+            sources: Vec::new(),
+            actions: Vec::new(),
+            exec: Vec::new(),
+            preferences: Vec::new(),
+            sprites: Vec::new(),
+            icons: Vec::new(),
+            mcp,
+        }
+    }
+
+    /// A server its manifest says another plugin delivers is started from
+    /// that plugin, and a tool's error leaves the session as it was.
+    // The server is the POSIX `sh` stand-in above.
+    #[cfg(unix)]
+    #[test]
+    fn a_server_another_plugin_delivers_is_started_from_it_and_kept_past_a_tool_error() {
+        let root = uze_testkit::temp::scratch("mcp-named-plugin");
+        let home = UzeHome::at(root.join("home"));
+        tracker_installed(&root, &home);
+        let identity = Identity {
+            marketplace: "local".into(),
+            plugin: "timesheets".into(),
+            id: "timesheet".into(),
+        };
+        let manifest = manifest_naming(vec![uze_contract::McpDecl {
+            server: "rtc".into(),
+            plugin: Some("tracker@local".into()),
+            timeout: None,
+        }]);
+        let call = Call {
+            home: &home,
+            identity: &identity,
+            manifest: &manifest,
+            checkout: &root,
+        };
+        let sessions = Arc::new(McpSessions::default());
+        let pid = |sessions: &Arc<McpSessions>| {
+            sessions
+                .call(&call, "rtc", "rtc_timesheet", &serde_json::json!({}))
+                .unwrap()["pid"]
+                .as_u64()
+                .unwrap()
+        };
+
+        let first = pid(&sessions);
+        let refused = sessions
+            .call(&call, "rtc", "refuse", &serde_json::json!({}))
+            .unwrap_err();
+        assert!(refused.0.contains("refused"), "{refused:?}");
+        assert_eq!(pid(&sessions), first, "the same server answers after it");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

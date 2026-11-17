@@ -152,4 +152,29 @@ mod tests {
         assert_eq!(bytes_text(300 * 1024), "300 KiB");
         assert_eq!(bytes_text(3 * 1024 * 1024 / 2), "1.5 MiB");
     }
+
+    /// D28's targets are bounds: a cost at a target is not over it.
+    #[test]
+    fn a_cost_at_a_target_is_not_over_it() {
+        let at_targets = cost(Some(P95_TARGET.as_secs_f64() * 1000.0), MEMORY_TARGET);
+        assert!(
+            at_targets.over_target().is_empty(),
+            "{:?}",
+            at_targets.over_target()
+        );
+    }
+
+    #[test]
+    fn a_measurement_says_how_long_ago_it_was_taken() {
+        let fresh = MeasuredCosts::now(Vec::new());
+        assert!(fresh.measured_at > 0);
+        assert!(fresh.age() < Duration::from_secs(60), "{:?}", fresh.age());
+
+        let earlier = MeasuredCosts {
+            measured_at: fresh.measured_at - 600,
+            extensions: Vec::new(),
+        };
+        assert!(earlier.age() >= Duration::from_secs(600));
+        assert!(earlier.age() < Duration::from_secs(660));
+    }
 }

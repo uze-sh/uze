@@ -215,3 +215,213 @@ fn derive_warnings(
     }
     warnings
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use uze_core::capability::Resource;
+    use uze_core::exposure::{ExposureMechanism, ExposurePlan};
+    use uze_core::integration::{AttachmentReceipt, HarnessDetection};
+    use uze_core::router::{CompatibilityRoute, HarnessCapabilities};
+
+    fn observed(
+        file_name: &str,
+        exists: bool,
+        has_user_content: bool,
+    ) -> InstructionSourceObservation {
+        InstructionSourceObservation {
+            file_name: file_name.to_owned(),
+            path: PathBuf::from(file_name),
+            exists,
+            has_user_content,
+            managed_region_identities: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn two_vendor_files_with_content_and_no_agents_md_are_named_together_as_divergent() {
+        let sources = [
+            observed("ONE.md", true, true),
+            observed("TWO.md", true, true),
+        ];
+
+        let warnings = derive_warnings(false, &sources);
+
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("ONE.md and TWO.md each carry"),
+            "{warnings:?}"
+        );
+        assert!(matches!(
+            derive_portability(false, &sources),
+            Portability::VendorLocked { files } if files.len() == 2
+        ));
+    }
+
+    #[test]
+    fn a_single_vendor_file_is_vendor_locked_without_a_divergence_warning() {
+        let sources = [
+            observed("ONE.md", true, true),
+            observed("TWO.md", true, false),
+        ];
+
+        assert!(derive_warnings(false, &sources).is_empty());
+        assert!(matches!(
+            derive_portability(false, &sources),
+            Portability::VendorLocked { files } if files == [PathBuf::from("ONE.md")]
+        ));
+    }
+
+    #[test]
+    fn a_vendor_file_beside_agents_md_is_noted_once_and_agents_md_itself_never() {
+        let sources = [
+            observed(AGENTS_MD_FILE_NAME, true, true),
+            observed("ONE.md", true, true),
+        ];
+
+        let warnings = derive_warnings(true, &sources);
+
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].starts_with("ONE.md carries instructions of its own beside AGENTS.md"));
+        assert!(matches!(
+            derive_portability(true, &sources),
+            Portability::Portable
+        ));
+    }
+
+    #[test]
+    fn agents_md_alone_is_no_vendor_content() {
+        let sources = [observed(AGENTS_MD_FILE_NAME, true, true)];
+
+        assert!(derive_warnings(true, &sources).is_empty());
+        assert!(matches!(
+            derive_portability(false, &sources),
+            Portability::NoContext
+        ));
+    }
+
+    /// A harness that reads `AGENTS.md` beside a file of its own, or that
+    /// declares no instructions delivery at all.
+    struct InstructedHarness {
+        id: &'static str,
+        delivery: fn() -> ContextDelivery,
+        present: bool,
+    }
+
+    impl IntegrationPort for InstructedHarness {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: self.present,
+                version: None,
+            }
+        }
+
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: CompatibilityRoute::Adaptable,
+                mechanism: ExposureMechanism::Unsupported {
+                    rationale: "context only".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+
+        fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+            Ok(None)
+        }
+
+        fn context_delivery(&self) -> ContextDelivery {
+            (self.delivery)()
+        }
+    }
+
+    fn bridged() -> ContextDelivery {
+        ContextDelivery::Bridge {
+            file_name: "VENDOR.md",
+        }
+    }
+
+    #[test]
+    fn each_harness_is_reported_by_how_it_reads_agents_md_and_one_without_a_delivery_is_left_out() {
+        let root = uze_testkit::temp::scratch("context-inspect-harnesses");
+        let project = root.join("project");
+        fs::create_dir_all(&project).unwrap();
+        uze_testkit::git::mark_repository(&project);
+        let app = UzeApplication::new(
+            UzeHome::at(root.join("uze")),
+            vec![
+                Box::new(InstructedHarness {
+                    id: "present",
+                    delivery: bridged,
+                    present: true,
+                }),
+                Box::new(InstructedHarness {
+                    id: "missing",
+                    delivery: bridged,
+                    present: false,
+                }),
+                Box::new(InstructedHarness {
+                    id: "silent",
+                    delivery: || ContextDelivery::None,
+                    present: true,
+                }),
+            ],
+        );
+
+        let status = app.context().inspect(&project).unwrap();
+
+        let deliveries: Vec<(&str, &HarnessContextDelivery)> = status
+            .harnesses
+            .iter()
+            .map(|harness| (harness.integration.as_str(), &harness.delivery))
+            .collect();
+        assert!(
+            matches!(
+                deliveries[..],
+                [
+                    ("present", HarnessContextDelivery::ReadsNatively),
+                    ("missing", HarnessContextDelivery::NotDetected),
+                ]
+            ),
+            "{deliveries:?}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_directory_standing_where_a_vendor_file_would_be_carries_no_content() {
+        let root = uze_testkit::temp::scratch("context-inspect-directory");
+        let project = root.join("project");
+        fs::create_dir_all(project.join("VENDOR.md")).unwrap();
+        uze_testkit::git::mark_repository(&project);
+        let app = UzeApplication::new(
+            UzeHome::at(root.join("uze")),
+            vec![Box::new(InstructedHarness {
+                id: "present",
+                delivery: bridged,
+                present: true,
+            })],
+        );
+
+        let status = app.context().inspect(&project).unwrap();
+
+        let vendor = status
+            .sources
+            .iter()
+            .find(|source| source.file_name == "VENDOR.md")
+            .expect("the harness's file is observed");
+        assert!(!vendor.exists);
+        assert!(!vendor.has_user_content);
+        assert!(matches!(status.portability, Portability::NoContext));
+        let _ = fs::remove_dir_all(root);
+    }
+}

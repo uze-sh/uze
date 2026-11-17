@@ -888,6 +888,66 @@ fn the_opencode_hooks_are_one_runtime_over_each_packages_document() {
         Path::new("/tmp/plugin root"),
     ));
 
+    // Each handler is carried for the runtime to run: a shell line with
+    // the package root resolved, and a JavaScript script in OpenCode's
+    // own Bun, from where the package is delivered.
+    let line = &group["handlers"][0];
+    let command = line["command"].as_str().expect("a shell line is carried");
+    assert!(command.contains("check"), "{line}");
+    assert!(!command.contains("${PLUGIN_ROOT}"), "{line}");
+    assert_eq!(line["timeout"], 10);
+    let mut watch = hook();
+    watch.id = "watch".into();
+    watch.handlers = vec![CommandHook {
+        handler_type: CommandHandlerType::Command,
+        command: "hooks/watch.js".into(),
+        args: Some(vec!["--quiet".into()]),
+        interpreter: None,
+        timeout: 5,
+    }];
+    let with_script = opencode_hook_document(
+        crate::opencode::HOOKS,
+        &[&hook(), &watch],
+        Path::new("/tmp/plugin root"),
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&with_script).unwrap();
+    let script = &parsed["groups"][1]["handlers"][0];
+    assert_eq!(script["bun"], true, "{script}");
+    let argv = script["argv"]
+        .as_array()
+        .expect("the script runs from its words");
+    let delivered = crate::opencode::HOOKS
+        .store
+        .root_of(Path::new("/tmp/plugin root"))
+        .join("hooks/watch.js");
+    assert_eq!(argv[0], delivered.display().to_string(), "{script}");
+    assert_eq!(argv[1], "--quiet");
+
+    // Anything but exactly these groups, at this root and version, is not
+    // the document this build writes.
+    assert!(!document_carries_groups(
+        crate::opencode::HOOKS,
+        &document,
+        &[&hook(), &watch],
+        Path::new("/tmp/plugin root"),
+    ));
+    let mut moved: serde_json::Value = serde_json::from_str(&document).unwrap();
+    moved["root"] = serde_json::json!("/tmp/elsewhere");
+    assert!(!document_carries_groups(
+        crate::opencode::HOOKS,
+        &moved.to_string(),
+        &[&hook()],
+        Path::new("/tmp/plugin root"),
+    ));
+    let mut versioned: serde_json::Value = serde_json::from_str(&document).unwrap();
+    versioned["version"] = serde_json::json!(OPENCODE_DOCUMENT_VERSION + 1);
+    assert!(!document_carries_groups(
+        crate::opencode::HOOKS,
+        &versioned.to_string(),
+        &[&hook()],
+        Path::new("/tmp/plugin root"),
+    ));
+
     let section = opencode_hooks_section(crate::opencode::HOOKS, Path::new("/state/hook-groups"));
     // V2 plugin API (spec: opencode.ai/v2/docs/build/plugins): the section
     // registers ctx.tool.hook callbacks and runs handlers in the harness's
@@ -951,6 +1011,59 @@ fn bridge_file_cleanup_removes_only_uzes_files() {
         "a non-empty directory is preserved"
     );
     let _ = fs::remove_dir_all(root);
+}
+
+/// Only a delivered hook asks the machine for the wrapper's programs: a
+/// package whose delivered resources hold no hook needs nothing.
+#[test]
+fn a_package_without_hooks_needs_nothing_for_the_wrapper() {
+    let scratch = uze_testkit::temp::TempDir::new("hooks-requirements-skill");
+    let package = scratch.path().join("pkg");
+    fs::create_dir_all(package.join("skills/commit")).unwrap();
+    fs::write(package.join("plugin.json"), r#"{"name":"flow"}"#).unwrap();
+    let skill = "---\nname: commit\ndescription: Commit.\n---\nBody.\n";
+    fs::write(package.join("skills/commit/SKILL.md"), skill).unwrap();
+    let stored = crate::shared::test_support::stored_at(&package, "flow");
+    let mut resource = crate::shared::test_support::skill_resource(&stored);
+    resource.capability.payload = skill.as_bytes().to_vec();
+    let home = UzeHome::at(scratch.path().join("uze"));
+    let claude = crate::claude::ClaudeIntegration::new(scratch.path().join("claude"), home.clone());
+    // Setup has run, so the Skill is delivered rather than held back.
+    uze_core::state::record(
+        &home,
+        uze_core::integration::IntegrationPort::id(&claude),
+        uze_core::state::IntegrationRecord::default(),
+    )
+    .unwrap();
+    assert!(
+        !matches!(
+            uze_core::integration::IntegrationPort::exposure_plan(&claude, &resource).mechanism,
+            ExposureMechanism::Unsupported { .. }
+        ),
+        "the Skill is delivered"
+    );
+    assert!(generated_requirements(&claude, crate::claude::HOOKS, &[&resource]).is_empty());
+}
+
+/// A bridge that could not be removed is an error, never a success: it
+/// stays, and would keep running a removed package's hooks.
+// A directory that refuses a removal is a Unix file mode.
+#[cfg(unix)]
+#[test]
+fn a_bridge_that_cannot_be_removed_is_an_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = uze_testkit::temp::TempDir::new("hooks-cleanup-locked");
+    let plugins = root.path().join("plugins");
+    let bridge = plugins.join("hooks-demo.ts");
+    fs::create_dir_all(&plugins).unwrap();
+    fs::write(&bridge, "// generated").unwrap();
+    fs::set_permissions(&plugins, fs::Permissions::from_mode(0o555)).unwrap();
+    // An account that writes past permissions (root) cannot see this case.
+    if fs::write(plugins.join("probe"), "").is_err() {
+        assert!(remove_bridge_file(&bridge).is_err());
+        assert!(bridge.is_file(), "the bridge went after all");
+    }
+    fs::set_permissions(&plugins, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 /// A merge rewrites the whole document, so the order the user's own
@@ -1126,16 +1239,55 @@ fn a_wrapper_an_earlier_build_wrote_still_removes() {
         wrapper: &wrapper,
     };
 
-    assert_eq!(
-        crate::claude::HOOKS.inspect_entry(&delivered).state,
-        AttachmentState::Matched
+    let inspection = crate::claude::HOOKS.inspect_entry(&delivered);
+    assert_eq!(inspection.state, AttachmentState::Matched);
+    assert!(
+        inspection.reason.contains("the next install rewrites it"),
+        "a matched entry says its wrapper is an earlier build's: {}",
+        inspection.reason
     );
+
+    // An edited entry is drift, and that is all it says.
+    let mut document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+    document["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = serde_json::json!(99);
+    fs::write(&config, document.to_string()).unwrap();
+    let drifted = crate::claude::HOOKS.inspect_entry(&delivered);
+    assert_eq!(drifted.state, AttachmentState::Drifted);
+    assert!(
+        !drifted.reason.contains("the next install rewrites it"),
+        "{}",
+        drifted.reason
+    );
+    merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
+    let mut document: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+    document["hooks"]["PreToolUse"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|group| group["hooks"][0]["timeout"] != 99);
+    fs::write(&config, document.to_string()).unwrap();
+
     assert_eq!(
         crate::claude::HOOKS.detach_entry(&delivered).unwrap().state,
         AttachmentState::Missing
     );
     assert!(!config.exists(), "the entry went with the receipt");
     let _ = fs::remove_dir_all(root);
+}
+
+/// A wrapper whose content differs from what this build writes is
+/// rewritten, executable: a template upgrade lands on the next delivery.
+#[test]
+fn a_changed_wrapper_is_rewritten() {
+    let root = uze_testkit::temp::TempDir::new("hooks-rewritten-wrapper");
+    let wrapper = root.path().join("hooks").join("exec");
+    fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+    fs::write(&wrapper, "#!/bin/sh\nold\n").unwrap();
+    let source = wrapper_source(crate::claude::HOOKS).expect("a wrapper runs here");
+    materialize_wrapper(&wrapper, &source).unwrap();
+    assert_eq!(fs::read_to_string(&wrapper).unwrap(), source);
+    assert!(is_executable(&wrapper));
 }
 
 /// Only the header marks a wrapper as generated; a file somebody else
@@ -1188,6 +1340,74 @@ fn an_edited_event_entry_is_drift_on_both_invocation_forms() {
         );
     }
     let _ = fs::remove_dir_all(root);
+}
+
+/// An entry that no longer starts the wrapper is not this delivery
+/// changed, even when it still hands on the package's root: it is gone.
+#[test]
+fn an_entry_that_no_longer_starts_the_wrapper_is_missing_not_drift() {
+    let root = uze_testkit::temp::scratch("hooks-replaced-wrapper");
+    fs::create_dir_all(&root).unwrap();
+    let wrapper = Path::new("/state/hooks/exec");
+    for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
+        let config = root.join(format!("{target}.json"));
+        let entry = target.event_entry(&hook(), Roots::same(Path::new("/pkg")), wrapper);
+        let expected = serde_json::to_string(&entry).unwrap();
+        merge_event_entry(&config, HookEvent::PreToolUse, &entry, &[]).unwrap();
+        let mut document: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+        let handler = &mut document["hooks"]["PreToolUse"][0]["hooks"][0];
+        // The wrapper sits in the command line or among its arguments,
+        // depending on how this platform's shell starts a script.
+        let spelled = handler.to_string();
+        assert!(spelled.contains("/state/hooks/exec"), "{target}: {spelled}");
+        *handler =
+            serde_json::from_str(&spelled.replace("/state/hooks/exec", "/state/hooks/other"))
+                .unwrap();
+        fs::write(&config, document.to_string()).unwrap();
+
+        assert_eq!(
+            inspect_event_entry(&config, HookEvent::PreToolUse, &expected).state,
+            AttachmentState::Missing,
+            "{target}"
+        );
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+/// The previous versions of an entry are the ones this integration's
+/// receipts recorded under that entry's name, and no other: another
+/// group, or another harness's entry of the same name, is never replaced
+/// as an earlier version.
+#[test]
+fn only_this_integrations_receipts_of_the_same_entry_are_previous_versions() {
+    let scratch = uze_testkit::temp::TempDir::new("hooks-previous");
+    let home = UzeHome::at(scratch.path().join("uze"));
+    let record = |integration: &str, entry_name: &str, expected: &str| {
+        uze_core::state::record_receipt(
+            &home,
+            uze_core::integration::AttachmentReceipt {
+                package_id: "demo@local".into(),
+                resource_identity: Some(format!("{integration}:{entry_name}")),
+                integration: integration.into(),
+                artifact: ManagedArtifact::HookConfigEntry {
+                    config_file: scratch.path().join(format!("{integration}.json")),
+                    entry_name: entry_name.into(),
+                    event: HookEvent::PreToolUse,
+                    expected: expected.into(),
+                    wrapper: scratch.path().join("exec"),
+                },
+            },
+        )
+        .unwrap();
+    };
+    record("claude", "demo:a", r#"{"a":1}"#);
+    record("claude", "demo:b", r#"{"b":1}"#);
+    record("codex", "demo:a", r#"{"a":2}"#);
+    assert_eq!(
+        previous_hook_entry_content(&home, "claude", "demo:a").unwrap(),
+        [r#"{"a":1}"#]
+    );
 }
 
 /// The wrapper is shared by every package, so naming it is not enough:

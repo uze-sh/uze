@@ -206,6 +206,26 @@ mod tests {
         );
     }
 
+    /// Only a `Bash` call is a command the agent ran; another tool whose
+    /// input happens to carry a `command` is not one.
+    #[test]
+    fn the_last_command_is_the_last_bash_call_whatever_other_tools_take() {
+        let records = vec![
+            operator("deploy it", "2026-10-06T00:00:00Z"),
+            agent(
+                json!([{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cargo test"}},
+                       {"type":"tool_use","id":"t2","name":"mcp__ops__run","input":{"command":"deploy"}}]),
+                "2026-10-06T00:00:01Z",
+            ),
+        ];
+        let digest = read(&transcript("claude-digest-only-bash", &records), None).unwrap();
+
+        assert_eq!(
+            digest.last_command.map(|command| command.line).as_deref(),
+            Some("cargo test")
+        );
+    }
+
     #[test]
     fn a_compaction_summary_replaces_what_came_before_it() {
         let mut records = conversation();

@@ -296,4 +296,79 @@ mod tests {
         );
         fs::remove_dir_all(scratch).unwrap();
     }
+
+    /// The bound is one MiB, and a file of exactly that is read whole.
+    #[test]
+    fn a_file_of_exactly_the_bound_is_read_whole() {
+        let (scratch, reach) = checkout("reach-at-bound");
+        fs::write(reach.root.join("at-bound"), vec![b'a'; 1024 * 1024]).unwrap();
+        assert_eq!(
+            reach.read_checkout(&path("at-bound")).unwrap().len(),
+            1024 * 1024
+        );
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// A script is told what went wrong in plain words, never the absolute
+    /// path the host resolved.
+    #[test]
+    fn a_missing_file_is_said_not_found() {
+        let (scratch, reach) = checkout("reach-not-found");
+        let refused = reach.read_checkout(&path("missing.md")).unwrap_err();
+        assert_eq!(refused.0, "`missing.md`: not found");
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// Without a store, a program runner or an MCP caller, a reach refuses
+    /// each; with a store, it hands the store over.
+    #[test]
+    fn a_reach_hands_over_only_what_it_was_given() {
+        let (scratch, reach) = checkout("reach-given");
+        assert!(reach.store().is_err());
+        assert!(reach.run_program("sh", &[]).is_err());
+        assert!(reach.mcp("rtc", "search", &serde_json::json!({})).is_err());
+
+        let stored = serde_json::json!({ "last": 3 });
+        let reach = reach
+            .with_store(stored.clone())
+            .with_mcp(Arc::new(
+                |server: &str, tool: &str, _: &serde_json::Value| {
+                    Ok(serde_json::json!(format!("{server}/{tool}")))
+                },
+            ))
+            .with_programs(Arc::new(|name: &str, _: &[String]| {
+                Ok(ProgramReply {
+                    code: Some(0),
+                    stdout: name.to_owned(),
+                    stderr: String::new(),
+                })
+            }));
+        assert_eq!(reach.store().unwrap(), stored);
+        assert_eq!(
+            reach.mcp("rtc", "search", &serde_json::json!({})).unwrap(),
+            serde_json::json!("rtc/search")
+        );
+        assert_eq!(reach.run_program("sh", &[]).unwrap().stdout, "sh");
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// An entry that is neither a file, a directory nor a link is listed as
+    /// another kind.
+    // Unix only: a Unix-domain socket is the entry of another kind.
+    #[cfg(unix)]
+    #[test]
+    fn a_socket_is_listed_as_another_kind() {
+        let scratch = uze_testkit::temp::socket_scratch("reach-socket");
+        fs::create_dir_all(&scratch).unwrap();
+        let reach = CheckoutReach::new(uze_platform::path::canonical(&scratch).unwrap());
+        let _socket = std::os::unix::net::UnixListener::bind(reach.root.join("sock")).unwrap();
+        let listed = reach.list_checkout(&path("")).unwrap();
+        assert!(
+            listed
+                .iter()
+                .any(|entry| entry.name == "sock" && entry.kind == EntryKind::Other),
+            "{listed:?}"
+        );
+        fs::remove_dir_all(scratch).unwrap();
+    }
 }

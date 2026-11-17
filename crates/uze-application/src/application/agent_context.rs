@@ -258,3 +258,204 @@ fn project_resource_delivery(
         projection,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use uze_core::UzeHome;
+    use uze_core::capability::Resource;
+    use uze_core::exposure::{ExposureMechanism, ExposurePlan};
+    use uze_core::integration::{
+        AttachmentReceipt, ContextDelivery, HarnessDetection, ProjectResourceRoute, RulesRoute,
+    };
+    use uze_core::router::{CompatibilityRoute, HarnessCapabilities};
+
+    /// A harness that reads instructions and rules itself and has its
+    /// project resources projected at launch through its shim.
+    struct ProjectedHarness {
+        present: bool,
+        projects_here: bool,
+    }
+
+    impl IntegrationPort for ProjectedHarness {
+        fn id(&self) -> &'static str {
+            "projected"
+        }
+
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: self.present,
+                version: None,
+            }
+        }
+
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: CompatibilityRoute::Adaptable,
+                mechanism: ExposureMechanism::Unsupported {
+                    rationale: "context only".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+
+        fn attach_receipt(&self, _resource: &Resource) -> Result<Option<AttachmentReceipt>> {
+            Ok(None)
+        }
+
+        fn runtime_projects_project_context(&self) -> bool {
+            true
+        }
+
+        fn runtime_contribution_would_activate(&self, _ctx: &RuntimeContext) -> bool {
+            self.projects_here
+        }
+
+        fn context_delivery(&self) -> ContextDelivery {
+            ContextDelivery::Bridge {
+                file_name: "VENDOR.md",
+            }
+        }
+
+        fn project_resource_route(
+            &self,
+            _resource: AgentsDirectoryResource,
+        ) -> ProjectResourceRoute {
+            ProjectResourceRoute::RuntimeProjection
+        }
+
+        fn rules_route(&self) -> RulesRoute {
+            RulesRoute::native("reads the rules itself")
+        }
+    }
+
+    struct World {
+        root: PathBuf,
+        app: UzeApplication,
+    }
+
+    impl World {
+        fn new(label: &str, harness: ProjectedHarness) -> Self {
+            let root = uze_testkit::temp::scratch(label);
+            let home = UzeHome::at(root.join("uze"));
+            let shim = home.shim_path(harness.shim_name());
+            fs::create_dir_all(shim.parent().unwrap()).unwrap();
+            fs::write(&shim, "shim").unwrap();
+            let app = UzeApplication::new(home, vec![Box::new(harness)]);
+            let project = root.join("project");
+            fs::create_dir_all(&project).unwrap();
+            uze_testkit::git::mark_repository(&project);
+            Self { root, app }
+        }
+
+        fn project(&self) -> PathBuf {
+            self.root.join("project")
+        }
+
+        /// A project carrying every resource the status reports on.
+        fn furnished(self) -> Self {
+            let project = self.project();
+            fs::write(project.join("AGENTS.md"), "Be kind.\n").unwrap();
+            fs::create_dir_all(project.join(".agents/skills")).unwrap();
+            fs::create_dir_all(project.join(".agents/agents")).unwrap();
+            fs::create_dir_all(project.join(".agents/rules")).unwrap();
+            self
+        }
+
+        fn status(&self) -> AgentContextStatus {
+            let mut statuses = self.app.context().agent_context(&self.project());
+            assert_eq!(statuses.len(), 1, "one status per registered harness");
+            statuses.remove(0)
+        }
+    }
+
+    impl Drop for World {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn a_present_harness_reads_what_it_reads_and_is_projected_the_rest() {
+        let world = World::new(
+            "agent-context-projected",
+            ProjectedHarness {
+                present: true,
+                projects_here: true,
+            },
+        )
+        .furnished();
+
+        let status = world.status();
+
+        assert!(status.present);
+        assert_eq!(status.instructions, ResourceDelivery::Native);
+        assert_eq!(status.project_skills, ResourceDelivery::Projected);
+        assert_eq!(status.project_agents, ResourceDelivery::Projected);
+        assert_eq!(status.project_rules, ResourceDelivery::Native);
+    }
+
+    #[test]
+    fn a_launch_that_would_project_nothing_here_claims_no_projection() {
+        let world = World::new(
+            "agent-context-nothing-to-project",
+            ProjectedHarness {
+                present: true,
+                projects_here: false,
+            },
+        )
+        .furnished();
+
+        let status = world.status();
+
+        let unsupported = ResourceDelivery::Undelivered(UndeliveredReason::Unsupported);
+        assert_eq!(status.project_skills, unsupported);
+        assert_eq!(status.project_agents, unsupported);
+    }
+
+    #[test]
+    fn what_the_project_carries_is_undelivered_to_an_absent_harness() {
+        let world = World::new(
+            "agent-context-absent-harness",
+            ProjectedHarness {
+                present: false,
+                projects_here: true,
+            },
+        )
+        .furnished();
+
+        let status = world.status();
+
+        let absent = ResourceDelivery::Undelivered(UndeliveredReason::HarnessAbsent);
+        assert!(!status.present);
+        assert_eq!(status.instructions, absent);
+        assert_eq!(status.project_skills, absent);
+        assert_eq!(status.project_agents, absent);
+        assert_eq!(status.project_rules, absent);
+    }
+
+    #[test]
+    fn what_the_project_does_not_carry_is_absent_from_it_whatever_the_harness() {
+        for present in [true, false] {
+            let world = World::new(
+                "agent-context-bare-project",
+                ProjectedHarness {
+                    present,
+                    projects_here: true,
+                },
+            );
+
+            let status = world.status();
+
+            assert_eq!(status.instructions, ResourceDelivery::AbsentFromProject);
+            assert_eq!(status.project_skills, ResourceDelivery::AbsentFromProject);
+            assert_eq!(status.project_agents, ResourceDelivery::AbsentFromProject);
+            assert_eq!(status.project_rules, ResourceDelivery::AbsentFromProject);
+        }
+    }
+}

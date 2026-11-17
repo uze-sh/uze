@@ -310,3 +310,43 @@ fn a_large_transcript_is_read_within_budget_and_an_appended_turn_at_once() {
         "one turn took {took:?}, budget {appended:?}"
     );
 }
+
+/// A prompt Claude records as content blocks is still what the person
+/// typed; a tool's result that quotes a command is not.
+#[test]
+fn a_command_typed_as_a_text_block_is_the_persons_and_a_tool_result_is_not() {
+    let blocks = |at: &str, kind: &str, name: &str| {
+        line(json!({"type": "user", "timestamp": at,
+            "message": {"role": "user", "content": [
+                {"type": kind, "text": format!("<command-name>/{name}</command-name>")}]}}))
+    };
+    let text = [
+        blocks("2026-10-31T10:00:00Z", "text", "flow:review"),
+        blocks("2026-10-31T10:01:00Z", "tool_result", "quoted"),
+    ]
+    .concat();
+    assert_eq!(
+        named(&uses_of(&text)),
+        [(ResourceKind::Skill, "flow:review", Invoker::Person)]
+    );
+}
+
+/// The model may take minutes to act on a mention; within half an hour the
+/// dispatch is still the one the person asked for.
+#[test]
+fn a_dispatch_minutes_after_its_mention_is_still_the_mentions() {
+    let text = [
+        mention("2026-10-31T10:00:00Z", "usage-probe-agent"),
+        call(
+            "2026-10-31T10:10:00Z",
+            "t1",
+            "Agent",
+            json!({"subagent_type": "usage-probe-agent"}),
+        ),
+    ]
+    .concat();
+    assert_eq!(
+        named(&uses_of(&text)),
+        [(ResourceKind::Agent, "usage-probe-agent", Invoker::Person)]
+    );
+}

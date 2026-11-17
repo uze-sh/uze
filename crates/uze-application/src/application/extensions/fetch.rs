@@ -512,4 +512,67 @@ mod tests {
         assert!(envelope.store.is_none());
         assert!(envelope.notice.unwrap().contains("used a secret"));
     }
+
+    #[test]
+    fn an_answer_that_used_no_secret_keeps_what_it_asked_to() {
+        let mut store = serde_json::Map::new();
+        store.insert("last".into(), serde_json::json!("x"));
+        let envelope = untainted(
+            &AtomicBool::new(false),
+            uze_contract::Envelope {
+                store: Some(Box::new(store)),
+                ..uze_contract::Envelope::default()
+            },
+        );
+        assert!(envelope.store.is_some());
+        assert_eq!(envelope.notice, None);
+    }
+
+    /// A `fetch` exists only for an extension that wants a host, and then
+    /// for its hosts and secrets, through the system's own `curl`.
+    #[test]
+    fn a_fetch_is_made_only_for_an_extension_that_wants_a_host() {
+        let root = uze_testkit::temp::scratch("fetch-of");
+        let home = UzeHome::at(root.join("uze"));
+        let identity = uze_contract::Identity {
+            marketplace: "studio".into(),
+            plugin: "ci".into(),
+            id: "ci-status".into(),
+        };
+        let mut manifest = uze_contract::Manifest {
+            protocol: 1,
+            id: "ci-status".into(),
+            name: "CI".into(),
+            description: String::new(),
+            surfaces: Vec::new(),
+            wants: vec![uze_contract::Grant::ReadCheckout],
+            sources: Vec::new(),
+            actions: Vec::new(),
+            exec: Vec::new(),
+            preferences: vec![uze_contract::PreferenceDecl {
+                name: "token".into(),
+                label: "Token".into(),
+                kind: uze_contract::PreferenceKind::Secret,
+                default: serde_json::Value::Null,
+            }],
+            sprites: Vec::new(),
+            icons: Vec::new(),
+            mcp: Vec::new(),
+        };
+        assert!(Fetcher::of(&home, &identity, &manifest, None).is_none());
+
+        manifest
+            .wants
+            .push(uze_contract::Grant::Net("api.github.com".into()));
+        let fetcher = Fetcher::of(&home, &identity, &manifest, None).expect("a fetch");
+        assert_eq!(fetcher.hosts, ["api.github.com"]);
+        assert_eq!(fetcher.secrets, ["token"]);
+        assert_eq!(fetcher.plugin, "ci@studio");
+        assert!(fetcher.curl.is_absolute(), "{}", fetcher.curl.display());
+        assert_eq!(
+            fetcher.curl.file_stem().and_then(|stem| stem.to_str()),
+            Some("curl")
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

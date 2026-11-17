@@ -1000,4 +1000,347 @@ mod tests {
         assert_eq!(finding.action(), Some(REPAIR_COMMAND));
         assert!(!finding.has_own_row());
     }
+
+    fn finding(subject: Subject, path: Option<&'static str>) -> HealthFinding {
+        HealthFinding {
+            subject,
+            lane: Lane::Repair,
+            severity: Severity::Problem,
+            about: "flow@market".to_owned(),
+            detail: "detail".to_owned(),
+            harness: None,
+            location: None,
+            path,
+            command: None,
+        }
+    }
+
+    /// Receipts, builds and the three records `doctor` prints on rows of
+    /// their own are not listed again; every other finding is.
+    #[test]
+    fn a_finding_has_its_own_row_only_where_doctor_prints_one() {
+        assert!(finding(Subject::Receipts, None).has_own_row());
+        assert!(finding(Subject::Builds, Some("build_dir")).has_own_row());
+        for path in [
+            "registry_path",
+            "attachments_path",
+            "provisioning_state_path",
+        ] {
+            assert!(
+                finding(Subject::Records, Some(path)).has_own_row(),
+                "{path}"
+            );
+        }
+        assert!(!finding(Subject::Records, Some("marketplaces_path")).has_own_row());
+        assert!(!finding(Subject::PackageBytes, None).has_own_row());
+    }
+
+    /// Each headline says what is wrong with what it is about, rather than
+    /// only that something needs attention.
+    #[test]
+    fn a_headline_says_what_is_wrong() {
+        for (subject, said) in [
+            (Subject::PackageBytes, "bytes"),
+            (Subject::Registrations, "marketplace"),
+            (Subject::Shims, "launcher"),
+            (Subject::Records, "read"),
+        ] {
+            let headline = finding(subject, None).headline();
+            assert!(headline.contains("flow@market"), "{subject:?}: {headline}");
+            assert!(headline.contains(said), "{subject:?}: {headline}");
+            assert!(
+                !headline.contains("needs attention"),
+                "{subject:?}: {headline}"
+            );
+        }
+        let endpoint = finding(Subject::TerminalEndpoint, None).headline();
+        assert!(endpoint.contains("terminal"), "{endpoint}");
+        let other = finding(Subject::Leftovers, None).headline();
+        assert!(other.contains("flow@market"), "{other}");
+    }
+
+    /// A record that is not there reads; one that is there and is not
+    /// JSON, or cannot be read at all, says why and names its path.
+    #[test]
+    fn a_record_unparsed_only_when_present_and_not_json() {
+        let root = uze_testkit::temp::scratch("catalogue-unparsed");
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(unparsed(&root.join("absent.json")), None);
+        let valid = root.join("valid.json");
+        std::fs::write(&valid, "{}").unwrap();
+        assert_eq!(unparsed(&valid), None);
+        let corrupt = root.join("corrupt.json");
+        std::fs::write(&corrupt, "not json").unwrap();
+        let why = unparsed(&corrupt).expect("a corrupt record says why");
+        assert!(why.contains(&corrupt.display().to_string()), "{why}");
+        let directory = root.join("directory.json");
+        std::fs::create_dir_all(&directory).unwrap();
+        assert!(
+            unparsed(&directory).is_some(),
+            "an unreadable record says why"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn reconciled(
+        package_id: &str,
+        resource_identity: Option<&str>,
+        artifact: ManagedArtifact,
+        state: AttachmentState,
+    ) -> uze_core::reconciliation::ReconciledReceipt {
+        uze_core::reconciliation::ReconciledReceipt {
+            ledger_key: format!("{package_id}:{state:?}"),
+            receipt: uze_core::integration::AttachmentReceipt {
+                package_id: package_id.to_owned(),
+                resource_identity: resource_identity.map(str::to_owned),
+                integration: "misregistered".to_owned(),
+                artifact,
+            },
+            inspection: uze_core::integration::AttachmentInspection {
+                state,
+                reason: "test".to_owned(),
+            },
+        }
+    }
+
+    fn owned(selector: &str) -> ManagedArtifact {
+        ManagedArtifact::IntegrationOwned {
+            kind: "entry".to_owned(),
+            selector: selector.to_owned(),
+            detail: BTreeMap::new(),
+        }
+    }
+
+    /// Each receipt finding lands in the lane that puts it back: what its
+    /// receipt restores alone, or a build, is automatic; a blocked one
+    /// waiting on missing bytes waits on the repair; anything else is the
+    /// operator's, with the command that resolves it. A matched one is no
+    /// finding.
+    #[test]
+    fn a_receipt_finding_lands_in_the_lane_that_puts_it_back() {
+        let (app, home, base) = damaged("catalogue-receipt-lanes");
+        let gone = app.plugins().list().unwrap().remove(0).id;
+        let present_source = base.join("present");
+        std::fs::create_dir_all(present_source.join("skills/present")).unwrap();
+        std::fs::write(present_source.join("plugin.json"), r#"{"name": "present"}"#).unwrap();
+        std::fs::write(
+            present_source.join("skills/present/SKILL.md"),
+            "# Present\n",
+        )
+        .unwrap();
+        app.plugins()
+            .add(
+                uze_core::PackageSource::Local {
+                    path: present_source,
+                },
+                &uze_core::trust::AlwaysTrust,
+            )
+            .unwrap();
+        let present = app
+            .plugins()
+            .list()
+            .unwrap()
+            .into_iter()
+            .find(|plugin| plugin.id != gone)
+            .unwrap()
+            .id;
+        let in_store = home.store_dir().join("hooks").join("hook.json");
+        let elsewhere = base.join("elsewhere").join("hook.json");
+        let lane_of = |receipt| {
+            let report = ReconciliationReport {
+                package_id: receipt_package(&receipt),
+                receipts: vec![receipt],
+                ledger_error: None,
+            };
+            app.health()
+                .receipt_findings(&[report])
+                .into_iter()
+                .map(|finding| (finding.lane, finding.command, finding.path))
+                .next()
+        };
+        fn receipt_package(receipt: &uze_core::reconciliation::ReconciledReceipt) -> String {
+            receipt.receipt.package_id.clone()
+        }
+
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                None,
+                owned("a"),
+                AttachmentState::Matched
+            )),
+            None
+        );
+        let link = ManagedArtifact::SymlinkReference {
+            path: elsewhere.clone(),
+            target: base.clone(),
+        };
+        assert_eq!(
+            lane_of(reconciled(&present, None, link, AttachmentState::Missing)),
+            Some((Lane::Automatic, None, None))
+        );
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                Some(uze_core::integration::BUILD_IDENTITY),
+                owned("build"),
+                AttachmentState::Missing
+            )),
+            Some((Lane::Automatic, None, Some("build_dir")))
+        );
+        let hook = |path: &std::path::Path| ManagedArtifact::ManagedHookFile {
+            path: path.to_path_buf(),
+        };
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                Some("hooks/hook.json"),
+                hook(&in_store),
+                AttachmentState::Missing
+            )),
+            Some((Lane::Automatic, None, None)),
+            "a capability's artifact inside the store is put back from it"
+        );
+        let setup = Some("uze setup misregistered".to_owned());
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                Some("hooks/hook.json"),
+                hook(&elsewhere),
+                AttachmentState::Missing
+            )),
+            Some((Lane::Operator, setup.clone(), None))
+        );
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                None,
+                hook(&in_store),
+                AttachmentState::Missing
+            )),
+            Some((Lane::Operator, setup.clone(), None)),
+            "an artifact no capability names is not put back from the store"
+        );
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                None,
+                owned("b"),
+                AttachmentState::Missing
+            )),
+            Some((Lane::Operator, setup, None))
+        );
+        assert_eq!(
+            lane_of(reconciled(
+                &gone,
+                None,
+                owned("c"),
+                AttachmentState::Blocked
+            )),
+            Some((Lane::Repair, None, None)),
+            "waits on the bytes coming back"
+        );
+        assert_eq!(
+            lane_of(reconciled(
+                &present,
+                None,
+                owned("d"),
+                AttachmentState::Blocked
+            )),
+            Some((Lane::Operator, Some(format!("uze inspect {present}")), None))
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A harness the workspace starts through a launcher of UZE's, set up
+    /// and detected, or not set up when `configured` is false.
+    struct Launched {
+        configured: bool,
+    }
+
+    impl IntegrationPort for Launched {
+        fn id(&self) -> &'static str {
+            "launched"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn status(&self, _home: &UzeHome) -> IntegrationStatus {
+            if self.configured {
+                IntegrationStatus::InstalledVerified
+            } else {
+                IntegrationStatus::NotConfigured
+            }
+        }
+    }
+
+    fn shim_findings(configured: bool, home: &UzeHome) -> Vec<String> {
+        let app = UzeApplication::new(home.clone(), vec![Box::new(Launched { configured })]);
+        app.health()
+            .missing_shims()
+            .into_iter()
+            .map(|finding| finding.detail)
+            .collect()
+    }
+
+    /// A set-up harness's launcher is a finding when it is missing or runs
+    /// something other than this uze, and none once it starts this uze; a
+    /// harness nobody set up expects no launcher.
+    #[test]
+    fn a_launcher_is_a_finding_until_it_starts_this_uze() {
+        let root = uze_testkit::temp::scratch("catalogue-shims");
+        let home = UzeHome::at(&root);
+        let shim = home.shim_path("launched");
+
+        let missing = shim_findings(true, &home);
+        assert_eq!(missing.len(), 1, "{missing:?}");
+        assert!(missing[0].contains("missing"), "{missing:?}");
+        assert!(shim_findings(false, &home).is_empty(), "nobody set it up");
+
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::fs::write(&shim, "something else").unwrap();
+        let foreign = shim_findings(true, &home);
+        assert_eq!(foreign.len(), 1, "{foreign:?}");
+        assert!(foreign[0].contains("does not start"), "{foreign:?}");
+
+        std::fs::remove_file(&shim).unwrap();
+        let program = std::env::current_exe().unwrap();
+        uze_platform::executable::place_launcher(&program, &shim).unwrap();
+        assert_eq!(shim_findings(true, &home), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // A launcher is a symbolic link only on Unix; a dangling one is there,
+    // pointing nowhere, rather than missing.
+    #[cfg(unix)]
+    #[test]
+    fn a_launcher_pointing_nowhere_is_not_missing_but_wrong() {
+        let root = uze_testkit::temp::scratch("catalogue-shim-dangling");
+        let home = UzeHome::at(&root);
+        let shim = home.shim_path("launched");
+        std::fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(root.join("gone"), &shim).unwrap();
+        let findings = shim_findings(true, &home);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("does not start"), "{findings:?}");
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

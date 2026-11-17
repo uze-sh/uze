@@ -319,9 +319,11 @@ pub fn dispatcher() -> PathBuf {
     std::env::current_exe()
         .ok()
         .and_then(|test| {
+            // How deep the test sits below the profile directory is Cargo's
+            // to choose: `deps/` until 1.99, `build/<package>/<hash>/out/`
+            // since the build-dir layout v2 became the default in 1.100.
             test.ancestors()
                 .skip(1)
-                .take(3)
                 .map(|directory| directory.join(&name))
                 .find(|candidate| candidate.is_file())
         })
