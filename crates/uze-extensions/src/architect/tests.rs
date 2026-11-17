@@ -2189,6 +2189,10 @@ fn a_click_on_the_source_picks_no_box() {
     handle_mouse(&mut state, Some(hit), SPACE);
     handle_mouse(&mut state, Some(number), SPACE);
     assert_eq!(state.picked, None);
+
+    state.picked = Some(0);
+    handle_mouse(&mut state, Some(number), SPACE);
+    assert_eq!(state.picked, Some(0), "nor lets go of the one picked");
 }
 
 /// A press at the board's left edge reaches the board like any other.
