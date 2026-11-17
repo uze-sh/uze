@@ -1241,6 +1241,10 @@ mod hosted {
         };
         assert!(choosing(&extension).is_some());
         assert!(extension.hover(SURFACE, Some(ViewHit::SelectItem(1))));
+        assert!(
+            !extension.hover(SURFACE, Some(ViewHit::SelectItem(1))),
+            "standing still costs no frame"
+        );
         extension.missed(SURFACE, SPACE);
         assert_eq!(choosing(&extension), None);
     }
