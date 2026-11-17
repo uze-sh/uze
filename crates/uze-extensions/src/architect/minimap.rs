@@ -330,6 +330,17 @@ mod tests {
             "framed"
         );
         assert!(lit_cells(&map, &canvas).is_empty(), "nothing to show");
+        for (x, y) in [
+            (map.frame.x - 1, map.frame.y),
+            (map.frame.x + map.frame.w, map.frame.y),
+            (map.frame.x, map.frame.y - 1),
+        ] {
+            assert_eq!(
+                canvas.cell(x, y).unwrap().glyph,
+                'X',
+                "only its frame: ({x},{y})"
+            );
+        }
     }
 
     /// A box is dots in the secondary role, where the box is on the board.
@@ -486,5 +497,31 @@ mod tests {
         let lit = lit_cells(&map, &canvas);
         assert!(!lit.is_empty());
         assert!(lit.iter().all(|&(column, _, _)| column >= left), "{lit:?}");
+    }
+
+    /// On a board small enough that a row is several dots, the outline
+    /// ends at the last row and column looked at, not past them.
+    #[test]
+    fn the_outline_ends_at_the_last_cell_looked_at() {
+        let board = (20, 5);
+        let looking_at = Frame {
+            x: 2,
+            y: 1,
+            w: 6,
+            h: 2,
+        };
+        let (map, canvas) = painted(board, &[], looking_at, Glyphs::Unicode);
+        let last = map.dot_of(
+            looking_at.x + looking_at.w - 1,
+            looking_at.y + looking_at.h - 1,
+        );
+        let lit = lit_cells(&map, &canvas);
+        assert!(!lit.is_empty());
+        assert!(
+            lit.iter()
+                .all(|&(column, row, _)| column <= last.0 / 2 && row <= last.1 / 4),
+            "nothing past {last:?}: {lit:?}"
+        );
+        assert!(lit.iter().any(|&(_, row, _)| row == last.1 / 4), "{lit:?}");
     }
 }
