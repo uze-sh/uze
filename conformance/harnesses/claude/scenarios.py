@@ -68,10 +68,41 @@ def claude_container(cfg, prov_ip, final_cmd, plugins="flow mcp-plugin", tty=Tru
     return cmd
 
 
+#: 2.1.326: `--add-dir` asks for trust in each folder not trusted yet, one
+#: screen per folder, defaulting to "No, exit", which quits the session.
+#: The answer "holds for this session", so every launch asks again; a
+#: workspace launch adds the agent's own directory and the runtime
+#: projection, so it asks twice.
+ADDED_DIRECTORY = "Adding a new directory"
+
+
+def added_directory_pending(plain):
+    """Whether the latest screen is an `--add-dir` trust question nobody
+    has answered yet: its header, no prompt after it, and the selection not
+    on "Yes, add it". A selection on "Yes" is the repaint of an answered
+    one — Enter sent at it would land on whatever screen comes next."""
+    text = common.squash(plain)
+    at = text.rfind(common.squash(ADDED_DIRECTORY))
+    if at < 0:
+        return False
+    tail = text[at:]
+    if "Opus" in tail or "APIUsageBilling" in tail:
+        return False
+    return tail.rfind("❯Yes,addit") <= tail.rfind("❯No,exit")
+
+
+def answer_added_directory(child):
+    """Answers the question as a person does: down to "Yes, add it", Enter."""
+    child.send("\x1b[B")
+    time.sleep(0.3)
+    child.send("\r")
+
+
 def drive_onboarding(child):
     """Dialogs: Welcome/Security guide (2.1.250 first-run) -> API key (Yes)
-    -> theme -> security notes -> trust (Yes) -> Tips/What's-new popup ->
-    prompt. Returns (screen, plain, marker).
+    -> theme -> security notes -> trust (Yes) -> one "Adding a new
+    directory" trust (Yes, add it) per untrusted `--add-dir` folder ->
+    Tips/What's-new popup -> prompt. Returns (screen, plain, marker).
 
     Every match here is space-insensitive (`squash`): 2.1.260 paints the
     first-run screens with cursor-forward moves instead of spaces, so a
@@ -84,6 +115,9 @@ def drive_onboarding(child):
     screen = make_screen(child)
     wait_for = make_waiter(screen)
     DIALOGS = [
+        # First: its screen also carries "Security guide", whose branch
+        # answers the launch folder's trust and would confirm "No, exit".
+        ADDED_DIRECTORY,
         "Welcome to Claude Code",
         "Security guide",
         "Yes, I trust this folder",
@@ -104,9 +138,14 @@ def drive_onboarding(child):
         return bool(t) and ("Opus" in j or "APIUsageBilling" in j)
 
     t, p, m = wait_for(DIALOGS, tries=16, stop_on_death=True, squash_spaces=True)
-    for i in range(10):
+    for i in range(12):
         j = common.squash(p)
-        if m == "Detected a custom API key":
+        if m == ADDED_DIRECTORY:
+            if added_directory_pending(p):
+                answer_added_directory(child)
+            elif prompt_is_up(t, p):
+                break
+        elif m == "Detected a custom API key":
             child.send("\x1b[A")
             time.sleep(0.3)
             child.send("\r")  # Yes
