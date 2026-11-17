@@ -782,4 +782,26 @@ mod tests {
         let outer = placement.clusters[0];
         assert!(outer.y > source.y + source.h, "{source:?} {outer:?}");
     }
+
+    /// A short last row of a tile starts at the left, under the first
+    /// column, the way a short last line of text does.
+    #[test]
+    fn a_short_last_row_of_a_tile_starts_under_the_first_column() {
+        for count in [3, 5] {
+            let nodes: String = (0..count).map(|n| format!(" n{n}[N]\n")).collect();
+            let (_, placement) = placed(&format!("flowchart TD\n{nodes}"));
+            let top = placement.nodes.iter().map(|f| f.y).min().unwrap();
+            let last_row = placement.nodes.iter().map(|f| f.y).max().unwrap();
+            let left = |y: i32| {
+                placement
+                    .nodes
+                    .iter()
+                    .filter(|f| f.y == y)
+                    .map(|f| f.x)
+                    .min()
+                    .unwrap()
+            };
+            assert_eq!(left(last_row), left(top), "{count} boxes");
+        }
+    }
 }
