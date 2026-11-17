@@ -7,8 +7,15 @@ import time
 from contract import continuity
 from contract.bindings import Bindings, hook_prelude, json_documents
 from contract.tui import Tui
+from shared.common import squash
 
-from .scenarios import claude_container, drive_onboarding
+from .scenarios import (
+    ADDED_DIRECTORY,
+    added_directory_pending,
+    answer_added_directory,
+    claude_container,
+    drive_onboarding,
+)
 
 
 class ClaudeBindings(Bindings):
@@ -63,6 +70,30 @@ class ClaudeBindings(Bindings):
             plain, _ = tui.until(self.ready_markers)
         tui.snapshot("ready", plain)
         return plain, any(marker in plain for marker in self.ready_markers)
+
+    #: A relaunched process proves its prompt by the status line alone: the
+    #: `--add-dir` trust question it opens on draws "❯" too (2.1.326).
+    rejoin_markers = ("Opus", "API Usage Billing")
+
+    def rejoin(self, tui, already=""):
+        """A relaunch asks again for each `--add-dir` folder (2.1.326: the
+        answer holds for one session), answered on screen as `prepare`
+        answers it, before the prompt can prove anything."""
+        plain = already
+        for _ in range(6):
+            if added_directory_pending(plain):
+                answer_added_directory(tui.child)
+                plain = ""
+            elif any(squash(m) in squash(plain) for m in self.rejoin_markers):
+                break
+            else:
+                _, plain, _ = tui.wait_for(
+                    [ADDED_DIRECTORY, *self.rejoin_markers],
+                    tries=8,
+                    accumulate=True,
+                    squash_spaces=True,
+                )
+        return super().rejoin(tui, plain)
 
     def skill_catalog(self, tui):
         """The `/` menu is the surface a person invokes from: typing a
