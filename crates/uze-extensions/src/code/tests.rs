@@ -4544,10 +4544,11 @@ fn enter_splits_the_line_and_delete_takes_the_next_character() {
     assert_eq!(buffer(&view), "b\nc\n");
 }
 
-/// A chain opened in one press stays as the viewer folded it when its
-/// directory is read again.
+/// A directory folded again before its listing lands stays folded, and
+/// the selection stays on its row rather than following a chain nobody
+/// opened.
 #[test]
-fn a_chain_folded_by_the_viewer_stays_folded_when_read_again() {
+fn a_directory_folded_before_its_listing_lands_stays_folded() {
     let machine = FakeMachine::default()
         .with_directory("/w/src")
         .with_directory("/w/src/main")
@@ -4557,23 +4558,12 @@ fn a_chain_folded_by_the_viewer_stays_folded_when_read_again() {
     let mut view = files_at("/w");
     settle(&mut view, &machine);
     view.focus = Focus::Navigator;
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+    press(&mut view, Command::Activate);
     press(&mut view, Command::Activate);
     settle(&mut view, &machine);
-    press(&mut view, Command::Activate);
-    let names = |view: &CodeView| -> Vec<String> {
-        view.files
-            .rows(&view.root)
-            .into_iter()
-            .map(|row| row.name)
-            .collect()
-    };
-    let folded = names(&view);
-    assert!(!folded.iter().any(|name| name == "App.java"), "{folded:?}");
-    view.absorb(fulfill(
-        &machine,
-        FileRequest::List(PathBuf::from("/w/src")),
-    ));
-    assert_eq!(names(&view), folded);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+    assert!(!view.files.expanded.contains(Path::new("/w/src/main")));
 }
 
 /// Esc on the delete question cancels it and says so.
