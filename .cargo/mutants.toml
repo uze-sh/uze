@@ -307,4 +307,22 @@ exclude_re = [
   # uze-application lifecycle
   # Removal returns NotFound only when the path vanished between its stat and its removal.
   'uze-application/src/application/uninstall\.rs.*replace match guard error\.kind\(\) != std::io::ErrorKind::NotFound with true in remove_path$',
+  # uze-extensions surfaces
+  # When scroll + visible equals total, total - visible is the scroll already.
+  'uze-extensions/src/review\.rs.*replace > with >= in taking_lines_away$',
+  # A caret on the scroll's own line sets the scroll to what it already is.
+  'uze-extensions/src/code\.rs.*replace < with <= in CodeView::follow_caret$',
+  # `returning` is only called on a view just opened: its list is the files and its root already asked for.
+  'uze-extensions/src/code\.rs.*replace == with != in CodeView::returning$',
+  'uze-extensions/src/code\.rs.*delete ! in CodeView::returning$',
+  'uze-extensions/src/code\.rs.*replace && with \|\| in CodeView::returning$',
+  # `show` re-places the caret of the file already open on its own line; no line leaves it there.
+  'uze-extensions/src/code\.rs.*replace CodeView::line_in_view -> Option<usize> with None$',
+  # The extra layouts are of source lines, which do not depend on the width.
+  'uze-extensions/src/spec\.rs.*replace SpecView::renders_markdown -> bool with true$',
+  'uze-extensions/src/spec\.rs.*replace && with \|\| in SpecView::renders_markdown$',
+  # With a target selected, nothing is on show only when its unit holds no documents.
+  'uze-extensions/src/spec\.rs.*replace match guard state\.units\(\)\[target\.unit\(\)\]\.artifacts\.is_empty\(\) with true in content$',
+  # No notes prefix only blank lines, and CommonMark drops leading blank lines.
+  'uze-extensions/src/spec\.rs.*replace match guard !standing\.notes\.is_empty\(\) with true in with_standing$',
 ]
