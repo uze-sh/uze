@@ -2092,11 +2092,14 @@ fn paging_the_wheel_and_the_scrollbar_move_within_the_document() {
     assert_eq!(state.scroll, 19, "the last line");
 }
 
-/// A rendered document wraps to the width it is shown at, and what is
-/// copied from it is what was shown.
+/// A rendered document's table is fitted to the width it is shown at,
+/// and what is copied from it is what was shown.
 #[test]
 fn a_rendered_document_wraps_to_its_width_and_copies_as_shown() {
-    let paragraph = "word ".repeat(60);
+    let paragraph = format!(
+        "| what | why |\n|---|---|\n| {} | x |\n",
+        "word ".repeat(60)
+    );
     let state = opened(hand_answer(vec![hand_unit(
         Subject::Changes,
         "wide",
@@ -2107,11 +2110,20 @@ fn a_rendered_document_wraps_to_its_width_and_copies_as_shown() {
         width: 40,
         height: 20,
     };
-    let Content::Lines { total, .. } = view(&state, narrow).content else {
-        panic!("lines");
+    let wide = Size {
+        width: 400,
+        height: 20,
     };
-    assert!(total > 1, "wrapped");
-    assert_eq!(text(&state, 0..usize::MAX).len(), total);
+    let total = |space: Size| {
+        let Content::Lines { total, .. } = view(&state, space).content else {
+            panic!("lines");
+        };
+        total
+    };
+    let fitted = total(narrow);
+    assert!(fitted > total(wide), "the table folds to the narrow width");
+    let fitted = total(narrow);
+    assert_eq!(text(&state, 0..usize::MAX).len(), fitted);
 }
 
 /// A subject is offered only where a tool that was read lists it.
