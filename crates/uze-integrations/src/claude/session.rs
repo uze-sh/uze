@@ -282,6 +282,62 @@ mod tests {
         );
     }
 
+    /// The same, with the previous tenant's transcript named the way Claude
+    /// Code names every conversation, so only its age sets it aside.
+    #[test]
+    fn a_conversation_claude_named_before_the_launch_is_never_adopted() {
+        let root = scratch("claude-session-previous-uuid");
+        let cwd = Path::new("/work/slot");
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000009", 100);
+
+        assert_eq!(observe(&root, &since(cwd, 500)), None);
+    }
+
+    /// A conversation the agent started in the very second it was launched
+    /// belongs to that launch.
+    #[test]
+    fn a_conversation_started_in_the_launch_second_is_observed() {
+        let root = scratch("claude-session-same-second");
+        let cwd = Path::new("/work/slot");
+        transcript(&root, cwd, "00000000-0000-4000-8000-000000000005", 500);
+
+        assert_eq!(
+            observe(&root, &since(cwd, 500)),
+            Some(SessionId::parse("00000000-0000-4000-8000-000000000005").unwrap())
+        );
+    }
+
+    /// The newest wins however many there are, and in whatever order the
+    /// directory lists them.
+    #[test]
+    fn the_newest_of_many_conversations_is_observed_whatever_the_listing_order() {
+        let root = scratch("claude-session-many");
+        let cwd = Path::new("/work/slot");
+        for (id, at) in [
+            ("00000000-0000-4000-8000-000000000011", 100),
+            ("00000000-0000-4000-8000-000000000012", 400),
+            ("00000000-0000-4000-8000-000000000013", 200),
+            ("00000000-0000-4000-8000-000000000014", 300),
+            ("00000000-0000-4000-8000-000000000015", 150),
+        ] {
+            transcript(&root, cwd, id, at);
+        }
+
+        assert_eq!(
+            observe(&root, &since(cwd, 50)),
+            Some(SessionId::parse("00000000-0000-4000-8000-000000000012").unwrap())
+        );
+    }
+
+    fn since(cwd: &Path, since_unix: u64) -> ObservationContext<'_> {
+        ObservationContext {
+            cwd,
+            since_unix,
+            preceded_by: None,
+            claimed_elsewhere: &[],
+        }
+    }
+
     /// Seven agents in one project root, as a space without isolation
     /// has them: the newest transcript there is whoever spoke last, and
     /// adopting it gave every agent the same conversation on restart.

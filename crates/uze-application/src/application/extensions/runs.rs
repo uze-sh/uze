@@ -248,4 +248,41 @@ mod tests {
         assert_eq!(line.chars().count(), INPUT_SHOWN + 1);
         assert_eq!(input_line(&serde_json::json!({"a": 1})), r#"{"a":1}"#);
     }
+
+    /// The window is five minutes, its edge within it: a run that old
+    /// still counts.
+    #[test]
+    fn a_run_as_old_as_the_window_still_counts() {
+        let mut book = RunBook::default();
+        let start = Instant::now();
+        book.note(&identity(), run(start, 5, true));
+        book.note(&identity(), run(start + Duration::from_secs(120), 5, true));
+        let three_minutes = book.cost(&identity(), start + Duration::from_secs(180));
+        assert!(
+            (three_minutes.runs_per_minute - 2.0 / 3.0).abs() < 0.01,
+            "two runs over three minutes: {three_minutes:?}"
+        );
+
+        let edge = start + Duration::from_secs(5 * 60);
+        book.note(&identity(), run(edge, 5, true));
+        let at_the_edge = book.cost(&identity(), edge);
+        assert!(
+            (at_the_edge.runs_per_minute - 3.0 / 5.0).abs() < 0.01,
+            "three runs over the window: {at_the_edge:?}"
+        );
+    }
+
+    #[test]
+    fn a_p95_at_the_target_is_not_slow() {
+        let at_target = ExtensionCost {
+            p95: Some(P95_TARGET),
+            ..ExtensionCost::default()
+        };
+        assert!(!at_target.slow());
+        let over = ExtensionCost {
+            p95: Some(P95_TARGET + Duration::from_millis(1)),
+            ..ExtensionCost::default()
+        };
+        assert!(over.slow());
+    }
 }

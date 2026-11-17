@@ -24,3 +24,30 @@ impl ProjectLabels<'_> {
         project_labels::set_label(&self.0.home, root, label)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{UzeApplication, UzeHome};
+
+    /// A name is recorded and answered back; the directory's own name, or
+    /// none, takes it away.
+    #[test]
+    fn a_project_label_is_kept_until_it_says_nothing_new() {
+        let root = uze_testkit::temp::scratch("project-labels");
+        let app = UzeApplication::new(UzeHome::at(root.join("uze")), Vec::new());
+        let project = root.join("acme");
+
+        assert_eq!(app.project_labels().all().unwrap().of(&project), None);
+        assert_eq!(
+            app.project_labels().set(&project, "Rocket").unwrap(),
+            Some("Rocket".to_owned())
+        );
+        assert_eq!(
+            app.project_labels().all().unwrap().of(&project),
+            Some("Rocket")
+        );
+        assert_eq!(app.project_labels().set(&project, "acme").unwrap(), None);
+        assert_eq!(app.project_labels().all().unwrap().of(&project), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

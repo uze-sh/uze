@@ -356,6 +356,9 @@ mod tests {
         assert!(conforms(Shape::Count, &yaml("0")).is_err());
         assert!(conforms(Shape::HexColor, &yaml("'#a1b2c3'")).is_ok());
         assert!(conforms(Shape::HexColor, &yaml("teal")).is_err());
+        assert!(conforms(Shape::HexColor, &yaml("'#abc'")).is_err());
+        assert!(conforms(Shape::HexColor, &yaml("a1b2c3d")).is_err());
+        assert!(conforms(Shape::HexColor, &yaml("a1b2c3")).is_err());
         assert!(
             conforms(
                 Shape::Rules,
@@ -460,6 +463,50 @@ mod tests {
         );
         assert!(withheld(&dialect, &["x"], &within).is_empty());
         assert_eq!(agent_block(&dialect, &["x"], &within).0.len(), 2);
+
+        // The ceiling itself is what the operator granted: carried as written.
+        let at_ceiling =
+            document("name: a\ndescription: d\nharness:\n  x: { sandbox: workspace-write }");
+        assert!(withheld(&dialect, &["x"], &at_ceiling).is_empty());
+        let (carried, findings) = agent_block(&dialect, &["x"], &at_ceiling);
+        assert!(findings.warnings.is_empty(), "{findings:?}");
+        assert_eq!(carried["sandbox"].as_str(), Some("workspace-write"));
+    }
+
+    /// A projection running inside the harness reads the same dialect:
+    /// every known field with its shape, and whether an unknown one is
+    /// carried.
+    #[test]
+    fn the_dialect_as_data_names_each_field_s_shape() {
+        let dialect = AgentDialect {
+            known: &[
+                ("model", Shape::Qualified),
+                (
+                    "sandbox",
+                    Shape::Ceiling {
+                        levels: &["read-only", "workspace-write", "full"],
+                        ceiling: "workspace-write",
+                    },
+                ),
+                ("mode", Shape::Withheld("an agent cannot grant itself this")),
+            ],
+            carries_unknown: false,
+        };
+        let data = to_json(&dialect);
+        assert_eq!(data["known"]["model"]["shape"], "qualified");
+        assert_eq!(data["known"]["sandbox"]["shape"], "ceiling");
+        assert_eq!(data["known"]["sandbox"]["ceiling"], "workspace-write");
+        assert_eq!(
+            data["known"]["sandbox"]["choices"],
+            serde_json::json!(["read-only", "workspace-write", "full"])
+        );
+        assert_eq!(data["known"]["mode"]["shape"], "left-out");
+        assert_eq!(data["carriesUnknown"], false);
+        let tolerant = AgentDialect {
+            carries_unknown: true,
+            ..dialect
+        };
+        assert_eq!(to_json(&tolerant)["carriesUnknown"], true);
     }
 
     #[test]

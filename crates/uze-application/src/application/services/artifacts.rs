@@ -167,6 +167,18 @@ mod tests {
         assert!(reason.contains("`docs`"), "{reason}");
     }
 
+    /// The manifest travels: what each entry spells is judged, not only
+    /// where it lands on this machine.
+    #[test]
+    fn an_entry_spelled_through_a_parent_step_is_refused_even_landing_inside() {
+        let project = project("workspace:\n  artifacts: [docs/../docs]\n");
+        fs::create_dir(project.path().join("docs")).unwrap();
+        let ProjectArtifacts::Refused(reason) = project_artifacts(project.path()) else {
+            panic!("an entry spelled through `..` was followed");
+        };
+        assert!(reason.contains("docs/../docs"), "{reason}");
+    }
+
     #[test]
     fn an_entry_that_leaves_the_project_refuses_the_declaration_by_name() {
         for path in ["../elsewhere", "/etc"] {

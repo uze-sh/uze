@@ -184,7 +184,7 @@ mod mcp_tests {
 
     use uze_core::integration::AttachmentState;
 
-    use super::{McpEntry, inspect_opencode_mcp_value};
+    use super::{McpEntry, attach_mcp_config, inspect_opencode_mcp_value};
 
     #[test]
     fn managed_cwd_and_environment_reference_drift_are_detected() {
@@ -212,5 +212,56 @@ mod mcp_tests {
             .state,
             AttachmentState::Drifted
         );
+    }
+
+    /// The entry's working directory is part of what UZE wrote: the same
+    /// command run from somewhere else is somebody's edit.
+    #[test]
+    fn a_working_directory_moved_alone_is_drift() {
+        let expected = PathBuf::from("/bin/example");
+        let args = vec!["--serve".to_owned()];
+        let entry = McpEntry {
+            cwd: Some(Path::new("/expected")),
+            ..McpEntry::planned("uze-example", &expected, &args)
+        };
+        let at = |cwd: &str| {
+            serde_json::json!({
+                "type": "local",
+                "command": ["/bin/example", "--serve"],
+                "cwd": cwd,
+            })
+        };
+        assert_eq!(
+            inspect_opencode_mcp_value(&at("/expected"), &entry).state,
+            AttachmentState::Matched
+        );
+        assert_eq!(
+            inspect_opencode_mcp_value(&at("/other"), &entry).state,
+            AttachmentState::Drifted
+        );
+    }
+
+    /// An entry of that name UZE did not write is refused, never replaced.
+    #[test]
+    fn an_entry_of_the_same_name_uze_did_not_write_is_left_alone() {
+        let root = uze_testkit::temp::scratch("opencode-mcp-foreign-entry");
+        let config = root.join("opencode.json");
+        std::fs::create_dir_all(&root).unwrap();
+        let operators =
+            r#"{"mcp":{"servers":{"uze-example":{"type":"local","command":["/bin/theirs"]}}}}"#;
+        std::fs::write(&config, operators).unwrap();
+
+        let attached = attach_mcp_config(
+            &config,
+            "uze-example",
+            Path::new("/bin/example"),
+            &["--serve".to_owned()],
+        );
+        assert!(
+            matches!(attached, Err(uze_core::UzeError::ExposureUnavailable(_))),
+            "{attached:?}"
+        );
+        assert_eq!(std::fs::read_to_string(&config).unwrap(), operators);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

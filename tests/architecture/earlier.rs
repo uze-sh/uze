@@ -100,6 +100,36 @@ fn every_record_lists_its_rungs() {
     );
 }
 
+/// An entry reaches the suite only through its crate's `earlier()`, which
+/// the suite gathers; one a crate leaves out is one the floor never sees.
+#[test]
+fn every_declared_entry_is_gathered() {
+    let gathered: Vec<&str> = every_entry().iter().map(|entry| entry.name).collect();
+    let mut missing = Vec::new();
+    for (file, source) in workspace_sources() {
+        let code = without_comments(&source);
+        for (at, needle) in code.match_indices("Earlier {") {
+            let Some(name) = code[at + needle.len()..]
+                .trim_start()
+                .strip_prefix("name: \"")
+                .and_then(|rest| rest.split_once('"'))
+                .map(|(name, _)| name)
+            else {
+                continue;
+            };
+            if !gathered.contains(&name) {
+                missing.push(format!("  {file}: {name}"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "\n\nThese entries are declared but their crate's `earlier()` does not \
+         gather them, so the release floor never sees them (see {RULE}):\n\n{}\n",
+        missing.join("\n")
+    );
+}
+
 /// Whether the crate `file` belongs to calls its module's `rungs()`.
 fn gathered(sources: &[(String, String)], file: &str) -> bool {
     let (root, module) = match file.split_once("/src/") {

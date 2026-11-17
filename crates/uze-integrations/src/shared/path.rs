@@ -222,3 +222,33 @@ mod normalize_declared_relative_path_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod prune_empty_package_dir_tests {
+    use super::prune_empty_package_dir;
+
+    /// A package's emptied directory goes, and the pruning never climbs to
+    /// the root it stages under, nor touches anything outside it.
+    #[test]
+    fn only_an_emptied_package_directory_under_the_root_goes() {
+        let scratch = uze_testkit::temp::TempDir::new("prune-package-dir");
+        let root = scratch.path().join("root");
+        let package = root.join("pkg");
+        std::fs::create_dir_all(package.join("cap")).unwrap();
+        std::fs::remove_dir(package.join("cap")).unwrap();
+        prune_empty_package_dir(&package.join("cap"), &root);
+        assert!(!package.exists(), "the emptied package directory stayed");
+        assert!(root.is_dir(), "the root went");
+
+        prune_empty_package_dir(&root.join("cap"), &root);
+        assert!(
+            root.is_dir(),
+            "an artifact staged at the root removed the root"
+        );
+
+        let outside = scratch.path().join("outside/pkg");
+        std::fs::create_dir_all(&outside).unwrap();
+        prune_empty_package_dir(&outside.join("cap"), &root);
+        assert!(outside.is_dir(), "a directory outside the root was pruned");
+    }
+}

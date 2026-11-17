@@ -2021,4 +2021,298 @@ pub(super) mod tests {
                 .contains("not inside a Git checkout")
         );
     }
+
+    #[test]
+    fn a_runner_confines_only_through_a_helper() {
+        assert!(ExtensionRunner::confining_through(Some(PathBuf::from("helper"))).confines());
+        assert!(!ExtensionRunner::confining_through(None).confines());
+    }
+
+    /// Forgetting an extension closes its resident sessions; there is
+    /// nothing left to stop, and stopping nothing is no failure.
+    #[test]
+    fn forgetting_an_extension_closes_its_resident_sessions() {
+        let world = World::new("runner-resident-forget");
+        with_resident(&world, "fn start(context) { true }\nfn render(size) { 1 }");
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let start = resident(&world, ResidentCall::Start, serde_json::json!({}));
+        assert_eq!(data(world.ask(&runner, &start)), serde_json::json!(true));
+
+        runner.forget(&Identity {
+            id: "another".to_owned(),
+            ..world.band()
+        });
+        assert_eq!(runner.residents(), 1, "another extension's forgetting");
+        runner.forget(&world.band());
+        assert_eq!(runner.residents(), 0);
+        let render = resident(&world, ResidentCall::Render, serde_json::json!({}));
+        assert!(matches!(
+            world.ask(&runner, &render),
+            Answer::Failed { reason, .. } if reason.contains("not running")
+        ));
+        let stop = resident(&world, ResidentCall::Stop, serde_json::json!({}));
+        assert!(matches!(world.ask(&runner, &stop), Answer::Answered { .. }));
+    }
+
+    /// A picture its programs kept is read no further than the bound and a
+    /// byte, so the engine refuses it without holding all of it.
+    #[test]
+    fn a_kept_picture_is_read_no_further_than_one_past_the_bound() {
+        let world = World::new("runner-media-bound");
+        let runner = ExtensionRunner::new();
+        let kept = world
+            .app
+            .home
+            .extension_pictures_dir("gsd@studio", "gsd-band");
+        fs::create_dir_all(&kept).unwrap();
+        fs::File::create(kept.join("big.png"))
+            .unwrap()
+            .set_len(uze_contract::IMAGE_FILE_MAX as u64 + 5)
+            .unwrap();
+        assert_eq!(
+            runner
+                .media(&world.app.extensions(), &world.band(), "scratch:big.png")
+                .unwrap()
+                .len(),
+            uze_contract::IMAGE_FILE_MAX + 1
+        );
+    }
+
+    /// A check is answered for a source the extension declares, and for
+    /// nothing it does not.
+    #[test]
+    fn a_check_through_the_application_answers_a_scripts_source() {
+        let world = World::new("runner-rehearse-public");
+        let runner = ExtensionRunner::new();
+        let extensions = world.app.extensions();
+        assert!(
+            runner
+                .rehearse(
+                    &extensions,
+                    &world.band,
+                    &world.band(),
+                    "state",
+                    &world.checkout
+                )
+                .is_some()
+        );
+        assert!(
+            runner
+                .rehearse(
+                    &extensions,
+                    &world.band,
+                    &world.band(),
+                    "nothing",
+                    &world.checkout
+                )
+                .is_none()
+        );
+    }
+
+    /// A check keeps nothing: what its script asks to keep is dropped.
+    #[test]
+    fn a_check_keeps_nothing_its_script_asks_to_keep() {
+        let world = World::new("runner-rehearse-store");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            text.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"store\"",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) { #{ data: #{ ok: true }, store: #{ last: 1 } } }\n</script>\n",
+        )
+        .unwrap();
+        let runner = ExtensionRunner::new();
+        let answer = runner
+            .rehearse_over(
+                &world.app.home,
+                &world.band,
+                &world.band(),
+                "state",
+                &world.checkout,
+                |path| extension_checkout(path, &world.around),
+            )
+            .unwrap();
+        match answer {
+            Answer::Answered { envelope, .. } => {
+                assert_eq!(envelope.data, serde_json::json!({ "ok": true }));
+                assert_eq!(envelope.store, None);
+            }
+            other => panic!("not answered: {other:?}"),
+        }
+    }
+
+    /// Where nothing confines programs, a check's script runs none.
+    #[test]
+    fn a_check_where_nothing_confines_runs_no_program() {
+        let world = World::new("runner-rehearse-unconfined");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            text.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"exec:git\"",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) {\n    let ran = run_program(\"git\", [\"--version\"]);\n    #{ data: #{ code: ran.code } }\n}\n</script>\n",
+        )
+        .unwrap();
+        let runner = ExtensionRunner::confining_through(None);
+        let answer = runner
+            .rehearse_over(
+                &world.app.home,
+                &world.band,
+                &world.band(),
+                "state",
+                &world.checkout,
+                |path| extension_checkout(path, &world.around),
+            )
+            .unwrap();
+        match answer {
+            Answer::Failed { reason, .. } => {
+                assert!(reason.contains("`git` is not run here"), "{reason}");
+            }
+            other => panic!("a program ran: {other:?}"),
+        }
+    }
+
+    /// A source that names its preferences is asked with them as they are
+    /// set; one that does not is asked without.
+    #[test]
+    fn only_a_source_naming_its_preferences_is_asked_with_them() {
+        let world = World::new("runner-preferences");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!(
+                "{text}\nsource \"tuned\" {{\n    script \"state.uze\"\n    preferences\n}}\n\npreferences {{\n    number \"warn-at\" label=\"Warn at\" default=70 min=1 max=100\n}}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) {\n    let set = input.preferences ?? #{};\n    #{ data: #{ warn: set[\"warn-at\"] ?? \"none\" } }\n}\n</script>\n",
+        )
+        .unwrap();
+        world.enabled();
+        world
+            .app
+            .extensions()
+            .set_preference(&world.band(), "warn-at", 40.into())
+            .unwrap();
+        let runner = ExtensionRunner::new();
+        assert_eq!(
+            data(world.ask(&runner, &world.question("tuned"))),
+            serde_json::json!({ "warn": 40 })
+        );
+        assert_eq!(
+            data(world.ask(&runner, &world.question("state"))),
+            serde_json::json!({ "warn": "none" })
+        );
+    }
+
+    /// A project's store is that project's: another project's answers do
+    /// not read it.
+    #[test]
+    fn a_project_store_is_kept_apart_from_another_projects() {
+        let world = World::new("runner-project-store");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            text.replace(
+                "wants \"read:checkout\"",
+                "wants \"read:checkout\" \"store\"",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            world.band.join("state.uze"),
+            "<script>\nfn answer(input, context) {\n    let kept = store();\n    #{ data: #{ seen: kept.count ?? 0 }, store: #{ count: 1 } }\n}\n</script>\n",
+        )
+        .unwrap();
+        let other = world.checkout.with_file_name("other");
+        fs::create_dir_all(&other).unwrap();
+        uze_testkit::git::isolated_git_in(&other, &["init", "-q"]);
+        world.enabled();
+        let extensions = world.app.extensions();
+        extensions
+            .enable(&world.band(), &other, Asker::Operator)
+            .unwrap();
+        let runner = ExtensionRunner::new();
+        let ask_in = |checkout: &Path| {
+            data(world.ask(
+                &runner,
+                &Question {
+                    checkout: Some(checkout.to_path_buf()),
+                    ..world.question("state")
+                },
+            ))
+        };
+        assert_eq!(ask_in(&world.checkout), serde_json::json!({ "seen": 0 }));
+        assert_eq!(ask_in(&other), serde_json::json!({ "seen": 0 }));
+    }
+
+    /// What a source answered from files since saved over is let go, and
+    /// what it answered other inputs from the same files is kept.
+    #[test]
+    fn answers_from_files_saved_over_are_let_go() {
+        let world = World::new("runner-remember-files");
+        world.enabled();
+        let runner = ExtensionRunner::new();
+        let question = world.question("state");
+        let other = Question {
+            input: serde_json::json!({ "phase": "1" }),
+            ..question.clone()
+        };
+        data(world.ask(&runner, &question));
+        data(world.ask(&runner, &other));
+        assert_eq!(lock(&runner.answered).len(), 2, "both inputs remembered");
+
+        let script = world.band.join("state.uze");
+        let text = fs::read_to_string(&script).unwrap();
+        fs::write(&script, text.replace("lines:", "count:")).unwrap();
+        data(world.ask(&runner, &question));
+        assert_eq!(
+            lock(&runner.answered).len(),
+            1,
+            "the answers from the files saved over went"
+        );
+    }
+
+    /// An action that runs a program is judged as any question is: before
+    /// consent it is withheld for it.
+    #[test]
+    fn an_action_running_a_program_waits_for_consent() {
+        let world = World::new("runner-action-run");
+        let manifest = world.band.join("extension.kdl");
+        let text = fs::read_to_string(&manifest).unwrap();
+        fs::write(
+            &manifest,
+            format!(
+                "{}\naction \"version\" label=\"Version\" on=\"board\" {{\n    run \"git\" \"--version\"\n}}\n",
+                text.replace("wants \"read:checkout\"", "wants \"read:checkout\" \"exec:git\"")
+            ),
+        )
+        .unwrap();
+        let runner = ExtensionRunner::new();
+        let action = Question {
+            declaration: "version".to_owned(),
+            asking: Asking::Action,
+            ..world.question("state")
+        };
+        assert_eq!(withheld(world.ask(&runner, &action)), "needs consent");
+    }
 }

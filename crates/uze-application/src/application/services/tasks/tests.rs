@@ -3892,6 +3892,33 @@ mod overrides_tests {
         assert_eq!(recent, [words("--model opus"), words("DEBUG=1")]);
     }
 
+    #[test]
+    fn a_recent_entry_is_forgotten_once_and_says_so() {
+        let repository = uze_testkit::git::Repository::new("overrides-forget");
+        let root = repository.root().canonical().unwrap();
+        let app = application("overrides-forget-home");
+        placed(&app, &root, "one", "--model opus DEBUG=1");
+
+        assert!(
+            app.workspace()
+                .forget_recent_override("one", &words("--model opus"))
+                .unwrap()
+        );
+        let recent: Vec<Vec<String>> = app
+            .workspace()
+            .recent_overrides("one", &root)
+            .into_iter()
+            .map(|entry| entry.words)
+            .collect();
+        assert_eq!(recent, [words("DEBUG=1")]);
+        assert!(
+            !app.workspace()
+                .forget_recent_override("one", &words("--model opus"))
+                .unwrap(),
+            "an entry already forgotten was not there to forget"
+        );
+    }
+
     /// The selection a new agent launched with is what the next one opens
     /// on, read against its harness's catalog: a value a flag takes stays
     /// with it, and a secret is left out.
@@ -4077,5 +4104,583 @@ mod overrides_tests {
         assert_eq!(checked[0].words, ["--model", "big one"]);
         assert_eq!(checked[0].verdict, OverrideVerdict::Accepted);
         assert!(catalog.check("--model \"open").is_err());
+    }
+}
+
+mod identity_tests {
+    use super::*;
+    use uze_core::{
+        UzeHome, exposure::ExposurePlan, integration::SessionContinuity,
+        router::HarnessCapabilities,
+    };
+
+    /// A harness whose prompt invokes a skill with `prefix`, and which
+    /// continues a conversation when `continues`.
+    struct Prompted {
+        id: &'static str,
+        prefix: &'static str,
+        continues: bool,
+    }
+
+    impl IntegrationPort for Prompted {
+        fn id(&self) -> &'static str {
+            self.id
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn invocation_prefix(&self) -> &'static str {
+            self.prefix
+        }
+        fn session_continuity(&self) -> SessionContinuity {
+            if self.continues {
+                SessionContinuity::Observed
+            } else {
+                SessionContinuity::Unsupported
+            }
+        }
+    }
+
+    fn identities() -> Vec<AgentIdentity> {
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("identities")),
+            vec![
+                Box::new(Prompted {
+                    id: "slashed",
+                    prefix: "/",
+                    continues: true,
+                }),
+                Box::new(Prompted {
+                    id: "unprefixed",
+                    prefix: "",
+                    continues: false,
+                }),
+            ],
+        );
+        app.workspace().agent_identities()
+    }
+
+    #[test]
+    fn a_skill_is_typed_with_the_harness_prefix_and_its_arguments() {
+        assert_eq!(
+            crate::application::services::skill_invocation(
+                "$",
+                "uze:init",
+                &["check".to_owned(), "now".to_owned()]
+            ),
+            "$uze:init check now"
+        );
+        let identities = identities();
+        assert_eq!(
+            identities[0].skill_invocation("uze:init", &["check".to_owned()]),
+            Some("/uze:init check".to_owned())
+        );
+        assert_eq!(
+            identities[1].skill_invocation("uze:init", &[]),
+            None,
+            "a harness with no prefix has no way to invoke a skill"
+        );
+    }
+
+    #[test]
+    fn the_continuity_gap_names_whether_the_harness_or_the_missing_launcher_is_why() {
+        let identities = identities();
+        let continuing = identities[0].continuity_gap.clone().unwrap_or_default();
+        assert!(
+            continuing.contains("launcher"),
+            "a harness that continues lacks only UZE's launcher here: {continuing}"
+        );
+        let forgetting = identities[1].continuity_gap.clone().unwrap_or_default();
+        assert!(
+            forgetting.contains("no way to continue"),
+            "a harness with no mechanism says so: {forgetting}"
+        );
+    }
+}
+
+/// The workspace service's answers that hand a question to the workspace's
+/// domain: each is the answer the domain gives, never a stand-in.
+mod facade_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    fn application(label: &str) -> UzeApplication {
+        UzeApplication::new(UzeHome::at(uze_testkit::temp::scratch(label)), Vec::new())
+    }
+
+    fn placed(app: &UzeApplication, root: &Path) -> super::naming_tests::Placed {
+        super::naming_tests::placed(app, root)
+    }
+
+    fn claim<'a>(placed: &'a super::naming_tests::Placed) -> Claim<'a> {
+        Claim {
+            id: &placed.id,
+            key: &placed.key,
+            cwd: &placed.checkout,
+        }
+    }
+
+    #[test]
+    fn an_agent_reports_and_is_reviewed_only_under_its_own_claim() {
+        let repository = uze_testkit::git::Repository::new("facade-reports");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-reports-home");
+        let agent = placed(&app, &root);
+        let workspace = app.workspace();
+
+        let report = uze_workspace::reports::Report {
+            event: "turn.started".to_owned(),
+            at: 1,
+            ..Default::default()
+        };
+        workspace.report(claim(&agent), report).unwrap();
+        let (read, _) = workspace.reports_since(&agent.id, &Default::default());
+        assert_eq!(
+            read.iter()
+                .map(|report| report.event.as_str())
+                .collect::<Vec<_>>(),
+            ["turn.started"]
+        );
+        let stranger = Claim {
+            key: "not-the-key",
+            ..claim(&agent)
+        };
+        assert!(
+            workspace
+                .report(stranger, uze_workspace::reports::Report::default())
+                .is_err(),
+            "a process UZE did not launch reports nothing"
+        );
+
+        assert!(
+            workspace
+                .review_show(claim(&agent))
+                .unwrap()
+                .contains("No review comment"),
+            "an agent with nothing sent is told so"
+        );
+        assert!(
+            workspace
+                .review_reply(claim(&agent), "1/1", "done")
+                .is_err(),
+            "there is no comment to answer"
+        );
+
+        let written = workspace
+            .update_review(&agent.checkout, Some(&agent.id), |review| {
+                review.viewed.insert("lib.rs".to_owned(), 7);
+            })
+            .unwrap();
+        assert_eq!(written.viewed.get("lib.rs"), Some(&7));
+        assert_eq!(
+            workspace
+                .review_of_checkout(&agent.checkout, Some(&agent.id))
+                .unwrap()
+                .viewed
+                .get("lib.rs"),
+            Some(&7)
+        );
+    }
+
+    #[test]
+    fn a_checkout_answers_its_primary_branch_and_change_stamp() {
+        let repository = uze_testkit::git::Repository::new("facade-repository");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-repository-home");
+        let agent = placed(&app, &root);
+        let workspace = app.workspace();
+
+        assert_eq!(workspace.primary_of(&agent.checkout), Some(root.clone()));
+        assert_eq!(workspace.root(&root), root);
+        let branch = repository
+            .git(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .trim()
+            .to_owned();
+        assert_eq!(workspace.current_branch(&root), Some(branch));
+
+        let before = workspace.checkout_stamp(&root, None);
+        assert!(before.is_some());
+        repository.commit_file("next.txt", "next\n");
+        let after = workspace.checkout_stamp(&root, None);
+        assert!(after.is_some());
+        assert_ne!(before, after, "a commit moves the stamp");
+    }
+
+    #[test]
+    fn declaring_a_completion_says_whether_it_creates_the_manifest() {
+        let repository = uze_testkit::git::Repository::new("facade-completion");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-completion-home");
+        let workspace = app.workspace();
+
+        assert_eq!(
+            workspace
+                .completion_change_consequence(&root)
+                .map(|consequence| consequence.creates_manifest),
+            Some(true),
+            "a project with no agents.yaml gets one"
+        );
+        assert!(
+            workspace
+                .set_completion(&root, Some(CompletionBehavior::Push))
+                .unwrap(),
+            "the first declaration creates the manifest"
+        );
+        assert_eq!(
+            workspace
+                .completion_change_consequence(&root)
+                .map(|consequence| consequence.creates_manifest),
+            Some(false)
+        );
+        assert!(
+            !workspace
+                .set_completion(&root, Some(CompletionBehavior::Merge))
+                .unwrap(),
+            "a manifest already there is written, not created"
+        );
+        assert_eq!(
+            workspace
+                .delivery_policy(&root)
+                .and_then(|policy| policy.completion),
+            Some(CompletionBehavior::Merge.abi_name())
+        );
+    }
+
+    #[test]
+    fn a_prompt_history_is_forgotten_and_the_layout_remembered() {
+        let repository = uze_testkit::git::Repository::new("facade-history");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-history-home");
+        let workspace = app.workspace();
+        let origin = prompt_history::PromptOrigin {
+            space_label: "space".to_owned(),
+            tab_id: 1,
+            tab_label: "tab".to_owned(),
+            agent_binary: "agent".to_owned(),
+            agent: Some("agent-1".to_owned()),
+        };
+        workspace
+            .record_prompt(&root, &origin, "write the parser")
+            .unwrap();
+        assert_eq!(workspace.prompt_history(&root, "agent-1", 10).len(), 1);
+        workspace.clear_prompt_history(&root, "agent-1").unwrap();
+        assert!(workspace.prompt_history(&root, "agent-1", 10).is_empty());
+
+        let mut layout = workspace.client_layout();
+        layout.sidebar.width = Some(42);
+        workspace.save_client_layout(&layout).unwrap();
+        assert_eq!(workspace.client_layout().sidebar.width, Some(42));
+    }
+
+    #[test]
+    fn a_harness_nobody_registered_has_no_conversation_to_refresh() {
+        let repository = uze_testkit::git::Repository::new("facade-refresh");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-refresh-home");
+        let agent = placed(&app, &root);
+        assert!(
+            !app.workspace()
+                .refresh_conversation("unregistered", claim(&agent))
+        );
+    }
+
+    #[test]
+    fn the_declaration_stamp_moves_when_the_project_declares_something() {
+        let repository = uze_testkit::git::Repository::new("facade-stamp");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-stamp-home");
+        let workspace = app.workspace();
+        let before = workspace.declaration_stamp(&root);
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  worktree: always\n").unwrap();
+        assert_ne!(workspace.declaration_stamp(&root), before);
+
+        let gone = root.join("gone");
+        assert!(matches!(
+            workspace.space_overview(&gone).unwrap(),
+            crate::SpaceOverview::DirectoryGone { .. }
+        ));
+        assert!(matches!(
+            workspace.space_overview(&root).unwrap(),
+            crate::SpaceOverview::Directory(_)
+        ));
+    }
+
+    #[test]
+    fn the_policy_names_a_command_this_machine_cannot_run() {
+        let repository = uze_testkit::git::Repository::new("facade-policy");
+        let root = repository.root().canonical().unwrap();
+        let app = application("facade-policy-home");
+        let other = uze_platform::shell::spelling("windows", "posix");
+        std::fs::write(
+            root.join("agents.yaml"),
+            format!(
+                "workspace:\n  gate:\n    {other}: make check\n  setup: for f in *; do make; done\n"
+            ),
+        )
+        .unwrap();
+        let workspace = app.workspace();
+
+        let unspelled = workspace.steps_not_spelled_here(&root);
+        let only_in_sh = workspace.steps_only_in_sh(&root);
+        assert!(
+            unspelled
+                .iter()
+                .any(|step| step.step == uze_workspace::worktree::PolicyStep::Gate),
+            "{unspelled:?}"
+        );
+        let setup_reported = unspelled
+            .iter()
+            .map(|step| step.step)
+            .chain(only_in_sh.iter().map(|step| step.step))
+            .filter(|step| *step == uze_workspace::worktree::PolicyStep::Setup)
+            .count();
+        assert_eq!(
+            setup_reported, 1,
+            "a line the portable shell cannot read is named once, wherever it runs"
+        );
+    }
+}
+
+mod root_standing_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    /// An agent in the root reads the branch the root is on and how far it
+    /// is ahead of the target.
+    #[test]
+    fn an_agent_in_the_root_reads_the_roots_branch_and_its_commits_ahead() {
+        let repository = uze_testkit::git::Repository::new("root-standing");
+        let root = repository.root().canonical().unwrap();
+        let target = repository
+            .git(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .trim()
+            .to_owned();
+        std::fs::write(
+            root.join("agents.yaml"),
+            format!("workspace:\n  target: {target}\n"),
+        )
+        .unwrap();
+        repository.git(&["switch", "--quiet", "-c", "feature"]);
+        repository.commit_file("feature.txt", "feature\n");
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("root-standing-home")),
+            Vec::new(),
+        );
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::InPlace), "fixture", &[])
+            .unwrap();
+
+        let listed = app.workspace().tasks(&root);
+        let view = listed
+            .iter()
+            .find(|view| view.id == placed.placement.agent().as_str())
+            .expect("the agent is listed");
+        assert_eq!(view.branch, "feature");
+        assert_eq!(view.ahead, 1);
+    }
+}
+
+mod unread_policy_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    fn application(label: &str) -> UzeApplication {
+        UzeApplication::new(UzeHome::at(uze_testkit::temp::scratch(label)), Vec::new())
+    }
+
+    /// A manifest that does not parse says nothing about where an agent
+    /// belongs: only a launch that names its kind still goes ahead.
+    #[test]
+    fn an_unreadable_manifest_places_only_an_agent_whose_kind_was_named() {
+        let repository = uze_testkit::git::Repository::new("place-unreadable");
+        let root = repository.root().canonical().unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace: [unterminated\n").unwrap();
+        let app = application("place-unreadable-home");
+
+        assert!(
+            app.workspace()
+                .place_new_agent(&root, None, "fixture", &[])
+                .is_err()
+        );
+        assert!(
+            app.workspace()
+                .place_new_agent(&root, Some(PlacementKind::InPlace), "fixture", &[])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_declared_target_is_pulled_on_request() {
+        let repository = uze_testkit::git::Repository::new("pull-declared");
+        let root = repository.root().canonical().unwrap();
+        std::fs::write(root.join("agents.yaml"), "workspace:\n  target: main\n").unwrap();
+        repository.with_origin("main");
+        let app = application("pull-declared-home");
+        assert!(app.workspace().pull_target(&root).is_some());
+    }
+}
+
+mod retired_region_tests {
+    use super::*;
+    use uze_core::UzeHome;
+
+    #[test]
+    fn a_region_an_earlier_release_left_in_agents_md_is_planned_for_removal() {
+        let repository = uze_testkit::git::Repository::new("leftover-regions");
+        let root = repository.root().canonical().unwrap();
+        let app = UzeApplication::new(
+            UzeHome::at(uze_testkit::temp::scratch("leftover-regions-home")),
+            Vec::new(),
+        );
+        assert!(app.workspace().leftover_regions(&root).is_none());
+
+        uze_core::text_region::attach(
+            &root.join("AGENTS.md"),
+            "package:greet:tools:instructions",
+            "hello\n",
+        )
+        .unwrap();
+        assert!(app.workspace().leftover_regions(&root).is_some());
+    }
+}
+
+mod space_memory_tests {
+    use super::*;
+    use uze_core::{
+        UzeHome,
+        exposure::ExposurePlan,
+        memory::{FactKind, MemoryEntry, Scope},
+        router::HarnessCapabilities,
+    };
+
+    /// A harness that keeps one fact for the project and one for the
+    /// machine.
+    struct Remembering;
+
+    fn entry(name: &str, scope: Scope) -> MemoryEntry {
+        MemoryEntry {
+            name: name.to_owned(),
+            description: format!("{name} fact"),
+            kind: FactKind::Project,
+            scope,
+            origin: "remembering".to_owned(),
+            source: None,
+            path: PathBuf::from(format!("{name}.md")),
+            updated: None,
+            writable: false,
+            proposed: false,
+            cites: Vec::new(),
+            missing: Vec::new(),
+        }
+    }
+
+    impl IntegrationPort for Remembering {
+        fn id(&self) -> &'static str {
+            "remembering"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn memory_source(&self, _project_root: &Path) -> Vec<MemoryEntry> {
+            vec![
+                entry("project-fact", Scope::Project),
+                entry("machine-fact", Scope::Machine),
+            ]
+        }
+    }
+
+    #[test]
+    fn a_directorys_overview_keeps_the_project_facts_apart_from_the_machines() {
+        let directory = uze_testkit::temp::scratch("space-memory");
+        let app = UzeApplication::new(
+            UzeHome::at(directory.join("home")),
+            vec![Box::new(Remembering)],
+        );
+        let place = directory.join("notes");
+        std::fs::create_dir_all(&place).unwrap();
+
+        let crate::SpaceOverview::Directory(space) =
+            app.workspace().space_overview(&place).unwrap()
+        else {
+            panic!("the directory is there");
+        };
+        let names = |entries: &[crate::application::memory::Entry]| {
+            entries
+                .iter()
+                .map(|entry| entry.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&space.memory.project), ["project-fact"]);
+        assert_eq!(names(&space.memory.machine), ["machine-fact"]);
+    }
+}
+
+mod preserved_work_tests {
+    use super::*;
+    use uze_core::UzeHome;
+    use uze_workspace::conversation::{ConversationOrigin, HarnessConversation};
+
+    /// An agent's work is last active when it last launched into a
+    /// conversation its record still names, and a project's overview lists
+    /// its own preserved work.
+    #[test]
+    fn preserved_work_is_as_recent_as_its_last_conversation_and_listed_by_its_project() {
+        let repository = uze_testkit::git::Repository::new("preserved-recent");
+        let root = repository.root().canonical().unwrap();
+        let home = UzeHome::at(uze_testkit::temp::scratch("preserved-recent-home"));
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let placed = app
+            .workspace()
+            .place_new_agent(&root, Some(PlacementKind::Isolated), "fixture", &[])
+            .unwrap();
+        let id = placed.placement.agent().clone();
+        let created = app
+            .workspace()
+            .preserved_work()
+            .into_iter()
+            .find(|work| work.id == id.as_str())
+            .expect("the agent's work is preserved")
+            .created_at_unix;
+        let conversed = created + 1_000;
+        conversation::update(&home, &root, &id, |record| {
+            record.harnesses.insert(
+                "fixture".to_owned(),
+                HarnessConversation {
+                    conversation: Some(uze_core::session::SessionId::parse("talk").unwrap()),
+                    origin: ConversationOrigin::Assigned,
+                    launched_at_unix: conversed,
+                    observed_at_unix: None,
+                    preceded_by: None,
+                    left_at_unix: None,
+                },
+            );
+        })
+        .unwrap();
+
+        let preserved = app.workspace().preserved_work();
+        let work = preserved
+            .iter()
+            .find(|work| work.id == id.as_str())
+            .expect("still preserved");
+        assert_eq!(work.last_active_unix, conversed);
+
+        let crate::SpaceOverview::Directory(space) = app.workspace().space_overview(&root).unwrap()
+        else {
+            panic!("the project is there");
+        };
+        let Some(Ok(project)) = &space.project else {
+            panic!("the project reads: {:?}", space.project.is_some());
+        };
+        assert!(
+            project.preserved.iter().any(|work| work.id == id.as_str()),
+            "the project's overview lists its own preserved work"
+        );
     }
 }

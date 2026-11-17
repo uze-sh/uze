@@ -301,6 +301,31 @@ mod provision_tests {
         );
     }
 
+    /// The installer's last resort, `~/.opencode/bin`, is where a fresh
+    /// install off `PATH` is looked for, through the port as well.
+    #[test]
+    fn the_installers_own_directory_under_home_is_an_install_location() {
+        let Some(home) = std::env::var_os(uze_platform::home::VARIABLE) else {
+            return;
+        };
+        let installed = std::path::PathBuf::from(home)
+            .join(".opencode")
+            .join("bin")
+            .join(uze_platform::executable::file_name("opencode"));
+        assert!(
+            super::install_locations().contains(&installed),
+            "{installed:?}"
+        );
+        let root = uze_testkit::temp::scratch("opencode-install-locations");
+        let integration = OpenCodeIntegration::new(
+            root.join("agents"),
+            root.join("config/opencode.json"),
+            UzeHome::at(root.join("uze")),
+        );
+        assert!(integration.install_locations().contains(&installed));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_binary_the_installer_placed_off_path_is_found() {
         let root = uze_testkit::temp::scratch("opencode-off-path");

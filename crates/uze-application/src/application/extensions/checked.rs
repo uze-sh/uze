@@ -828,4 +828,234 @@ source "board" { fixture "fixtures/board.json"; }
         }
         assert!(!world.band.join("escape.json").exists());
     }
+
+    /// A harness this application integrates, started by the program
+    /// `pilot`.
+    struct Pilot;
+
+    impl uze_core::integration::IntegrationPort for Pilot {
+        fn id(&self) -> &'static str {
+            "pilot"
+        }
+        fn display_name(&self) -> &'static str {
+            "Pilot"
+        }
+        fn capabilities(&self) -> uze_core::router::HarnessCapabilities {
+            uze_core::router::HarnessCapabilities::default()
+        }
+        fn exposure_plan(
+            &self,
+            _resource: &uze_core::capability::Resource,
+        ) -> uze_core::exposure::ExposurePlan {
+            uze_core::exposure::ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "a test harness attaches nothing".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn detect(&self) -> uze_core::integration::HarnessDetection {
+            uze_core::integration::HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+    }
+
+    #[test]
+    fn the_program_of_a_harness_the_application_integrates_is_never_granted() {
+        let root = uze_testkit::temp::scratch("extensions-check-integrated-harness");
+        let manifest = MANIFEST.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "wants \"exec:pilot\"\nsource \"board\" { run \"pilot\" \"-p\"; }",
+        );
+        let plugin = plugin_with(&root, &manifest, "{}");
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), vec![Box::new(Pilot)]);
+
+        assert_eq!(app.extensions().harness_programs(), ["pilot"]);
+        let checked = &app.extensions().check(&plugin)[0];
+        assert!(!checked.is_clean());
+        assert!(
+            checked
+                .errors
+                .iter()
+                .any(|error| error.message.contains("`exec:pilot` is never granted")),
+            "{:?}",
+            checked.errors
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_checked_extension_carries_the_plugin_its_manifest_names() {
+        let root = uze_testkit::temp::scratch("extensions-check-plugin-name");
+        let plugin = plugin_with(&root, MANIFEST, r#"{"title": "Week"}"#);
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+        let plugin_of = |app: &UzeApplication| {
+            app.extensions().check(&plugin)[0]
+                .compiled
+                .as_ref()
+                .map(|compiled| compiled.identity.plugin.clone())
+        };
+
+        assert_eq!(plugin_of(&app).as_deref(), Some("greet"), "its directory");
+        fs::write(plugin.join("plugin.json"), r#"{"name": "greeter"}"#).unwrap();
+        assert_eq!(plugin_of(&app).as_deref(), Some("greeter"), "its manifest");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_editors_fixture_is_not_read_as_a_test() {
+        let root = uze_testkit::temp::scratch("extensions-check-overlay-fixture");
+        let plugin = plugin_with(&root, MANIFEST, r#"{"title": "Week"}"#);
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+        let overlay = super::Overlay::from([
+            (
+                "fixtures/board.json".to_owned(),
+                r#"{"title": "Month"}"#.to_owned(),
+            ),
+            ("notes.test.kdl".to_owned(), "not a test".to_owned()),
+        ]);
+
+        let checked = app
+            .extensions()
+            .check_extension(&plugin.join("extensions/board"), &overlay);
+        assert!(checked.is_clean(), "{:?}", checked.errors);
+        assert!(checked.tests.is_empty(), "{:?}", checked.tests.keys());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_warning_is_placed_where_its_text_is_known() {
+        let root = uze_testkit::temp::scratch("extensions-check-warn-at");
+        let plugin = plugin_with(&root, MANIFEST, r#"{"title": "Week"}"#);
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+        let mut checked = app.extensions().check(&plugin).remove(0);
+        let before = checked.warnings.len();
+
+        checked.warn_at("board.uze", 19, "looked at".to_owned());
+        checked.warn_at("absent.uze", 4, "nowhere".to_owned());
+
+        let placed: Vec<_> = checked.warnings[before..]
+            .iter()
+            .map(|warning| (warning.file.as_str(), warning.line, warning.column))
+            .collect();
+        assert_eq!(placed, [("board.uze", 3, 5), ("absent.uze", 0, 0)]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A component a resident source runs is reached: its script is
+    /// checked, and it is not warned of as run by nothing.
+    #[test]
+    fn a_resident_sources_component_is_reached() {
+        let root = uze_testkit::temp::scratch("extensions-check-resident");
+        let manifest = "protocol 1\nid \"board\"\nname \"Board\"\ndescription \"A board\"\nwants \"resident\"\nsurface \"board\" slot=\"view\" view=\"board.uze\" source=\"board\"\nsource \"board\" {\n    resident \"board.uze\"\n}\n";
+        let plugin = plugin_with(&root, manifest, "{}");
+        let component = plugin.join("extensions/board/board.uze");
+        fs::write(
+            &component,
+            "<view>\nText \"a\"\n</view>\n<script>\nfn start(context) { true }\nfn render(size) { #{ type: \"text\", args: [\"a\"] } }\n</script>\n",
+        )
+        .unwrap();
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+
+        let checked = &app.extensions().check(&plugin)[0];
+        assert!(checked.is_clean(), "{:?}", checked.errors);
+        assert!(checked.warnings.is_empty(), "{:?}", checked.warnings);
+
+        fs::write(
+            &component,
+            "<view>\nText \"a\"\n</view>\n<script>\nfn start(context) { ( }\n</script>\n",
+        )
+        .unwrap();
+        let checked = &app.extensions().check(&plugin)[0];
+        assert!(
+            checked
+                .errors
+                .iter()
+                .any(|error| error.to_string().starts_with("board.uze:5:")),
+            "{:?}",
+            checked.errors
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A component a surface draws and a source runs is reached, so it is
+    /// not warned of.
+    #[test]
+    fn a_drawn_component_a_source_runs_is_not_warned_of() {
+        let root = uze_testkit::temp::scratch("extensions-check-drawn-and-run");
+        let manifest = MANIFEST.replace(
+            "source \"board\" { fixture \"fixtures/board.json\"; }",
+            "wants \"read:checkout\"\nsource \"board\" { script \"board.uze\"; }",
+        );
+        let plugin = plugin_with(&root, &manifest, "{}");
+        fs::write(
+            plugin.join("extensions/board/board.uze"),
+            "<view>\nText \"{title}\"\n</view>\n<script>\nfn answer(input, context) { #{ data: #{ title: \"a\" } } }\n</script>\n",
+        )
+        .unwrap();
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+
+        let checked = &app.extensions().check(&plugin)[0];
+        assert!(checked.is_clean(), "{:?}", checked.errors);
+        assert!(checked.warnings.is_empty(), "{:?}", checked.warnings);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// An action calling a function its script lacks is told to define it
+    /// or call another, not what a source's script answers with.
+    #[test]
+    fn a_missing_called_function_suggests_defining_it() {
+        let root = uze_testkit::temp::scratch("extensions-check-called-suggestion");
+        let manifest = format!(
+            "{MANIFEST}\naction \"poke\" label=\"Poke\" on=\"board\" {{ call \"poke\"; }}\n"
+        );
+        let plugin = plugin_with(&root, &manifest, r#"{"title": "Week"}"#);
+        fs::write(
+            plugin.join("extensions/board/board.uze"),
+            "<view>\nText \"{title}\"\n</view>\n<script>\nfn other(input, context) { #{ data: () } }\n</script>\n",
+        )
+        .unwrap();
+        let app = UzeApplication::new(UzeHome::at(root.join("home")), Vec::new());
+
+        let checked = &app.extensions().check(&plugin)[0];
+        let missing = checked
+            .errors
+            .iter()
+            .find(|error| {
+                error
+                    .message
+                    .contains("defines no `fn poke(input, context)`")
+            })
+            .unwrap_or_else(|| panic!("{:?}", checked.errors));
+        assert_eq!(
+            missing.suggestion.as_deref(),
+            Some("define it, or call a function the script has")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A recording of exactly the fixture bound is written; a byte more is
+    /// refused.
+    #[test]
+    fn a_recording_up_to_the_fixture_bound_is_written() {
+        let world = crate::application::extensions::runner::tests::World::new("record-bound");
+        let extensions = world.app.extensions();
+        // A JSON string is written with its two quotes.
+        let at_bound = serde_json::Value::String("a".repeat(1024 * 1024 - 2));
+        let past_bound = serde_json::Value::String("a".repeat(1024 * 1024 - 1));
+
+        assert!(
+            extensions
+                .record_fixture(&world.band(), "fixtures/large.json", &at_bound)
+                .is_ok()
+        );
+        let refused = extensions
+            .record_fixture(&world.band(), "fixtures/larger.json", &past_bound)
+            .unwrap_err();
+        assert!(refused.contains("larger than 1 MiB"), "{refused}");
+        assert!(!world.band.join("fixtures/larger.json").exists());
+    }
 }

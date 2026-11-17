@@ -384,3 +384,99 @@ fn read_shipped(package_root: &Path) -> Expected {
         Err(error) => Expected::Unverified(error.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rule(name: &str) -> ShippedRule {
+        ShippedRule {
+            name: name.to_owned(),
+            bytes: b"---\ntrigger: always_on\n---\nbody\n".to_vec(),
+        }
+    }
+
+    #[test]
+    fn copies_are_quiet_only_when_nothing_moved_and_nothing_needs_a_person() {
+        assert!(RuleCopies::default().is_quiet());
+        let loud: [fn(&mut RuleCopies); 6] = [
+            |copies| copies.written.push("w".to_owned()),
+            |copies| copies.removed.push("r".to_owned()),
+            |copies| copies.drifted.push("d".to_owned()),
+            |copies| copies.extra.push("e".to_owned()),
+            |copies| copies.manifest = ManifestChange::Registered,
+            |copies| copies.unverified = Some("unreachable".to_owned()),
+        ];
+        for change in loud {
+            let mut copies = RuleCopies::default();
+            change(&mut copies);
+            assert!(!copies.is_quiet(), "{copies:?}");
+        }
+    }
+
+    #[test]
+    fn an_unchanged_manifest_is_left_out_of_the_serialized_copies() {
+        let quiet = serde_json::to_value(RuleCopies::default()).unwrap();
+        assert!(quiet.get("manifest").is_none(), "{quiet}");
+        let registered = serde_json::to_value(RuleCopies {
+            manifest: ManifestChange::Registered,
+            ..RuleCopies::default()
+        })
+        .unwrap();
+        assert!(registered.get("manifest").is_some(), "{registered}");
+    }
+
+    #[test]
+    fn copies_carry_what_the_convergence_did_under_the_plugins_name() {
+        let done = Convergence {
+            written: vec!["a".to_owned()],
+            removed: vec!["b".to_owned()],
+            drifted: vec!["c".to_owned()],
+            extra: vec!["d".to_owned()],
+            manifest: ManifestChange::Unregistered,
+        };
+        let copies = RuleCopies::from(
+            &Namespace::new("flow", "acme"),
+            done,
+            Some("why".to_owned()),
+        );
+        assert_eq!(
+            copies,
+            RuleCopies {
+                plugin: "flow@acme".to_owned(),
+                written: vec!["a".to_owned()],
+                removed: vec!["b".to_owned()],
+                drifted: vec!["c".to_owned()],
+                extra: vec!["d".to_owned()],
+                manifest: ManifestChange::Unregistered,
+                unverified: Some("why".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn known_rules_converge_from_themselves_and_unknown_ones_from_none() {
+        let known = Expected::Known(vec![rule("a.md"), rule("b.md")]);
+        assert_eq!(known.or_none().len(), 2);
+        assert!(
+            Expected::Unverified("unreachable".to_owned())
+                .or_none()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_copies_live_in_the_checkout_a_project_inside_it_shares() {
+        let repository = uze_testkit::temp::scratch("plugin-rules-checkout");
+        uze_testkit::git::mark_repository(&repository);
+        let project = repository.join("services").join("api");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("agents.yaml"), "").unwrap();
+
+        assert_eq!(
+            uze_platform::path::canonical(&checkout_of(&project)).unwrap(),
+            uze_platform::path::canonical(&repository).unwrap()
+        );
+        let _ = std::fs::remove_dir_all(repository);
+    }
+}

@@ -266,6 +266,73 @@ mod tests {
         assert!(parse_listing(b"<!doctype html>").is_none());
     }
 
+    /// A stand-in for the `opencode` binary that prints `stdout` and exits
+    /// with `code`, whatever it is asked.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    fn stand_in(root: &Path, name: &str, stdout: &[u8], code: i32) -> PathBuf {
+        std::fs::create_dir_all(root).unwrap();
+        let answer = root.join(format!("{name}.answer"));
+        std::fs::write(&answer, stdout).unwrap();
+        let executable = root.join(name);
+        uze_testkit::process::install_executable(
+            &executable,
+            format!("#!/bin/sh\ncat '{}'\nexit {code}\n", answer.display()).as_bytes(),
+        );
+        executable
+    }
+
+    /// The harness is asked by id, and only its own "no such session"
+    /// makes a conversation gone: a harness that cannot answer keeps it.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn a_conversation_is_gone_only_when_the_harness_answers_so() {
+        let root = uze_testkit::temp::scratch("opencode-session-exists");
+        let session = SessionId::parse("ses_x").unwrap();
+        let missing = stand_in(
+            &root,
+            "missing",
+            br#"{"_tag":"SessionNotFoundError","sessionID":"ses_x"}"#,
+            1,
+        );
+        let held = stand_in(&root, "held", br#"{"data":{"id":"ses_x"}}"#, 0);
+        let broken = stand_in(&root, "broken", b"", 127);
+
+        assert!(!exists(&missing, &root, &session));
+        assert!(exists(&held, &root, &session));
+        assert!(exists(&broken, &root, &session), "unreadable is not gone");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// The listing the harness answers is where an observed conversation
+    /// comes from, and a listing it answered with a failure is none.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn the_conversation_observed_is_the_newest_the_harness_lists() {
+        let root = uze_testkit::temp::scratch("opencode-session-observe");
+        let listing = payload(&[
+            ("ses_old", "/work/slot", 100),
+            ("ses_new", "/work/slot", 200),
+        ]);
+        let ctx = ObservationContext {
+            cwd: Path::new("/work/slot"),
+            since_unix: 50,
+            preceded_by: None,
+            claimed_elsewhere: &[],
+        };
+        let answering = stand_in(&root, "answering", &listing, 0);
+        let failing = stand_in(&root, "failing", &listing, 1);
+
+        assert_eq!(
+            observe(&answering, &root, &ctx),
+            Some(SessionId::parse("ses_new").unwrap())
+        );
+        assert_eq!(observe(&failing, &root, &ctx), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn a_first_turn_rides_on_its_prompt_flag_beside_the_session() {
         let session = SessionId::parse("ses_1").unwrap();

@@ -337,6 +337,16 @@ mod provision_cli_tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    // `sh` is the one program every POSIX `PATH` reaches.
+    #[cfg(unix)]
+    #[test]
+    fn an_executable_path_already_reaches_is_not_reported() {
+        let shims = uze_testkit::temp::scratch("provision-on-path").join("shims");
+        let shell = uze_core::harness_runtime::resolve_real_executable(&["sh"], &shims)
+            .expect("a POSIX shell is on PATH");
+        assert_eq!(found_outside_path(&["sh"], &shims, &shell), None);
+    }
+
     #[test]
     fn absent_before_dispatches_install_then_verifies() {
         let runner = RecordingRunner {

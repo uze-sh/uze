@@ -555,4 +555,102 @@ mod tests {
                 .contains("no MCP server `absent`")
         );
     }
+
+    /// A `null` environment or working directory declares none: the
+    /// managed entry carries such a server whole.
+    #[test]
+    fn a_null_env_or_cwd_declares_nothing() {
+        let declared = br#"{"command":"server","env":null,"cwd":null}"#;
+        assert_eq!(undeliverable(declared), None);
+        assert!(stdio_command(declared, &PluginRoot::whole("/store/pm")).is_some());
+    }
+
+    /// `"args": null` is no arguments, and is handed on as an empty list:
+    /// not every harness's configuration can hold a null.
+    #[test]
+    fn null_arguments_are_handed_on_as_none() {
+        let resolved = resolve_server(
+            &serde_json::json!({"command": "server", "args": null}),
+            &PluginRoot::whole("/store/pm"),
+        );
+        assert_eq!(resolved["args"], serde_json::json!([]));
+    }
+
+    /// Only a receipt asking for a stdio command and its arguments is
+    /// one a vendor entry read by command and args can prove; anything
+    /// more it records is not.
+    #[test]
+    fn only_a_command_and_its_arguments_are_plain_stdio() {
+        let command = Path::new("server");
+        let args = ["--serve".to_owned()];
+        let plain = McpEntry::planned("s", command, &args);
+        assert!(plain.is_plain_stdio());
+        let environment = [McpEnvironmentReference {
+            name: "TOKEN".to_owned(),
+        }];
+        for (what, entry) in [
+            (
+                "a network transport",
+                McpEntry {
+                    transport: "http",
+                    ..plain
+                },
+            ),
+            (
+                "a working directory",
+                McpEntry {
+                    cwd: Some(Path::new("/srv")),
+                    ..plain
+                },
+            ),
+            (
+                "an environment",
+                McpEntry {
+                    environment: &environment,
+                    ..plain
+                },
+            ),
+            (
+                "an enabled flag",
+                McpEntry {
+                    enabled: Some(true),
+                    ..plain
+                },
+            ),
+        ] {
+            assert!(!entry.is_plain_stdio(), "{what} is not plain stdio");
+        }
+    }
+
+    /// A vendor whose `mcp remove` exits with `remove`, and whose `mcp get`
+    /// exits with `get`.
+    // The stand-in vendor is a POSIX shell script.
+    #[cfg(unix)]
+    fn vendor(label: &str, remove: u8, get: u8) -> (uze_testkit::temp::TempDir, PathBuf) {
+        let scratch = uze_testkit::temp::TempDir::new(label);
+        let program = scratch.path().join("vendor");
+        uze_testkit::process::install_executable(
+            &program,
+            format!(
+                "#!/bin/sh\ncase \"$2\" in remove) exit {remove};; get) exit {get};; esac\nexit 9\n"
+            )
+            .as_bytes(),
+        );
+        (scratch, program)
+    }
+
+    /// Removal is idempotent: an entry already gone is no error. A removal
+    /// that failed while the vendor still knows the entry is one, or the
+    /// server would keep running after the package left.
+    // The stand-in vendor is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_removal_is_an_error_only_while_the_entry_remains() {
+        let (scratch, removed) = vendor("mcp-remove-ok", 0, 0);
+        assert!(cli_remove(&removed, scratch.path(), "vendor", "s").is_ok());
+        let (scratch, absent) = vendor("mcp-remove-absent", 1, 1);
+        assert!(cli_remove(&absent, scratch.path(), "vendor", "s").is_ok());
+        let (scratch, remains) = vendor("mcp-remove-remains", 1, 0);
+        assert!(cli_remove(&remains, scratch.path(), "vendor", "s").is_err());
+    }
 }

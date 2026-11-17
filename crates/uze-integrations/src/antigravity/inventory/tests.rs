@@ -247,3 +247,21 @@ fn seconds(time: SystemTime) -> u64 {
         .unwrap()
         .as_secs()
 }
+
+#[test]
+fn only_markdown_files_are_agents() {
+    let gemini = Gemini::new("agy-inventory-agent-files");
+    gemini.write(
+        "antigravity-cli/agents/planner.md",
+        "---\nname: planner\ndescription: Plans.\n---\n",
+    );
+    gemini.write("antigravity-cli/agents/README.txt", "notes");
+    fs::create_dir_all(gemini.cli().join("agents/old.md")).unwrap();
+    let agents: Vec<String> = gemini
+        .found()
+        .into_iter()
+        .filter(|resource| resource.kind == ResourceKind::Agent)
+        .map(|resource| resource.name)
+        .collect();
+    assert_eq!(agents, ["planner"]);
+}

@@ -1254,3 +1254,675 @@ mod agent_toml_tests {
         );
     }
 }
+
+/// What the integration reads and answers through the port, at the paths
+/// Codex keeps under the home its agents home sits in.
+#[cfg(test)]
+mod port_tests {
+    use std::ffi::OsString;
+    use std::time::UNIX_EPOCH;
+
+    use uze_core::capability::Capability;
+    use uze_core::harness_runtime::RuntimeContext;
+    use uze_core::integration::{
+        AgentContext, ObservationContext, RegistrationRead, WorktreePlace,
+    };
+    use uze_core::inventory::{Claim, ResourceKind};
+    use uze_core::session::SessionId;
+    use uze_core::usage::Resume;
+
+    use super::*;
+
+    const SESSION: &str = "019a0000-0000-7000-8000-0000000000aa";
+
+    /// A Codex integration whose agents home is `<root>/.agents`, so Codex's
+    /// own files sit in `<root>/.codex`.
+    fn codex_at(root: &Path) -> CodexIntegration {
+        CodexIntegration::new(root.join(".agents"), UzeHome::at(root.join("uze")))
+    }
+
+    fn write(path: &Path, text: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+
+    fn record_setup(codex: &CodexIntegration) {
+        state::record(
+            &codex.uze_home,
+            codex.id(),
+            state::IntegrationRecord {
+                version: Some("0.166.0".to_owned()),
+                strategy: "managed-user-scope-skills-dir".to_owned(),
+            },
+        )
+        .unwrap();
+    }
+
+    fn rollout(root: &Path) {
+        let lines = [
+            serde_json::json!({"timestamp":"2026-10-31T10:00:00Z","type":"session_meta",
+                "payload":{"id":SESSION,"session_id":SESSION,"cwd":"/w"}}),
+            serde_json::json!({"timestamp":"2026-10-31T10:00:01Z","type":"response_item",
+                "payload":{"type":"message","role":"user","content":[
+                    {"type":"input_text","text":"<skill>\n<name>probe</name>\n<path>/home/me/.agents/skills/probe/SKILL.md</path>\n</skill>"}],
+                    "internal_chat_message_metadata_passthrough":{"turn_id":"t1"}}}),
+            serde_json::json!({"timestamp":"2026-10-31T10:00:01Z","type":"event_msg",
+                "payload":{"type":"item_completed","item":{"type":"UserMessage","id":"u1",
+                    "content":[{"type":"text","text":"tidy the namer"}]}}}),
+        ];
+        let text: String = lines.iter().map(|line| format!("{line}\n")).collect();
+        write(
+            &root.join(format!(
+                ".codex/sessions/2026/10/31/rollout-2026-10-31T10-00-00-{SESSION}.jsonl"
+            )),
+            &text,
+        );
+    }
+
+    /// Continuity, the briefing, usage and the Overview's counts all read
+    /// the conversations Codex files under `<home>/.codex/sessions`.
+    #[test]
+    fn conversations_are_read_where_codex_files_them() {
+        let root = uze_testkit::temp::scratch("codex-port-sessions");
+        let codex = codex_at(&root);
+        rollout(&root);
+        let session = SessionId::parse(SESSION).unwrap();
+        let elsewhere = SessionId::parse("019a0000-0000-7000-8000-0000000000bb").unwrap();
+
+        assert_eq!(
+            codex.observe_session(&ObservationContext {
+                cwd: Path::new("/w"),
+                since_unix: 0,
+                preceded_by: None,
+                claimed_elsewhere: &[],
+            }),
+            Some(session.clone())
+        );
+        assert!(codex.session_exists(&session, Path::new("/w")));
+        assert!(!codex.session_exists(&elsewhere, Path::new("/w")));
+        assert_eq!(
+            codex
+                .conversation_digest(&session, Path::new("/w"), None)
+                .and_then(|digest| digest.goal),
+            Some("tidy the namer".to_owned())
+        );
+        let records = codex.usage_records(UNIX_EPOCH).unwrap();
+        assert_eq!(records.len(), 1);
+        let read = codex.read_usage(&records[0], Resume::Start).unwrap();
+        assert_eq!(read.uses.len(), 1);
+        assert_eq!(read.uses[0].kind, ResourceKind::Skill);
+        assert_eq!(codex.session_counts().unwrap().total, 1);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn codexs_memory_summary_is_one_machine_entry_while_it_exists() {
+        let root = uze_testkit::temp::scratch("codex-port-memory");
+        let codex = codex_at(&root);
+        assert!(codex.memory_source(&root).is_empty());
+
+        let summary = root.join(".codex/memories/memory_summary.md");
+        write(&summary, "twelve bytes");
+        let entries = codex.memory_source(&root);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0].path, summary);
+        assert_eq!(entries[0].scope, uze_core::memory::Scope::Machine);
+        assert!(!entries[0].writable);
+        assert!(
+            entries[0].description.contains("12 bytes"),
+            "{}",
+            entries[0].description
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Codex skips `AGENTS.md` in a project marked untrusted and reads at
+    /// most `project_doc_max_bytes` of it elsewhere.
+    #[test]
+    fn context_codex_leaves_unread_is_named() {
+        let root = uze_testkit::temp::scratch("codex-port-context-unread");
+        let codex = codex_at(&root);
+        let project = root.join("project");
+        let instructions = project.join("AGENTS.md");
+        write(&instructions, "small\n");
+        assert_eq!(codex.context_unread(&project, &instructions), None);
+
+        let config = root.join(".codex/config.toml");
+        write(
+            &config,
+            &format!(
+                "[projects.{:?}]\ntrust_level = \"untrusted\"\n",
+                project.display().to_string()
+            ),
+        );
+        assert!(
+            codex
+                .context_unread(&project, &instructions)
+                .is_some_and(|note| note.contains("untrusted"))
+        );
+
+        write(&config, "project_doc_max_bytes = 10\n");
+        write(&instructions, "eleven byte");
+        let note = codex.context_unread(&project, &instructions).unwrap();
+        assert!(note.contains("10") && note.contains("11"), "{note}");
+        write(&instructions, "ten bytes!");
+        assert_eq!(codex.context_unread(&project, &instructions), None);
+        write(&instructions, "five!");
+        assert_eq!(codex.context_unread(&project, &instructions), None);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_launch_resumes_by_its_identifier_and_carries_its_first_turn() {
+        let codex = codex_at(Path::new("/home/me"));
+        let session = SessionId::parse(SESSION).unwrap();
+        assert_eq!(
+            codex.resume_session_args(&session),
+            [OsString::from("resume"), OsString::from(SESSION)]
+        );
+        assert_eq!(
+            codex.first_turn_args("read your briefing"),
+            [OsString::from("read your briefing")]
+        );
+    }
+
+    /// The agent's context reaches Codex as a SessionStart hook declared on
+    /// a `-c` layer, which a second layer trusts under the identity Codex
+    /// gives exactly that handler, so no review stops it.
+    #[test]
+    fn the_agents_context_is_a_trusted_session_start_hook_printing_its_file() {
+        let root = uze_testkit::temp::scratch("codex-port-context");
+        let codex = codex_at(&root);
+        let file = root.join("context/AGENTS.md");
+        let contribution = codex
+            .deliver_context(
+                &codex.uze_home,
+                &AgentContext {
+                    dir: &root.join("context"),
+                    file: &file,
+                    text: "notes",
+                    instructions: "",
+                    notes: None,
+                    checkout: &root,
+                    link: &root.join("link"),
+                    launch: "launch",
+                    session: None,
+                },
+            )
+            .unwrap();
+        let args: Vec<String> = contribution
+            .args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(args.len(), 4, "{args:?}");
+        assert_eq!((args[0].as_str(), args[2].as_str()), ("-c", "-c"));
+
+        let hooks: toml_edit::DocumentMut = args[1].parse().unwrap();
+        let handler = &hooks["hooks"]["SessionStart"][0]["hooks"][0];
+        let command = handler["command"].as_str().unwrap();
+        assert!(
+            command.contains(&*file.to_string_lossy()),
+            "the hook prints the context file: {command}"
+        );
+        let timeout = u64::try_from(handler["timeout"].as_integer().unwrap()).unwrap();
+
+        let trust: toml_edit::DocumentMut = args[3].parse().unwrap();
+        let (key, hash) =
+            trust::session_layer_trust(uze_core::hook::HookEvent::SessionStart, command, timeout);
+        assert_eq!(
+            trust["hooks"]["state"][key.as_str()]["trusted_hash"].as_str(),
+            Some(hash.as_str())
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Sessions are observed and resumed in `$CODEX_HOME`, so an agent
+    /// override never moves it.
+    #[test]
+    fn codex_home_is_a_variable_uze_manages() {
+        assert!(
+            codex_at(Path::new("/home/me"))
+                .managed_environment()
+                .contains(&"CODEX_HOME")
+        );
+    }
+
+    fn rules_engine_receipt(integration: &str) -> AttachmentReceipt {
+        AttachmentReceipt {
+            package_id: "uze@uze".to_owned(),
+            resource_identity: None,
+            integration: integration.to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: "rules-engine".to_owned(),
+                selector: "SessionStart".to_owned(),
+                detail: serde_json::from_value(serde_json::json!({"engine": "/uze/rules/engine"}))
+                    .unwrap(),
+            },
+        }
+    }
+
+    /// The Overview names what Codex carries, and only Codex's own receipts
+    /// claim any of it.
+    #[test]
+    fn the_machine_inventory_is_claimed_by_codexs_own_receipts_only() {
+        let root = uze_testkit::temp::scratch("codex-port-inventory");
+        let codex = codex_at(&root);
+        write(
+            &root.join(".agents/skills/x/SKILL.md"),
+            "---\nname: x\ndescription: x things.\n---\nBody.\n",
+        );
+        write(
+            &root.join(".codex/hooks.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"'/uze/rules/engine' '/uze/sessions'"}]}]}}"#,
+        );
+        let hook = |codex: &CodexIntegration| {
+            codex
+                .machine_inventory()
+                .unwrap()
+                .into_iter()
+                .find(|found| found.kind == ResourceKind::Hook)
+                .unwrap()
+        };
+
+        state::record_receipt(&codex.uze_home, rules_engine_receipt("claude")).unwrap();
+        let found = codex.machine_inventory().unwrap();
+        assert!(
+            found.iter().any(|resource| resource.name == "x"),
+            "{found:?}"
+        );
+        assert_eq!(
+            hook(&codex).claim,
+            None,
+            "another harness's receipt claims nothing here"
+        );
+
+        state::record_receipt(&codex.uze_home, rules_engine_receipt("codex")).unwrap();
+        let engine = hook(&codex);
+        assert_eq!(engine.name, uze_core::inventory::UZE_RULES);
+        assert_eq!(
+            engine.claim,
+            Some(Claim::Owned {
+                kind: "rules-engine".to_owned(),
+                selector: "SessionStart".to_owned(),
+            })
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The official installer puts `codex` in `~/.local/bin`, which a shell
+    /// may not have on its `PATH` yet.
+    #[test]
+    fn codex_is_looked_for_where_its_installer_puts_it() {
+        let root = uze_testkit::temp::scratch("codex-port-install-location");
+        let mut env = uze_testkit::env::scope();
+        for variable in uze_platform::home::VARIABLES {
+            env.set(variable, &root);
+        }
+        assert!(
+            codex_at(&root).install_locations().contains(
+                &root
+                    .join(".local/bin")
+                    .join(uze_platform::executable::file_name("codex"))
+            ),
+            "{:?}",
+            codex_at(&root).install_locations()
+        );
+    }
+
+    /// Codex invokes a Skill as `$name`.
+    #[test]
+    fn a_skill_is_invoked_with_a_dollar_sign() {
+        assert_eq!(codex_at(Path::new("/home/me")).invocation_prefix(), "$");
+    }
+
+    #[test]
+    fn a_packages_rules_are_withheld_as_delivered_per_project() {
+        let root = uze_testkit::temp::scratch("codex-port-withheld");
+        let package_root = root.join("pkg");
+        fs::create_dir_all(package_root.join("rules")).unwrap();
+        write(&package_root.join("plugin.json"), r#"{"name":"flow"}"#);
+        let package = crate::shared::test_support::stored_at(&package_root, "flow");
+        let withheld = codex_at(&root).withheld_paths(&package);
+        assert_eq!(withheld.len(), 1, "{withheld:?}");
+        assert_eq!(withheld[0].path, "rules");
+        assert!(
+            withheld[0].reason.contains("per project"),
+            "{}",
+            withheld[0].reason
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Whether a launch would hand a project's agents over is read from the
+    /// `config.toml` in Codex's own home.
+    #[test]
+    fn projection_activates_by_the_trust_in_codexs_own_config() {
+        let root = uze_testkit::temp::scratch("codex-port-would-activate");
+        let codex = codex_at(&root);
+        let project = root.join("project");
+        uze_testkit::git::mark_repository(&project);
+        write(
+            &project.join(".agents/agents/a.md"),
+            "---\ndescription: a\n---\nDo it.\n",
+        );
+        let ctx = RuntimeContext {
+            cwd: &project,
+            home: &codex.uze_home,
+        };
+        assert!(!codex.runtime_contribution_would_activate(&ctx));
+        write(
+            &root.join(".codex/config.toml"),
+            &format!(
+                "[projects.{:?}]\ntrust_level = \"trusted\"\n",
+                project.display().to_string()
+            ),
+        );
+        assert!(codex.runtime_contribution_would_activate(&ctx));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn agent_resource(payload: &str) -> Resource {
+        let id =
+            uze_core::store::PackageId::from_plugin_name("flow", Path::new("plugin.json")).unwrap();
+        Resource::from_package(
+            id,
+            PathBuf::from("/store/packages/flow"),
+            Capability {
+                kind: CapabilityKind::Agent,
+                path: PathBuf::from("/store/packages/flow/agents/reviewer.md"),
+                payload: payload.as_bytes().to_vec(),
+            },
+        )
+    }
+
+    /// A root field Codex does not carry is warned about; `model` is left
+    /// to the common layer, which already speaks for it.
+    #[test]
+    fn a_root_field_codex_does_not_carry_is_warned_about() {
+        let findings = codex_at(Path::new("/home/me")).check_capability(&agent_resource(
+            "---\nname: reviewer\ndescription: Reviews\ncolor: red\nmodel: x\n---\nReview.\n",
+        ));
+        assert!(
+            findings
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("`color`")),
+            "{:?}",
+            findings.warnings
+        );
+        assert!(
+            !findings
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("`model` at the root")),
+            "{:?}",
+            findings.warnings
+        );
+    }
+
+    /// A plain `doctor` reads the `uze-store` registration from
+    /// `config.toml` by its name, never by starting Codex.
+    #[test]
+    fn the_recorded_registration_is_read_by_its_name() {
+        let root = uze_testkit::temp::scratch("codex-port-recorded-registration");
+        let codex = codex_at(&root);
+        let config = root.join(".codex/config.toml");
+        write(
+            &config,
+            "[marketplaces.other]\nsource = \"/elsewhere\"\n\n[marketplaces.uze-store]\nsource = \"/uze/store/codex\"\n",
+        );
+        let registrations = codex.registrations(RegistrationRead::Recorded);
+        assert_eq!(registrations.len(), 1, "{registrations:?}");
+        assert_eq!(
+            registrations[0].registered.as_deref(),
+            Some(Path::new("/uze/store/codex"))
+        );
+
+        write(&config, "[marketplaces.other]\nsource = \"/elsewhere\"\n");
+        let registrations = codex.registrations(RegistrationRead::Recorded);
+        assert_eq!(registrations.len(), 1, "{registrations:?}");
+        assert_eq!(registrations[0].registered, None);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// An earlier build linked a Skill entry to a wrapper of its own; the
+    /// wrapper leaves with the last link to it.
+    // Unix: a symlink is made without privilege.
+    #[cfg(unix)]
+    #[test]
+    fn detaching_the_last_link_to_an_earlier_wrapper_removes_the_wrapper() {
+        let root = uze_testkit::temp::scratch("codex-port-earlier-wrapper");
+        let codex = codex_at(&root);
+        let wrapper = crate::shared::earlier::skill_wrapper_root(&codex.uze_home, "codex")
+            .join("flow@local")
+            .join("review");
+        write(&wrapper.join("SKILL.md"), "---\nname: flow:review\n---\n");
+        let skills = root.join(".agents/skills");
+        fs::create_dir_all(&skills).unwrap();
+        let link = |name: &str| {
+            let path = skills.join(name);
+            std::os::unix::fs::symlink(&wrapper, &path).unwrap();
+            AttachmentReceipt {
+                package_id: "flow@local".to_owned(),
+                resource_identity: None,
+                integration: "codex".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path,
+                    target: wrapper.clone(),
+                },
+            }
+        };
+        let (first, second) = (link("flow-review"), link("flow-review-again"));
+
+        assert_eq!(
+            codex.detach_receipt(&first).unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(wrapper.is_dir(), "another link still names it");
+        assert_eq!(
+            codex.detach_receipt(&second).unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(!wrapper.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Codex's `create_worktree` makes checkouts under its own home, which
+    /// are Codex's and no stray.
+    #[test]
+    fn codexs_own_worktrees_are_under_its_home() {
+        let places = codex_at(Path::new("/home/me")).own_worktree_places();
+        assert!(
+            matches!(places.as_slice(), [WorktreePlace::Outside(path)] if path == Path::new("/home/me/.codex/worktrees")),
+            "{places:?}"
+        );
+    }
+
+    #[test]
+    fn a_harness_projecting_project_agents_declares_it() {
+        let codex = codex_at(Path::new("/home/me"));
+        let projects = [
+            AgentsDirectoryResource::Skills,
+            AgentsDirectoryResource::Agents,
+        ]
+        .into_iter()
+        .any(|resource| {
+            matches!(
+                codex.project_resource_route(resource),
+                ProjectResourceRoute::RuntimeProjection
+            )
+        });
+        assert!(projects);
+        assert!(codex.runtime_projects_project_context());
+    }
+
+    /// Doctor looks for Skills where Codex attaches them.
+    #[test]
+    fn skills_are_discovered_where_codex_attaches_them() {
+        assert_eq!(
+            codex_at(Path::new("/home/me")).skill_discovery_root(),
+            Some(PathBuf::from("/home/me/.agents/skills"))
+        );
+    }
+
+    /// A `codex` on `PATH` that logs each invocation under its `HOME` and
+    /// answers `mcp get` with `.codex-mcp-get.json` when the test wrote one.
+    fn codex_on_path(root: &Path) -> uze_testkit::env::ProcessEnvGuard<'static> {
+        let bin = root.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        uze_testkit::process::install_executable(
+            &bin.join("codex"),
+            b"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOME/codex.log\"\nif [ \"$1 $2\" = \"mcp get\" ]; then\n  if [ -f \"$HOME/.codex-mcp-get.json\" ]; then cat \"$HOME/.codex-mcp-get.json\"; exit 0; fi\n  printf \"Error: No MCP server named '%s' found.\\n\" \"$3\" >&2\n  exit 1\nfi\nexit 0\n",
+        );
+        let mut env = uze_testkit::env::scope();
+        env.set("PATH", uze_testkit::temp::path_prefixed(&bin));
+        env
+    }
+
+    fn invocations(root: &Path) -> Vec<String> {
+        fs::read_to_string(root.join("codex.log"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// An MCP server is registered, inspected and removed through Codex's
+    /// own CLI.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn an_mcp_server_is_registered_inspected_and_removed_through_codex() {
+        let root = uze_testkit::temp::scratch("codex-port-mcp");
+        let _env = codex_on_path(&root);
+        let codex = codex_at(&root);
+        record_setup(&codex);
+        let package_root = root.join("pkg");
+        write(&package_root.join("plugin.json"), r#"{"name":"flow"}"#);
+        let package = crate::shared::test_support::stored_at(&package_root, "flow");
+        let mut resource = crate::shared::test_support::mcp_resource(&package, "srv");
+        resource.capability.payload = br#"{"command":"/bin/serve","args":["--x"]}"#.to_vec();
+
+        let artifact = codex
+            .attach(&resource)
+            .unwrap()
+            .expect("a registered server");
+        let ManagedArtifact::VendorConfigEntry { entry_name, .. } = &artifact else {
+            panic!("{artifact:?}");
+        };
+        assert!(
+            invocations(&root).contains(&format!("mcp add {entry_name} -- /bin/serve --x")),
+            "{:?}",
+            invocations(&root)
+        );
+
+        write(
+            &root.join(".codex-mcp-get.json"),
+            &serde_json::json!({"name": entry_name, "command": "/bin/serve", "args": ["--x"]})
+                .to_string(),
+        );
+        let receipt = AttachmentReceipt {
+            package_id: package.id.as_str().to_owned(),
+            resource_identity: Some(resource.identity()),
+            integration: "codex".to_owned(),
+            artifact: artifact.clone(),
+        };
+        assert_eq!(
+            codex.inspect_receipt(&receipt).state,
+            AttachmentState::Matched
+        );
+        assert_eq!(
+            codex.detach_receipt(&receipt).unwrap().state,
+            AttachmentState::Missing
+        );
+        assert!(
+            invocations(&root).contains(&format!("mcp remove {entry_name}")),
+            "{:?}",
+            invocations(&root)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A receipt of a kind this build does not know, written by another
+    /// build, is never read as one of Codex's plugins.
+    // Unix: the stand-in harness is a `#!/bin/sh` script.
+    #[cfg(unix)]
+    #[test]
+    fn a_receipt_of_an_unknown_kind_stays_blocked_without_asking_codex() {
+        let root = uze_testkit::temp::scratch("codex-port-unknown-kind");
+        let _env = codex_on_path(&root);
+        let codex = codex_at(&root);
+        let receipt = AttachmentReceipt {
+            package_id: "flow@local".to_owned(),
+            resource_identity: None,
+            integration: "codex".to_owned(),
+            artifact: ManagedArtifact::IntegrationOwned {
+                kind: "unknown-kind".to_owned(),
+                selector: "flow@uze-store".to_owned(),
+                detail: serde_json::from_value(serde_json::json!({
+                    "marketplace_root": root.join("store"),
+                    "package_root": root.join("store/flow@local"),
+                }))
+                .unwrap(),
+            },
+        };
+        assert_eq!(
+            codex.inspect_receipt(&receipt).state,
+            AttachmentState::Blocked
+        );
+        assert!(invocations(&root).is_empty(), "{:?}", invocations(&root));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Codex keys a hook's trust by its group's position, so removing a
+    /// group asks again about every trusted group after it, and the removal
+    /// says which; with none after it, it says nothing of the kind.
+    #[test]
+    fn removing_a_hook_group_names_the_trusted_groups_codex_will_ask_about_again() {
+        let root = uze_testkit::temp::scratch("codex-port-hook-shift");
+        let codex = codex_at(&root);
+        let hooks = codex.hooks_config_path();
+        let wrapper = root.join("store/hooks/exec");
+        fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
+        uze_testkit::process::install_executable(
+            &wrapper,
+            crate::hooks::wrapper_source(HOOKS).unwrap().as_bytes(),
+        );
+        let group = |name: &str| serde_json::json!({"hooks": [{"type": "command", "command": format!("'{}' {name}", wrapper.display()), "timeout": 5}]});
+        let (ours, theirs) = (group("ours"), group("theirs"));
+        write(
+            &hooks,
+            &serde_json::json!({"hooks": {"PreToolUse": [ours.clone(), theirs.clone()]}})
+                .to_string(),
+        );
+        let key = |index: usize| format!("{}:pre_tool_use:{index}:0", hooks.display());
+        write(
+            &codex.config_toml_path(),
+            &format!("[hooks.state.{:?}]\ntrusted_hash = \"b\"\n", key(1)),
+        );
+        let receipt = |group: &serde_json::Value| AttachmentReceipt {
+            package_id: "flow@local".to_owned(),
+            resource_identity: None,
+            integration: "codex".to_owned(),
+            artifact: ManagedArtifact::HookConfigEntry {
+                config_file: hooks.clone(),
+                entry_name: "flow@local:guard".to_owned(),
+                event: uze_core::hook::HookEvent::PreToolUse,
+                expected: group.to_string(),
+                wrapper: wrapper.clone(),
+            },
+        };
+
+        let first = codex.detach_receipt(&receipt(&ours)).unwrap();
+        assert!(
+            first.reason.contains("Codex will ask you to review again")
+                && first.reason.contains(&key(1)),
+            "{}",
+            first.reason
+        );
+        let last = codex.detach_receipt(&receipt(&theirs)).unwrap();
+        assert!(!last.reason.contains("review again"), "{}", last.reason);
+        let _ = fs::remove_dir_all(root);
+    }
+}

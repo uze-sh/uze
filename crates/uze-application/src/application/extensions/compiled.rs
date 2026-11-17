@@ -585,4 +585,141 @@ mod tests {
         assert_ne!(before, extension_stamp(&installed.dir));
         fs::remove_dir_all(root).unwrap();
     }
+
+    /// A JSON string of exactly `bytes` bytes, quotes included.
+    fn json_of_size(bytes: usize) -> String {
+        format!("\"{}\"", "a".repeat(bytes - 2))
+    }
+
+    #[test]
+    fn a_fixture_up_to_the_bound_is_read_and_one_byte_more_is_not() {
+        let root = uze_testkit::temp::scratch("extension-fixture-bound");
+        let installed = extension_in(&root);
+        let limit = 1024 * 1024;
+        fs::write(installed.dir.join("fixtures/at.json"), json_of_size(limit)).unwrap();
+        fs::write(
+            installed.dir.join("fixtures/past.json"),
+            json_of_size(limit + 1),
+        )
+        .unwrap();
+        let files = loaded(&installed);
+
+        assert!(loaded_fixture(&files, "fixtures/at.json").is_ok());
+        assert_eq!(
+            loaded_fixture(&files, "fixtures/past.json"),
+            Err("fixtures/past.json: larger than 1 MiB".to_owned())
+        );
+        assert_eq!(
+            fixture_bytes(&installed.dir, "fixtures/at.json").map(|bytes| bytes.len()),
+            Ok(limit)
+        );
+        assert_eq!(
+            fixture_bytes(&installed.dir, "fixtures/past.json"),
+            Err("fixtures/past.json: larger than 1 MiB".to_owned())
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Of an installed extension's revisions the newest is kept, and a file
+    /// in the cache's directory that is no revision is never touched.
+    #[test]
+    fn cache_maintenance_keeps_the_newest_revision() {
+        let root = uze_testkit::temp::scratch("extension-compile-newest");
+        let home = uze_core::UzeHome::at(root.join("home"));
+        let installed = extension_in(&root);
+        let cache = home.compiled_extensions_dir();
+        fs::create_dir_all(&cache).unwrap();
+        let now = std::time::SystemTime::now();
+        let revisions = [
+            ("1111111111111111", 300),
+            ("ffffffffffffffff", 200),
+            ("8888888888888888", 100),
+        ];
+        for (key, age) in revisions {
+            let path = cache.join(format!("{key}.json"));
+            fs::write(&path, serde_json::to_vec(&compiled()).unwrap()).unwrap();
+            uze_platform::fs::set_modified(&path, now - std::time::Duration::from_secs(age))
+                .unwrap();
+        }
+        fs::write(cache.join("beef.json"), "not a revision").unwrap();
+
+        let mut removed = pruned_compiled_cache(&home, std::slice::from_ref(&installed));
+        removed.sort();
+        assert_eq!(
+            removed,
+            [
+                cache.join("1111111111111111.json"),
+                cache.join("ffffffffffffffff.json")
+            ]
+        );
+        assert!(cache.join("8888888888888888.json").is_file());
+        assert!(cache.join("beef.json").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn collecting_compiled_views_removes_those_of_extensions_no_longer_installed() {
+        use crate::application::Collectable as _;
+        let root = uze_testkit::temp::scratch("extension-compiled-collect");
+        let home = uze_core::UzeHome::at(root.join("home"));
+        let app = crate::UzeApplication::new(home.clone(), Vec::new());
+        let cache = home.compiled_extensions_dir();
+        fs::create_dir_all(&cache).unwrap();
+        let revision = cache.join("0123456789abcdef.json");
+        fs::write(&revision, serde_json::to_vec(&compiled()).unwrap()).unwrap();
+
+        let collected = CompiledViews(&app).collect(&home);
+        assert_eq!(collected.removed, std::slice::from_ref(&revision));
+        assert!(!revision.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Each collector of extensions' generated files answers for paths the
+    /// home's map marks disposable, and for at least one.
+    #[test]
+    fn the_extension_collectors_answer_for_disposable_paths() {
+        use crate::application::Collectable;
+        let root = uze_testkit::temp::scratch("extension-collector-roots");
+        let app = crate::UzeApplication::new(uze_core::UzeHome::at(root.join("home")), Vec::new());
+        let collectors: [&dyn Collectable; 4] = [
+            &CompiledViews(&app),
+            &crate::application::extensions::ExtensionScratch,
+            &crate::application::extensions::ExtensionPictures,
+            &crate::application::extensions::DeliveredPackages,
+        ];
+        for collector in collectors {
+            assert!(!collector.roots().is_empty(), "{}", collector.name());
+            for root in collector.roots() {
+                assert!(
+                    uze_core::UzeHome::owned_path(root).is_some_and(|owned| owned.disposable),
+                    "{}: {root}",
+                    collector.name()
+                );
+            }
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A save as deep as the stamp walks moves it; one deeper does not.
+    #[test]
+    fn the_stamp_walks_as_deep_as_its_bound_and_no_deeper() {
+        let root = uze_testkit::temp::scratch("extension-stamp-bound");
+        let nested = |depth: usize| {
+            (0..depth).fold(root.join("assets"), |path, level| {
+                path.join(level.to_string())
+            })
+        };
+        let deepest_walked = nested(STAMP_DEPTH - 1);
+        let too_deep = nested(STAMP_DEPTH);
+        fs::create_dir_all(&too_deep).unwrap();
+        fs::write(deepest_walked.join("seen.txt"), "a").unwrap();
+        fs::write(too_deep.join("unseen.txt"), "a").unwrap();
+
+        let before = extension_stamp(&root);
+        fs::write(too_deep.join("unseen.txt"), "a longer text").unwrap();
+        assert_eq!(extension_stamp(&root), before, "past the bound");
+        fs::write(deepest_walked.join("seen.txt"), "a longer text").unwrap();
+        assert_ne!(extension_stamp(&root), before, "at the bound");
+        fs::remove_dir_all(root).unwrap();
+    }
 }

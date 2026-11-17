@@ -641,4 +641,27 @@ mod tests {
             &text[text.len().saturating_sub(80)..]
         );
     }
+
+    /// A listing far larger than a screenful still arrives whole: a JSON
+    /// answer cut short would be read as no answer at all.
+    // Its stand-in program is a POSIX shell script.
+    #[cfg(unix)]
+    #[test]
+    fn a_large_json_answer_is_read_whole() {
+        let home = uze_testkit::temp::TempDir::new("large-json-answer");
+        let listing = json(
+            Path::new("/bin/sh"),
+            home.path(),
+            &[
+                "-c",
+                "printf '['; i=0; while [ $i -lt 4000 ]; do printf '\"plugin-entry\",'; \
+                 i=$((i+1)); done; printf '\"last\"]'",
+            ],
+            "large listing",
+        )
+        .expect("the whole listing parses");
+        let entries = listing.as_array().unwrap();
+        assert_eq!(entries.len(), 4001);
+        assert_eq!(entries[4000], "last");
+    }
 }

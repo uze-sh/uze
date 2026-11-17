@@ -161,6 +161,7 @@ impl Themes<'_> {
 #[cfg(test)]
 mod tests {
     use crate::{UzeApplication, UzeHome};
+    use uze_core::appearance::Background;
 
     /// `adaptive` is a selection, not a file: a theme written under that
     /// name could never be drawn in, so it neither replaces the selection
@@ -180,6 +181,108 @@ mod tests {
             .collect();
         assert_eq!(adaptive.len(), 1, "{listed:?}");
         assert_eq!(adaptive[0].path, None, "the selection, not the file");
+    }
+
+    /// The selection is recorded and read back, and the list marks it as
+    /// the one active entry; a written theme answers where its file is.
+    #[test]
+    fn a_selected_theme_is_the_active_one_in_the_list() {
+        let root = uze_testkit::temp::scratch("theme-select");
+        let home = UzeHome::at(&root);
+        std::fs::create_dir_all(home.themes_dir()).expect("themes dir");
+        std::fs::write(home.themes_dir().join("mine.json"), "{}").expect("theme file");
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        let themes = app.themes();
+
+        assert_eq!(themes.active().expect("active"), super::ADAPTIVE);
+        themes.select("mine").expect("selected");
+        assert_eq!(themes.active().expect("active"), "mine");
+
+        let listed = themes.list(&["default"]).expect("listed");
+        let active: Vec<&str> = listed
+            .iter()
+            .filter(|theme| theme.active)
+            .map(|theme| theme.id.as_str())
+            .collect();
+        assert_eq!(active, ["mine"], "{listed:?}");
+
+        assert_eq!(
+            themes.path_of("mine").expect("path"),
+            Some(home.themes_dir().join("mine.json"))
+        );
+        assert_eq!(themes.path_of("default").expect("path"), None);
+    }
+
+    /// Glyphs are a selection of their own: unset until chosen, then the
+    /// chosen set is the only active one, and the theme is left alone.
+    #[test]
+    fn a_selected_glyph_set_is_marked_without_touching_the_theme() {
+        let root = uze_testkit::temp::scratch("theme-glyphs");
+        let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+        let themes = app.themes();
+
+        assert_eq!(themes.glyphs().expect("glyphs"), None);
+        themes.select_glyphs("ascii").expect("selected");
+        assert_eq!(themes.glyphs().expect("glyphs"), Some("ascii".to_owned()));
+        assert_eq!(themes.active().expect("active"), super::ADAPTIVE);
+
+        let sets = themes.glyph_sets(&["nerd", "ascii"]).expect("sets");
+        assert_eq!(
+            sets,
+            [
+                super::GlyphSetSummary {
+                    id: "nerd".to_owned(),
+                    active: false,
+                },
+                super::GlyphSetSummary {
+                    id: "ascii".to_owned(),
+                    active: true,
+                },
+            ]
+        );
+    }
+
+    /// What an adaptive selection draws in is recorded per background, and
+    /// an observed background reports a change only when it is one.
+    #[test]
+    fn adaptive_choices_and_the_observed_background_are_remembered() {
+        let root = uze_testkit::temp::scratch("theme-adaptive");
+        let app = UzeApplication::new(UzeHome::at(&root), Vec::new());
+        let themes = app.themes();
+
+        assert_eq!(themes.adaptive(Background::Light).expect("unset"), None);
+        themes
+            .set_adaptive(Background::Light, "paper")
+            .expect("recorded");
+        assert_eq!(
+            themes.adaptive(Background::Light).expect("set"),
+            Some("paper".to_owned())
+        );
+        assert_eq!(themes.adaptive(Background::Dark).expect("other"), None);
+
+        assert!(themes.observe_background(Background::Light).expect("first"));
+        assert!(!themes.observe_background(Background::Light).expect("same"));
+        assert_eq!(themes.background(), Background::Light);
+    }
+
+    /// Overrides are read from the configuration and name where they came
+    /// from, so a message about a bad one can point at it.
+    #[test]
+    fn overrides_are_read_from_the_configuration_with_their_source() {
+        let root = uze_testkit::temp::scratch("theme-overrides");
+        let home = UzeHome::at(&root);
+        let app = UzeApplication::new(home.clone(), Vec::new());
+        assert_eq!(app.themes().overrides().expect("none"), None);
+
+        std::fs::create_dir_all(home.config_path().parent().expect("parent")).expect("dir");
+        std::fs::write(
+            home.config_path(),
+            "[appearance.colors]\naccent = \"#ff0000\"\n",
+        )
+        .expect("config");
+        let (layer, source) = app.themes().overrides().expect("read").expect("some");
+        assert_eq!(layer["colors"]["accent"], "#ff0000");
+        assert_eq!(source, uze_core::appearance::OVERRIDES_SOURCE);
     }
 
     #[test]

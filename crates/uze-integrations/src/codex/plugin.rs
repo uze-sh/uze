@@ -486,6 +486,19 @@ mod plugin_tests {
             inspect_codex_plugin_value(&absent, "example@uze-local", package).state,
             AttachmentState::Missing
         );
+        for (field, value) in [
+            ("installed", serde_json::json!(false)),
+            ("marketplaceName", serde_json::json!("other")),
+            ("source", serde_json::json!({"path": "/elsewhere"})),
+        ] {
+            let mut differing = exact.clone();
+            differing["installed"][0][field] = value;
+            assert_eq!(
+                inspect_codex_plugin_value(&differing, "example@uze-local", package).state,
+                AttachmentState::Drifted,
+                "a plugin whose `{field}` differs is not the one UZE installed"
+            );
+        }
     }
 
     /// The listing without a marketplace is the one that waits on Codex's

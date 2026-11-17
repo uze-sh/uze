@@ -768,6 +768,442 @@ mod tests {
         fs::remove_dir_all(&base).ok();
     }
 
+    /// A harness here, whose project rules take `route` and whose agent
+    /// context arrives through `channel`, unless `unavailable` says why not.
+    struct Channelled {
+        route: uze_core::router::CompatibilityRoute,
+        channel: uze_core::integration::ContextChannel,
+        unavailable: Option<&'static str>,
+    }
+
+    impl Channelled {
+        fn native() -> Self {
+            Self {
+                route: uze_core::router::CompatibilityRoute::Native,
+                channel: uze_core::integration::ContextChannel::Directory,
+                unavailable: None,
+            }
+        }
+    }
+
+    impl IntegrationPort for Channelled {
+        fn id(&self) -> &'static str {
+            "channelled"
+        }
+        fn display_name(&self) -> &'static str {
+            "Channelled"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn rules_route(&self) -> uze_core::integration::RulesRoute {
+            uze_core::integration::RulesRoute {
+                route: self.route,
+                reason: "measured".to_owned(),
+            }
+        }
+        fn context_delivery(&self) -> uze_core::integration::ContextDelivery {
+            uze_core::integration::ContextDelivery::Native { files: &[] }
+        }
+        fn context_channel(&self) -> uze_core::integration::ContextChannel {
+            self.channel
+        }
+        fn context_channel_unavailable(&self) -> Option<String> {
+            self.unavailable.map(str::to_owned)
+        }
+    }
+
+    #[test]
+    fn agent_context_falls_short_only_without_an_invisible_channel_that_runs_here() {
+        assert_eq!(agent_context_shortfall(&Channelled::native()), None);
+        let visible = Channelled {
+            channel: uze_core::integration::ContextChannel::FirstTurn,
+            ..Channelled::native()
+        };
+        assert!(
+            agent_context_shortfall(&visible).is_some_and(|why| why.contains("first turn")),
+            "a harness with only the visible first turn says so"
+        );
+        let switched_off = Channelled {
+            unavailable: Some("its hooks are switched off"),
+            ..Channelled::native()
+        };
+        assert!(
+            agent_context_shortfall(&switched_off)
+                .is_some_and(|why| why.contains("its hooks are switched off")),
+            "a channel that cannot run here names why"
+        );
+    }
+
+    #[test]
+    fn the_setup_state_reads_as_words_distinct_for_each_state() {
+        let words = [
+            integration_status(IntegrationStatus::NotConfigured),
+            integration_status(IntegrationStatus::InstalledUnverified),
+            integration_status(IntegrationStatus::InstalledVerified),
+        ];
+        assert_eq!(words[0], "not configured");
+        assert!(words[1].contains("unverified"), "{words:?}");
+        assert!(words[2].contains("verified") && !words[2].contains("unverified"));
+    }
+
+    #[test]
+    fn a_harness_is_labelled_by_its_display_name_and_an_unknown_id_as_itself() {
+        let base = uze_testkit::temp::scratch("doctor-label");
+        let app = UzeApplication::new(
+            UzeHome::at(base.join("home")),
+            vec![Box::new(Channelled::native())],
+        );
+        assert_eq!(app.health().integration_label("channelled"), "Channelled");
+        assert_eq!(app.health().integration_label("elsewhere"), "elsewhere");
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_package_without_its_manifest_blocks_the_store_and_one_without_bytes_does_not() {
+        let base = uze_testkit::temp::scratch("doctor-store");
+        let app = UzeApplication::new(UzeHome::at(base.join("home")), Vec::new());
+        write_plugin(&base, "flow");
+        app.plugins()
+            .add(
+                PackageSource::Local {
+                    path: base.join("flow"),
+                },
+                &AlwaysTrust,
+            )
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        assert_eq!(package_store_inconsistency(&package), None);
+        assert!(
+            matches!(app.health().report().store, StoreHealth::Ready),
+            "a healthy store with no unreadable registration is ready"
+        );
+
+        fs::remove_file(&package.manifest).unwrap();
+        assert!(
+            package_store_inconsistency(&package).is_some_and(|why| why.contains("plugin.json")),
+            "bytes that are not a package name what is missing"
+        );
+
+        fs::remove_dir_all(&package.root).unwrap();
+        assert_eq!(
+            package_store_inconsistency(&package),
+            None,
+            "bytes gone altogether are the health catalogue's to report"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn status_reads_the_instructions_context_and_rules_route_of_each_detected_harness() {
+        for (route, said) in [
+            (uze_core::router::CompatibilityRoute::Native, "native"),
+            (
+                uze_core::router::CompatibilityRoute::Unsupported,
+                "unsupported",
+            ),
+            (uze_core::router::CompatibilityRoute::Adaptable, "engine"),
+        ] {
+            let base = uze_testkit::temp::scratch("doctor-status-route");
+            let app = UzeApplication::new(
+                UzeHome::at(base.join("home")),
+                vec![Box::new(Channelled {
+                    route,
+                    ..Channelled::native()
+                })],
+            );
+            let project = base.join("project");
+            fs::create_dir_all(&project).unwrap();
+            fs::write(project.join("agents.yaml"), "{}\n").unwrap();
+            fs::write(project.join("AGENTS.md"), "# Instructions\n").unwrap();
+
+            let status = app.health().status(&project).unwrap();
+            assert!(status.instructions.exists, "AGENTS.md is there");
+            let harness = &status.harnesses[0];
+            assert_eq!(harness.rules.as_ref().map(|rules| rules.route), Some(said));
+            assert!(
+                harness.context.is_some(),
+                "the context delivery found for this harness is its own"
+            );
+            fs::remove_dir_all(&base).ok();
+        }
+    }
+
+    /// A harness here that holds back, until the person acts in it, the
+    /// first resource each receipt serves.
+    struct Holding;
+
+    impl IntegrationPort for Holding {
+        fn id(&self) -> &'static str {
+            "holding"
+        }
+        fn display_name(&self) -> &'static str {
+            "Holding"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "test does not attach".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+        fn detect(&self) -> HarnessDetection {
+            HarnessDetection {
+                present: true,
+                version: None,
+            }
+        }
+        fn held_back(
+            &self,
+            _package: &StoredPackage,
+            _receipt: &AttachmentReceipt,
+            served: &[&uze_core::capability::Resource],
+        ) -> Vec<uze_core::integration::HeldBack> {
+            served
+                .first()
+                .map(|resource| uze_core::integration::HeldBack {
+                    capability: resource.identity(),
+                    action: "approve it in the harness".to_owned(),
+                })
+                .into_iter()
+                .collect()
+        }
+    }
+
+    #[test]
+    fn what_a_detected_harness_holds_back_is_noted_for_its_own_receipts_by_name() {
+        let base = uze_testkit::temp::scratch("doctor-held-back");
+        let home = UzeHome::at(base.join("home"));
+        let app = UzeApplication::new(home.clone(), vec![Box::new(Holding)]);
+        for name in ["flow", "std"] {
+            write_plugin(&base, name);
+            app.plugins()
+                .add(
+                    PackageSource::Local {
+                        path: base.join(name),
+                    },
+                    &AlwaysTrust,
+                )
+                .unwrap();
+        }
+        for package in app.installed_packages() {
+            let resources = uze_core::engine::package_resources(&package).unwrap();
+            // Another harness's receipt, for one package only, is not this
+            // harness's to judge.
+            let integrations: &[&str] = if package.id.as_str() == "flow@local" {
+                &["holding", "elsewhere"]
+            } else {
+                &["holding"]
+            };
+            for integration in integrations {
+                state::record_receipt(
+                    &home,
+                    AttachmentReceipt {
+                        package_id: package.id.as_str().to_owned(),
+                        resource_identity: Some(resources[0].identity()),
+                        integration: (*integration).to_owned(),
+                        artifact: ManagedArtifact::IntegrationOwned {
+                            kind: "test".to_owned(),
+                            selector: (*integration).to_owned(),
+                            detail: BTreeMap::default(),
+                        },
+                    },
+                )
+                .unwrap();
+            }
+        }
+
+        let every = held_back_notes(&app, None);
+        assert_eq!(
+            every
+                .iter()
+                .map(|note| note.plugin.as_str())
+                .collect::<Vec<_>>(),
+            ["flow@local", "std@local"],
+            "one note per receipt of the detected harness: {every:?}"
+        );
+        assert!(every.iter().all(|note| note.harness == "Holding"));
+        assert!(
+            every
+                .iter()
+                .all(|note| note.name == "SKILL.md" && note.capability != note.name),
+            "named by its resource's own name, not its identity: {every:?}"
+        );
+        let flow = held_back_notes(&app, Some("flow@local"));
+        assert_eq!(flow.len(), 1, "{flow:?}");
+        assert_eq!(flow[0].plugin, "flow@local");
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A harness whose skills are discovered in `root`.
+    struct Discovering {
+        root: std::path::PathBuf,
+    }
+
+    impl IntegrationPort for Discovering {
+        fn id(&self) -> &'static str {
+            "discovering"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn skill_discovery_root(&self) -> Option<std::path::PathBuf> {
+            Some(self.root.clone())
+        }
+    }
+
+    // A symbolic link, which Windows lets an ordinary account make only in
+    // developer mode.
+    #[cfg(unix)]
+    #[test]
+    fn a_reference_into_the_home_at_something_gone_is_dangling_unless_a_receipt_claims_it() {
+        let base = uze_testkit::temp::scratch("doctor-dangling");
+        let home = UzeHome::at(base.join("home"));
+        let skills = base.join("skills");
+        fs::create_dir_all(&skills).unwrap();
+        fs::create_dir_all(home.root()).unwrap();
+        let app = UzeApplication::new(
+            home.clone(),
+            vec![Box::new(Discovering {
+                root: skills.clone(),
+            })],
+        );
+        let stale = skills.join("stale");
+        std::os::unix::fs::symlink(home.root().join("gone"), &stale).unwrap();
+
+        let found = app.health().dangling_references();
+        assert_eq!(
+            found
+                .iter()
+                .map(|reference| reference.path.clone())
+                .collect::<Vec<_>>(),
+            vec![stale.clone()]
+        );
+
+        state::record_receipt(
+            &home,
+            AttachmentReceipt {
+                package_id: "flow@local".to_owned(),
+                resource_identity: None,
+                integration: "discovering".to_owned(),
+                artifact: ManagedArtifact::SymlinkReference {
+                    path: stale.clone(),
+                    target: home.root().join("gone"),
+                },
+            },
+        )
+        .unwrap();
+        assert!(
+            app.health().dangling_references().is_empty(),
+            "a reference a receipt claims is the receipt's to judge"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A harness here whose plan for every capability is unsupported, with
+    /// why.
+    struct Hookless;
+
+    impl IntegrationPort for Hookless {
+        fn id(&self) -> &'static str {
+            "hookless"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &uze_core::capability::Resource) -> ExposurePlan {
+            ExposurePlan {
+                route: uze_core::router::CompatibilityRoute::Unsupported,
+                mechanism: uze_core::exposure::ExposureMechanism::Unsupported {
+                    rationale: "this harness runs no hooks".to_owned(),
+                },
+                evidence: "test".to_owned(),
+            }
+        }
+    }
+
+    /// A hook a harness cannot run is a row that says what is lost, and a
+    /// hook attached there shows the artifact its own receipt owns.
+    #[test]
+    fn each_hook_is_a_row_per_harness_naming_what_is_weakened_and_its_own_receipt() {
+        let base = uze_testkit::temp::scratch("doctor-hooks");
+        let home = UzeHome::at(base.join("home"));
+        let app = UzeApplication::new(home.clone(), vec![Box::new(Hookless)]);
+        let source = base.join("guarded");
+        fs::create_dir_all(source.join("scripts")).unwrap();
+        fs::write(
+            source.join("plugin.json"),
+            serde_json::json!({ "name": "guarded" }).to_string(),
+        )
+        .unwrap();
+        fs::write(source.join("scripts/guard"), "exit 0\n").unwrap();
+        let hook = serde_json::json!({ "type": "command", "command": "scripts/guard", "args": [], "timeout": 10 });
+        let group = serde_json::json!({ "id": "guard", "matcher": "shell", "hooks": [hook] });
+        fs::write(
+            source.join("hooks.json"),
+            serde_json::json!({ "hooks": { "PreToolUse": [group] } }).to_string(),
+        )
+        .unwrap();
+        app.plugins()
+            .add(PackageSource::Local { path: source }, &AlwaysTrust)
+            .unwrap();
+        let package = app.installed_packages().remove(0);
+        let hook_identity = uze_core::engine::package_resources(&package)
+            .unwrap()
+            .into_iter()
+            .find(|resource| resource.capability.kind == CapabilityKind::Hook)
+            .expect("the package carries a hook")
+            .identity();
+        // Another receipt of the same harness, recorded first, that is not
+        // the hook's.
+        for (identity, path) in [(None, "package-link"), (Some(hook_identity), "hook-link")] {
+            state::record_receipt(
+                &home,
+                AttachmentReceipt {
+                    package_id: package.id.as_str().to_owned(),
+                    resource_identity: identity,
+                    integration: "hookless".to_owned(),
+                    artifact: ManagedArtifact::SymlinkReference {
+                        path: base.join(path),
+                        target: base.join("target"),
+                    },
+                },
+            )
+            .unwrap();
+        }
+
+        let report = app.health().report();
+        let hooks = &report.attachments[0].hooks;
+        let [row] = hooks.as_slice() else {
+            panic!("one hook on one harness: {hooks:?}");
+        };
+        assert_eq!(row.harness, "hookless");
+        assert_eq!(row.weakened.as_deref(), Some("this harness runs no hooks"));
+        assert_eq!(
+            row.artifact.as_deref(),
+            Some(base.join("hook-link").as_path())
+        );
+        assert!(row.state.is_some());
+        fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn matched_inspection_is_cached_across_instances() {
         let base = uze_testkit::temp::scratch("fast-vs-deep");

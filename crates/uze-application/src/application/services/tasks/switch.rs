@@ -248,6 +248,60 @@ mod tests {
     };
     use uze_workspace::conversation::ConversationOrigin;
 
+    /// A harness whose agent context arrives through `channel`, unless
+    /// `unavailable` says why it cannot here.
+    struct Receiving {
+        channel: uze_core::integration::ContextChannel,
+        unavailable: Option<&'static str>,
+    }
+
+    impl IntegrationPort for Receiving {
+        fn id(&self) -> &'static str {
+            "receiving"
+        }
+        fn display_name(&self) -> &'static str {
+            "Receiving"
+        }
+        fn capabilities(&self) -> HarnessCapabilities {
+            HarnessCapabilities::default()
+        }
+        fn exposure_plan(&self, _resource: &Resource) -> ExposurePlan {
+            panic!("nothing is delivered")
+        }
+        fn context_channel(&self) -> uze_core::integration::ContextChannel {
+            self.channel
+        }
+        fn context_channel_unavailable(&self) -> Option<String> {
+            self.unavailable.map(str::to_owned)
+        }
+    }
+
+    #[test]
+    fn the_switch_notice_says_whether_the_briefing_waits_on_a_first_turn() {
+        let invisible = Receiving {
+            channel: uze_core::integration::ContextChannel::Directory,
+            unavailable: None,
+        };
+        let notice = switched_notice(&invisible);
+        assert!(notice.contains("Receiving"), "{notice}");
+        assert!(notice.contains("waits for your next message"), "{notice}");
+
+        for visible in [
+            Receiving {
+                channel: uze_core::integration::ContextChannel::FirstTurn,
+                unavailable: None,
+            },
+            Receiving {
+                channel: uze_core::integration::ContextChannel::Directory,
+                unavailable: Some("its hooks are switched off"),
+            },
+        ] {
+            let notice = switched_notice(&visible);
+            assert!(notice.contains("Receiving"), "{notice}");
+            assert!(notice.contains("first turn"), "{notice}");
+        }
+    }
+
     /// A harness that names its own conversations — always `observed` when
     /// asked — and whose transcript always says the same thing.
     struct Harness(&'static str);

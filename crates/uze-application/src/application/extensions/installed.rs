@@ -291,4 +291,22 @@ mod tests {
         );
         fs::remove_dir_all(root).unwrap();
     }
+
+    /// What a package declares is its own: neither another plugin of its
+    /// marketplace's nor its namesake's elsewhere.
+    #[test]
+    fn a_package_declares_only_its_own_extensions() {
+        let world = crate::application::extensions::runner::tests::World::new("declared-by");
+        let extensions = world.app.extensions();
+        let ids = |marketplace: &str, plugin: &str| -> Vec<String> {
+            extensions
+                .declared_by(marketplace, plugin)
+                .into_iter()
+                .map(|identity| identity.id)
+                .collect()
+        };
+        assert_eq!(ids("studio", "gsd"), ["gsd-band", "gsd-panel"]);
+        assert!(ids("studio", "other").is_empty());
+        assert!(ids("elsewhere", "gsd").is_empty());
+    }
 }

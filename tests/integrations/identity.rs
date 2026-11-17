@@ -148,16 +148,35 @@ fn assert_basic_identity_contract(integration: &dyn IntegrationPort) {
         "{}: display_name() must be a human label distinct from the stable id — the id is for logic, the label for display",
         integration.id()
     );
+    // `uze doctor` and the Harnesses list show it beside the label.
+    assert!(
+        !integration.description().is_empty(),
+        "{}: description() must say what the harness is",
+        integration.id()
+    );
     // Presentation-only, but the docs matrix links every name it prints:
     // a relative or `http` value there is a broken link on the site, not a
     // wrong delivery claim, and nothing else would catch it.
-    if let Some(homepage) = integration.homepage() {
-        assert!(
-            homepage.starts_with("https://"),
-            "{}: homepage() must be an absolute https URL — the docs site links it verbatim",
-            integration.id()
-        );
-    }
+    let homepage = integration
+        .homepage()
+        .unwrap_or_else(|| panic!("{}: the docs matrix links every name", integration.id()));
+    assert!(
+        homepage.starts_with("https://"),
+        "{}: homepage() must be an absolute https URL — the docs site links it verbatim",
+        integration.id()
+    );
+    // The docs site serves `web/public` at its root.
+    let icon = integration
+        .icon_path()
+        .unwrap_or_else(|| panic!("{}: the docs matrix shows every mark", integration.id()));
+    let served = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("web/public")
+        .join(icon.trim_start_matches('/'));
+    assert!(
+        !icon.trim_start_matches('/').is_empty() && served.is_file(),
+        "{}: icon_path() {icon:?} names no file under web/public",
+        integration.id()
+    );
     let capabilities = integration.capabilities();
     assert!(
         !(capabilities.native.is_empty()

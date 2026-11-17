@@ -305,3 +305,92 @@ fn marketplaces_are_read_from_the_config_without_codex() {
         None
     );
 }
+
+/// A receipt claims the engine for the event it was recorded for, and only
+/// a hook that runs that engine: another program on that event, or the
+/// engine on another event, stays the operator's.
+#[test]
+fn the_rules_engine_is_claimed_only_on_its_event_running_its_engine() {
+    let root = TempDir::new("codex-inventory-engine-claim");
+    write(
+        &root.join(".codex/hooks.json"),
+        r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"bash fmt.sh"}]}],"PostToolUse":[{"hooks":[{"type":"command","command":"'/uze/rules/engine' '/uze/sessions'"}]}]}}"#,
+    );
+    let receipt = owned(
+        "rules-engine",
+        "SessionStart",
+        serde_json::json!({"engine": "/uze/rules/engine"}),
+    );
+    let found = inventory(&places(&root), &[receipt]);
+    assert!(
+        found.iter().all(|resource| resource.claim.is_none()),
+        "{found:?}"
+    );
+    let format = found
+        .iter()
+        .find(|r| r.note.as_deref() == Some("runs on SessionStart"))
+        .unwrap();
+    assert_eq!(format.name, "bash");
+}
+
+#[test]
+fn a_quoted_program_is_named_by_its_file_name() {
+    let root = TempDir::new("codex-inventory-quoted-hook");
+    write(
+        &root.join(".codex/hooks.json"),
+        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"'/opt/tools/lint' --fix"}]},{"hooks":[{"type":"command","command":"\"/opt/tools/check\" all"}]}]}}"#,
+    );
+    let found = inventory(&places(&root), &[]);
+    let names: Vec<&str> = found.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, ["lint", "check"]);
+}
+
+#[test]
+fn a_hidden_skill_directory_is_not_listed() {
+    let root = TempDir::new("codex-inventory-hidden-skill");
+    skill(&root.join(".agents/skills"), ".draft");
+    skill(&root.join(".agents/skills"), "review");
+    let found = inventory(&places(&root), &[]);
+    let names: Vec<&str> = found.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, ["review"]);
+}
+
+/// Only a thread that names its parent is a subagent's: a parent spelled
+/// out as null is a conversation the person started.
+#[test]
+fn only_a_named_parent_makes_a_subagents_thread() {
+    let root = TempDir::new("codex-inventory-parents");
+    for (name, payload) in [
+        ("a", r#"{"id":"a","parent_thread_id":null}"#),
+        ("b", r#"{"id":"b","parent_thread_id":"a"}"#),
+        ("c", r#"{"id":"c","parent_thread_id":"a"}"#),
+        ("d", r#"{"id":"d"}"#),
+    ] {
+        rollout(
+            &root,
+            "30",
+            name,
+            &format!(r#"{{"type":"session_meta","payload":{payload}}}"#),
+            "",
+        );
+    }
+    assert_eq!(session_counts(&places(&root)).total, 2);
+}
+
+/// Codex's `session_meta` carries its whole base instructions, tens of
+/// kilobytes, before the parent it names; a line that size is still read.
+#[test]
+fn a_real_size_first_line_is_still_read() {
+    let root = TempDir::new("codex-inventory-long-meta");
+    let instructions = "x".repeat(64 * 1024);
+    rollout(
+        &root,
+        "30",
+        "sub",
+        &format!(
+            r#"{{"type":"session_meta","payload":{{"id":"sub","base_instructions":"{instructions}","parent_thread_id":"a"}}}}"#
+        ),
+        "",
+    );
+    assert_eq!(session_counts(&places(&root)).total, 0);
+}
