@@ -808,4 +808,134 @@ mod tests {
         assert_eq!(sequence.participants[1].id, "CLI");
         assert_eq!(sequence.steps.len(), 3);
     }
+
+    #[test]
+    fn a_subgraph_is_named_by_the_word_before_its_title() {
+        let graph = graph(
+            "flowchart TD\n  subgraph core[The core]\n    a\n  end\n  subgraph edge [The edge]\n    b\n  end",
+        );
+        let ids: Vec<&str> = graph.clusters.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["core", "edge"]);
+    }
+
+    /// `end` closes the subgraph it is in: what follows it is outside, and
+    /// it is no box of its own.
+    #[test]
+    fn end_closes_a_subgraph_and_is_not_a_box() {
+        let graph = graph("flowchart TD\n  subgraph one\n    a\n  end\n  b");
+        let ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b"]);
+        assert_eq!(
+            (graph.nodes[0].cluster, graph.nodes[1].cluster),
+            (Some(0), None)
+        );
+    }
+
+    /// Styling is the host's to decide: a diagram that sets colours is read
+    /// for what it says, and the styling adds nothing to it.
+    #[test]
+    fn styling_statements_are_skipped() {
+        let graph = graph(
+            "flowchart TD\n  a --> b\n  classDef hot fill:#f00\n  class a hot\n  \
+             style b fill:#0f0\n  linkStyle 0 stroke:#f00\n  direction LR",
+        );
+        assert_eq!((graph.nodes.len(), graph.edges.len()), (2, 1));
+    }
+
+    #[test]
+    fn a_line_break_in_a_box_separates_its_title_from_its_description() {
+        let graph = graph("flowchart TD\n  a[\"Title<br/>more words\"]");
+        assert_eq!(graph.nodes[0].title, "Title");
+        assert_eq!(graph.nodes[0].description.as_deref(), Some("more words"));
+    }
+
+    #[test]
+    fn a_node_id_may_hold_underscores_and_dots() {
+        let graph = graph("flowchart TD\n  my_node.v2[Alpha] --> b");
+        assert_eq!(graph.nodes[0].id, "my_node.v2");
+        assert_eq!(graph.nodes[0].title, "Alpha");
+    }
+
+    /// A malformed file is a reason on the board, never a crash.
+    #[test]
+    fn an_inline_label_that_never_closes_is_refused() {
+        assert!(parse("flowchart TD\n  a -- never closes").is_err());
+    }
+
+    #[test]
+    fn an_inline_label_may_hold_a_hyphen() {
+        let graph = graph("flowchart LR\n  a -- read-only --> b");
+        assert_eq!(graph.edges[0].label.as_deref(), Some("read-only"));
+        assert_eq!(graph.nodes.len(), 2);
+    }
+
+    #[test]
+    fn deployment_nodes_and_an_enterprise_are_boundaries_of_their_own_kind() {
+        let graph = graph(
+            "C4Deployment\n  Node(a, \"A\", \"Linux\")\n  Node_L(b, \"B\", \"Linux\")\n  \
+             Deployment_Node(c, \"C\", \"Linux\")\n  Enterprise_Boundary(e, \"Shop\")",
+        );
+        let boundaries: Vec<_> = graph.clusters.iter().map(|c| c.boundary.clone()).collect();
+        assert_eq!(
+            boundaries,
+            [
+                Some(Boundary::Deployment),
+                Some(Boundary::Deployment),
+                Some(Boundary::Deployment),
+                Some(Boundary::Enterprise),
+            ]
+        );
+        assert_eq!(graph.clusters[3].title, "Shop [Enterprise]");
+    }
+
+    #[test]
+    fn a_person_is_drawn_as_a_person() {
+        let graph = graph("C4Context\n  Person(dev, \"Developer\")\n  Person_Ext(user, \"User\")");
+        assert_eq!(graph.nodes[0].shape, Shape::Person);
+        assert_eq!(graph.nodes[1].shape, Shape::Person);
+    }
+
+    fn sequence_of(source: &str) -> Sequence {
+        match parse(source).expect("the diagram parses") {
+            Diagram::Sequence(sequence) => sequence,
+            Diagram::Graph(_) => panic!("expected a sequence"),
+        }
+    }
+
+    #[test]
+    fn a_block_of_a_sequence_is_kept_as_dividers() {
+        let sequence =
+            sequence_of("sequenceDiagram\n  A->>B: hi\n  loop every minute\n  B->>A: tick\n  end");
+        let dividers: Vec<&str> = sequence
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                SequenceStep::Divider(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(dividers, ["loop every minute", "end"]);
+        assert_eq!(sequence.steps.len(), 4);
+    }
+
+    /// A message missing an end says nothing, and invents nobody.
+    #[test]
+    fn a_message_missing_an_end_is_skipped() {
+        let sequence = sequence_of("sequenceDiagram\n  A->>: hi\n  ->>B: hi");
+        assert!(sequence.steps.is_empty());
+        assert!(sequence.participants.is_empty());
+    }
+
+    #[test]
+    fn an_activation_mark_is_not_part_of_the_participant() {
+        let sequence =
+            sequence_of("sequenceDiagram\n  A->>+B: hi\n  B-->>-A: ok\n  A ->> B: again");
+        let ids: Vec<&str> = sequence
+            .participants
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect();
+        assert_eq!(ids, ["A", "B"]);
+        assert_eq!(sequence.steps.len(), 3);
+    }
 }
