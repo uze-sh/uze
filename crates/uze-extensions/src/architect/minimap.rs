@@ -206,4 +206,285 @@ mod tests {
             "{back:?}"
         );
     }
+
+    #[test]
+    fn a_map_is_offered_only_on_a_screen_with_room_for_it_and_a_drawing_to_show() {
+        let board = (100, 50);
+        assert!(
+            Minimap::of(board, SMALLEST_SCREEN).is_some(),
+            "the smallest screen"
+        );
+        assert!(Minimap::of(board, (SMALLEST_SCREEN.0 - 1, SMALLEST_SCREEN.1)).is_none());
+        assert!(Minimap::of(board, (SMALLEST_SCREEN.0, SMALLEST_SCREEN.1 - 1)).is_none());
+        assert!(Minimap::of((0, 50), (120, 40)).is_none(), "nothing drawn");
+        assert!(
+            Minimap::of((1, 50), (120, 40)).is_some(),
+            "one column drawn"
+        );
+    }
+
+    /// The braille cells, framed, in the screen's bottom-right corner.
+    #[test]
+    fn the_map_sits_framed_in_the_bottom_right_corner_of_the_screen() {
+        let screen = (120, 40);
+        let map = Minimap::of((300, 25), screen).unwrap();
+        assert_eq!((map.frame.w, map.frame.h), (CELLS.0 + 2, CELLS.1 + 2));
+        assert!(map.frame.x + map.frame.w <= screen.0 && map.frame.y + map.frame.h <= screen.1);
+        assert!(map.frame.x > screen.0 / 2 && map.frame.y > screen.1 / 2);
+    }
+
+    /// Two dots across a braille cell and four down: the drawing is scaled
+    /// to fit the map whole, and centred along its shorter side.
+    #[test]
+    fn a_drawing_is_scaled_to_fit_the_map_whole_and_centred_in_it() {
+        let across = CELLS.0 * 2;
+        let down = CELLS.1 * 4;
+        for board in [(560, 40), (100, 200), (190, 80), (20, 5)] {
+            let map = Minimap::of(board, (120, 40)).unwrap();
+            let first = map.dot_of(0, 0);
+            let end = map.dot_of(board.0, board.1);
+            assert!(first.0 >= 0 && first.1 >= 0, "{board:?}: {first:?}");
+            assert!(end.0 <= across && end.1 <= down, "{board:?}: {end:?}");
+            let fills_across = first.0 <= 1 && end.0 >= across - 1;
+            let fills_down = first.1 <= 1 && end.1 >= down - 1;
+            assert!(fills_across || fills_down, "{board:?} is drawn small");
+            assert!(
+                (first.0 + end.0 - across).abs() <= 2,
+                "{board:?} is centred across: {first:?} {end:?}"
+            );
+            assert!(
+                (first.1 + end.1 - down).abs() <= 2,
+                "{board:?} is centred down: {first:?} {end:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_click_on_a_dot_points_back_at_its_row_where_the_drawing_is_centred_down() {
+        let map = Minimap::of((560, 40), (120, 40)).unwrap();
+        let dot = map.dot_of(300, 20);
+        let cell = (map.frame.x + 1 + dot.0 / 2, map.frame.y + 1 + dot.1 / 4);
+        let back = map.board_cell_at(cell.0, cell.1).unwrap();
+        assert!((back.1 - 20).abs() <= 20, "{back:?}");
+    }
+
+    /// The map painted over a screen covered in `X`, as the glyph and role
+    /// of every braille cell inside its frame.
+    fn painted(
+        board: (i32, i32),
+        boxes: &[Frame],
+        looking_at: Frame,
+        glyphs: Glyphs,
+    ) -> (Minimap, Canvas) {
+        let screen = (120, 40);
+        let map = Minimap::of(board, screen).unwrap();
+        let mut canvas = Canvas::new(screen.0, screen.1, glyphs);
+        for y in 0..screen.1 {
+            for x in 0..screen.0 {
+                canvas.put(x, y, 'X', Role::Default, false);
+            }
+        }
+        map.paint(&mut canvas, boxes, looking_at);
+        (map, canvas)
+    }
+
+    fn braille(map: &Minimap, canvas: &Canvas, column: i32, row: i32) -> Cell {
+        canvas
+            .cell(map.frame.x + 1 + column, map.frame.y + 1 + row)
+            .unwrap()
+    }
+
+    fn lit_cells(map: &Minimap, canvas: &Canvas) -> Vec<(i32, i32, Role)> {
+        let mut lit = Vec::new();
+        for row in 0..CELLS.1 {
+            for column in 0..CELLS.0 {
+                let cell = braille(map, canvas, column, row);
+                if cell.glyph != ' ' {
+                    lit.push((column, row, cell.role));
+                }
+            }
+        }
+        lit
+    }
+
+    const NOWHERE: Frame = Frame {
+        x: -1000,
+        y: -1000,
+        w: 1,
+        h: 1,
+    };
+
+    /// What the map covers is the map's: the board under it does not show
+    /// through, and it is framed.
+    #[test]
+    fn the_map_covers_the_board_under_it() {
+        let (map, canvas) = painted((560, 40), &[], NOWHERE, Glyphs::Unicode);
+        for y in map.frame.y..map.frame.y + map.frame.h {
+            for x in map.frame.x..map.frame.x + map.frame.w {
+                assert_ne!(canvas.cell(x, y).unwrap().glyph, 'X', "({x},{y})");
+            }
+        }
+        assert_ne!(
+            canvas.cell(map.frame.x, map.frame.y).unwrap().glyph,
+            ' ',
+            "framed"
+        );
+        assert!(lit_cells(&map, &canvas).is_empty(), "nothing to show");
+    }
+
+    /// A box is dots in the secondary role, where the box is on the board.
+    #[test]
+    fn a_box_is_drawn_where_it_stands_on_the_board() {
+        let board = (560, 40);
+        let left = Frame {
+            x: 0,
+            y: 0,
+            w: 56,
+            h: 40,
+        };
+        let (map, canvas) = painted(board, &[left], NOWHERE, Glyphs::Unicode);
+        let lit = lit_cells(&map, &canvas);
+        assert!(!lit.is_empty(), "the box is drawn");
+        assert!(
+            lit.iter()
+                .all(|&(column, _, role)| column < CELLS.0 / 4 && role == Role::Secondary),
+            "{lit:?}"
+        );
+        let rows: Vec<i32> = lit.iter().map(|&(_, row, _)| row).collect();
+        let (top, bottom) = (rows.iter().min().unwrap(), rows.iter().max().unwrap());
+        assert!(
+            (top - (CELLS.1 - 1 - bottom)).abs() <= 1,
+            "centred down: rows {top}..={bottom}"
+        );
+    }
+
+    /// Every dot of a cell the drawing covers is lit.
+    #[test]
+    fn a_cell_the_drawing_covers_lights_every_dot() {
+        let board = (56, 28);
+        let whole = Frame {
+            x: 0,
+            y: 0,
+            w: 56,
+            h: 28,
+        };
+        let (map, canvas) = painted(board, &[whole], NOWHERE, Glyphs::Unicode);
+        assert_eq!(
+            braille(&map, &canvas, CELLS.0 / 2, CELLS.1 / 2).glyph,
+            '\u{28ff}'
+        );
+    }
+
+    /// Boxes a cell apart stay apart on the map: a box is drawn no larger
+    /// than it is, across or down.
+    #[test]
+    fn boxes_apart_on_the_board_stay_apart_on_the_map() {
+        let side_by_side = [
+            Frame {
+                x: 0,
+                y: 0,
+                w: 5,
+                h: 2,
+            },
+            Frame {
+                x: 6,
+                y: 0,
+                w: 5,
+                h: 2,
+            },
+        ];
+        let (map, canvas) = painted((11, 2), &side_by_side, NOWHERE, Glyphs::Unicode);
+        let gap = map.dot_of(5, 0).0 / 2;
+        let lit = lit_cells(&map, &canvas);
+        assert!(lit.iter().any(|&(column, _, _)| column < gap), "{lit:?}");
+        assert!(lit.iter().any(|&(column, _, _)| column > gap), "{lit:?}");
+        assert!(
+            !lit.iter().any(|&(column, _, _)| column == gap),
+            "column {gap} is between the two: {lit:?}"
+        );
+
+        let stacked = [
+            Frame {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 5,
+            },
+            Frame {
+                x: 0,
+                y: 7,
+                w: 2,
+                h: 8,
+            },
+        ];
+        let (map, canvas) = painted((2, 15), &stacked, NOWHERE, Glyphs::Unicode);
+        let gap = map.dot_of(0, 5).1 / 4;
+        let lit = lit_cells(&map, &canvas);
+        assert!(lit.iter().any(|&(_, row, _)| row < gap), "{lit:?}");
+        assert!(lit.iter().any(|&(_, row, _)| row > gap), "{lit:?}");
+        assert!(
+            !lit.iter().any(|&(_, row, _)| row == gap),
+            "row {gap} is between the two: {lit:?}"
+        );
+    }
+
+    /// The part being looked at is an outline in the accent role, all four
+    /// sides of it, and nothing inside.
+    #[test]
+    fn the_part_looked_at_is_outlined() {
+        let board = (560, 40);
+        let looking_at = Frame {
+            x: 140,
+            y: 0,
+            w: 280,
+            h: 40,
+        };
+        let (map, canvas) = painted(board, &[], looking_at, Glyphs::Unicode);
+        let lit = lit_cells(&map, &canvas);
+        assert!(
+            lit.iter().all(|&(_, _, role)| role == Role::Accent),
+            "{lit:?}"
+        );
+        let left = map.dot_of(140, 0).0 / 2;
+        let right = map.dot_of(419, 0).0 / 2;
+        let top = map.dot_of(0, 0).1 / 4;
+        let bottom = map.dot_of(0, 39).1 / 4;
+        let middle = (left + right) / 2;
+        for (column, row) in [
+            (left, top + 1),
+            (right, top + 1),
+            (middle, top),
+            (middle, bottom),
+        ] {
+            assert!(
+                lit.iter().any(|&(c, r, _)| (c, r) == (column, row)),
+                "({column},{row}) is on the outline: {lit:?}"
+            );
+        }
+        assert!(
+            !lit.iter()
+                .any(|&(c, r, _)| c > left && c < right && r > top && r < bottom),
+            "an outline: {lit:?}"
+        );
+        let (map, canvas) = painted(board, &[], looking_at, Glyphs::Ascii);
+        assert_eq!(braille(&map, &canvas, middle, top).glyph, '+');
+    }
+
+    /// A screen gone past the board's edge is cut where it leaves the map,
+    /// and what is cut lands nowhere else.
+    #[test]
+    fn an_outline_past_the_edge_of_the_map_is_cut_there() {
+        let board = (560, 40);
+        let past = Frame {
+            x: 400,
+            y: 20,
+            w: 400,
+            h: 100,
+        };
+        let (map, canvas) = painted(board, &[], past, Glyphs::Unicode);
+        let left = map.dot_of(400, 0).0 / 2;
+        let lit = lit_cells(&map, &canvas);
+        assert!(!lit.is_empty());
+        assert!(lit.iter().all(|&(column, _, _)| column >= left), "{lit:?}");
+    }
 }
