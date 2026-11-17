@@ -54,8 +54,8 @@ allow-wildcard-paths = true
 
 [advisories]
 yanked = "deny"
-# Three crates are flagged `unmaintained`. Neither is a vulnerability, and
-# neither can be dropped without changing production Rust, so each is
+# Four crates are flagged `unmaintained`. None is a vulnerability, and
+# none can be dropped without changing production Rust, so each is
 # recorded here with what would remove it rather than left to fail the gate
 # every run until someone stops reading it. A vulnerability advisory is
 # never ignored — these entries are for `unmaintained` only, and each one
@@ -79,6 +79,11 @@ ignore = [
   # still compiles smartstring unconditionally. It leaves when rhai makes it
   # optional.
   { id = "RUSTSEC-2026-0249", reason = "smartstring is transitive through rhai, unused under its compact_str feature; it leaves when rhai makes it optional" },
+  # chrono 0.4 reaches the tree only through rmcp, the MCP server SDK the
+  # root crate serves its tools with: rmcp depends on it unconditionally
+  # (3.11 too) and turns on schemars' `chrono04`. Nothing here names it. It
+  # leaves when rmcp moves to jiff or time, or makes chrono optional.
+  { id = "RUSTSEC-2026-0543", reason = "chrono is transitive through rmcp, which requires it; it leaves when rmcp drops or gates it" },
 ]
 
 [sources]
