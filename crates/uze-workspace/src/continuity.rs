@@ -1189,6 +1189,42 @@ mod tests {
         );
     }
 
+    /// A briefing waits while the checkout stands where the switch left
+    /// it, and is retired once a commit moves it on.
+    #[test]
+    fn a_briefing_is_retired_once_the_checkout_moves_past_the_switch() {
+        let repository = uze_testkit::git::Repository::new("continuity-retire-briefing");
+        repository.commit_file("a.rs", "a\n");
+        let root = uze_platform::path::canonical(repository.root()).unwrap();
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "continuity-retire-briefing-home",
+        ));
+        let mut agent = Agent::in_the_root("harness");
+        launched_with_test_key(&mut agent);
+        let id = agent.id.clone();
+        let mut store = AgentStore::default();
+        store.upsert(agent);
+        task::save(&home, &root, &store).unwrap();
+        let at_switch = repository.git(&["rev-parse", "HEAD"]).trim().to_owned();
+        conversation::update(&home, &root, &id, |stored| {
+            stored.briefing = Some(conversation::Briefing {
+                integration: "harness".to_owned(),
+                text: BRIEFING_TEXT.to_owned(),
+                head_at_switch: Some(at_switch),
+                first_turn_given: false,
+            });
+        })
+        .unwrap();
+        let harness = Harness::new(SessionContinuity::Unsupported);
+
+        assert!(!refresh(&home, claim(id.as_str(), &root), &harness));
+        assert!(conversation::load(&home, &root, &id).briefing.is_some());
+
+        repository.commit_file("b.rs", "b\n");
+        assert!(refresh(&home, claim(id.as_str(), &root), &harness));
+        assert!(conversation::load(&home, &root, &id).briefing.is_none());
+    }
+
     #[test]
     fn every_launch_is_given_its_instructions() {
         let (home, primary, slot, id) = managed("continuity-context-instructions");

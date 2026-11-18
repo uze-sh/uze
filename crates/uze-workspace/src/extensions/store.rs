@@ -191,6 +191,31 @@ mod tests {
         forget_plugin(&home, "gpu@proving").unwrap();
     }
 
+    /// A store written at exactly its bound is within it.
+    #[test]
+    fn a_store_exactly_at_its_bound_is_kept() {
+        let root = uze_testkit::temp::scratch("extension-store-bound");
+        let home = UzeHome::at(root.join("uze"));
+        let sized = |length: usize| {
+            let mut store = Map::new();
+            store.insert("blob".to_owned(), Value::String("x".repeat(length)));
+            store
+        };
+        let written = |store: Map<String, Value>| {
+            serde_json::to_vec(&StoreRecord {
+                schema_version: <StoreRecord as uze_document::Shaped>::SHAPE,
+                store,
+            })
+            .unwrap()
+            .len()
+        };
+        let length = STORE_MAX - written(sized(0));
+        assert_eq!(written(sized(length)), STORE_MAX);
+
+        assert!(patch(&home, &store(None), &sized(length)).is_ok());
+        assert!(patch(&home, &store(None), &sized(length + 1)).is_err());
+    }
+
     fn last(value: u64) -> Map<String, Value> {
         serde_json::json!({ "last": value })
             .as_object()
