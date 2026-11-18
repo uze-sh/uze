@@ -213,3 +213,54 @@ fn only_an_endpoint_nothing_answers_is_stale_and_cleared() {
     assert_eq!(stale_endpoint().unwrap(), None);
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// The recorded WSL case: `systemd-tmpfiles` takes the socket out from
+/// under a live server. The server puts it back where clients look, and
+/// the key beside the claim too, rather than leave every later client
+/// starting a second server or being turned away.
+#[test]
+fn a_socket_cleaned_from_under_a_live_server_is_put_back() {
+    let scratch = uze_testkit::temp::socket_scratch("rebind");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let socket = socket_path().unwrap();
+    let (server, _damage) =
+        Server::new(seat_at(&project), Palette::default(), socket.clone()).unwrap();
+    let server = Arc::new(server);
+    let listener = bind_endpoint(&socket).unwrap();
+    let accepting = Arc::clone(&server);
+    thread::spawn(move || {
+        crate::runtime::accept_connections(listener, accepting, crate::runtime::Door::Shared)
+    });
+    crate::runtime::spawn_endpoint_watch(Arc::clone(&server));
+
+    let put_back = |path: &Path| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !path.exists() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+        path.exists()
+    };
+    // The key first: once it is back, the watch has looked at the
+    // endpoint as it was bound at least once.
+    std::fs::remove_file(crate::runtime::key_path()).unwrap();
+    assert!(
+        put_back(&crate::runtime::key_path()),
+        "the key is written back where clients read it"
+    );
+    assert!(server.key.admits(&crate::runtime::server_key()));
+
+    std::fs::remove_file(&socket).unwrap();
+    assert!(put_back(&socket), "the socket is put back");
+    assert!(
+        std::os::unix::net::UnixStream::connect(&socket).is_ok(),
+        "and the server answers at it"
+    );
+    server.shut_down();
+    let _ = std::fs::remove_dir_all(&scratch);
+}

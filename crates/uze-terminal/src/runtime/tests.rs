@@ -5223,6 +5223,309 @@ fn listening_server(project: &Path) -> (Arc<Server>, PathBuf) {
     (server, socket)
 }
 
+/// A client of another protocol is told so, key or no key: the answer
+/// is "incompatible", which its build acts on by replacing this server.
+#[test]
+fn a_client_of_another_protocol_is_told_so_whatever_key_it_offers() {
+    let scratch = uze_testkit::temp::socket_scratch("another-protocol");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+
+    let answer = first_answer_to(
+        &socket,
+        &crate::ClientRequest::Attach {
+            version: crate::PROTOCOL_VERSION + 1,
+            columns: 0,
+            rows: 0,
+            seating: crate::Seating::WhereItLeftOff,
+            key: String::new(),
+        },
+    );
+    assert!(answer.starts_with("answered Error"), "{answer}");
+
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// What a client attaching says about its size sizes the pane it lands
+/// on, and only when it gives both dimensions: a zero is "leave it
+/// alone", and a space opened for such a client starts at the placeholder.
+#[test]
+fn an_attach_sizes_the_pane_it_lands_on_only_with_both_dimensions() {
+    let scratch = uze_testkit::temp::socket_scratch("attach-sizes");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let sizeless = scratch.join("sizeless");
+    let half_sized = scratch.join("half-sized");
+    for directory in [&uze_home, &project, &sizeless, &half_sized] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    let size_of = |pane: PaneId| {
+        let snapshot = server.runtime(pane).expect("the pane runs").snapshot();
+        (snapshot.columns, snapshot.rows)
+    };
+    let attach = |columns, rows, seating| crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns,
+        rows,
+        seating,
+        key: super::server_key(),
+    };
+    let first = server.session.lock().unwrap().selected_tab().pane.id;
+    let placeholder = crate::state::PLACEHOLDER_PANE_SIZE;
+
+    let attached = |request: crate::ClientRequest| {
+        let mut stream = super::transport::connect(&socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        send_request(&mut stream, &request).unwrap();
+        let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+        read_until(&mut reader, |event| match event {
+            crate::ClientEvent::Snapshot { .. } => Some(()),
+            _ => None,
+        });
+        let _ = send_request(&mut stream, &crate::ClientRequest::Detach);
+    };
+
+    for (columns, rows) in [(0, 0), (100, 0), (0, 30)] {
+        attached(attach(columns, rows, crate::Seating::WhereItLeftOff));
+        assert_eq!(size_of(first), placeholder, "{columns}x{rows}");
+    }
+    attached(attach(100, 30, crate::Seating::WhereItLeftOff));
+    assert_eq!(size_of(first), (100, 30));
+
+    for (root, (columns, rows)) in [(&sizeless, (0, 0)), (&half_sized, (120, 0))] {
+        attached(attach(columns, rows, crate::Seating::Open(seat_at(root))));
+        let opened = server
+            .session
+            .lock()
+            .unwrap()
+            .workspace
+            .spaces
+            .last()
+            .expect("a space was opened")
+            .tabs[0]
+            .pane
+            .id;
+        assert_eq!(size_of(opened), placeholder, "{columns}x{rows}");
+    }
+
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A client attached to `server` over a pair, and what reads its events.
+fn client_of(
+    server: &Arc<Server>,
+) -> (
+    super::Stream,
+    std::io::BufReader<super::Stream>,
+    std::thread::JoinHandle<()>,
+) {
+    let (client, driver) = super::transport::pair().unwrap();
+    let serving = {
+        let server = Arc::clone(server);
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
+    };
+    let mut writer = driver.try_clone().unwrap();
+    driver
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    send_request(&mut writer, &attach_with(super::server_key())).unwrap();
+    (writer, std::io::BufReader::new(driver), serving)
+}
+
+/// Reads `reader` until an event `wanted` picks something out of.
+fn read_until<T>(
+    reader: &mut std::io::BufReader<super::Stream>,
+    mut wanted: impl FnMut(crate::ClientEvent) -> Option<T>,
+) -> T {
+    loop {
+        match read_event(reader).expect("the server must still be speaking") {
+            Some(event) => {
+                if let Some(found) = wanted(event) {
+                    return found;
+                }
+            }
+            None => panic!("the server hung up"),
+        }
+    }
+}
+
+/// Copies `pane`'s selection and waits for the answer: every request sent
+/// before it has been handled once it arrives.
+fn copied(
+    writer: &mut super::Stream,
+    reader: &mut std::io::BufReader<super::Stream>,
+    pane: PaneId,
+) -> String {
+    send_request(writer, &crate::ClientRequest::CopySelection { pane }).unwrap();
+    read_until(reader, |event| match event {
+        crate::ClientEvent::SelectionText { text, .. } => Some(text),
+        _ => None,
+    })
+}
+
+/// A space a client creates is started, and that client is put in it; a
+/// tab it selects afterwards in another space puts it back there.
+#[test]
+fn a_client_lands_in_the_space_it_creates_and_in_the_space_of_a_tab_it_selects() {
+    let scratch = uze_testkit::temp::socket_scratch("create-select");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    let (first_space, first_tab, first_pane) = {
+        let session = server.session.lock().unwrap();
+        let tab = session.selected_tab();
+        (session.workspace.selected_space, tab.id, tab.pane.id)
+    };
+    let client_space = || server.clients.lock().unwrap()[0].selection.space;
+
+    let (mut writer, mut reader, serving) = client_of(&server);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::CreateSpace {
+            label: None,
+            cwd: project.clone(),
+            columns: 80,
+            rows: 24,
+        },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, first_pane);
+    let (created, created_pane) = {
+        let session = server.session.lock().unwrap();
+        let space = session.workspace.spaces.last().unwrap();
+        (space.id, space.tabs[0].pane.id)
+    };
+    assert_ne!(created, first_space);
+    assert!(
+        server.runtime(created_pane).is_some(),
+        "the created space's shell was started"
+    );
+    assert_eq!(client_space(), Some(created), "the client is in it");
+
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::SelectTab { tab: first_tab },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, first_pane);
+    assert_eq!(
+        client_space(),
+        Some(first_space),
+        "selecting a tab of the first space put the client back there"
+    );
+
+    drop(writer);
+    drop(reader);
+    let _ = serving.join();
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A client's scroll moves the pane's view, its selection selects the
+/// pane's text, and the pane's output reaches it as damage.
+// Unix only: `cat` as the pane's shell prints nothing until it is typed
+// to, so the text fed to the pane is all it shows.
+#[cfg(unix)]
+#[test]
+fn a_client_scrolls_and_selects_in_a_pane_and_is_sent_its_output() {
+    let scratch = uze_testkit::temp::socket_scratch("scroll-select");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home).set("UZE_SHELL", "cat");
+    let (server, damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    super::spawn_damage_broadcaster(Arc::clone(&server), damage);
+    let pane = server.session.lock().unwrap().selected_tab().pane.id;
+    let runtime = server.runtime(pane).expect("the pane runs");
+    let lines: String = (0..60).map(|line| format!("line {line}\r\n")).collect();
+    draw(&runtime, format!("hello\r\n{lines}").as_bytes());
+
+    let (mut writer, mut reader, serving) = client_of(&server);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Input {
+            pane,
+            bytes: b"uze-echo".to_vec(),
+        },
+    )
+    .unwrap();
+    read_until(&mut reader, |event| match event {
+        crate::ClientEvent::Damage(damage)
+            if damage.pane == pane
+                && damage
+                    .changed
+                    .iter()
+                    .map(|(_, _, cell)| cell.character)
+                    .collect::<String>()
+                    .contains("uze-echo") =>
+        {
+            Some(())
+        }
+        _ => None,
+    });
+
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Scroll { pane, lines: 1000 },
+    )
+    .unwrap();
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Select {
+            pane,
+            gesture: crate::SelectionGesture::Begin {
+                anchor: (0, 0),
+                head: (4, 0),
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(copied(&mut writer, &mut reader, pane), "hello");
+    assert!(
+        runtime.terminal.lock().unwrap().grid().display_offset() > 0,
+        "the view moved into the scrollback"
+    );
+
+    drop(writer);
+    drop(reader);
+    let _ = serving.join();
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// ADR-056: any process of this user can reach the endpoint, so reaching
 /// it proves nothing. Attaching — every pane's contents, input into every
 /// agent, tabs that run any command — and stopping the runtime take the
