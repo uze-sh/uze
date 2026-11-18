@@ -480,4 +480,8 @@ exclude_re = [
   'uze-extensions/src/code/extension\.rs.*replace < with <= in CodeExtension::history_job$',
   # GAP is 1, and multiplying by one is dividing by one.
   'uze-extensions/src/code/map\.rs.*replace \* with / in bordered$',
+  # A border lies inside its own tile's drawn box, which is within the map, so no bound is ever crossed.
+  'uze-extensions/src/code/map\.rs.*replace \|\| with && in Grid::add$',
+  # The sides OR-ed together are distinct bits, so XOR gives the same set.
+  'uze-extensions/src/code/map\.rs.*replace \| with \^ in Grid::outline$',
 ]
