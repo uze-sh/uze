@@ -1169,4 +1169,50 @@ mod tests {
             "the top wall is the region's too"
         );
     }
+
+    /// Hand-placed boxes in one tall region, routed.
+    fn in_a_tall_region(source: &str, nodes: Vec<Frame>) -> (Placement, Routes) {
+        let graph = graph_of(source);
+        let placement = Placement {
+            nodes,
+            clusters: vec![Frame {
+                x: 0,
+                y: 0,
+                w: 14,
+                h: 40,
+            }],
+            width: 30,
+            height: 50,
+        };
+        let routes = route(&graph, &placement);
+        (placement, routes)
+    }
+
+    fn small(x: i32, y: i32) -> Frame {
+        Frame { x, y, w: 3, h: 3 }
+    }
+
+    #[test]
+    fn a_line_between_two_members_of_a_region_stays_inside_it() {
+        let (placement, routes) = in_a_tall_region(
+            "flowchart TD\n subgraph r [R]\n a --> b\n end",
+            vec![small(8, 3), small(8, 33)],
+        );
+        let region = placement.clusters[0];
+        let cells = &routes.routes[0].cells;
+        assert!(
+            cells.iter().all(|&(x, y, _)| region.contains(x, y)),
+            "{cells:?}"
+        );
+    }
+
+    #[test]
+    fn a_line_leaving_its_region_for_a_box_below_runs_straight_through_it() {
+        let (_, routes) = in_a_tall_region(
+            "flowchart TD\n subgraph r [R]\n a\n end\n a --> b",
+            vec![small(8, 3), small(8, 45)],
+        );
+        let cells = &routes.routes[0].cells;
+        assert_eq!(bends(&routes.routes[0]), 0, "{cells:?}");
+    }
 }
