@@ -535,4 +535,10 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_sequence_with_nobody_in_it_draws_nothing() {
+        let canvas = drawn("sequenceDiagram\n");
+        assert!(canvas.to_text().trim().is_empty());
+    }
 }
