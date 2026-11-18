@@ -1367,4 +1367,30 @@ mod tests {
             );
         }
     }
+
+    /// Both rows of a broken label must be free: one whose second row
+    /// would land on a box moves up to where both are.
+    #[test]
+    fn a_label_broken_over_two_rows_covers_nothing_with_either() {
+        let (first, second) = ("a".repeat(12), "b".repeat(12));
+        let label = format!("{first} {second}");
+        let (_, open) = upright(12, &label, vec![]);
+        let (_, row_on_open) = find(&open, &first).unwrap();
+        let below = Frame {
+            x: 18,
+            y: row_on_open + 1,
+            w: 5,
+            h: 5,
+        };
+        let (_, canvas) = upright(12, &label, vec![below]);
+        assert_eq!(
+            glyph(&canvas, below.x, below.y),
+            '┌',
+            "{}",
+            row(&canvas, below.y)
+        );
+        let (x, y) = find(&canvas, &first).expect("the first half");
+        assert_eq!(find(&canvas, &second), Some((x, y + 1)));
+        assert!(y + 1 < below.y, "both rows clear of the box");
+    }
 }
