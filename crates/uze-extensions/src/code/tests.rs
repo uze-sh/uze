@@ -4942,3 +4942,171 @@ fn a_chain_with_no_bottom_is_read_only_so_far_down() {
         .count();
     assert_eq!(below_top, 32);
 }
+
+/// The ASCII rendering of the map draws with ASCII alone, for a terminal
+/// whose font has no box-drawing glyphs.
+#[test]
+fn the_ascii_map_is_drawn_in_ascii_alone() {
+    let mut view = on_the_map();
+    view.map_showing = MapShowing::Ascii;
+    let Content::Lines { lines, .. } = render::view(&view, space()).content else {
+        panic!("the map is lines");
+    };
+    let drawn: String = lines
+        .iter()
+        .flat_map(|line| line.spans.iter().map(|span| span.text.as_str()))
+        .collect();
+    assert!(!drawn.trim().is_empty());
+    assert!(drawn.is_ascii(), "{drawn}");
+}
+
+/// The trail stands on the directory the map is in: its last step.
+#[test]
+fn the_maps_trail_stands_on_its_last_step() {
+    let current = |view: &CodeView| -> Vec<bool> {
+        render::view(view, space())
+            .trail
+            .into_iter()
+            .map(|step| step.current)
+            .collect()
+    };
+    let mut view = on_the_map();
+    assert_eq!(current(&view), [true]);
+    click_tile(&mut view, "src");
+    press(&mut view, Command::Activate);
+    assert_eq!(current(&view), [false, true]);
+}
+
+/// The footer names what each state answers: nothing over a question,
+/// which names its own keys; a file's actions on a file, a directory's
+/// on a directory; and the map's own way through.
+#[test]
+fn the_footer_names_what_the_surface_answers_now() {
+    let footer = |view: &CodeView| render::view(view, space()).footer;
+    let (mut view, _machine) = tree_fixture();
+    let on_a_file = footer(&view);
+    for command in [
+        Command::SelectNext,
+        Command::Collapse,
+        Command::Expand,
+        Command::OpenMenu,
+        Command::Edit,
+        Command::Delete,
+        Command::Find,
+        Command::ToggleMap,
+        Command::Close,
+    ] {
+        assert!(on_a_file.contains(&command), "{command:?} in {on_a_file:?}");
+    }
+
+    view.select(PathBuf::from("/w/src"));
+    let on_a_directory = footer(&view);
+    assert!(on_a_directory.contains(&Command::OpenMenu));
+    assert!(on_a_directory.contains(&Command::Delete));
+    assert!(
+        !on_a_directory.contains(&Command::Edit),
+        "{on_a_directory:?}"
+    );
+
+    press(&mut view, Command::Delete);
+    assert!(view.confirming_delete.is_some());
+    assert_eq!(footer(&view), [], "the question names its own keys");
+    press(&mut view, Command::Close);
+
+    view.select(PathBuf::from("/w/README.md"));
+    pick_from_menu(&mut view, 2);
+    assert!(view.renaming.is_some());
+    assert_eq!(footer(&view), []);
+    press(&mut view, Command::Close);
+
+    let machine = FakeMachine::default().with_directory("/w");
+    let mut empty = files_at("/w");
+    settle(&mut empty, &machine);
+    assert_eq!(empty.selected, None);
+    let on_nothing = footer(&empty);
+    assert!(!on_nothing.contains(&Command::OpenMenu), "{on_nothing:?}");
+    assert!(!on_nothing.contains(&Command::Delete));
+
+    let map = on_the_map();
+    assert_eq!(
+        footer(&map),
+        [
+            Command::SelectNext,
+            Command::Activate,
+            Command::ToggleMap,
+            Command::Close
+        ]
+    );
+}
+
+/// Beside a search the list's own keys are a search's: no folding, no
+/// row menu, and no second search to start.
+#[test]
+fn beside_a_search_the_footer_offers_no_tree_keys() {
+    let (mut view, _machine) = searched_fog();
+    press(&mut view, Command::FocusNext);
+    assert!(!view.typing(), "the keys are out of the field");
+    let footer = render::view(&view, space()).footer;
+    for command in [
+        Command::Collapse,
+        Command::OpenMenu,
+        Command::Edit,
+        Command::Find,
+    ] {
+        assert!(!footer.contains(&command), "{command:?} in {footer:?}");
+    }
+}
+
+/// The tree's badge counts its files, not its directories.
+#[test]
+fn the_trees_badge_counts_its_files() {
+    let (view, _machine) = tree_fixture();
+    assert_eq!(navigator_of_tree(&view).badge, "2");
+}
+
+/// The search's list is lit while it has the keys.
+#[test]
+fn the_search_list_is_focused_while_it_has_the_keys() {
+    let (mut view, _machine) = searched_fog();
+    view.focus = Focus::Navigator;
+    assert!(navigator_of_tree(&view).focused);
+    view.focus = Focus::Content;
+    assert!(!navigator_of_tree(&view).focused);
+}
+
+/// A file opened from a search has what was searched for set apart in
+/// it; the same file read from the tree does not.
+#[test]
+fn a_file_beside_its_search_sets_the_matches_apart() {
+    let grounds = |view: &CodeView| -> Vec<bool> {
+        let Content::Lines { lines, .. } = render::view(view, space()).content else {
+            panic!("a file's lines");
+        };
+        lines[0]
+            .spans
+            .iter()
+            .map(|span| span.ground.is_some())
+            .collect()
+    };
+    let (mut view, machine) = searched_fog();
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    assert!(grounds(&view).contains(&true), "{:?}", grounds(&view));
+
+    let mut read = reading(&machine, "/w/a.txt");
+    read.search.query = "fog".to_owned();
+    assert!(!grounds(&read).contains(&true));
+}
+
+/// The caret is drawn only while the file is being typed into.
+#[test]
+fn the_caret_is_drawn_only_while_editing() {
+    let caret = |view: &CodeView| match render::view(view, space()).content {
+        Content::Lines { caret, .. } => caret,
+        other => panic!("a file's lines: {other:?}"),
+    };
+    let machine = FakeMachine::default().with_file("/w/a.txt", "one\n");
+    assert_eq!(caret(&reading(&machine, "/w/a.txt")), None);
+    assert!(caret(&editing(&machine, "/w/a.txt")).is_some());
+}
