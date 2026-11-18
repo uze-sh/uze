@@ -1121,4 +1121,46 @@ mod tests {
         assert!(!grid.may_turn(on_the_wall, OUTSIDE));
         assert!(grid.may_turn(inside, OUTSIDE));
     }
+
+    #[test]
+    fn a_line_pays_to_run_beside_a_region_on_any_side_and_may_run_either_way() {
+        let (graph, _, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end\n c",
+        );
+        let (x, y) = open_ground(&grid);
+        let open = grid.entering(x, y, 1, OUTSIDE).unwrap();
+        let (middle, level) = (wall.x + wall.w / 2, wall.y + wall.h / 2);
+        for (cx, cy, heading) in [
+            (middle, wall.y - 1, 1),
+            (middle, wall.y + wall.h, 1),
+            (wall.x - 1, level, 2),
+            (wall.x + wall.w, level, 2),
+        ] {
+            let beside = grid.entering(cx, cy, heading, OUTSIDE).unwrap();
+            assert!(beside > open, "({cx},{cy}): {beside} > {open}");
+        }
+        for (cx, cy) in [
+            (wall.x, wall.y - 1),
+            (wall.x + wall.w - 1, wall.y - 1),
+            (wall.x, wall.y + wall.h),
+            (wall.x - 1, wall.y),
+        ] {
+            for heading in 0..4 {
+                assert!(
+                    grid.entering(cx, cy, heading, OUTSIDE).is_some(),
+                    "({cx},{cy}) beside a corner, heading {heading}"
+                );
+            }
+        }
+        let a = graph.nodes.iter().position(|node| node.id == "a").unwrap();
+        let member = Passage {
+            ends: (100, 101),
+            inside: regions_of(&graph, a),
+        };
+        let across = |passage| grid.entering(middle + 2, wall.y, 2, passage).unwrap();
+        assert!(
+            across(OUTSIDE) > across(member),
+            "the top wall is the region's too"
+        );
+    }
 }
