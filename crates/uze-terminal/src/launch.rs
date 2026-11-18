@@ -234,6 +234,29 @@ mod tests {
     }
 
     #[test]
+    fn a_launch_environment_at_its_bounds_is_admitted() {
+        let most: Vec<_> = (0..MAX_ENVIRONMENT_ENTRIES)
+            .map(|index| pair(&format!("V{index}"), "x"))
+            .collect();
+        assert_eq!(admits(&most), Ok(()));
+        let largest = vec![pair("V", &"x".repeat(MAX_ENVIRONMENT_BYTES - 1))];
+        assert_eq!(admits(&largest), Ok(()));
+    }
+
+    /// The refusal is what the client is answered with, so it says which
+    /// bound was crossed and by how much.
+    #[test]
+    fn a_refusal_says_which_bound_the_environment_crossed() {
+        let many = EnvironmentRefusal::TooManyEntries { entries: 17 }.to_string();
+        assert!(many.contains("16") && many.contains("17"), "{many}");
+        let large = EnvironmentRefusal::TooLarge { bytes: 5000 }.to_string();
+        assert!(large.contains("4096") && large.contains("5000"), "{large}");
+        let name = EnvironmentRefusal::InvalidName { name: "A=B".into() }.to_string();
+        assert!(name.contains("A=B"), "{name}");
+        assert!(!EnvironmentRefusal::WithoutCommand.to_string().is_empty());
+    }
+
+    #[test]
     fn a_name_is_non_empty_and_carries_no_separator() {
         for name in ["", "A=B", "A\0"] {
             assert!(matches!(

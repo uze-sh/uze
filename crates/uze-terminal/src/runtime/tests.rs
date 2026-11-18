@@ -103,6 +103,17 @@ fn endpoint_identity_is_project_specific() {
     );
 }
 
+/// Homes that differ in a single character — numbered checkouts, a
+/// series of scratch homes — are as many workspaces, each with an
+/// endpoint of its own.
+#[test]
+fn sibling_homes_never_share_an_endpoint_identity() {
+    let identities: std::collections::BTreeSet<String> = (0..256)
+        .map(|index| identity_of(Path::new(&format!("/tmp/home-{index}"))))
+        .collect();
+    assert_eq!(identities.len(), 256);
+}
+
 /// One workspace, one endpoint, whatever each terminal's environment
 /// says. `XDG_RUNTIME_DIR` and `TMPDIR` are set per session and can
 /// differ between two terminals of one login — and then the two

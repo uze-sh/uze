@@ -83,6 +83,12 @@ mod tests {
         subscription.observe(b"\x1b[?20");
         subscription.observe(b"31h");
         assert!(subscribed.load(Ordering::Relaxed));
+        subscription.observe(b"\x1b[?2031h");
+        subscription.observe(b"\x1b[?2004l");
+        assert!(
+            subscribed.load(Ordering::Relaxed),
+            "resetting another mode leaves this one set"
+        );
         subscription.observe(b"\x1b[?1000;2031l");
         assert!(
             !subscribed.load(Ordering::Relaxed),
