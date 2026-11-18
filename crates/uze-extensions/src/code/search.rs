@@ -538,4 +538,125 @@ mod tests {
         search.absorb("fog", Ok(Findings::default()));
         assert!(!search.pending());
     }
+    /// A search for `fog` answered with two lines in `a.rs` and three in
+    /// `b.rs`.
+    fn answered() -> Search {
+        let output = "a.rs\u{0}1\u{0}1\u{0}fog\na.rs\u{0}2\u{0}1\u{0}fog\n\
+                      b.rs\u{0}1\u{0}1\u{0}fog\nb.rs\u{0}2\u{0}1\u{0}fog\nb.rs\u{0}3\u{0}1\u{0}fog\n";
+        let mut search = Search {
+            query: "fog".to_owned(),
+            ..Search::default()
+        };
+        search.absorb("fog", Ok(parse(Path::new("/w"), output)));
+        search
+    }
+
+    /// Each row's id, and whether it is the selected one.
+    fn listed(search: &Search) -> Vec<(char, usize, bool)> {
+        search
+            .rows()
+            .into_iter()
+            .map(|row| match row {
+                NavigatorRow::Found { id, .. } => ('f', id, false),
+                NavigatorRow::Match { id, selected, .. } => ('m', id, selected),
+                _ => ('?', 0, false),
+            })
+            .collect()
+    }
+
+    /// The ids the list hands out number every line across every file,
+    /// and each one leads back to the file and line it names.
+    #[test]
+    fn a_found_lines_id_leads_back_to_its_file_and_line() {
+        let search = answered();
+        assert_eq!(
+            listed(&search),
+            [
+                ('f', 0, false),
+                ('m', 0, false),
+                ('m', 1, false),
+                ('f', 1, false),
+                ('m', 2, false),
+                ('m', 3, false),
+                ('m', 4, false),
+            ]
+        );
+        assert_eq!(search.hit_of(0), Some((0, 0)));
+        assert_eq!(search.hit_of(1), Some((0, 1)));
+        assert_eq!(search.hit_of(2), Some((1, 0)));
+        assert_eq!(search.hit_of(4), Some((1, 2)));
+        assert_eq!(search.hit_of(5), None);
+    }
+
+    /// The arrows walk the lines in order across files, stopping at the
+    /// last, and the selected row and the row kept in sight follow.
+    #[test]
+    fn the_arrows_walk_the_found_lines_and_the_list_follows() {
+        let mut search = answered();
+        assert_eq!(search.anchor(), None, "nowhere yet");
+        search.step(true);
+        assert_eq!(search.cursor, Some((0, 0)), "from the first line");
+        search.step(true);
+        search.step(true);
+        assert_eq!(search.cursor, Some((1, 0)), "into the next file");
+        assert_eq!(search.anchor(), Some(4), "under both headings");
+        let selected: Vec<usize> = listed(&search)
+            .into_iter()
+            .filter(|(.., selected)| *selected)
+            .map(|(_, id, _)| id)
+            .collect();
+        assert_eq!(selected, [2]);
+        search.step(false);
+        assert_eq!(search.cursor, Some((0, 1)), "up goes back");
+        assert_eq!(search.anchor(), Some(2));
+        for _ in 0..6 {
+            search.step(true);
+        }
+        assert_eq!(search.cursor, Some((1, 2)), "and stops at the last");
+        assert_eq!(search.anchor(), Some(6));
+    }
+
+    /// Folding the cursor's file takes its lines off the list and the
+    /// cursor with them; the next file's rows come up beneath its
+    /// heading. Asking to open what is open, or fold what is folded,
+    /// changes nothing.
+    #[test]
+    fn folding_the_cursors_file_takes_its_lines_away() {
+        let mut search = answered();
+        search.step(true);
+        search.fold_cursor(true);
+        assert_eq!(search.cursor, Some((0, 0)), "already open");
+        search.fold_cursor(false);
+        assert_eq!(search.cursor, None);
+        assert_eq!(listed(&search)[..2], [('f', 0, false), ('f', 1, false)]);
+        search.step(true);
+        assert_eq!(search.cursor, Some((1, 0)));
+        assert_eq!(search.anchor(), Some(2), "below the folded file's heading");
+    }
+
+    /// The field is focused only while keys land in it.
+    #[test]
+    fn the_field_is_focused_only_while_it_is_typed_into() {
+        let mut search = answered();
+        assert!(!search.field(true).focused);
+        search.typing = true;
+        assert!(search.field(true).focused);
+        assert!(!search.field(false).focused);
+    }
+
+    /// A match may end on the last character, and never starts halfway
+    /// through a character that lowercases to two.
+    #[test]
+    fn a_match_starts_on_a_character_of_the_text() {
+        assert_eq!(occurrences("ab", "b"), [1..2]);
+        assert!(occurrences("\u{130}x", "\u{307}x").is_empty());
+    }
+
+    /// A far match is kept with a little of what leads up to it.
+    #[test]
+    fn a_far_match_keeps_a_little_of_its_lead() {
+        let line = format!("{}needle", "x".repeat(100));
+        let spans = marked(&line, "needle");
+        assert_eq!(spans[1].text, "x".repeat(LEAD));
+    }
 }
