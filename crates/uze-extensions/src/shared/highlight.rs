@@ -1011,8 +1011,18 @@ fn answer(input, context) {
     fn a_known_lockfile_is_read_in_the_format_its_package_manager_writes() {
         for (name, language) in [
             ("Cargo.lock", "TOML"),
+            ("poetry.lock", "TOML"),
+            ("uv.lock", "TOML"),
+            ("pdm.lock", "TOML"),
             ("composer.lock", "JSON"),
+            ("flake.lock", "JSON"),
+            ("Pipfile.lock", "JSON"),
+            ("deno.lock", "JSON"),
+            ("bun.lock", "JSON"),
             ("yarn.lock", "YAML"),
+            ("pubspec.lock", "YAML"),
+            ("Podfile.lock", "YAML"),
+            ("agents.lock", "YAML"),
             ("mix.lock", "Elixir"),
         ] {
             assert_eq!(syntax_for(Path::new(name), None).name, language, "{name}");
