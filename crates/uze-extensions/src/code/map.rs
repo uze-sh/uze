@@ -1057,6 +1057,30 @@ mod tests {
         }
     }
 
+    /// The room a name needs is room in the box as drawn, after the cell
+    /// it gives back to a neighbour.
+    #[test]
+    fn every_tile_as_drawn_has_room_for_its_name() {
+        let mut files = vec![
+            file("Cargo.lock", 3799, 2),
+            file("AGENTS.md", 620, 9),
+            file("README.md", 300, 4),
+        ];
+        files.extend((0..14).map(|n| file(&format!("crates/core/m{n}.rs"), 1400 + n * 60, n)));
+        files.extend((0..7).map(|n| file(&format!("src/ui/u{n}.rs"), 2400, 20 + n)));
+        files.extend((0..40).map(|n| file(&format!("docs/adr/{n:03}.md"), 180, 1)));
+        for space in [(150, 38), SPACE, (80, 24), (60, 16)] {
+            for tile in map(files.clone()).tiles(space) {
+                let drawn = bordered(tile.frame, space);
+                assert!(
+                    drawn.w >= NAMED.0 && drawn.h >= NAMED.1,
+                    "{} drawn as {drawn:?} in {space:?}",
+                    tile.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_level_is_never_more_than_a_screenful_of_tiles() {
         let map = map((0..200)
