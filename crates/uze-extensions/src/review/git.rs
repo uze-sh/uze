@@ -513,6 +513,24 @@ mod tests {
         assert_eq!(read, [(root.join("new.rs"), FileStatus::Untracked)]);
     }
 
+    /// A file taken out of the index but left on disk is both gone from
+    /// the base's view and untracked: it is listed once.
+    #[test]
+    fn a_file_untracked_after_being_committed_is_listed_once() {
+        let repository = uze_testkit::git::Repository::new("review-listed-once");
+        let root = repository.root();
+        repository.commit_file("a.rs", "fn a() {}\n");
+        repository.commit_file("b.rs", "fn b() {}\n");
+        repository.git(&["rm", "--cached", "--quiet", "a.rs"]);
+        std::fs::write(root.join("c.rs"), "fn c() {}\n").unwrap();
+        let listed = listing(&DiskHost, root, Some("HEAD^^")).unwrap();
+        let paths: Vec<PathBuf> = listed.files.into_iter().map(|file| file.path).collect();
+        assert_eq!(
+            paths,
+            [root.join("a.rs"), root.join("b.rs"), root.join("c.rs")]
+        );
+    }
+
     #[test]
     fn a_listing_names_the_commit_checked_out() {
         let repository = uze_testkit::git::Repository::new("review-listing-head");
