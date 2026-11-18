@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use uze_contract::{NodeName, ResidentCall, SourceDecl, SourceKind};
 
 use super::source_tests::checkout;
-use super::tests::{SOURCE, SPACE, VIEW, compiled_view, extension, n, texts, tree};
+use super::tests::{SECTION, SOURCE, SPACE, VIEW, compiled_view, extension, n, texts, tree};
 use super::*;
 use crate::contract::RawInput;
 use crate::view::NodeKind;
@@ -401,4 +401,36 @@ fn a_tree_the_catalog_refuses_is_said_and_not_drawn() {
         tree(&engine).kind,
         NodeKind::Notice { text, .. } if text.contains("iframe")
     ));
+}
+
+#[test]
+fn a_session_shown_in_a_section_renders_again_once_the_section_is_drawn() {
+    let mut engine = game();
+    let host = Session::new();
+    let start = Instant::now();
+    engine.focus(Some(&checkout("/work/a")));
+    pass(&mut engine, start, &[SECTION]);
+    run(&mut engine, &host);
+    engine.section(SECTION, false);
+    run(&mut engine, &host);
+    let renders = |host: &Session| {
+        host.calls()
+            .iter()
+            .filter(|call| **call == ResidentCall::Render)
+            .count()
+    };
+    assert_eq!(renders(&host), 1);
+
+    engine.raw_input(
+        SECTION,
+        RawInput::Key {
+            key: "up".to_owned(),
+            mods: Vec::new(),
+        },
+    );
+    pass(&mut engine, start + Duration::from_millis(100), &[SECTION]);
+    run(&mut engine, &host);
+    engine.section(SECTION, false);
+    run(&mut engine, &host);
+    assert_eq!(renders(&host), 2, "the drawn section is a frame");
 }

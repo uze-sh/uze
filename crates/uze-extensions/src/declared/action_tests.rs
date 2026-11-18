@@ -574,3 +574,25 @@ fn the_actions_recorded_are_the_newest_few() {
         Some(&json!("../up"))
     );
 }
+
+#[test]
+fn putting_a_surface_away_drops_only_the_question_standing_on_it() {
+    let mut go = action("go", Does::Refresh(vec![SOURCE.to_owned()]));
+    go.confirm = Some("Again?".to_owned());
+    let mut engine = board(vec![go]);
+    press(&mut engine, 0);
+    engine.close(SECTION);
+    assert!(engine.asking(VIEW).is_some(), "asked in the view still");
+    engine.close(VIEW);
+    assert!(engine.asking(VIEW).is_none());
+    assert!(engine.jobs().is_empty(), "and nothing runs");
+}
+
+#[test]
+fn a_confirmed_open_names_the_surface_it_opens() {
+    let mut go = action("go", Does::Open(VIEW.to_owned()));
+    go.confirm = Some("Open it?".to_owned());
+    let mut engine = board(vec![go]);
+    press(&mut engine, 0);
+    assert_eq!(engine.asking(VIEW).expect("asks first").body, "Opens GSD");
+}

@@ -503,3 +503,56 @@ pub trait Extension: Send {
     /// (indices into the content's whole lines), covering `text`.
     fn selected(&mut self, _surface: &str, _lines: std::ops::Range<usize>, _text: &str) {}
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An extension that answers only what the contract requires of it,
+    /// keeping a place for every surface.
+    struct Plain;
+
+    impl Extension for Plain {
+        fn identity(&self) -> String {
+            "plain".to_owned()
+        }
+        fn surfaces(&self) -> Vec<SurfaceInfo> {
+            Vec::new()
+        }
+        fn view(&self, _surface: &str, _space: Size) -> Option<View> {
+            None
+        }
+        fn section(&self, _surface: &str, _collapsed: bool) -> Option<Section> {
+            None
+        }
+        fn command(&mut self, _surface: &str, _command: Command, _space: Size) -> Outcome {
+            Outcome::Stay
+        }
+        fn hit(&mut self, _surface: &str, _hit: ViewHit, _space: Size) -> Outcome {
+            Outcome::Stay
+        }
+        fn scroll(&mut self, _: &str, _: ScrollTarget, _: ScrollDirection, _: Size) {}
+        fn place(&self, _surface: &str) -> Option<Opaque> {
+            Some(Opaque::new(7_u8))
+        }
+    }
+
+    #[test]
+    fn an_extension_that_says_nothing_applies_everywhere_and_takes_only_commands() {
+        let mut plain = Plain;
+        assert!(plain.applies("board"), "every surface applies unless told");
+        assert!(!plain.typing("board"), "a letter is a shortcut");
+        assert!(!plain.reads_raw_input("board"), "keys arrive as commands");
+        assert!(!plain.drags("board"), "a press is a click at once");
+        assert!(!plain.hover("board", None), "nothing to draw again");
+        assert!(!plain.observes_agents(), "told nothing of the agents");
+        assert_eq!(plain.door_badge(), None, "no door on the tab strip");
+        assert!(plain.text("board", 0..3).is_empty(), "nothing to copy");
+    }
+
+    #[test]
+    fn what_a_surface_holds_for_its_tab_is_its_place_unless_it_says_otherwise() {
+        let held = Plain.hold("board").expect("the place is held");
+        assert_eq!(held.downcast::<u8>(), Some(7));
+    }
+}

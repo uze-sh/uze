@@ -107,6 +107,18 @@ mod tests {
     }
 
     #[test]
+    fn a_builtin_lists_the_preferences_it_declares() {
+        let registry = ExtensionRegistry::builtin();
+        let review = registry.get("review").expect("the review ships");
+        let names: Vec<String> = review
+            .preferences()
+            .into_iter()
+            .map(|decl| decl.name)
+            .collect();
+        assert_eq!(names, [crate::review::MARK_VIEWED_AUTOMATICALLY]);
+    }
+
+    #[test]
     fn catalog_entries_are_well_formed() {
         for extension in ExtensionRegistry::builtin().all() {
             assert!(!extension.name.is_empty());
