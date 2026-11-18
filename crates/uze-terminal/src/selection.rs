@@ -936,4 +936,126 @@ mod tests {
              was blank before too"
         );
     }
+
+    #[test]
+    fn a_press_and_release_on_one_cell_selects_that_cell() {
+        let mut terminal = numbered_lines();
+        let mut selection = PaneSelection::default();
+        selection.apply(&mut terminal, begin((2, 0), (2, 0)));
+        assert_eq!(selection.text(&terminal), "n");
+    }
+
+    #[test]
+    fn a_selection_copies_from_where_it_starts_to_where_it_ends() {
+        let mut screen = FullScreen::showing(10);
+        screen.apply(begin((3, 0), (4, 2)));
+        assert_eq!(
+            screen.text(),
+            "sage 10\nmessage 11\nmessa",
+            "the first line from the press, the lines between whole, the last up to the pointer"
+        );
+    }
+
+    #[test]
+    fn a_pane_resized_under_an_alternate_screen_selection_ends_it() {
+        let mut screen = FullScreen::showing(10);
+        screen.apply(begin((0, 1), (9, 1)));
+        screen.apply(SelectionGesture::Release);
+        screen.terminal.resize(TermSize::new(20, 4));
+        screen.selection.observe(&screen.terminal);
+        assert_eq!(screen.text(), "");
+    }
+
+    /// A full-screen program whose content reaches the last row, with no
+    /// prompt kept in place below it.
+    #[test]
+    fn content_scrolling_into_the_last_row_carries_the_selection() {
+        let mut screen = FullScreen::showing(10);
+        let lines = |first: usize| -> Vec<String> {
+            (first..first + 5)
+                .map(|line| format!("line {line}"))
+                .collect()
+        };
+        screen.draw_rows(&lines(10), 0..5);
+        screen.apply(begin((0, 2), (6, 2)));
+        screen.apply(SelectionGesture::Release);
+        screen.draw_rows(&lines(11), 0..5);
+        assert_eq!(screen.selected(), ["", "line 12", "", "", ""]);
+    }
+
+    /// Half the screen rewritten where it stands is still the same screen,
+    /// edited; more than half is another one.
+    #[test]
+    fn half_the_screen_rewritten_in_place_is_an_edit_and_more_is_another_screen() {
+        let rewrite = |rows: std::ops::Range<usize>| {
+            let mut screen = FullScreen::showing_rows(10, 10);
+            screen.apply(begin((0, 0), (9, 0)));
+            screen.apply(SelectionGesture::Release);
+            let mut lines = FullScreen::frame(10, 10);
+            for row in rows.clone() {
+                lines[row] = format!("rewritten {row}");
+            }
+            screen.draw_rows(&lines, rows);
+            screen.text()
+        };
+        assert_eq!(rewrite(2..7), "message 10", "five rows of ten");
+        assert_eq!(rewrite(2..8), "", "six rows of ten");
+    }
+
+    /// Rows cleared are not rows rewritten: a program blanking most of its
+    /// screen has not drawn another one.
+    #[test]
+    fn rows_cleared_where_they_stand_keep_the_selection() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.apply(begin((0, 0), (9, 0)));
+        screen.apply(SelectionGesture::Release);
+        let mut lines = FullScreen::frame(10, 10);
+        for line in &mut lines[2..9] {
+            line.clear();
+        }
+        screen.draw_rows(&lines, 2..9);
+        assert_eq!(screen.text(), "message 10");
+    }
+
+    /// One row that happens to show what another row showed before is not
+    /// enough to call a move: it is an edit where it stands.
+    #[test]
+    fn a_single_row_matching_another_is_an_edit_not_a_move() {
+        let mut screen = FullScreen::showing(10);
+        screen.apply(begin((0, 1), (9, 1)));
+        screen.apply(SelectionGesture::Release);
+        let mut lines = FullScreen::frame(10, 5);
+        lines[3] = "message 11".to_owned();
+        screen.draw_rows(&lines, 3..4);
+        assert_eq!(screen.selected(), ["", "message 11", "", "", ""]);
+    }
+
+    /// Two rows carried up one, and the row the move brought in, explain
+    /// three of six changed rows, enough to call it a move; three of seven
+    /// is not, and that redraw is another screen.
+    #[test]
+    fn a_move_is_called_only_when_it_explains_half_the_redraw() {
+        let redraw = |others: std::ops::Range<usize>| {
+            let mut screen = FullScreen::showing_rows(10, 10);
+            screen.apply(begin((0, 2), (9, 2)));
+            screen.apply(SelectionGesture::Release);
+            let mut lines = FullScreen::frame(10, 10);
+            lines[1] = "message 12".to_owned();
+            lines[2] = "message 13".to_owned();
+            for row in others.clone() {
+                lines[row] = format!("other {row}");
+            }
+            screen.draw_rows(&lines, 1..others.end);
+            screen.selected()
+        };
+        let selected = redraw(3..7);
+        assert_eq!(
+            selected[1], "message 12",
+            "the selection moved with its line: {selected:?}"
+        );
+        assert!(
+            redraw(3..8).iter().all(String::is_empty),
+            "another screen ends the selection"
+        );
+    }
 }
