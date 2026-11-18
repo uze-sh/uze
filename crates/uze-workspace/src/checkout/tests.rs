@@ -2509,3 +2509,33 @@ fn instructions_that_cannot_be_left_out_of_a_slot_say_so() {
 
     assert!(keep_derived_instructions_behind(repository.root(), &slot).is_err());
 }
+
+/// A store an earlier build wrote can name one slot from several agents;
+/// reconciling leaves the slot to the one whose branch the checkout has,
+/// however many others name it.
+#[test]
+fn a_slot_several_agents_name_is_left_to_the_one_on_its_branch() {
+    let repository = repository("slot-several-holders");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (holder, slot) = launch(&repository, &mut store, "holder");
+    for label in ["earlier", "earliest"] {
+        let mut stale = task(label);
+        isolation(&mut stale).checkout = Some(slot.id.clone());
+        store.upsert(stale);
+    }
+
+    reconcile(primary, &mut store, TARGET);
+
+    let naming: Vec<AgentId> = store
+        .agents
+        .iter()
+        .filter(|agent| {
+            agent
+                .isolation()
+                .is_some_and(|isolation| isolation.checkout.as_ref() == Some(&slot.id))
+        })
+        .map(|agent| agent.id.clone())
+        .collect();
+    assert_eq!(naming, vec![holder.id.clone()]);
+}
