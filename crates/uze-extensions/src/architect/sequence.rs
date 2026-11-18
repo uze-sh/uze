@@ -429,4 +429,34 @@ mod tests {
         let (x, _) = find(&grid, &format!("│ {long} │"));
         assert!(x + long.chars().count() + 4 < grid[0].len());
     }
+
+    /// The blank columns left and right of everything drawn.
+    fn margins(grid: &[Vec<char>]) -> (usize, usize) {
+        let drawn = |column: usize| grid.iter().any(|row| row[column] != ' ');
+        let width = grid[0].len();
+        let first = (0..width).find(|&c| drawn(c)).unwrap();
+        let last = (0..width).rev().find(|&c| drawn(c)).unwrap();
+        (first, width - 1 - last)
+    }
+
+    #[test]
+    fn the_drawing_is_as_wide_as_what_reaches_furthest_and_its_margin() {
+        let long = "sequenceDiagram\n participant A as A participant with a long title\n participant B as Bob\n";
+        for source in [
+            format!("{TWO} A->>B: hi"),
+            format!("{TWO} B->>A: a message from the right, longer than the heads"),
+            format!("{TWO} B->>B: a self message with a great many words"),
+            format!("{TWO} A->>A: a self message with a great many words"),
+            format!("{long} Note over B: a note wider than any head here"),
+            format!("{long} Note over B: a note wider than any head her"),
+        ] {
+            let grid = grid(&drawn(&source));
+            let (left, right) = margins(&grid);
+            assert_eq!(left, 2, "{source}");
+            assert!(
+                (2..=3).contains(&right),
+                "{source}: {right} blank on the right"
+            );
+        }
+    }
 }
