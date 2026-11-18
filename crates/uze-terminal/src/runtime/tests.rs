@@ -596,7 +596,7 @@ fn a_claim_this_build_cannot_name_is_reported_rather_than_called_stopped() {
     let refused = super::stop().expect_err("a claim nobody can name is not a clean stop");
     let said = refused.to_string();
     assert!(
-        said.contains("serving this workspace") && said.contains(&super::host::find_server()),
+        said.contains("serving this workspace") && said.contains("terminal serve"),
         "the message names the situation and how to end it: {said}"
     );
     assert!(

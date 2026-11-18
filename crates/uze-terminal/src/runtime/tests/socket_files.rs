@@ -264,3 +264,34 @@ fn a_socket_cleaned_from_under_a_live_server_is_put_back() {
     server.shut_down();
     let _ = std::fs::remove_dir_all(&scratch);
 }
+
+/// An endpoint this client may not connect to is a failure to report,
+/// never "nothing is running": a stop does not answer that it found
+/// nothing to stop, and usage does not answer that no server runs.
+#[test]
+fn an_endpoint_this_client_may_not_reach_is_reported_rather_than_called_absent() {
+    // SAFETY: no arguments, and it cannot fail.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipped: the superuser reaches a socket whatever its mode");
+        return;
+    }
+    let scratch = uze_testkit::temp::socket_scratch("unreachable");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let socket = socket_path().unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    assert!(
+        matches!(crate::runtime::stop(), Err(RuntimeError::Io(_))),
+        "a stop"
+    );
+    assert!(
+        matches!(crate::runtime::usage(), Err(RuntimeError::Io(_))),
+        "a usage request"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
