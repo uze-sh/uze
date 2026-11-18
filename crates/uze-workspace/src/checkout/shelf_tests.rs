@@ -425,3 +425,35 @@ fn a_dropped_shelf_is_dropped_only_while_it_is_the_one_expected() {
     drop_shelf(repository.root(), TASK, &second).unwrap();
     assert_eq!(shelf_of(repository.root(), TASK), None);
 }
+
+#[test]
+fn why_a_checkout_cannot_be_shelved_names_what_stands_in_the_way() {
+    let uncapturable = Unshelvable::Uncapturable("submodule `vendor`".to_owned()).to_string();
+    assert!(
+        uncapturable.contains("submodule `vendor`"),
+        "{uncapturable}"
+    );
+    let failed = Unshelvable::Failed("the index is locked".to_owned()).to_string();
+    assert!(failed.contains("the index is locked"), "{failed}");
+}
+
+/// Shelving reads the checkout through an index of its own, and leaves
+/// nothing of it behind in the checkout's Git directory.
+#[test]
+fn shelving_leaves_no_index_of_its_own_behind() {
+    let (repository, slot, branch) = slot("shelf-temporary-index");
+    fs::write(slot.join("new.rs"), "fn new() {}\n").unwrap();
+    let before: Vec<_> = fs::read_dir(slot_git_dir(&slot))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+
+    shelved(&repository, &slot, &branch);
+
+    let left: Vec<_> = fs::read_dir(slot_git_dir(&slot))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| !before.contains(name))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
