@@ -4667,3 +4667,44 @@ fn a_rename_refuses_no_name_and_the_directorys_own_names() {
         press(&mut view, Command::Close);
     }
 }
+
+/// Editor settings with no `settings.json` among them are no exclusion
+/// and no failure: the tree shows everything and says nothing.
+#[test]
+fn editor_settings_without_the_settings_file_hide_nothing_quietly() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file("/w/.vscode/extensions.json", "{}")
+        .with_directory("/w/node_modules");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "node_modules"]);
+    assert!(view.notice.is_none(), "{:?}", view.notice);
+}
+
+/// A chain of only children with no bottom — what a link naming its own
+/// directory looks like — is read thirty-two directories down and no
+/// further.
+#[test]
+fn a_chain_with_no_bottom_is_read_only_so_far_down() {
+    let mut machine = FakeMachine::default().with_file("/w/README.md", "# hi\n");
+    let mut path = String::from("/w/top");
+    machine = machine.with_directory(&path);
+    for _ in 0..40 {
+        path.push_str("/a");
+        machine = machine.with_directory(&path);
+    }
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/top"));
+    press(&mut view, Command::Activate);
+    let request = view.take_request().expect("the opened directory is read");
+    view.absorb(fulfill(&machine, request));
+    let below_top = view
+        .files
+        .listings
+        .keys()
+        .filter(|listed| listed.starts_with("/w/top/a"))
+        .count();
+    assert_eq!(below_top, 32);
+}
