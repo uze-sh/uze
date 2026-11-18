@@ -369,6 +369,8 @@ mod tests {
             x + "think about it at some length".len() < bob,
             "the next lifeline stands clear of the words"
         );
+        let blank = bob - (x + "think about it at some length".len());
+        assert!(blank <= 3, "and no further than they need: {blank}");
         let (_, next) = find(&grid, "next");
         assert!(
             next > y + 2,
