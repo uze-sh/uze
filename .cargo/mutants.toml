@@ -343,6 +343,8 @@ exclude_re = [
   'uze-extensions/src/architect/sequence\.rs.*replace > with >= in message$',
   # A gap already as wide as the message needs is widened by nothing.
   'uze-extensions/src/architect/sequence\.rs.*replace < with <= in centres$',
+  # A frontier entry never costs less than the best already known for its state, so the mutant skips nothing and only expands stale entries, which can improve no state.
+  'uze-extensions/src/architect/route\.rs.*replace > with < in shortest$',
   # uze-extensions engine
   # A default answered as `Vec::new()` is the `vec![]` the mutant puts back.
   'uze-extensions/src/contract\.rs.*replace Extension::(requests|notifications|text|watches|jobs) -> Vec<\w+> with vec!\[\]$',
