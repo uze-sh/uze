@@ -575,4 +575,233 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn a_box_holds_its_text_inside_a_border_and_a_column_of_air() {
+        let (_, placement) = placed("flowchart TD\n a[Hello]");
+        let frame = placement.nodes[0];
+        assert_eq!((frame.w, frame.h), (text_width("Hello") + 4, 1 + 2));
+    }
+
+    /// A store has a lid, a row of its own; a queue has a second wall, a
+    /// column of its own.
+    #[test]
+    fn a_store_takes_a_row_more_and_a_queue_a_column_more() {
+        let (_, placement) = placed(
+            "C4Container\n Container(c, \"Jobs\")\n ContainerDb(d, \"Jobs\")\n ContainerQueue(q, \"Jobs\")",
+        );
+        let [plain, store, queue] = [0, 1, 2].map(|node| placement.nodes[node]);
+        assert_eq!((store.w, store.h), (plain.w, plain.h + 1));
+        assert_eq!((queue.w, queue.h), (plain.w + 1, plain.h));
+    }
+
+    #[test]
+    fn the_margin_around_a_diagram_is_the_same_on_every_side() {
+        let (_, placement) = placed("flowchart TD\n a[Hello]");
+        let frame = placement.nodes[0];
+        let (left, top) = (frame.x, frame.y);
+        let right = placement.width - (frame.x + frame.w);
+        let bottom = placement.height - (frame.y + frame.h);
+        assert!(left > 0);
+        assert_eq!((left, left, left), (right, top, bottom));
+    }
+
+    /// A region's members sit inside its border with a column of air each
+    /// side and its title on the top border; a long title widens it.
+    #[test]
+    fn a_region_wraps_its_members_and_fits_its_title() {
+        let (_, placement) = placed("flowchart TD\n subgraph s [S]\n a[Hello]\n end");
+        let (region, member) = (placement.clusters[0], placement.nodes[0]);
+        let left = member.x - region.x;
+        let right = region.x + region.w - (member.x + member.w);
+        assert!(left > 1, "a border and air: {left}");
+        assert_eq!(left, right, "the same each side");
+        let above = member.y - region.y;
+        let below = region.y + region.h - (member.y + member.h);
+        assert!(above > 1 && below > 1, "{above} above, {below} below");
+        assert!(
+            region.w - member.w <= 6 && region.h - member.h <= 4,
+            "no more room than a border and air"
+        );
+
+        let title = "A region with a long title";
+        let (_, placement) = placed(&format!(
+            "flowchart TD\n subgraph s [{title}]\n a[Hi]\n end"
+        ));
+        let width = placement.clusters[0].w;
+        assert!(
+            width > text_width(title) + 2 && width <= text_width(title) + 8,
+            "{width} for a title of {}",
+            text_width(title)
+        );
+    }
+
+    /// A short box beside a tall one is centred in their rank rather than
+    /// hanging from its top.
+    #[test]
+    fn a_short_box_is_centred_beside_a_tall_one() {
+        let (_, placement) = placed(
+            "flowchart TD\n a --> b[\"Tall<br/>one two three four five six seven eight nine ten eleven twelve thirteen fourteen\"]\n a --> c[Short]",
+        );
+        let (tall, short) = (placement.nodes[1], placement.nodes[2]);
+        assert!(tall.h > short.h + 2, "{tall:?} {short:?}");
+        let middle = |frame: Frame| frame.y * 2 + frame.h;
+        assert!(
+            (middle(tall) - middle(short)).abs() <= 1,
+            "{tall:?} {short:?}"
+        );
+    }
+
+    /// The room between ranks of a top-down flow does not depend on how
+    /// thick the ranks are.
+    #[test]
+    fn ranks_are_the_same_distance_apart_however_thick() {
+        let (_, placement) = placed(
+            "flowchart TD\n a --> b[\"Tall<br/>one two three four five six seven eight nine ten eleven twelve\"] --> c",
+        );
+        let [a, b, c] = [0, 1, 2].map(|node| placement.nodes[node]);
+        assert!(b.h > a.h);
+        let first = b.y - (a.y + a.h);
+        let second = c.y - (b.y + b.h);
+        assert!(first > 0);
+        assert_eq!(first, second);
+    }
+
+    /// Nothing connects them, so they tile: rows and columns, not a line.
+    #[test]
+    fn unconnected_boxes_tile() {
+        for (count, side) in [(4, 2), (9, 3)] {
+            let nodes: String = (0..count).map(|n| format!(" n{n}[N]\n")).collect();
+            let (_, placement) = placed(&format!("flowchart TD\n{nodes}"));
+            let rows: BTreeSet<i32> = placement.nodes.iter().map(|f| f.y).collect();
+            let columns: BTreeSet<i32> = placement.nodes.iter().map(|f| f.x).collect();
+            assert_eq!((rows.len(), columns.len()), (side, side), "{count} boxes");
+        }
+    }
+
+    /// Links between two ranks that cross where an order exists in which
+    /// none does.
+    fn crossings(graph: &Graph, placement: &Placement) -> usize {
+        let at = |node: usize| placement.nodes[node];
+        let mut crossings = 0;
+        for (i, first) in graph.edges.iter().enumerate() {
+            for second in graph.edges.iter().skip(i + 1) {
+                let same_ranks =
+                    at(first.from).y == at(second.from).y && at(first.to).y == at(second.to).y;
+                let above = (at(first.from).x - at(second.from).x).signum();
+                let below = (at(first.to).x - at(second.to).x).signum();
+                if same_ranks && above * below < 0 {
+                    crossings += 1;
+                }
+            }
+        }
+        crossings
+    }
+
+    #[test]
+    fn ranks_are_ordered_so_links_do_not_cross() {
+        for source in [
+            "flowchart TD\n c\n d\n a --> d\n b --> c",
+            "flowchart TD\n x\n y\n z\n a --> z\n b --> y\n c --> x",
+            "flowchart TD\n a --> m2\n b --> m1\n m1 --> z1\n m2 --> z2\n z2\n z1",
+            "flowchart TD\n p --> q2\n p --> q1\n q1 --> r1\n q2 --> r2\n s --> r2\n t --> r1",
+        ] {
+            let (graph, placement) = placed(source);
+            assert_eq!(crossings(&graph, &placement), 0, "{source}");
+        }
+    }
+
+    /// Along a left-to-right flow the room between ranks is where a label
+    /// is written, so it holds the longest; down a top-down one a label
+    /// runs beside its line and takes no room between ranks.
+    #[test]
+    fn the_room_between_ranks_holds_a_label_where_a_label_goes_there() {
+        let label = "a rather long label written here";
+        let gap = |source: &str| {
+            let (_, placement) = placed(source);
+            let (a, b) = (placement.nodes[0], placement.nodes[1]);
+            (b.x - (a.x + a.w), b.y - (a.y + a.h))
+        };
+        let (across, _) = gap(&format!("flowchart LR\n a -- {label} --> b"));
+        assert!(
+            across > text_width(label) && across <= text_width(label) + 10,
+            "{across} for a label of {}",
+            text_width(label)
+        );
+        let (_, labelled) = gap(&format!("flowchart TD\n a -- {label} --> b"));
+        let (_, bare) = gap("flowchart TD\n a --> b");
+        assert_eq!(labelled, bare);
+    }
+
+    fn middle_across(frame: Frame) -> i32 {
+        frame.x * 2 + frame.w
+    }
+
+    /// A parent sits over its children, and a lone child under its parent,
+    /// rather than wherever packing them left them.
+    #[test]
+    fn a_parent_sits_over_its_children() {
+        let (_, placement) = placed("flowchart TD\n p[Parent] --> l[Left]\n p --> r[Right]");
+        let [p, l, r] = [0, 1, 2].map(|node| placement.nodes[node]);
+        let between = (middle_across(l) + middle_across(r)) / 2;
+        assert!((middle_across(p) - between).abs() <= 2, "{p:?} {l:?} {r:?}");
+
+        let (_, placement) = placed(
+            "flowchart TD\n w[\"A very wide parent box indeed\"] --> c[Child]\n x[Other] --> y[Below]",
+        );
+        let [w, c] = [0, 1].map(|node| placement.nodes[node]);
+        assert!(
+            (middle_across(w) - middle_across(c)).abs() <= 2,
+            "{w:?} {c:?}"
+        );
+    }
+
+    /// A row of children pulled toward their parents keeps its order and
+    /// its spacing.
+    #[test]
+    fn children_pulled_toward_their_parent_keep_apart() {
+        let (_, placement) = placed(
+            "flowchart TD\n p --> a[Alpha]\n p --> b[Beta]\n p --> c[Gamma]\n p --> d[Delta]",
+        );
+        let row: Vec<Frame> = (1..5).map(|node| placement.nodes[node]).collect();
+        for pair in row.windows(2) {
+            assert!(pair[0].x + pair[0].w < pair[1].x, "{pair:?}");
+        }
+        let p = placement.nodes[0];
+        let between = (middle_across(row[0]) + middle_across(row[3])) / 2;
+        assert!((middle_across(p) - between).abs() <= 2, "{p:?} {row:?}");
+    }
+
+    /// A link into a region ranks the region after where the link starts.
+    #[test]
+    fn a_link_into_a_region_ranks_the_region_below_its_source() {
+        let (_, placement) = placed(
+            "flowchart TD\n x --> a\n subgraph outer [Outer]\n subgraph inner [Inner]\n a[A]\n end\n b[B]\n end",
+        );
+        let source = placement.nodes[0];
+        let outer = placement.clusters[0];
+        assert!(outer.y > source.y + source.h, "{source:?} {outer:?}");
+    }
+
+    /// A short last row of a tile starts at the left, under the first
+    /// column, the way a short last line of text does.
+    #[test]
+    fn a_short_last_row_of_a_tile_starts_under_the_first_column() {
+        for count in [3, 5] {
+            let nodes: String = (0..count).map(|n| format!(" n{n}[N]\n")).collect();
+            let (_, placement) = placed(&format!("flowchart TD\n{nodes}"));
+            let top = placement.nodes.iter().map(|f| f.y).min().unwrap();
+            let last_row = placement.nodes.iter().map(|f| f.y).max().unwrap();
+            let left = |y: i32| {
+                placement
+                    .nodes
+                    .iter()
+                    .filter(|f| f.y == y)
+                    .map(|f| f.x)
+                    .min()
+                    .unwrap()
+            };
+            assert_eq!(left(last_row), left(top), "{count} boxes");
+        }
+    }
 }
