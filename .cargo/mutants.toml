@@ -365,6 +365,8 @@ exclude_re = [
   'uze-workspace/src/continuity\.rs.*replace LaunchPlan::nothing -> Self with Default::default\(\)$',
   # A fast path: an empty claim id finds no record, and no launches file holds none.
   'uze-workspace/src/continuity\.rs.*replace \|\| with && in overrides_left_behind$',
+  # Only an extra exclusion of the isolation directory, which is idempotent.
+  'uze-workspace/src/continuity\.rs.*replace && with \|\| in give_context$',
   # The catch-all spells `types()`, which for Unset is the conventional list joined the same way.
   'uze-workspace/src/worktree\.rs.*delete match arm Self::Unset in BranchVocabulary::spelled$',
   # Read only by the architecture suite, and every entry is Unbounded, so never due.
