@@ -1302,6 +1302,96 @@ mod tests {
         cost + side_cost(side, opposite(exit)) + off
     }
 
+    /// Each edge of `graph`, laid out at `placement`, is drawn the
+    /// cheapest way there is given the lines drawn before it, and leaves
+    /// its box straight.
+    fn check_cheapest(source: &str, graph: &Graph, placement: &Placement) {
+        let mut grid = Grid::new(graph, placement);
+        let mut search = Search::new(grid.blocked.len() * 4);
+        for edge in &graph.edges {
+            if edge.from == edge.to {
+                continue;
+            }
+            let ends = (edge.from, edge.to);
+            let passage = Passage {
+                ends,
+                inside: regions_of(graph, ends.0) | regions_of(graph, ends.1),
+            };
+            let (from, to) = (placement.nodes[ends.0], placement.nodes[ends.1]);
+            let wanted = cheapest(&grid, graph.flow, from, to, passage);
+            let found = shortest(&grid, &mut search, graph.flow, from, to, passage);
+            let cost = found
+                .as_ref()
+                .map(|cells| cost_of(&grid, graph.flow, from, to, passage, cells));
+            assert_eq!(cost, wanted, "{source}: {ends:?} {found:?}");
+            let Some(cells) = found else { continue };
+            if let [(_, _, first), (_, _, second), ..] = cells[..] {
+                assert_eq!(first, second, "{source}: {ends:?} leaves straight");
+            }
+            for (position, &(x, y, heading)) in cells.iter().enumerate() {
+                let index = grid.index(x, y).unwrap();
+                assert!(
+                    position == 0
+                        || position + 1 == cells.len()
+                        || cells[position + 1].2 == heading
+                        || grid.may_turn(index, passage),
+                    "{source}: {ends:?} bends where it may not at ({x},{y})"
+                );
+                grid.claim(index, heading, ends);
+                if let Some(&(_, _, leaving)) = cells.get(position + 1) {
+                    grid.claim(index, leaving, ends);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hand_placed_line_takes_the_cheapest_way_there_is() {
+        let cases: Vec<(&str, Vec<Frame>)> = vec![
+            (
+                "flowchart TD\n a --> b\n c",
+                vec![
+                    small(2, 2),
+                    small(20, 22),
+                    Frame {
+                        x: 0,
+                        y: 6,
+                        w: 12,
+                        h: 10,
+                    },
+                ],
+            ),
+            ("flowchart TD\n a --> b", vec![small(2, 2), small(20, 5)]),
+            ("flowchart TD\n a --> b", vec![small(2, 2), small(6, 6)]),
+            ("flowchart LR\n a --> b", vec![small(2, 2), small(5, 12)]),
+            (
+                "flowchart TD\n a --> b\n c --> d",
+                vec![small(10, 0), small(10, 24), small(0, 12), small(24, 14)],
+            ),
+            (
+                "flowchart TD\n a --> b\n c --> d\n e --> f",
+                vec![
+                    small(4, 0),
+                    small(20, 24),
+                    small(0, 10),
+                    small(26, 10),
+                    small(0, 16),
+                    small(26, 16),
+                ],
+            ),
+        ];
+        for (source, nodes) in cases {
+            let graph = graph_of(source);
+            let placement = Placement {
+                nodes,
+                clusters: vec![],
+                width: 30,
+                height: 30,
+            };
+            check_cheapest(source, &graph, &placement);
+        }
+    }
+
     /// Every edge of each diagram is drawn the cheapest way there is, given
     /// the lines already drawn before it.
     #[test]
@@ -1315,32 +1405,7 @@ mod tests {
         ] {
             let graph = graph_of(source);
             let placement = layout::place(&graph);
-            let mut grid = Grid::new(&graph, &placement);
-            let mut search = Search::new(grid.blocked.len() * 4);
-            for edge in &graph.edges {
-                if edge.from == edge.to {
-                    continue;
-                }
-                let ends = (edge.from, edge.to);
-                let passage = Passage {
-                    ends,
-                    inside: regions_of(&graph, ends.0) | regions_of(&graph, ends.1),
-                };
-                let (from, to) = (placement.nodes[ends.0], placement.nodes[ends.1]);
-                let wanted = cheapest(&grid, graph.flow, from, to, passage);
-                let found = shortest(&grid, &mut search, graph.flow, from, to, passage);
-                let cost = found
-                    .as_ref()
-                    .map(|cells| cost_of(&grid, graph.flow, from, to, passage, cells));
-                assert_eq!(cost, wanted, "{source}: {ends:?}");
-                for (position, &(x, y, heading)) in found.iter().flatten().enumerate() {
-                    let index = grid.index(x, y).unwrap();
-                    grid.claim(index, heading, ends);
-                    if let Some(&(_, _, leaving)) = found.as_ref().unwrap().get(position + 1) {
-                        grid.claim(index, leaving, ends);
-                    }
-                }
-            }
+            check_cheapest(source, &graph, &placement);
         }
     }
 }
