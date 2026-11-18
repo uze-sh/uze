@@ -256,6 +256,11 @@ mod tests {
         }
         let (alice, bob) = (lifeline(&grid, "Alice"), lifeline(&grid, "Bob"));
         assert!(alice < bob, "columns in the order declared");
+        let under: String = row_text(&grid, 3).split_whitespace().collect();
+        assert_eq!(
+            under, "┆┆",
+            "a row of lifelines between the heads and the first step"
+        );
         assert!(
             find(&grid, "│ Alice │").0 + 9 < find(&grid, "│ Bob │").0,
             "heads stand apart"
