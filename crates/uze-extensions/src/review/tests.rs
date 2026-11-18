@@ -2965,3 +2965,234 @@ fn discarding_an_added_file_says_it_deletes_it() {
     let body = super::view(&view, SPACE).confirm.expect("asked").body;
     assert!(body.starts_with("Deletes the file"), "{body}");
 }
+
+// --- The review as it stands (surface.rs) ---------------------------------
+
+/// `naming.rs`'s diff answered again, as `text` reads.
+fn answered_again(view: &mut ReviewView, text: &str) {
+    let path = PathBuf::from("/w").join("naming.rs");
+    view.absorb_diff(path.clone(), Ok(diff_of(&path, text)), "x".to_owned());
+}
+
+/// NAMING with its last two lines gone: three cells.
+const NAMING_SHORTER: &str = "\
+diff --git a/naming.rs b/naming.rs
+--- a/naming.rs
++++ b/naming.rs
+@@ -1,2 +1,2 @@
+ use std::fmt;
+-fn old() {}
++fn apply() {
+";
+
+#[test]
+fn the_review_says_whose_it_is_and_how_files_are_marked() {
+    use crate::contract::{Checkout, Extension};
+    let mut extension = ReviewExtension::default();
+    extension.configure(&serde_json::json!({ MARK_VIEWED_AUTOMATICALLY: false }));
+    extension.open(
+        SURFACE,
+        &Checkout {
+            root: PathBuf::from("/w"),
+            display: "/w".to_owned(),
+            target: None,
+            agent: Some("a1".to_owned()),
+        },
+    );
+    let view = extension.review_view().unwrap();
+    assert_eq!(view.kept_for(), Some("a1"));
+    assert!(view.marks_by_hand_only());
+    extension.configure(&serde_json::json!({}));
+    assert!(!extension.review_view().unwrap().marks_by_hand_only());
+}
+
+/// A diff that could not be read is asked for again with the next list,
+/// though its file did not move.
+#[test]
+fn a_diff_that_could_not_be_read_is_asked_again_with_the_next_list() {
+    let mut view = reviewing();
+    let path = PathBuf::from("/w").join("naming.rs");
+    view.asking = view.diff_key(&path).map(|key| (path.clone(), key));
+    view.absorb_diff(path, Err("git was busy".to_owned()), "x".to_owned());
+    assert!(!view.diff_pending);
+    relisted(&mut view, 1);
+    assert!(view.diff_pending);
+}
+
+/// A diff answered again as it was keeps how far it was read; one that
+/// changed starts again.
+#[test]
+fn a_diff_answered_again_unchanged_keeps_how_far_it_was_read() {
+    let mut view = reviewing();
+    view.reading.end_seen = true;
+    answered_again(&mut view, NAMING);
+    assert!(view.reading.end_seen, "the same diff");
+    answered_again(&mut view, NAMING_SHORTER);
+    assert!(!view.reading.end_seen, "another diff");
+}
+
+/// A mark still inside the diff answered again stays; one past its end
+/// is let go.
+#[test]
+fn a_mark_past_the_end_of_a_diff_answered_again_is_let_go() {
+    let mut view = reviewing();
+    view.mark = Some((1, 2));
+    answered_again(&mut view, NAMING_SHORTER);
+    assert_eq!(view.marked(), Some((1, 2)), "it ends on the last line");
+    answered_again(&mut view, NAMING);
+    view.mark = Some((1, 5));
+    answered_again(&mut view, NAMING_SHORTER);
+    assert_eq!(view.marked(), None);
+}
+
+/// What is on screen is known to have been read to its end only while
+/// it is the diff of the file as it stands.
+#[test]
+fn a_diff_not_standing_is_never_read_to_its_end() {
+    let mut view = reviewing();
+    relisted(&mut view, 2);
+    assert!(view.diff_pending, "the file moved since");
+    view.note_seen(SPACE);
+    assert!(
+        !view.reading.end_seen,
+        "the diff on screen is the one before"
+    );
+
+    let mut view = reviewing();
+    let path = PathBuf::from("/w").join("naming.rs");
+    view.absorb_diff(path, Err("git was busy".to_owned()), "x".to_owned());
+    view.note_seen(SPACE);
+    assert!(!view.reading.end_seen, "no diff is on screen");
+}
+
+/// A diff read to its end and on screen for `READ_FOR` is marked as it is
+/// left; one left sooner is not.
+#[test]
+fn a_diff_read_to_its_end_for_long_enough_is_marked_as_it_is_left() {
+    let naming = PathBuf::from("/w/naming.rs");
+    let mut view = reviewing();
+    view.note_seen(SPACE);
+    let shown = view.reading.shown_at.expect("shown");
+    view.leave(shown + surface::READ_FOR - std::time::Duration::from_millis(1));
+    assert_eq!(view.viewed(&naming), surface::Viewed::No, "left too soon");
+
+    let mut view = reviewing();
+    view.note_seen(SPACE);
+    let shown = view.reading.shown_at.expect("shown");
+    view.leave(shown + surface::READ_FOR);
+    assert_eq!(view.viewed(&naming), surface::Viewed::Yes);
+}
+
+/// A step back from the first thread goes round to the last.
+#[test]
+fn a_step_back_from_the_first_thread_goes_round_to_the_last() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    thread_on(&mut view, 2, "naming.rs", 3, "    rename();");
+    thread_on(&mut view, 3, "naming.rs", 5, "fn branch() {}");
+    view.record.comments[2].rows[0].kind = crate::review::RowKind::Context;
+    view.thread = Some(1);
+    handle_command(&mut view, Command::PreviousThread, SPACE);
+    assert_eq!(view.thread, Some(3));
+    handle_command(&mut view, Command::PreviousThread, SPACE);
+    assert_eq!(view.thread, Some(2));
+}
+
+/// A thread gone to stands a few lines below the top of the screen.
+#[test]
+fn a_thread_gone_to_stands_a_few_lines_below_the_top() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 5, "fn branch() {}");
+    view.record.comments[0].rows[0].kind = crate::review::RowKind::Context;
+    view.go_to_thread_id(1);
+    assert_eq!(view.scroll, line_of(&view, Line::Cell(5)) - 3);
+}
+
+/// A comment is drawn again as its text or its answers change.
+#[test]
+fn a_comment_is_drawn_again_as_its_text_or_its_answers_change() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    let card = |view: &ReviewView| -> String {
+        render::lines(view)
+            .iter()
+            .filter(|drawn| drawn.line == Line::CardBody(1))
+            .map(spoken)
+            .collect()
+    };
+    view.change(change::Change::Edit {
+        id: 1,
+        text: "rewritten".to_owned(),
+    });
+    assert!(card(&view).contains("rewritten"), "{}", card(&view));
+    view.record.comments[0].answers = vec!["done so".to_owned()];
+    view.recolour();
+    assert!(card(&view).contains("done so"), "{}", card(&view));
+}
+
+/// Choosing the filter already on show leaves the diff on show.
+#[test]
+fn choosing_the_filter_on_show_keeps_its_diff() {
+    let mut view = reviewing();
+    view.set_filter(Filter::All);
+    assert!(view.diff.is_some());
+    assert!(view.listed, "nothing to read again");
+}
+
+/// Only a draft is opened again to edit, the one asked for.
+#[test]
+fn only_the_draft_asked_for_is_opened_again_to_edit() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    thread_on(&mut view, 2, "naming.rs", 3, "    rename();");
+    view.edit_comment(2);
+    let composer = view.composer.take().expect("editing");
+    assert_eq!(
+        (composer.editing, composer.text()),
+        (Some(2), "thread 2".to_owned())
+    );
+    view.record.comments[1].status = CommentStatus::Sent;
+    view.edit_comment(2);
+    assert!(view.composer.is_none(), "a sent comment is the agent's");
+}
+
+/// The comment mark stands on every line of a comment's run, from the
+/// diff's first line on.
+#[test]
+fn the_comment_mark_stands_on_every_line_of_the_run() {
+    let mut view = reviewing();
+    view.change(change::Change::Draft {
+        id: 1,
+        path: "naming.rs".to_owned(),
+        rows: vec![
+            Row {
+                kind: crate::review::RowKind::Context,
+                line: 1,
+                text: "use std::fmt;".to_owned(),
+            },
+            Row {
+                kind: crate::review::RowKind::Removed,
+                line: 2,
+                text: "fn old() {}".to_owned(),
+            },
+        ],
+        excerpt: String::new(),
+        text: "a run".to_owned(),
+    });
+    let mark = crate::view::COMMENT_MARK.to_string();
+    let marked: Vec<Line> = render::lines(&view)
+        .iter()
+        .filter(|drawn| drawn.content.gutter.starts_with(&mark))
+        .map(|drawn| drawn.line)
+        .collect();
+    assert_eq!(marked, [Line::Cell(0), Line::Cell(1)]);
+}
+
+/// A comment on every line of a diff is found under its last line.
+#[test]
+fn a_comment_on_every_line_of_a_diff_is_found() {
+    let path = PathBuf::from("/w").join("tests.rs");
+    let cells = diff_of(&path, TESTS).cells;
+    let rows: Vec<Row> = cells.iter().map(surface::row_of).collect();
+    assert_eq!(surface::locate(&rows, &cells), Some(cells.len() - 1));
+}
