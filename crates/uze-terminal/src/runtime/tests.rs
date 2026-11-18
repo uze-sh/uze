@@ -452,6 +452,28 @@ fn mouse_mode_reflects_what_the_pane_actually_asked_for() {
     assert_eq!(snapshot(PaneId(1), &terminal).mouse, MouseMode::default());
 }
 
+/// Drag reporting alone (1002) reports the press that starts a drag too.
+#[test]
+fn a_program_asking_only_for_drags_is_sent_clicks_as_well() {
+    let (sender, _receiver) = std::sync::mpsc::channel();
+    let mut terminal = Term::new(Config::default(), &TermSize::new(12, 3), reply_sink(sender));
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut terminal, b"\x1b[?1002h");
+    let mouse = snapshot(PaneId(1), &terminal).mouse;
+    assert!(mouse.reports_clicks && mouse.reports_drag, "{mouse:?}");
+}
+
+/// A query the emulator answers on its own (where the cursor is) is
+/// handed back for the program.
+#[test]
+fn a_cursor_position_query_is_answered() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut terminal = Term::new(Config::default(), &TermSize::new(12, 3), reply_sink(sender));
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut terminal, b"\x1b[2;3H\x1b[6n");
+    assert_eq!(receiver.try_recv().expect("a reply"), b"\x1b[2;3R".to_vec());
+}
+
 #[test]
 fn bracketed_paste_reflects_what_the_pane_actually_asked_for() {
     // A readline-style program (Claude Code, Codex) turns this on
@@ -583,6 +605,158 @@ fn damage_that_changes_nothing_drawn_is_not_offered() {
     pane.stop();
 
     assert_eq!(offered, 1, "an unchanged screen was offered again");
+}
+
+/// A pane whose program prints nothing, so what is fed to its emulator
+/// is all it shows.
+// Unix only: `sleep` in a POSIX shell prints nothing, while ConPTY paints a
+// starting console on its own schedule, over whatever was fed before it.
+#[cfg(unix)]
+fn quiet_pane(id: u64, columns: u16, rows: u16) -> PaneRuntime {
+    let (damage, _damage_events) = std::sync::mpsc::channel();
+    PaneRuntime::spawn(
+        PaneId(id),
+        std::env::temp_dir(),
+        columns,
+        rows,
+        damage,
+        Launch::Program {
+            argv: shell_argv("sleep 30", "Start-Sleep 30"),
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+        false,
+    )
+    .unwrap()
+}
+
+/// Feeds `bytes` to `pane`'s emulator as if its program had written them.
+// Unix only: used by the `quiet_pane` tests alone.
+#[cfg(unix)]
+fn draw(pane: &PaneRuntime, bytes: &[u8]) {
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut *pane.terminal.lock().unwrap(), bytes);
+}
+
+/// A cell rewritten with the cursor put back where it was still changed
+/// what a client draws.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn a_change_that_leaves_the_cursor_where_it_was_is_still_offered() {
+    let pane = quiet_pane(30, 80, 24);
+    let mut offered = Vec::new();
+    pane.offer_damage(|damage| offered.push(damage.changed.len()));
+    draw(&pane, b"\x1b7X\x1b8");
+    pane.offer_damage(|damage| offered.push(damage.changed.len()));
+    pane.stop();
+    assert_eq!(offered.len(), 2, "the rewritten cell was never offered");
+    assert_eq!(offered[1], 1);
+}
+
+/// Damage names each changed cell by the row and column it stands at.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn damage_names_the_row_and_column_of_a_changed_cell() {
+    let pane = quiet_pane(31, 80, 24);
+    pane.damage_since_last();
+    draw(&pane, b"\x1b[3;5HX");
+    let damage = pane.damage_since_last();
+    pane.stop();
+    let written: Vec<_> = damage
+        .changed
+        .iter()
+        .filter(|(_, _, cell)| cell.character == 'X')
+        .map(|(row, column, _)| (*row, *column))
+        .collect();
+    assert_eq!(written, [(2, 4)]);
+}
+
+/// A grid of another shape cannot be diffed against the last one, so the
+/// first damage after a resize describes every cell, even when only one
+/// dimension moved.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn damage_after_a_resize_describes_every_cell() {
+    let pane = quiet_pane(32, 80, 24);
+    pane.damage_since_last();
+    pane.resize(80, 30);
+    let damage = pane.damage_since_last();
+    pane.stop();
+    assert_eq!(damage.changed.len(), 80 * 30);
+}
+
+/// Scrolling says whether the view moved: up into the scrollback and back
+/// down do, and nothing below the newest line or above the oldest does.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn scrolling_a_pane_says_whether_the_view_moved() {
+    let pane = quiet_pane(33, 80, 24);
+    let lines: String = (0..60).map(|line| format!("line {line}\r\n")).collect();
+    draw(&pane, lines.as_bytes());
+    let moved: Vec<bool> = [-1, 1, -1, -1, 1000, 1]
+        .into_iter()
+        .map(|lines| pane.scroll(lines))
+        .collect();
+    pane.stop();
+    assert_eq!(moved, [false, true, true, false, true, false]);
+}
+
+/// Selecting says whether what is selected changed, and the selection is
+/// the pane's text it covers.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn a_pane_selects_and_copies_the_text_under_a_gesture() {
+    let pane = quiet_pane(34, 80, 24);
+    draw(&pane, b"hello world");
+    let began = pane.select(crate::SelectionGesture::Begin {
+        anchor: (0, 0),
+        head: (4, 0),
+    });
+    let released = pane.select(crate::SelectionGesture::Release);
+    let text = pane.selected_text();
+    pane.stop();
+    assert!(began, "a selection was drawn");
+    assert!(!released, "letting go selects nothing new");
+    assert_eq!(text, "hello");
+}
+
+/// What the emulator answers a program's query with — here where its
+/// cursor is — reaches the program, which a terminal echoing input shows.
+// Unix only: a POSIX shell's `printf`, and a terminal that echoes input.
+#[cfg(unix)]
+#[test]
+fn a_programs_query_is_answered_on_its_terminal() {
+    let (damage, damage_events) = std::sync::mpsc::channel();
+    let pane = PaneRuntime::spawn(
+        PaneId(35),
+        std::env::temp_dir(),
+        80,
+        24,
+        damage,
+        Launch::Program {
+            argv: shell_argv("printf '\\033[6n'; sleep 30", "Start-Sleep 30"),
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+        false,
+    )
+    .unwrap();
+    let answered = std::iter::from_fn(|| damage_events.recv_timeout(Duration::from_secs(10)).ok())
+        .any(|_| {
+            pane.snapshot()
+                .cells
+                .into_iter()
+                .map(|cell| cell.character)
+                .collect::<String>()
+                .contains("1;1R")
+        });
+    pane.stop();
+    assert!(answered, "the cursor report never reached the program");
 }
 
 #[test]
