@@ -1508,4 +1508,84 @@ mod tests {
         let one = map.tiles((1, 1));
         assert!(one.iter().any(|tile| tile.frame.contains(0, 0)));
     }
+    /// Checkouts of every shape, in spaces of every size, keep the map's
+    /// promises: where the largest tile can be named every tile as drawn
+    /// has room for its name, no tail is
+    /// folded into a tile standing for one file, a level is at most a
+    /// screenful, and the tiles cover the space.
+    #[test]
+    fn the_maps_promises_hold_in_every_space() {
+        let mut shapes: Vec<Vec<FileMeasure>> = Vec::new();
+        shapes.push(
+            (0..60)
+                .map(|n| file(&format!("f{n:02}.rs"), 2000 / (n + 1), n))
+                .collect(),
+        );
+        shapes.push(
+            (0..30)
+                .map(|n| file(&format!("e{n:02}.rs"), 100, 1))
+                .collect(),
+        );
+        let mut mixed = vec![file("big.rs", 9000, 3), file("mid.rs", 1500, 1)];
+        mixed.extend((0..25).map(|n| file(&format!("s{n:02}.rs"), 40 + n, 0)));
+        shapes.push(mixed);
+        let mut few = vec![
+            file("a.rs", 500, 1),
+            file("b.rs", 400, 1),
+            file("c.rs", 300, 1),
+        ];
+        few.push(file("d.rs", 5, 0));
+        shapes.push(few);
+        for files in shapes {
+            let map = map(files);
+            for width in (20..=200).step_by(9) {
+                for height in (8..=60).step_by(5) {
+                    let space = (width, height);
+                    let tiles = map.tiles(space);
+                    assert!(
+                        tiles.len() <= MOST + 1,
+                        "{} tiles in {space:?}",
+                        tiles.len()
+                    );
+                    let covered: i32 = tiles.iter().map(|tile| tile.frame.w * tile.frame.h).sum();
+                    assert_eq!(covered, width * height, "{space:?}");
+                    let has_room = |tile: &Tile| {
+                        let drawn = bordered(tile.frame, space);
+                        drawn.w >= NAMED.0 && drawn.h >= NAMED.1
+                    };
+                    // Narrowing stops at the first tile: a space too small
+                    // for the largest name promises none.
+                    let roomy = tiles.first().is_some_and(has_room);
+                    for tile in &tiles {
+                        assert_ne!(tile.name, "+1 files", "{space:?}");
+                        assert!(
+                            !roomy || has_room(tile),
+                            "{} drawn as {:?} in {space:?}",
+                            tile.name,
+                            bordered(tile.frame, space)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// With nothing picked, an arrow starts from the middle of the map,
+    /// up and down as much as across.
+    #[test]
+    fn an_arrow_with_nothing_picked_starts_halfway_down() {
+        let mut map = map(vec![
+            file("a.rs", 100, 0),
+            file("b.rs", 100, 0),
+            file("c.rs", 100, 0),
+        ]);
+        let space = (20, 40);
+        let tiles = map.tiles(space);
+        let middle = tiles
+            .iter()
+            .find(|tile| tile.frame.contains(10, 20))
+            .map(|tile| tile.path.clone());
+        map.pick_toward(PanDirection::Down, space);
+        assert_eq!(map.picked, middle, "{tiles:?}");
+    }
 }
