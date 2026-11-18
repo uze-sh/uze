@@ -584,4 +584,541 @@ mod tests {
             assert!(placement.node_at(x + dx, y + dy).is_some());
         }
     }
+
+    fn graph_of(source: &str) -> Graph {
+        let Diagram::Graph(graph) = mermaid::parse(source).unwrap() else {
+            panic!("expected a graph");
+        };
+        graph
+    }
+
+    const TANGLE: &str =
+        "flowchart TD\n a --> b & c & d\n b --> e\n c --> e\n d --> a\n e --> a\n b --> d";
+    const FAN: &str = "flowchart TD\n a --> b\n a --> c\n a --> d\n a --> e\n a --> f";
+
+    #[test]
+    fn opposite_headings_face_each_other() {
+        assert_eq!(
+            [0, 1, 2, 3].map(opposite),
+            [2, 3, 0, 1],
+            "north, east, south, west"
+        );
+    }
+
+    #[test]
+    fn two_edges_are_mates_when_they_share_a_source_or_a_target() {
+        assert!(mates((0, 1), (0, 2)), "one source");
+        assert!(mates((0, 1), (2, 1)), "one target");
+        assert!(!mates((0, 1), (1, 0)), "one's source is the other's target");
+        assert!(!mates((0, 1), (2, 3)));
+    }
+
+    #[test]
+    fn a_region_has_its_own_bit_until_the_bits_run_out() {
+        assert_eq!(region_bit(0), 1);
+        assert_eq!(region_bit(3), 8);
+        assert_eq!(region_bit(63), 1 << 63);
+        assert_eq!(region_bit(64), 0);
+        assert_eq!(region_bit(65), 0);
+    }
+
+    #[test]
+    fn a_box_stands_in_its_region_and_every_region_around_it() {
+        let graph = graph_of(
+            "flowchart TD\n subgraph outer [Outer]\n subgraph inner [Inner]\n a\n end\n b\n end\n c",
+        );
+        let id = |name: &str| graph.nodes.iter().position(|node| node.id == name).unwrap();
+        let cluster = |name: &str| graph.clusters.iter().position(|c| c.id == name).unwrap();
+        let (outer, inner) = (region_bit(cluster("outer")), region_bit(cluster("inner")));
+        assert_eq!(regions_of(&graph, id("a")), outer | inner);
+        assert_eq!(regions_of(&graph, id("b")), outer);
+        assert_eq!(regions_of(&graph, id("c")), 0);
+    }
+
+    #[test]
+    fn a_deflated_frame_loses_as_much_on_every_side() {
+        let frame = Frame {
+            x: 10,
+            y: 20,
+            w: 8,
+            h: 6,
+        };
+        assert_eq!(
+            deflated(frame, 2),
+            Frame {
+                x: 12,
+                y: 22,
+                w: 4,
+                h: 2
+            }
+        );
+    }
+
+    #[test]
+    fn a_box_faces_another_by_the_side_nearest_it_in_the_drawings_flow() {
+        let from = Frame {
+            x: 10,
+            y: 10,
+            w: 6,
+            h: 4,
+        };
+        let at = |x: i32, y: i32| Frame { x, y, w: 6, h: 4 };
+        let (north, east, south, west) = (0, 1, 2, 3);
+        // Top down: a box wholly below or above is faced vertically, even
+        // when far to one side; one beside it, horizontally.
+        assert_eq!(facing(Flow::TopDown, from, at(40, 14)), south, "just below");
+        assert_eq!(facing(Flow::TopDown, from, at(-40, 6)), north, "just above");
+        assert_eq!(facing(Flow::TopDown, from, at(30, 11)), east);
+        assert_eq!(facing(Flow::TopDown, from, at(-10, 9)), west);
+        assert_eq!(facing(Flow::TopDown, from, at(10, 12)), east, "level");
+        assert_eq!(facing(Flow::TopDown, from, at(16, 13)), east, "overlapping");
+        // Left to right: the same, turned.
+        assert_eq!(
+            facing(Flow::LeftRight, from, at(16, 40)),
+            east,
+            "just right"
+        );
+        assert_eq!(facing(Flow::LeftRight, from, at(4, -40)), west, "just left");
+        assert_eq!(facing(Flow::LeftRight, from, at(11, 30)), south);
+        assert_eq!(facing(Flow::LeftRight, from, at(9, -10)), north);
+        assert_eq!(facing(Flow::LeftRight, from, at(12, 10)), south, "level");
+        assert_eq!(
+            facing(Flow::LeftRight, from, at(15, 10)),
+            south,
+            "overlapping"
+        );
+    }
+
+    #[test]
+    fn the_ports_of_a_box_are_the_cells_beside_its_sides_short_of_the_corners() {
+        let frame = Frame {
+            x: 10,
+            y: 20,
+            w: 5,
+            h: 4,
+        };
+        let mut found = ports(frame);
+        found.sort();
+        let mut wanted = vec![
+            (11, 19, 0, 1),
+            (12, 19, 0, 0),
+            (13, 19, 0, 1),
+            (11, 24, 2, 1),
+            (12, 24, 2, 0),
+            (13, 24, 2, 1),
+            (15, 21, 1, 1),
+            (15, 22, 1, 0),
+            (9, 21, 3, 1),
+            (9, 22, 3, 0),
+        ];
+        wanted.sort();
+        assert_eq!(found, wanted);
+    }
+
+    #[test]
+    fn a_side_facing_the_other_end_is_cheapest_and_the_far_side_dearest() {
+        for preferred in 0..4 {
+            let beside = (preferred + 1) % 4;
+            assert_eq!(side_cost(preferred, preferred), 0);
+            assert!(side_cost(beside, preferred) > 0);
+            assert!(side_cost(opposite(preferred), preferred) > side_cost(beside, preferred));
+            assert_eq!(
+                side_cost(opposite(beside), preferred),
+                side_cost(beside, preferred)
+            );
+        }
+    }
+
+    #[test]
+    fn a_cell_is_shared_exactly_where_more_than_one_line_runs() {
+        let (placement, routes) = routed(FAN);
+        let mut shared = 0;
+        for y in 0..placement.height {
+            for x in 0..placement.width {
+                let running = routes
+                    .routes
+                    .iter()
+                    .filter(|route| route.cells.iter().any(|&(cx, cy, _)| (cx, cy) == (x, y)))
+                    .count();
+                assert_eq!(routes.is_shared(x, y), running > 1, "({x},{y})");
+                shared += usize::from(running > 1);
+            }
+        }
+        assert!(shared > 0, "a fan out of one box shares a trunk");
+        assert!(!routes.is_shared(0, placement.height + 5), "off the board");
+    }
+
+    /// Whether the line leaves and enters this cell along one axis.
+    fn straight_through(route: &Route, position: usize) -> Option<bool> {
+        let (_, _, entered) = route.cells[position];
+        let left = route
+            .cells
+            .get(position + 1)
+            .map_or(entered, |&(_, _, next)| next);
+        (entered == left).then(|| is_horizontal(entered))
+    }
+
+    #[test]
+    fn lines_of_unrelated_edges_only_ever_cross_square_on() {
+        for source in [
+            TANGLE,
+            FAN,
+            "flowchart LR\n a --> b & c\n d --> b\n c --> d\n e --> a",
+        ] {
+            let graph = graph_of(source);
+            let (_, routes) = routed(source);
+            for one in &routes.routes {
+                for other in &routes.routes {
+                    let ends = |route: &Route| {
+                        let edge = &graph.edges[route.edge];
+                        (edge.from, edge.to)
+                    };
+                    if mates(ends(one), ends(other)) {
+                        continue;
+                    }
+                    for (a, &(x, y, _)) in one.cells.iter().enumerate() {
+                        let Some(b) = other
+                            .cells
+                            .iter()
+                            .position(|&(ox, oy, _)| (ox, oy) == (x, y))
+                        else {
+                            continue;
+                        };
+                        let (along_one, along_other) =
+                            (straight_through(one, a), straight_through(other, b));
+                        assert!(
+                            along_one.is_some() && along_other.is_some(),
+                            "{source}: no bend on a crossing at ({x},{y})"
+                        );
+                        assert_ne!(
+                            along_one, along_other,
+                            "{source}: ({x},{y}) is ridden along"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_leaves_its_box_straight_before_it_bends() {
+        for source in [TANGLE, FAN, "flowchart LR\n a --> b & c & d\n d --> a"] {
+            let graph = graph_of(source);
+            let (placement, routes) = routed(source);
+            for route in &routes.routes {
+                let (x, y, heading) = route.cells[0];
+                let (dx, dy) = HEADINGS[heading];
+                let source_box = placement.nodes[graph.edges[route.edge].from];
+                assert!(
+                    source_box.contains(x - dx, y - dy),
+                    "{source}: it starts beside its box"
+                );
+                if let Some(&(_, _, next)) = route.cells.get(1) {
+                    assert_eq!(next, heading, "{source}: a stub first");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_with_a_clear_way_runs_straight_from_the_middle_of_the_facing_side() {
+        for source in [
+            "flowchart TD\n a[Alpha] --> b[Alpha]",
+            "flowchart LR\n a[Alpha] --> b[Alpha]",
+        ] {
+            let (placement, routes) = routed(source);
+            let route = &routes.routes[0];
+            let (from, to) = (placement.nodes[0], placement.nodes[1]);
+            let heading = route.cells[0].2;
+            assert!(
+                route.cells.iter().all(|&(_, _, h)| h == heading),
+                "{source}: no bend"
+            );
+            let (x, y, _) = route.cells[0];
+            if source.contains("TD") {
+                assert_eq!(heading, 2, "{source}: down");
+                assert_eq!(x, from.center().0, "{source}");
+                assert_eq!(
+                    route.cells.len() as i32,
+                    to.y - (from.y + from.h),
+                    "{source}"
+                );
+            } else {
+                assert_eq!(heading, 1, "{source}: across");
+                assert_eq!(y, from.center().1, "{source}");
+                assert_eq!(
+                    route.cells.len() as i32,
+                    to.x - (from.x + from.w),
+                    "{source}"
+                );
+            }
+        }
+    }
+
+    /// The number of times a line changes heading.
+    fn bends(route: &Route) -> usize {
+        route
+            .cells
+            .windows(2)
+            .filter(|pair| pair[0].2 != pair[1].2)
+            .count()
+    }
+
+    #[test]
+    fn a_line_to_a_box_off_to_one_side_turns_no_more_than_it_must() {
+        for source in [
+            "flowchart TD\n a[A rather wide box] --> b & c",
+            "flowchart LR\n a --> b & c",
+        ] {
+            let (_, routes) = routed(source);
+            for route in &routes.routes {
+                assert!(bends(route) <= 2, "{source}: {:?}", route.cells);
+                let (x, y, _) = route.cells[0];
+                let &(lx, ly, _) = route.cells.last().unwrap();
+                assert_eq!(
+                    route.cells.len() as i32 - 1,
+                    (lx - x).abs() + (ly - y).abs(),
+                    "{source}: never doubles back"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_climbing_back_up_leaves_by_the_top_and_arrives_from_below() {
+        let source = "flowchart TD\n a --> b\n b --> c\n c --> a";
+        let graph = graph_of(source);
+        let (placement, routes) = routed(source);
+        let back = routes
+            .routes
+            .iter()
+            .find(|route| graph.nodes[graph.edges[route.edge].from].id == "c")
+            .unwrap();
+        let (from, to) = (placement.nodes[2], placement.nodes[0]);
+        assert!(to.y < from.y, "the target is above");
+        let first = back.cells[0];
+        assert!(
+            first.1 < from.y || first.2 == 1 || first.2 == 3,
+            "it leaves by the top or a side, never the bottom: {first:?}"
+        );
+        assert_eq!(routes.unrouted, 0);
+    }
+
+    fn region_grid(source: &str) -> (Graph, Placement, Grid, Frame) {
+        let graph = graph_of(source);
+        let placement = layout::place(&graph);
+        let grid = Grid::new(&graph, &placement);
+        let wall = placement.clusters[0];
+        (graph, placement, grid, wall)
+    }
+
+    const OUTSIDE: Passage = Passage {
+        ends: (100, 101),
+        inside: 0,
+    };
+
+    #[test]
+    fn a_regions_wall_is_crossed_square_on_away_from_its_corners_and_title() {
+        let (graph, _, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end",
+        );
+        let (north, east, south, west) = (0, 1, 2, 3);
+        let (right, bottom) = (wall.x + wall.w - 1, wall.y + wall.h - 1);
+        for (x, y) in [
+            (wall.x, wall.y),
+            (right, wall.y),
+            (wall.x, bottom),
+            (right, bottom),
+        ] {
+            for heading in 0..4 {
+                assert_eq!(
+                    grid.entering(x, y, heading, OUTSIDE),
+                    None,
+                    "corner ({x},{y})"
+                );
+            }
+        }
+        let title = crate::shared::canvas::text_width(&graph.clusters[0].title);
+        let last_of_title = wall.x + title + 3;
+        assert_eq!(
+            grid.entering(last_of_title, wall.y, south, OUTSIDE),
+            None,
+            "on the title"
+        );
+        assert_eq!(
+            grid.entering(wall.x + 1, wall.y, south, OUTSIDE),
+            None,
+            "before the title"
+        );
+        let past_title = last_of_title + 1;
+        assert!(past_title < right);
+        assert!(grid.entering(past_title, wall.y, south, OUTSIDE).is_some());
+        assert!(grid.entering(past_title, wall.y, north, OUTSIDE).is_some());
+        assert_eq!(
+            grid.entering(past_title, wall.y, east, OUTSIDE),
+            None,
+            "along the top"
+        );
+        let middle = wall.x + wall.w / 2;
+        assert!(grid.entering(middle, bottom, south, OUTSIDE).is_some());
+        assert_eq!(
+            grid.entering(middle, bottom, west, OUTSIDE),
+            None,
+            "along the bottom"
+        );
+        let level = wall.y + wall.h / 2;
+        for x in [wall.x, right] {
+            assert!(
+                grid.entering(x, level, east, OUTSIDE).is_some(),
+                "across a side"
+            );
+            assert!(
+                grid.entering(x, level, west, OUTSIDE).is_some(),
+                "across a side"
+            );
+            assert_eq!(
+                grid.entering(x, level, south, OUTSIDE),
+                None,
+                "along a side"
+            );
+            assert_eq!(
+                grid.entering(x, level, north, OUTSIDE),
+                None,
+                "along a side"
+            );
+        }
+    }
+
+    /// A cell clear of every box, region and wall.
+    fn open_ground(grid: &Grid) -> (i32, i32) {
+        (0..grid.width)
+            .flat_map(|x| (0..grid.height).map(move |y| (x, y)))
+            .find(|&(x, y)| {
+                let index = grid.index(x, y).unwrap();
+                !grid.halo[index]
+                    && !grid.blocked[index]
+                    && grid.inside[index] == 0
+                    && grid.boundary[index] == Boundary::None
+            })
+            .expect("open ground")
+    }
+
+    #[test]
+    fn crossing_a_wall_costs_more_than_open_ground() {
+        let (_, _, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end\n c",
+        );
+        let (x, y) = open_ground(&grid);
+        let open = grid.entering(x, y, 1, OUTSIDE).unwrap();
+        let across = grid
+            .entering(wall.x, wall.y + wall.h / 2, 1, OUTSIDE)
+            .unwrap();
+        assert!(across > open, "{across} > {open}");
+    }
+
+    #[test]
+    fn standing_in_a_region_costs_only_a_line_with_no_end_there() {
+        let (graph, placement, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end",
+        );
+        let a = graph.nodes.iter().position(|node| node.id == "a").unwrap();
+        let member = Passage {
+            ends: (100, 101),
+            inside: regions_of(&graph, a),
+        };
+        let box_a = placement.nodes[a];
+        // Clear of the boxes and of the wall's halo.
+        let (x, y) = (wall.x + 3, box_a.y + box_a.h + 2);
+        assert!(placement.node_at(x, y).is_none());
+        let stranger = grid.entering(x, y, 2, OUTSIDE).unwrap();
+        let belongs = grid.entering(x, y, 2, member).unwrap();
+        assert!(stranger > belongs, "{stranger} > {belongs}");
+        let outside = grid.entering(wall.x + wall.w + 4, wall.y + 3, 2, OUTSIDE);
+        if let Some(outside) = outside {
+            assert_eq!(
+                outside, belongs,
+                "a member stands in its region as on open ground"
+            );
+        }
+    }
+
+    #[test]
+    fn hugging_a_wall_from_either_side_costs_more_than_standing_clear_of_it() {
+        let (_, placement, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end\n c[A box wide enough for room]",
+        );
+        let level = wall.y + wall.h / 2;
+        let member = Passage {
+            ends: (100, 101),
+            inside: u64::MAX,
+        };
+        let just_inside = grid.entering(wall.x + 1, level, 2, member).unwrap();
+        let clear_inside = grid.entering(wall.x + 2, level, 2, member).unwrap();
+        assert!(just_inside > clear_inside, "{just_inside} > {clear_inside}");
+        let (x, y) = (wall.x - 1, level);
+        if x >= 0 && placement.node_at(x, y).is_none() {
+            let just_outside = grid.entering(x, y, 2, OUTSIDE).unwrap();
+            assert!(just_outside > clear_inside);
+        }
+    }
+
+    #[test]
+    fn a_lane_is_its_owners_and_their_mates_and_crossing_another_costs() {
+        let (_, _, mut grid, _) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n x\n end\n a[A box wide enough for room] --> b",
+        );
+        let (x, y) = open_ground(&grid);
+        let index = grid.index(x, y).unwrap();
+        let owner = Passage {
+            ends: (0, 1),
+            inside: 0,
+        };
+        let fresh = grid.entering(x, y, 1, owner).unwrap();
+        grid.claim(index, 1, (0, 1));
+        let mate = Passage {
+            ends: (0, 7),
+            inside: 0,
+        };
+        let stranger = Passage {
+            ends: (5, 6),
+            inside: 0,
+        };
+        assert!(
+            grid.entering(x, y, 1, mate).unwrap() > fresh,
+            "riding a trunk"
+        );
+        assert!(
+            grid.entering(x, y, 3, mate).is_some(),
+            "either way along it"
+        );
+        assert_eq!(
+            grid.entering(x, y, 1, stranger),
+            None,
+            "never along a stranger's"
+        );
+        let crossing = grid.entering(x, y, 0, stranger).unwrap();
+        assert!(crossing > fresh, "crossing costs");
+        assert_eq!(
+            grid.entering(x, y, 0, mate),
+            Some(fresh),
+            "a mate crosses for free"
+        );
+        assert!(
+            !grid.may_turn(index, stranger),
+            "no bend on a stranger's line"
+        );
+        assert!(grid.may_turn(index, mate), "a mate may fork there");
+    }
+
+    #[test]
+    fn no_bend_stands_on_a_wall() {
+        let (_, _, grid, wall) = region_grid(
+            "flowchart TD\n subgraph r [Region]\n a[A box wide enough for room] --> b\n end",
+        );
+        let level = wall.y + wall.h / 2;
+        let on_the_wall = grid.index(wall.x, level).unwrap();
+        let inside = grid.index(wall.x + 2, level).unwrap();
+        assert!(!grid.may_turn(on_the_wall, OUTSIDE));
+        assert!(grid.may_turn(inside, OUTSIDE));
+    }
 }
