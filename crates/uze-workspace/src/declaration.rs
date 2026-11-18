@@ -916,6 +916,21 @@ mod tests {
         assert_eq!(instructions.get(&ActionState::OnChange), None);
     }
 
+    /// Only the moments UZE itself leaves the agent's checkout waiting on
+    /// it have something to ask when the project says nothing.
+    #[test]
+    fn only_a_paused_rebase_and_a_refused_gate_ask_something_unsaid() {
+        for state in [ActionState::OnConflict, ActionState::OnFail] {
+            assert!(
+                state.fallback().is_some_and(|text| !text.trim().is_empty()),
+                "{}",
+                state.key()
+            );
+        }
+        assert_eq!(ActionState::OnChange.fallback(), None);
+        assert_eq!(ActionState::OnPublish.fallback(), None);
+    }
+
     #[test]
     fn an_undeclared_policy_is_the_built_in_default() {
         let directory = uze_testkit::temp::TempDir::new("manifest");

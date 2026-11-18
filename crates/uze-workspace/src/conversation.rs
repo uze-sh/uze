@@ -1059,6 +1059,19 @@ mod tests {
         assert!(!orphan.exists());
     }
 
+    /// A document no record names goes, and the collection says it went.
+    #[test]
+    fn a_document_no_record_names_is_collected_and_said() {
+        let home = home("conversation-collect-orphan");
+        let sessions = home.session_context_dir("claude-code");
+        fs::create_dir_all(&sessions).unwrap();
+        let orphan = sessions.join("orphan.md");
+        fs::write(&orphan, "ended\n").unwrap();
+
+        assert_eq!(collect_session_documents(&home), vec![orphan.clone()]);
+        assert!(!orphan.exists());
+    }
+
     #[test]
     fn forgetting_a_task_takes_its_record_with_it() {
         let home = home("conversation-forget");

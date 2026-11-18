@@ -1630,3 +1630,192 @@ fn push_without_a_remote_is_refused_before_anything_moves() {
     );
     assert_eq!(publication(primary, work(&isolation)), None);
 }
+
+/// An agent whose branch is on the remote, pushed by the agent itself.
+fn pushed(label: &str) -> (Repository, PathBuf, Agent) {
+    let (repository, other) = published(label);
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, label);
+    agent_commits(&repository, work(&agent), "a.rs", "");
+    let slot = slot_path(repository.root(), work(&agent)).unwrap();
+    repository.git_in(&slot, &["push", "--quiet", REMOTE, "HEAD"]);
+    (repository, other, agent)
+}
+
+/// A pass asks the remote only about a published branch with no request
+/// yet and not asked within the interval, or about a number whose branch
+/// is no longer the one published.
+#[test]
+fn a_request_is_due_only_for_what_the_remote_could_change() {
+    let (repository, _other, agent) = pushed("landing-request-due");
+    let primary = repository.root();
+    let tips = checkout::BranchTips::read(primary);
+    let mut isolation = work(&agent).clone();
+
+    assert!(request_due(&tips, &isolation), "published, never asked");
+    isolation.request_asked_at_unix = Some(crate::task::now_unix());
+    assert!(!request_due(&tips, &isolation), "asked just now");
+    isolation.request_asked_at_unix = Some(crate::task::now_unix() - REQUEST_INTERVAL.as_secs());
+    assert!(request_due(&tips, &isolation), "asked a whole interval ago");
+
+    isolation.published_request = Some(7);
+    isolation.request_branch = Some(isolation.branch.clone());
+    assert!(!request_due(&tips, &isolation), "its number is known");
+    isolation.request_branch = Some("fix/an-earlier-branch".to_owned());
+    assert!(
+        request_due(&tips, &isolation),
+        "the number is another branch's"
+    );
+}
+
+#[test]
+fn an_unpublished_branch_has_no_request_due() {
+    let repository = repository("landing-request-unpublished");
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "unpublished");
+    let tips = checkout::BranchTips::read(repository.root());
+
+    assert!(!request_due(&tips, work(&agent)));
+    let observed = observe_request(repository.root(), work(&agent));
+    assert!(!observed.asked_the_remote(), "nothing was asked");
+}
+
+#[test]
+fn observing_a_published_branch_asks_the_remote() {
+    let (repository, _other, agent) = pushed("landing-request-asked");
+    let observed = observe_request(repository.root(), work(&agent));
+    assert!(observed.asked_the_remote());
+}
+
+/// A checkout nobody cut for an agent is ready once it carries commits
+/// its target lacks, and running until then.
+#[test]
+fn a_checkout_is_ready_once_it_is_ahead_of_its_target() {
+    let repository = repository("landing-readiness-of-checkout");
+    let primary = repository.root();
+    assert_eq!(readiness_of_checkout(primary, TARGET), Readiness::Running);
+
+    repository.git(&["switch", "--quiet", "-c", "feature"]);
+    repository.commit_file("feature.rs", "");
+    assert_eq!(
+        readiness_of_checkout(primary, TARGET),
+        Readiness::Ready {
+            ahead: 1,
+            base: TARGET.to_owned()
+        }
+    );
+}
+
+#[test]
+fn a_refusal_over_files_names_each_of_them() {
+    let said = DeliveryFailure::Overlap {
+        files: vec![PathBuf::from("a.rs"), PathBuf::from("b.rs")],
+    }
+    .to_string();
+    assert!(said.contains("a.rs, b.rs"), "{said}");
+}
+
+/// A head with a space in it is a sentence, not a type: the whole subject
+/// names the work.
+#[test]
+fn a_subject_whose_head_is_a_sentence_carries_no_type() {
+    let repository = repository("landing-sentence-head");
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "sentence");
+    agent_commits_saying(&repository, work(&agent), "a.rs", "update docs: typo");
+
+    let (kind, subject) = commit_derived_halves(repository.root(), work(&agent)).unwrap();
+    assert_eq!(kind, None);
+    assert!(subject.starts_with("update-docs"), "{subject}");
+}
+
+/// A subject of one word is that word, even a connective: the cut keeps
+/// at least one.
+#[test]
+fn a_subject_of_one_connective_is_kept() {
+    let repository = repository("landing-one-connective");
+    let mut store = AgentStore::default();
+    let agent = launch(&repository, &mut store, "connective");
+    agent_commits_saying(&repository, work(&agent), "a.rs", "fix: with");
+
+    assert_eq!(
+        commit_derived_halves(repository.root(), work(&agent)),
+        Some((Some("fix".to_owned()), "with".to_owned()))
+    );
+}
+
+/// A name derived from the work that somebody already has on the remote
+/// is not taken: the work is published under the name it already has.
+#[test]
+fn a_derived_name_somebody_has_on_the_remote_is_not_taken() {
+    let (repository, other) = published("landing-derived-taken");
+    let primary = repository.root();
+    repository.git_in(&other, &["switch", "-q", "-c", "fix/stop-the-redirect"]);
+    fs::write(other.join("theirs.rs"), "").unwrap();
+    repository.git_in(&other, &["add", "."]);
+    repository.git_in(&other, &["commit", "-qm", "theirs"]);
+    repository.git_in(
+        &other,
+        &["push", "--quiet", "-u", REMOTE, "fix/stop-the-redirect"],
+    );
+    let theirs = repository.git_in(&other, &["rev-parse", "HEAD"]);
+    repository.git(&["fetch", "--quiet", REMOTE]);
+
+    let mut store = AgentStore::default();
+    let mut agent = launch(&repository, &mut store, "anything");
+    agent_commits_saying(
+        &repository,
+        work(&agent),
+        "auth.rs",
+        "fix(auth): stop the redirect loop",
+    );
+    let own = work(&agent).branch.clone();
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+
+    let Delivered::Published { branch, .. } = deliver(primary, &mut agent, &policy).unwrap() else {
+        panic!("published");
+    };
+    assert_eq!(branch, own);
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, "refs/heads/fix/stop-the-redirect"],
+    );
+    assert!(remote.starts_with(&theirs), "{remote}");
+}
+
+/// The commit UZE pushed is what it may replace, even once the agent
+/// rewrote it rather than adding to it.
+#[test]
+fn a_branch_the_agent_rewrote_is_published_again_over_what_uze_pushed() {
+    let (repository, other) = published("landing-republish-rewritten");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let mut agent = launch(&repository, &mut store, "anything");
+    agent_commits_saying(&repository, work(&agent), "a.rs", "fix(a): first");
+    let policy = Policy {
+        completion: CompletionBehavior::Push,
+        gate: Some(Approved::assumed(&[])),
+        vocabulary: &BranchVocabulary::Unset,
+    };
+    let Delivered::Published { branch, .. } = deliver(primary, &mut agent, &policy).unwrap() else {
+        panic!("published");
+    };
+
+    let slot = slot_path(primary, work(&agent)).unwrap();
+    repository.git_in(
+        &slot,
+        &["commit", "--quiet", "--amend", "-m", "fix(a): first, again"],
+    );
+    let rewritten = tip_of(primary, &work(&agent).branch);
+    deliver(primary, &mut agent, &policy).unwrap();
+
+    let remote = repository.git_in(
+        &other,
+        &["ls-remote", REMOTE, &format!("refs/heads/{branch}")],
+    );
+    assert!(remote.starts_with(&rewritten), "{remote}");
+}

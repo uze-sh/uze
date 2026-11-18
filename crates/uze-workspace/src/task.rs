@@ -1346,6 +1346,19 @@ mod tests {
         );
     }
 
+    /// A project's first pass records it even when it changes nothing:
+    /// a project UZE has run in is a recorded one.
+    #[test]
+    fn a_first_pass_that_changes_nothing_still_records_the_project() {
+        let home = home("tasks-first-pass");
+        let root = uze_testkit::temp::scratch("tasks-first-pass-project");
+        assert!(!is_recorded(&home, &root));
+
+        locked(&home, &root, |_| Ok(())).unwrap();
+
+        assert!(is_recorded(&home, &root));
+    }
+
     #[test]
     fn a_document_this_build_cannot_read_is_set_aside_rather_than_refused() {
         let home = home("tasks-set-aside");

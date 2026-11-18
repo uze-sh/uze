@@ -235,5 +235,13 @@ mod tests {
             overrides.left_out,
             ["-c left out (uze composes features.memories on this launch)"]
         );
+        assert_eq!(overrides.len(), 2, "the flag kept and the variable");
+    }
+
+    #[test]
+    fn a_launch_carries_overrides_when_it_has_a_flag_or_a_variable() {
+        assert!(compose(&[], CATALOG, &[], &[]).is_empty());
+        assert!(!compose(&words("--model opus"), CATALOG, &[], &[]).is_empty());
+        assert!(!compose(&words("DEBUG=1"), CATALOG, &[], &[]).is_empty());
     }
 }

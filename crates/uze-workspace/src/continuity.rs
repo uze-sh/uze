@@ -796,6 +796,8 @@ mod tests {
         recorded_for: Option<SessionId>,
         channel: ContextChannel,
         unavailable: Option<String>,
+        /// Whether delivering the context links it where the launch says.
+        links: bool,
     }
 
     impl Harness {
@@ -808,6 +810,7 @@ mod tests {
                 recorded_for: None,
                 channel: ContextChannel::FirstTurn,
                 unavailable: None,
+                links: false,
             }
         }
 
@@ -874,6 +877,10 @@ mod tests {
             _home: &UzeHome,
             ctx: &AgentContext,
         ) -> uze_core::Result<ContextContribution> {
+            if self.links {
+                std::fs::create_dir_all(ctx.link.parent().unwrap()).unwrap();
+                uze_platform::fs::link_entry(ctx.dir, ctx.link).unwrap();
+            }
             Ok(ContextContribution {
                 args: vec![OsString::from("--context"), ctx.file.as_os_str().to_owned()],
                 env: vec![(OsString::from("CONTEXT_FLAG"), OsString::from("1"))],
@@ -1187,6 +1194,69 @@ mod tests {
             !context.contains(BRIEFING_TEXT),
             "the last launch's briefing does not outlive it: {context}"
         );
+    }
+
+    /// A briefing waits while the checkout stands where the switch left
+    /// it, and is retired once a commit moves it on.
+    #[test]
+    fn a_briefing_is_retired_once_the_checkout_moves_past_the_switch() {
+        let repository = uze_testkit::git::Repository::new("continuity-retire-briefing");
+        repository.commit_file("a.rs", "a\n");
+        let root = uze_platform::path::canonical(repository.root()).unwrap();
+        let home = UzeHome::at(uze_testkit::temp::scratch(
+            "continuity-retire-briefing-home",
+        ));
+        let mut agent = Agent::in_the_root("harness");
+        launched_with_test_key(&mut agent);
+        let id = agent.id.clone();
+        let mut store = AgentStore::default();
+        store.upsert(agent);
+        task::save(&home, &root, &store).unwrap();
+        let at_switch = repository.git(&["rev-parse", "HEAD"]).trim().to_owned();
+        conversation::update(&home, &root, &id, |stored| {
+            stored.briefing = Some(conversation::Briefing {
+                integration: "harness".to_owned(),
+                text: BRIEFING_TEXT.to_owned(),
+                head_at_switch: Some(at_switch),
+                first_turn_given: false,
+            });
+        })
+        .unwrap();
+        let harness = Harness::new(SessionContinuity::Unsupported);
+
+        assert!(!refresh(&home, claim(id.as_str(), &root), &harness));
+        assert!(conversation::load(&home, &root, &id).briefing.is_some());
+
+        repository.commit_file("b.rs", "b\n");
+        assert!(refresh(&home, claim(id.as_str(), &root), &harness));
+        assert!(conversation::load(&home, &root, &id).briefing.is_none());
+    }
+
+    /// A context linked into an isolation directory the launch made leaves
+    /// the operator's status exactly as it was.
+    #[test]
+    fn a_context_linked_into_a_new_isolation_directory_stays_out_of_the_status() {
+        let repository = uze_testkit::git::Repository::new("continuity-link-excluded");
+        let root = uze_platform::path::canonical(repository.root()).unwrap();
+        let home = UzeHome::at(uze_testkit::temp::scratch("continuity-link-excluded-home"));
+        let mut agent = Agent::in_the_root("harness");
+        launched_with_test_key(&mut agent);
+        let id = agent.id.as_str().to_owned();
+        let mut store = AgentStore::default();
+        store.upsert(agent);
+        task::save(&home, &root, &store).unwrap();
+        let harness = Harness {
+            links: true,
+            ..Harness::with_channel(SessionContinuity::Assigned)
+        };
+
+        plan(&home, claim(&id, &root), &harness);
+
+        assert!(
+            root.join(worktree::WORKTREES_DIRECTORY).is_dir(),
+            "the link was made"
+        );
+        assert_eq!(repository.git(&["status", "--porcelain"]), "");
     }
 
     #[test]

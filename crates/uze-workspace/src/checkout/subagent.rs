@@ -124,3 +124,19 @@ fn is_ancestor(root: &Path, ancestor: &str, descendant: &str) -> bool {
 fn is_object_id(candidate: &str) -> bool {
     matches!(candidate.len(), 40 | 64) && candidate.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A split point is read back from a record, so only a full commit id
+    /// in either hash is taken for one.
+    #[test]
+    fn only_a_full_commit_id_is_taken_for_a_split_point() {
+        assert!(is_object_id(&"a".repeat(40)));
+        assert!(is_object_id(&"0".repeat(64)));
+        assert!(!is_object_id("abc1234"), "an abbreviation");
+        assert!(!is_object_id(&"g".repeat(40)), "not hexadecimal");
+        assert!(!is_object_id(&"a".repeat(41)));
+    }
+}

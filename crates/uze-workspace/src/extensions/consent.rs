@@ -693,6 +693,16 @@ mod tests {
     }
 
     #[test]
+    fn disabling_everywhere_takes_back_a_project_it_was_enabled_in_alone() {
+        let (home, project) = home("consent-everywhere-one-project");
+        accept(&home, BAND, &grants(&[]), "sha256:a", 1, None).unwrap();
+        enable(&home, BAND, &project).unwrap();
+
+        assert!(disable_everywhere(&home, BAND).unwrap(), "it was enabled");
+        assert!(!consent(&home, BAND).unwrap().enabled_in(&project));
+    }
+
+    #[test]
     fn keeping_to_named_projects_takes_back_every_project_only() {
         let (home, project) = home("consent-narrowed");
         let other = project.parent().unwrap().join("other");
@@ -909,6 +919,20 @@ mod tests {
             judge(Some(&packaged), &packaging(&["bin/upload"]), "sha256:b"),
             Judgement::Held { .. }
         ));
+    }
+
+    /// A record that kept no packaged programs still runs the files it was
+    /// accepted for; only new files ask about them.
+    #[test]
+    fn a_record_that_kept_no_packaged_programs_asks_only_at_new_files() {
+        let before = Consent {
+            accepted_digest: "sha256:a".to_owned(),
+            ..Consent::default()
+        };
+        assert_eq!(
+            judge(Some(&before), &packaging(&["bin/meter"]), "sha256:a"),
+            Judgement::Current
+        );
     }
 
     fn packaging(files: &[&str]) -> Wants {

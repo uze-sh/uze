@@ -307,3 +307,128 @@ pub fn apply(document: &mut ManifestDocument, edits: &[Edit]) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn checked(text: &str) -> Checked {
+        let root = uze_testkit::temp::scratch("declaration-candidate");
+        check(&root, text)
+    }
+
+    #[test]
+    fn every_key_says_what_it_decides_in_its_own_words() {
+        let descriptions: Vec<&str> = DeclarationKey::ALL
+            .into_iter()
+            .map(DeclarationKey::description)
+            .collect();
+        assert!(descriptions.iter().all(|line| !line.trim().is_empty()));
+        let mut distinct = descriptions.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), descriptions.len(), "{descriptions:?}");
+    }
+
+    /// Each value is read as the control that edits it holds it: a list
+    /// as a list even when written as one item, a number as a number, and
+    /// each command key as its own commands.
+    #[test]
+    fn each_value_is_read_in_the_shape_its_control_holds() {
+        let checked = checked(
+            "workspace:\n  link: .env\n  branch: [feat, fix]\n  artifacts: [docs, specs]\n  \
+             slots: 3\n  idle_days: 5\n  setup: pnpm install\n  gate: [pnpm test]\n",
+        );
+        let value = |key| checked.values.get(&key).cloned();
+        let list = |items: &[&str]| {
+            Some(DeclaredValue::List(
+                items.iter().map(|item| (*item).to_owned()).collect(),
+            ))
+        };
+        assert_eq!(value(DeclarationKey::Link), list(&[".env"]));
+        assert_eq!(value(DeclarationKey::Branch), list(&["feat", "fix"]));
+        assert_eq!(value(DeclarationKey::Artifacts), list(&["docs", "specs"]));
+        assert_eq!(value(DeclarationKey::Slots), Some(DeclaredValue::Number(3)));
+        assert_eq!(
+            value(DeclarationKey::IdleDays),
+            Some(DeclaredValue::Number(5))
+        );
+        assert_eq!(
+            value(DeclarationKey::Setup),
+            Some(DeclaredValue::Commands(vec!["pnpm install".into()]))
+        );
+        assert_eq!(
+            value(DeclarationKey::Gate),
+            Some(DeclaredValue::Commands(vec!["pnpm test".into()]))
+        );
+    }
+
+    #[test]
+    fn a_file_that_does_not_read_is_one_problem_about_the_whole() {
+        let checked = checked("workspace: [\n");
+        assert_eq!(checked.problems.len(), 1, "{:?}", checked.problems);
+        assert_eq!(checked.problems[0].key, None);
+        assert!(checked.policy.is_none());
+    }
+
+    /// A problem with the policy withholds it; a problem with where the
+    /// project's descriptions live is not one with the policy.
+    #[test]
+    fn only_a_problem_with_the_policy_withholds_it() {
+        let repository = uze_testkit::git::Repository::new("declaration-candidate-policy");
+        repository.commit_file("README.md", "tracked\n");
+        let root = repository.root();
+
+        let refused_link = check(root, "workspace:\n  delivery: push\n  link: [README.md]\n");
+        assert!(
+            refused_link.problems.iter().any(|problem| {
+                problem.key.as_deref() == Some("link") && problem.reason.contains("does not ignore")
+            }),
+            "the link is refused for not being ignored: {:?}",
+            refused_link.problems
+        );
+        assert!(refused_link.policy.is_none());
+
+        let misplaced = check(
+            root,
+            "workspace:\n  delivery: push\n  artifacts:\n    docs: specs\n",
+        );
+        assert!(
+            misplaced
+                .problems
+                .iter()
+                .any(|problem| problem.key.as_deref() == Some(crate::declaration::ARTIFACTS)),
+            "{:?}",
+            misplaced.problems
+        );
+        assert!(misplaced.policy.is_some(), "the policy itself is sound");
+    }
+
+    /// Setting a key to nothing leaves it out rather than writing an empty
+    /// value under it.
+    #[test]
+    fn setting_a_key_to_nothing_takes_it_out() {
+        let path = Path::new("/p/agents.yaml");
+        let mut document =
+            ManifestDocument::from_source(path, "workspace:\n  link: [.env]\n  slots: 3\n")
+                .unwrap();
+        apply(
+            &mut document,
+            &[
+                Edit::Set {
+                    key: DeclarationKey::Link,
+                    value: DeclaredValue::List(Vec::new()),
+                },
+                Edit::Set {
+                    key: DeclarationKey::Target,
+                    value: DeclaredValue::Text("  ".to_owned()),
+                },
+            ],
+        )
+        .unwrap();
+        let written = document.source();
+        assert!(!written.contains("link"), "{written}");
+        assert!(!written.contains("target"), "{written}");
+        assert!(written.contains("slots: 3"), "{written}");
+    }
+}

@@ -420,6 +420,10 @@ mod tests {
         assert!(text.len() <= BOUND, "{} bytes", text.len());
         assert!(text.contains("## Goal"));
         assert!(!text.contains("## Git"), "{text}");
+        assert!(
+            !text.ends_with(" […]"),
+            "what does not fit goes a section at a time, never cut mid-way: {text}"
+        );
     }
 
     #[test]
@@ -466,5 +470,99 @@ mod tests {
     #[test]
     fn a_cut_never_splits_a_character() {
         assert_eq!(clip("ééééé", 9), "é […]");
+    }
+
+    /// The briefing sits under its heading in the agent's context, and both
+    /// fit the briefing's share of it.
+    #[test]
+    fn the_briefing_and_its_heading_fit_the_briefings_share() {
+        let heading = crate::agent_context::heading(HEADING);
+        assert!(BOUND + heading.len() <= crate::agent_context::BRIEFING_SHARE);
+    }
+
+    #[test]
+    fn each_first_turn_points_at_the_file_it_names() {
+        let file = Path::new("context.md");
+        let briefing = first_turn(file);
+        let instructions = instructions_turn(file);
+        assert!(briefing.contains("context.md"), "{briefing}");
+        assert!(instructions.contains("context.md"), "{instructions}");
+        assert_ne!(briefing, instructions, "taking over is said apart");
+    }
+
+    fn labelled(label: &str) -> Handover<'_> {
+        Handover {
+            label,
+            ..handover()
+        }
+    }
+
+    /// The length of the Git section as `render` places it after the header.
+    fn git_part(git: &GitFacts) -> usize {
+        render(&labelled(""), git, None).len()
+            - render(&labelled(""), &GitFacts::default(), None).len()
+            - 1
+    }
+
+    #[test]
+    fn a_briefing_exactly_at_the_bound_is_kept_whole() {
+        let git = git();
+        let header = render(&labelled(""), &GitFacts::default(), None).len();
+        let label = "l".repeat(BOUND - 1 - git_part(&git) - header);
+        let text = render(&labelled(&label), &git, None);
+        assert_eq!(text.len(), BOUND);
+        assert!(text.contains("## Git"), "{text}");
+        assert!(!text.ends_with(" […]"), "nothing is cut");
+    }
+
+    #[test]
+    fn one_byte_past_the_bound_takes_the_last_section_out_whole() {
+        let git = git();
+        let header = render(&labelled(""), &GitFacts::default(), None).len();
+        let label = "l".repeat(BOUND - git_part(&git) - header);
+        let text = render(&labelled(&label), &git, None);
+        assert!(text.len() <= BOUND, "{} bytes", text.len());
+        assert!(!text.contains("## Git"), "the Git section went whole");
+        assert!(text.contains(&label), "the header stays");
+    }
+
+    /// Even a header larger than the bound is never dropped: it is what
+    /// says whose work this is, so it is cut instead.
+    #[test]
+    fn a_header_past_the_bound_is_cut_and_never_dropped() {
+        let label = "l".repeat(BOUND * 2);
+        let text = render(&labelled(&label), &git(), None);
+        assert!(
+            text.starts_with("Agent: l"),
+            "{}",
+            &text[..20.min(text.len())]
+        );
+        assert!(text.len() <= BOUND, "{} bytes", text.len());
+    }
+
+    /// The operator's turns fill their bound newest first, each on its own
+    /// line: turns that fit exactly are all kept, and one byte more leaves
+    /// the oldest out.
+    #[test]
+    fn the_operators_turns_fill_their_bound_and_no_more() {
+        let digest = |oldest: &str| ConversationDigest {
+            turns: vec![
+                turn(Speaker::Operator, oldest),
+                turn(Speaker::Operator, &"m".repeat(297)),
+                turn(Speaker::Operator, &"n".repeat(297)),
+            ],
+            ..ConversationDigest::default()
+        };
+        // Items of 300, 299 and 299 bytes, on three lines: exactly the bound.
+        let fits = "o".repeat(298);
+        let text = render(&handover(), &git(), Some(&digest(&fits)));
+        assert!(text.contains(&fits), "{text}");
+        assert!(text.contains(&"m".repeat(297)), "{text}");
+
+        let over = "p".repeat(299);
+        let text = render(&handover(), &git(), Some(&digest(&over)));
+        assert!(!text.contains(&over), "the oldest no longer fits: {text}");
+        assert!(text.contains(&"n".repeat(297)), "{text}");
+        assert!(text.contains(&"m".repeat(297)), "{text}");
     }
 }

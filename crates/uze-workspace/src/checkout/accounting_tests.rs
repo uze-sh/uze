@@ -534,6 +534,15 @@ mod derived_content {
         );
     }
 
+    /// A lock that appears in a slot is only entries gained, from none.
+    #[test]
+    fn a_lock_made_in_a_slot_leaves_it_free() {
+        let (repository, mut store, agent, slot) = launched_with("derived-new-lock", &[]);
+        fs::write(slot.path.join("agents.lock"), LOCK).unwrap();
+
+        assert_eq!(end(&repository, &mut store, &agent), FREED);
+    }
+
     const INSTRUCTIONS: &str = "# Project\n\nWritten by a person.\n\n<!-- uze:begin project:policy/1 -->\nold\n<!-- uze:end project:policy/1 -->\n";
 
     /// UZE writes nothing into `AGENTS.md` in a slot, so a change there is
@@ -581,8 +590,155 @@ mod derived_content {
     }
 }
 
+/// What counts as somebody's work, asked of a checkout directly.
+mod work_facts {
+    use super::*;
+
+    const LOCK: &str = "version: 1\nmarketplaces:\n  m:\n    git: https://example.invalid/m\n    revision: 02d2c9831eb619821c574622a78bbc5f6189485a\nplugins:\n  a:\n    marketplace: m\n    integrity: sha256:aaaa\n";
+
+    const INSTRUCTIONS: &str = "# Project\n\nWritten by a person.\n\n<!-- uze:begin project:worktree-policy/1 -->\nold\n<!-- uze:end project:worktree-policy/1 -->\n";
+
+    /// The instructions as `uze install` leaves them: the regions an
+    /// earlier release wrote taken out.
+    fn installed(text: &str) -> String {
+        crate::text_region::without_regions(text, |identity| {
+            crate::project_earlier::is_retired(identity)
+                || crate::project_earlier::is_retired_package(identity)
+        })
+    }
+
+    #[test]
+    fn a_lock_that_only_gained_an_entry_is_no_ones_work() {
+        let repository = repository("facts-lock");
+        repository.commit_file("agents.lock", LOCK);
+        let root = repository.root();
+        assert!(!holds_uncommitted_work(root), "a clean checkout");
+
+        let grown = format!("{LOCK}  b:\n    marketplace: m\n    integrity: sha256:bbbb\n");
+        fs::write(root.join("agents.lock"), grown).unwrap();
+        assert!(!holds_uncommitted_work(root));
+
+        fs::write(root.join("feature.rs"), "fn f() {}\n").unwrap();
+        assert!(holds_uncommitted_work(root), "beside a real change");
+    }
+
+    #[test]
+    fn instructions_changed_only_by_retiring_regions_are_told_apart() {
+        let repository = repository("facts-instructions");
+        repository.commit_file("AGENTS.md", INSTRUCTIONS);
+        let root = repository.root();
+        let file = root.join("AGENTS.md");
+        assert!(
+            !instructions_changed_only_by_retiring_regions(root),
+            "unchanged is no change at all"
+        );
+
+        fs::write(&file, installed(INSTRUCTIONS)).unwrap();
+        assert!(instructions_changed_only_by_retiring_regions(root));
+
+        fs::write(
+            &file,
+            installed(INSTRUCTIONS).replace("Written by a person.", "Rewritten."),
+        )
+        .unwrap();
+        assert!(!instructions_changed_only_by_retiring_regions(root));
+    }
+
+    /// Instructions that held nothing but a retired region are taken out
+    /// whole by the install; anything that cannot be read is no such
+    /// change.
+    #[test]
+    fn instructions_that_were_only_a_region_may_be_gone_but_not_unreadable() {
+        let repository = repository("facts-instructions-gone");
+        let only_region = "<!-- uze:begin project:worktree-policy/1 -->\nold\n<!-- uze:end project:worktree-policy/1 -->\n";
+        repository.commit_file("AGENTS.md", only_region);
+        let root = repository.root();
+        assert!(installed(only_region).trim().is_empty());
+
+        fs::remove_file(root.join("AGENTS.md")).unwrap();
+        assert!(instructions_changed_only_by_retiring_regions(root));
+
+        fs::create_dir(root.join("AGENTS.md")).unwrap();
+        assert!(!instructions_changed_only_by_retiring_regions(root));
+    }
+
+    #[test]
+    fn a_paused_merge_is_named() {
+        let repository = repository("facts-paused");
+        let root = repository.root();
+        assert_eq!(paused_operation(root), None);
+        fs::write(root.join(".git").join("MERGE_HEAD"), tip_of(root, TARGET)).unwrap();
+        assert_eq!(paused_operation(root), Some("a merge"));
+    }
+}
+
+/// The isolation directory goes into the repository's own exclusions as
+/// one more line, the operator's lines kept byte for byte.
+mod exclusion {
+    use super::*;
+
+    fn exclude_after(label: &str, before: Option<&str>) -> String {
+        let repository = repository(label);
+        let primary = repository.root();
+        let exclude = primary.join(".git").join("info").join("exclude");
+        match before {
+            Some(text) => fs::write(&exclude, text).unwrap(),
+            None => {
+                let _ = fs::remove_file(&exclude);
+            }
+        }
+        exclude_isolation_directory(primary).unwrap();
+        fs::read_to_string(&exclude).unwrap()
+    }
+
+    #[test]
+    fn a_repository_with_no_exclusions_gets_the_one_line() {
+        assert_eq!(exclude_after("exclude-none", None), "/.worktrees/\n");
+        assert_eq!(exclude_after("exclude-empty", Some("")), "/.worktrees/\n");
+    }
+
+    #[test]
+    fn the_line_follows_the_operators_lines() {
+        assert_eq!(
+            exclude_after("exclude-ended", Some("*.log\n")),
+            "*.log\n/.worktrees/\n"
+        );
+        assert_eq!(
+            exclude_after("exclude-unended", Some("*.log")),
+            "*.log\n/.worktrees/\n"
+        );
+    }
+
+    #[test]
+    fn a_directory_already_excluded_in_another_spelling_is_left_alone() {
+        for spelled in [".worktrees/\n", ".worktrees\n", "/.worktrees/\n"] {
+            assert_eq!(exclude_after("exclude-spelled", Some(spelled)), spelled);
+        }
+    }
+}
+
 mod idle_age {
     use super::*;
+
+    /// A slot handed to an agent counts its idle age from then: one that
+    /// sat unused for days before is not collected as idle the moment its
+    /// next agent ends.
+    #[test]
+    fn a_reused_slot_counts_its_idle_age_from_its_last_use() {
+        let repository = repository("idle-reused");
+        let primary = repository.root();
+        let mut store = AgentStore::default();
+        let (first, slot) = launch(&repository, &mut store, "first");
+        end(&repository, &mut store, &first);
+        age(&slot.path, Duration::from_secs(10 * 24 * 60 * 60));
+
+        let (next, again) = launch(&repository, &mut store, "next");
+        assert!(!again.created, "the free slot is reused");
+        end(&repository, &mut store, &next);
+
+        assert!(trim_free_slots(primary, &store, Pool::default(), &nobody()).is_empty());
+        assert!(again.path.is_dir());
+    }
 
     fn ended_slots(repository: &Repository, store: &mut AgentStore, count: usize) -> Vec<Acquired> {
         let launched: Vec<(Agent, Acquired)> = (0..count)

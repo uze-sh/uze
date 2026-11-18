@@ -396,6 +396,17 @@ mod tests {
         assert!(!revoke(&home, &project).unwrap(), "nothing left to revoke");
     }
 
+    /// A withdrawal that could not remove the approval says so, rather
+    /// than reporting there was none.
+    #[test]
+    fn an_approval_that_cannot_be_removed_is_an_error() {
+        let (home, project) = home("approval-revoke-fails");
+        let file = path(&home, &canonical(&project));
+        std::fs::create_dir_all(file.join("in-the-way")).unwrap();
+
+        assert!(revoke(&home, &project).is_err());
+    }
+
     #[test]
     fn an_unreadable_approval_approves_nothing() {
         let (home, project) = home("approval-unreadable");

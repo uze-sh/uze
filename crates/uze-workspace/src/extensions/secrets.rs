@@ -265,4 +265,38 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(root);
     }
+
+    // Only where secrets are kept in a file: on macOS and Windows this
+    // would write to the operator's own Keychain or Credential Manager.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn a_deleted_secret_is_gone_and_no_longer_set() {
+        let root = uze_testkit::temp::scratch("workspace-secrets-deleted");
+        let home = UzeHome::at(root.join("uze"));
+        store(&home, "ci@studio", "ci-status", "token", "ghp_value").unwrap();
+
+        delete(&home, "ci@studio", "ci-status", "token").unwrap();
+
+        assert_eq!(
+            read(&home, "ci@studio", "ci-status", "token").unwrap(),
+            None
+        );
+        assert!(set_names(&home, "ci@studio", "ci-status").is_empty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    // Unix refuses to remove a regular file as a directory; Windows
+    // answers the same request in its own way, which this does not pin.
+    #[cfg(unix)]
+    #[test]
+    fn a_secrets_directory_that_cannot_be_removed_fails_the_forgetting() {
+        let root = uze_testkit::temp::scratch("workspace-secrets-in-the-way");
+        let home = UzeHome::at(root.join("uze"));
+        let dir = home.extension_plugin_secrets_dir("ci@studio");
+        std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
+        std::fs::write(&dir, b"not a directory").unwrap();
+
+        assert!(forget_plugin_with(&home, "ci@studio", |_| Ok(())).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

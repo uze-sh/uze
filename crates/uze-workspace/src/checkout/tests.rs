@@ -69,6 +69,32 @@ fn an_isolation_directory_the_repository_tracks_is_refused() {
     assert!(refused.to_string().contains("tracked"), "{refused}");
 }
 
+#[test]
+fn an_isolation_directory_that_is_a_file_is_refused_saying_so() {
+    let repository = repository("isolation-file");
+    let primary = repository.root();
+    fs::write(primary.join(WORKTREES_DIRECTORY), "not a directory").unwrap();
+
+    let mut agent = task("file");
+    let base = tip_of(primary, TARGET);
+    isolation(&mut agent).base_commit = base.clone();
+    let Err(refused) = acquire(
+        primary,
+        &AgentStore::default(),
+        &agent.id.clone(),
+        isolation(&mut agent),
+        &base,
+        None,
+        &nobody,
+    ) else {
+        panic!("a checkout was placed in a file");
+    };
+    assert!(
+        refused.to_string().contains("is not a directory"),
+        "{refused}"
+    );
+}
+
 /// A repository whose `.gitignore` already ignores `target/`, the way a
 /// Rust project does — the artifact reuse exists to preserve.
 fn repository(label: &str) -> Repository {
@@ -2205,4 +2231,317 @@ fn a_path_another_slot_moved_to_answers_for_that_slot() {
     assert!(subagent::operation_in_progress(&again.path));
     assert_eq!(paused_operation(&third.path), None);
     assert!(!subagent::operation_in_progress(&third.path));
+}
+
+/// A branch under UZE's prefix that no record names any more is still
+/// collected once the target carries it.
+#[test]
+fn an_integrated_agent_branch_no_record_names_is_pruned() {
+    let repository = repository("prune-forgotten");
+    let primary = repository.root();
+    let tip = tip_of(primary, TARGET);
+    repository.git(&["branch", "agent/forgotten", &tip]);
+
+    let removed = prune_integrated_branches(primary, &AgentStore::default(), TARGET);
+
+    assert_eq!(removed, vec!["agent/forgotten".to_owned()]);
+    assert!(!branch_exists(primary, "agent/forgotten"));
+}
+
+/// A target named by its commit rather than by a branch still resolves,
+/// so what it carries is collected against it.
+#[test]
+fn a_target_named_by_its_commit_still_collects_what_it_carries() {
+    let repository = repository("prune-by-commit");
+    let primary = repository.root();
+    let tip = tip_of(primary, TARGET);
+    repository.git(&["branch", "agent/carried", &tip]);
+
+    let removed = prune_integrated_branches(primary, &AgentStore::default(), &tip);
+
+    assert_eq!(removed, vec!["agent/carried".to_owned()]);
+}
+
+/// An agent that ended long ago holding nothing.
+fn finished(label: &str, state: WorkState) -> Agent {
+    let mut agent = task(label);
+    agent.state = state;
+    agent.ended_at_unix = Some(0);
+    agent
+}
+
+fn no_refs() -> Refs {
+    Refs {
+        tips: BranchTips::default(),
+        shelves: Vec::new(),
+    }
+}
+
+/// A record goes only once its agent ended and holds nothing anywhere:
+/// one that still names a checkout, or that may still be writing, stays.
+#[test]
+fn only_an_ended_agent_holding_nothing_is_forgotten() {
+    let mut store = AgentStore::default();
+    let gone = finished("gone", WorkState::Closed);
+    let mut placed = finished("placed", WorkState::Closed);
+    isolation(&mut placed).checkout = Some(CheckoutId::adopted("slot"));
+    let running = finished("running", WorkState::Running);
+    for agent in [&gone, &placed, &running] {
+        store.upsert(agent.clone());
+    }
+
+    let forgotten = forget_finished(
+        &no_refs(),
+        &[],
+        &mut store,
+        crate::task::RECORD_KEPT,
+        SystemTime::now(),
+    );
+
+    assert_eq!(forgotten, vec![gone.id.clone()]);
+    assert!(store.get(&placed.id).is_some(), "it still names a checkout");
+    assert!(store.get(&running.id).is_some(), "it may still be writing");
+}
+
+/// The record of an agent is kept for weeks after it ended, so its
+/// conversation can still be found and continued.
+#[test]
+fn an_agent_that_ended_a_fortnight_ago_is_still_recorded() {
+    let mut store = AgentStore::default();
+    let mut recent = finished("recent", WorkState::Closed);
+    let now = SystemTime::now();
+    let fortnight = Duration::from_secs(14 * 24 * 60 * 60);
+    recent.ended_at_unix = Some(
+        (now - fortnight)
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    );
+    store.upsert(recent.clone());
+
+    let forgotten = forget_finished(&no_refs(), &[], &mut store, crate::task::RECORD_KEPT, now);
+
+    assert!(forgotten.is_empty());
+    assert!(store.get(&recent.id).is_some());
+}
+
+/// A task settled without a checkout is integrated when it had work the
+/// target now holds, and closed when it never had any.
+#[test]
+fn a_task_settled_without_its_branch_is_told_by_what_it_had() {
+    let repository = repository("settle-without-branch");
+    let primary = repository.root();
+    let base = tip_of(primary, TARGET);
+
+    let mut shelved = task("was-shelved");
+    shelved.state = WorkState::Shelved;
+    isolation(&mut shelved).base_commit = base.clone();
+    settle_without_checkout(primary, TARGET, &mut shelved);
+    assert_eq!(shelved.state, WorkState::Integrated);
+
+    let mut delivered = task("was-delivered");
+    delivered.state = WorkState::Integrated;
+    isolation(&mut delivered).base_commit = base.clone();
+    settle_without_checkout(primary, TARGET, &mut delivered);
+    assert_eq!(delivered.state, WorkState::Integrated, "it stays delivered");
+
+    let mut fresh = task("never-committed");
+    fresh.state = WorkState::Running;
+    isolation(&mut fresh).base_commit = base;
+    settle_without_checkout(primary, TARGET, &mut fresh);
+    assert_eq!(fresh.state, WorkState::Closed);
+}
+
+/// A directory copied from a slot and pointed at its administrative
+/// directory with `git worktree repair` is not the slot its record names.
+#[test]
+fn a_copy_repaired_onto_a_slots_registration_is_not_that_slot() {
+    let repository = repository("record-repaired-copy");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (_, slot) = launch(&repository, &mut store, "original");
+    let copy = primary.join("copy");
+    fs::create_dir_all(&copy).unwrap();
+    fs::copy(slot.path.join(".git"), copy.join(".git")).unwrap();
+    repository.git(&["worktree", "repair", &copy.to_string_lossy()]);
+
+    assert_eq!(record::read(primary, &copy), Recorded::Absent);
+}
+
+#[test]
+fn a_checkout_id_is_written_as_its_name() {
+    let id = CheckoutId::adopted("ab12cd");
+    assert_eq!(id.to_string(), id.as_str());
+    assert!(!id.to_string().is_empty());
+}
+
+/// A shelf no task records is adopted under the branch it was cut beside.
+#[test]
+fn an_adopted_shelf_keeps_the_branch_it_was_cut_beside() {
+    let repository = repository("adopt-shelf-branch");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (agent, slot) = launch(&repository, &mut store, "named");
+    fs::write(slot.path.join("draft.rs"), "fn draft() {}\n").unwrap();
+    assert!(matches!(
+        shelf::shelve(&slot.path, agent.id.as_str(), "named", "feat/named-work").unwrap(),
+        shelf::Shelving::Kept(_)
+    ));
+
+    let mut forgotten = AgentStore::default();
+    let adopted = adopt_shelves(primary, &mut forgotten, TARGET);
+
+    assert_eq!(adopted.len(), 1);
+    let task = forgotten.get(&adopted[0]).unwrap();
+    assert_eq!(task.isolation().unwrap().branch, "feat/named-work");
+}
+
+/// A local target ahead of its remote is reached at its local tip, for a
+/// branch cut at the remote's tip too.
+#[test]
+fn a_target_ahead_of_its_remote_is_reached_at_its_local_tip() {
+    let repository = repository("reach-local-ahead");
+    let primary = repository.root();
+    let base = tip_of(primary, TARGET);
+    repository.git(&[
+        "update-ref",
+        &format!("refs/remotes/{REMOTE}/{TARGET}"),
+        &base,
+    ]);
+    let ahead = repository.commit_file("ahead.rs", "");
+    repository.git(&["branch", "cut-at-the-remote", &base]);
+
+    assert_eq!(
+        target_reach(primary, TARGET, Some("cut-at-the-remote")).as_deref(),
+        Some(ahead.as_str())
+    );
+}
+
+/// Diverged tips: the local one and the remote's, each a commit past the
+/// base the other lacks.
+fn diverged(label: &str) -> (Repository, String, String, String) {
+    let repository = repository(label);
+    let primary = repository.root();
+    let base = tip_of(primary, TARGET);
+    repository.git(&["switch", "--quiet", "-c", "elsewhere"]);
+    let theirs = repository.commit_file("theirs.rs", "");
+    repository.git(&["switch", "--quiet", TARGET]);
+    repository.git(&[
+        "update-ref",
+        &format!("refs/remotes/{REMOTE}/{TARGET}"),
+        &theirs,
+    ]);
+    let mine = repository.commit_file("mine.rs", "");
+    (repository, base, mine, theirs)
+}
+
+/// A branch cut from neither diverged tip stands on the local one: the
+/// remote's tip stands for the target only for a branch cut from it.
+#[test]
+fn a_branch_on_neither_diverged_tip_reaches_the_local_one() {
+    let (repository, base, mine, _) = diverged("reach-neither");
+    repository.git(&["branch", "at-the-base", &base]);
+
+    assert_eq!(
+        target_reach(repository.root(), TARGET, Some("at-the-base")).as_deref(),
+        Some(mine.as_str())
+    );
+}
+
+/// What a name points at moves, so a question asked by name is asked again
+/// each time — even a name spelled only in hex digits.
+#[test]
+fn a_branch_asked_about_by_name_is_answered_where_it_stands_now() {
+    let (repository, _, mine, theirs) = diverged("reach-by-name");
+    let primary = repository.root();
+    repository.git(&["branch", "cafe", &theirs]);
+    assert_eq!(
+        target_reach(primary, TARGET, Some("cafe")).as_deref(),
+        Some(theirs.as_str())
+    );
+
+    repository.git(&["branch", "--force", "cafe", &mine]);
+    assert_eq!(
+        target_reach(primary, TARGET, Some("cafe")).as_deref(),
+        Some(mine.as_str())
+    );
+}
+
+/// The primary's instructions changed only by an install that took out a
+/// region an earlier release wrote, and a slot cut before they were
+/// committed: the slot is left without them, as its commit has it.
+fn instructions_left_by_an_install(label: &str) -> (Repository, PathBuf) {
+    let repository = repository(label);
+    let primary = repository.root();
+    let slot = uze_testkit::temp::scratch(&format!("{label}-slot"));
+    let _ = fs::remove_dir_all(&slot);
+    repository.git(&[
+        "worktree",
+        "add",
+        "--quiet",
+        "-b",
+        "agent/cut-before",
+        &slot.to_string_lossy(),
+        TARGET,
+    ]);
+    repository.commit_file(
+        "AGENTS.md",
+        "<!-- uze:begin project:worktree-policy/1 -->\nold\n<!-- uze:end project:worktree-policy/1 -->\n",
+    );
+    fs::remove_file(primary.join("AGENTS.md")).unwrap();
+    (repository, slot)
+}
+
+#[test]
+fn a_slot_without_the_instructions_is_left_without_them() {
+    let (repository, slot) = instructions_left_by_an_install("derived-absent");
+    assert_eq!(
+        keep_derived_instructions_behind(repository.root(), &slot),
+        Ok(())
+    );
+
+    fs::write(slot.join("AGENTS.md"), "carried\n").unwrap();
+    assert_eq!(
+        keep_derived_instructions_behind(repository.root(), &slot),
+        Ok(())
+    );
+    assert!(!slot.join("AGENTS.md").exists(), "taken back out");
+}
+
+#[test]
+fn instructions_that_cannot_be_left_out_of_a_slot_say_so() {
+    let (repository, slot) = instructions_left_by_an_install("derived-in-the-way");
+    fs::create_dir_all(slot.join("AGENTS.md").join("inside")).unwrap();
+
+    assert!(keep_derived_instructions_behind(repository.root(), &slot).is_err());
+}
+
+/// A store an earlier build wrote can name one slot from several agents;
+/// reconciling leaves the slot to the one whose branch the checkout has,
+/// however many others name it.
+#[test]
+fn a_slot_several_agents_name_is_left_to_the_one_on_its_branch() {
+    let repository = repository("slot-several-holders");
+    let primary = repository.root();
+    let mut store = AgentStore::default();
+    let (holder, slot) = launch(&repository, &mut store, "holder");
+    for label in ["earlier", "earliest"] {
+        let mut stale = task(label);
+        isolation(&mut stale).checkout = Some(slot.id.clone());
+        store.upsert(stale);
+    }
+
+    reconcile(primary, &mut store, TARGET);
+
+    let naming: Vec<AgentId> = store
+        .agents
+        .iter()
+        .filter(|agent| {
+            agent
+                .isolation()
+                .is_some_and(|isolation| isolation.checkout.as_ref() == Some(&slot.id))
+        })
+        .map(|agent| agent.id.clone())
+        .collect();
+    assert_eq!(naming, vec![holder.id.clone()]);
 }

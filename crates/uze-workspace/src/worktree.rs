@@ -1134,4 +1134,62 @@ mod naming_tests {
                 .contains("changes your label only")
         );
     }
+
+    /// A subject as long as a sidebar can show is accepted; one character
+    /// more is refused.
+    #[test]
+    fn a_subject_may_be_exactly_as_long_as_a_sidebar_shows() {
+        let longest = format!("{}-{}", "a".repeat(15), "b".repeat(SUBJECT_MAX_CHARS - 16));
+        assert_eq!(longest.chars().count(), SUBJECT_MAX_CHARS);
+        let proposed = format!("fix/{longest}");
+        assert_eq!(conventional().accept(&proposed).unwrap(), proposed);
+        assert!(matches!(
+            conventional().accept(&format!("{proposed}b")),
+            Err(NameRefusal::MalformedSubject { .. })
+        ));
+    }
+
+    /// A cut with no hyphen to stop at past the first character keeps what
+    /// fits rather than nothing.
+    #[test]
+    fn a_cut_with_nowhere_to_stop_keeps_what_fits() {
+        assert_eq!(cut_at_word_boundary("-abcdefgh", 4), "-abc");
+        assert_eq!(cut_at_word_boundary("abcdefgh", 4), "abcd");
+        assert_eq!(cut_at_word_boundary("ab-cdefgh", 6), "ab");
+    }
+
+    #[test]
+    fn the_vocabularies_with_no_types_are_spelled_in_words() {
+        for preset in [BranchPreset::Flat, BranchPreset::Agent] {
+            let spelled = BranchVocabulary::Preset(preset).spelled();
+            assert!(!spelled.trim().is_empty(), "{preset:?}");
+        }
+        assert_ne!(
+            BranchVocabulary::Preset(BranchPreset::Flat).spelled(),
+            BranchVocabulary::Preset(BranchPreset::Agent).spelled()
+        );
+    }
+
+    /// An undeclared vocabulary is written as nothing at all; a declared
+    /// one is written.
+    #[test]
+    fn only_a_declared_vocabulary_is_written() {
+        let written = |branch| {
+            serde_json::to_value(WorktreePolicy {
+                branch,
+                ..WorktreePolicy::default()
+            })
+            .unwrap()
+        };
+        assert!(written(BranchVocabulary::Unset).get("branch").is_none());
+        assert!(written(conventional()).get("branch").is_some());
+    }
+
+    #[test]
+    fn a_command_of_the_wrong_shape_is_refused_saying_what_is_accepted() {
+        let error = serde_json::from_value::<WorktreePolicy>(serde_json::json!({ "setup": 3 }))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("a list of commands"), "{error}");
+    }
 }

@@ -826,6 +826,24 @@ mod tests {
         );
     }
 
+    /// A value UZE composes for a flag that sets no configuration key is
+    /// no key, whatever it looks like.
+    #[test]
+    fn only_a_keyed_flag_composes_a_key() {
+        assert_eq!(
+            planned("-c notify=[]", &["--hook", "notify=x"]),
+            [Verdict::Accepted]
+        );
+    }
+
+    #[test]
+    fn a_lone_dash_is_no_flag() {
+        assert_eq!(
+            entries(&words("-"), CATALOG),
+            [Entry::Positional("-".into())]
+        );
+    }
+
     #[test]
     fn a_conditional_key_is_refused_only_when_the_launch_sets_it() {
         assert_eq!(
