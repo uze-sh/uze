@@ -1321,4 +1321,167 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
     }
+    /// A small checkout: a changed, busy file, a directory of two, a file
+    /// nobody touched this year and one touched twice.
+    fn small() -> Map {
+        map(vec![
+            FileMeasure {
+                changed: true,
+                ..file("main.rs", 400, 12)
+            },
+            file("lib.rs", 300, 0),
+            file("docs/guide.md", 200, 1),
+            file("docs/notes.md", 100, 1),
+            file("Cargo.toml", 200, 2),
+        ])
+    }
+
+    const SMALL: (i32, i32) = (60, 14);
+
+    fn painted(map: &Map) -> Canvas {
+        map.paint(&map.tiles(SMALL), SMALL, Glyphs::Unicode)
+    }
+
+    /// Each tile is a box of its own, a cell clear of its neighbours and
+    /// flush with the map's edge, holding its name, its lines and what it
+    /// is made of as far down as it has room; a directory says so with a
+    /// slash, and a changed file carries the mark.
+    #[test]
+    fn a_map_is_drawn_as_boxes_that_say_what_they_hold() {
+        let text = painted(&small()).to_text();
+        let rows: Vec<&str> = text.lines().map(str::trim_end).collect();
+        assert_eq!(
+            rows,
+            [
+                "┌─────────────────┐ ┌────────────┐ ┌───────────────────────┐",
+                "│ main.rs ●       │ │ docs/      │ │ lib.rs                │",
+                "│ 400 lines       │ │ 300 lines  │ │ 300 lines             │",
+                "│ 12 commits thi… │ │ 2 files    │ │                       │",
+                "│                 │ │            │ │                       │",
+                "│                 │ │            │ │                       │",
+                "│                 │ │            │ └───────────────────────┘",
+                "│                 │ │            │",
+                "│                 │ │            │ ┌───────────────────────┐",
+                "│                 │ │            │ │ Cargo.toml            │",
+                "│                 │ │            │ │ 200 lines             │",
+                "│                 │ │            │ │ 2 commits this year   │",
+                "│                 │ │            │ │                       │",
+                "└─────────────────┘ └────────────┘ └───────────────────────┘",
+            ]
+        );
+    }
+
+    /// A tile's border is drawn in the colour of how hot it is.
+    #[test]
+    fn a_tiles_border_is_the_colour_of_its_heat() {
+        let canvas = painted(&small());
+        let role = |x, y| canvas.cell(x, y).map(|cell| cell.role);
+        assert_eq!(role(0, 0), Some(Role::Danger), "main.rs is hot");
+        assert_eq!(role(20, 0), Some(Role::Muted), "docs was touched");
+        assert_eq!(role(35, 0), Some(Role::Faint), "lib.rs was not");
+    }
+
+    /// Only the selected tile is laid on a ground.
+    #[test]
+    fn only_the_selected_tile_has_a_ground() {
+        let mut map = small();
+        let grounded = |canvas: &Canvas, x, y| canvas.cell(x, y).and_then(|cell| cell.ground);
+        let canvas = painted(&map);
+        assert_eq!(grounded(&canvas, 5, 5), None);
+        assert_eq!(grounded(&canvas, 40, 3), None);
+        map.picked = Some("lib.rs".to_owned());
+        let canvas = painted(&map);
+        assert_eq!(grounded(&canvas, 40, 3), Some(Role::Faint));
+        assert_eq!(grounded(&canvas, 5, 5), None);
+    }
+
+    /// The footer speaks of the whole level until a tile is selected, and
+    /// then of that tile.
+    #[test]
+    fn the_caption_speaks_of_the_level_or_the_selected_tile() {
+        let mut map = small();
+        let caption = |map: &Map| map.caption(&map.tiles(SMALL));
+        assert_eq!(caption(&map), "5 files · 1,200 lines");
+        map.picked = Some("main.rs".to_owned());
+        assert_eq!(
+            caption(&map),
+            "main.rs · 400 lines · 12 commits this year · changed · enter opens it"
+        );
+        map.picked = Some("docs".to_owned());
+        assert_eq!(
+            caption(&map),
+            "docs/ · 2 files · 300 lines · enter goes inside"
+        );
+        assert_eq!(grouped(123_456), "123,456");
+        assert_eq!(grouped(1_234_567), "1,234,567");
+    }
+
+    /// With nothing selected, an arrow picks the tile nearest the middle.
+    #[test]
+    fn an_arrow_with_nothing_picked_starts_in_the_middle() {
+        let mut map = small();
+        map.pick_toward(PanDirection::Right, SMALL);
+        assert_eq!(map.picked.as_deref(), Some("docs"));
+    }
+
+    /// The steps are ranked: the busiest twentieth of the touched files
+    /// is hot, the busiest fifth warm, and files nobody touched do not
+    /// count towards the rank.
+    #[test]
+    fn heat_is_ranked_among_the_files_that_were_touched() {
+        let mut files: Vec<FileMeasure> = (1..=100)
+            .map(|commits| file(&format!("t{commits}.rs"), 100, commits))
+            .collect();
+        files.extend((0..100).map(|n| file(&format!("u{n}.rs"), 100, 0)));
+        let steps = Steps::of(&files);
+        assert_eq!(steps.heat(100), Heat::Hot);
+        assert_eq!(steps.heat(95), Heat::Hot);
+        assert_eq!(steps.heat(94), Heat::Warm);
+        assert_eq!(steps.heat(80), Heat::Warm);
+        assert_eq!(steps.heat(79), Heat::Touched);
+        assert_eq!(steps.heat(1), Heat::Touched);
+        assert_eq!(steps.heat(0), Heat::Untouched);
+    }
+
+    /// A directory is as busy as its lines are on average, and touched if
+    /// anything in it was.
+    #[test]
+    fn a_directory_is_as_hot_as_its_lines_on_average() {
+        let tiles = map(vec![
+            file("busy/a.rs", 100, 10),
+            file("busy/b.rs", 300, 2),
+            file("quiet/c.rs", 1000, 0),
+            file("quiet/d.rs", 1000, 0),
+            file("nudged/e.rs", 1000, 0),
+            file("nudged/f.rs", 1, 1),
+        ])
+        .tiles(SPACE);
+        assert_eq!(tile(&tiles, "busy").commits, 4);
+        assert_eq!(tile(&tiles, "quiet").heat, Heat::Untouched);
+        assert_eq!(tile(&tiles, "nudged").heat, Heat::Touched);
+    }
+
+    /// An empty file holds no lines to draw: it is not on the map, and a
+    /// checkout of nothing else is an empty map.
+    #[test]
+    fn an_empty_file_is_not_on_the_map() {
+        let drawn = map(vec![file("a.rs", 10, 0), file("empty.rs", 0, 0)]);
+        assert!(!drawn.is_empty());
+        let tiles = drawn.tiles(SPACE);
+        assert!(tiles.iter().all(|tile| tile.path != "empty.rs"));
+        assert_eq!(tiles.iter().map(|tile| tile.files).sum::<usize>(), 1);
+        assert!(map(vec![file("empty.rs", 0, 0)]).is_empty());
+        assert!(map(Vec::new()).is_empty());
+    }
+
+    /// No space holds no tile; a single cell is still a tile to click.
+    #[test]
+    fn the_map_fits_down_to_a_single_cell() {
+        let map = small();
+        for nothing in [(0, 5), (5, 0), (0, 0)] {
+            assert!(map.tiles(nothing).is_empty(), "{nothing:?}");
+        }
+        let one = map.tiles((1, 1));
+        assert!(one.iter().any(|tile| tile.frame.contains(0, 0)));
+    }
 }
