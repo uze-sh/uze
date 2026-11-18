@@ -3971,3 +3971,613 @@ fn measure_the_editors_hot_paths() {
         )
     });
 }
+
+// --- what mutants showed untested -------------------------------------------
+
+fn requests(view: &mut CodeView) -> Vec<FileRequest> {
+    std::iter::from_fn(|| view.take_request()).collect()
+}
+
+/// A map measured and on show, over the files of `/repo`.
+fn on_the_map() -> CodeView {
+    let mut view = files_at("/repo");
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Map);
+    view
+}
+
+fn map_heading(view: &CodeView) -> String {
+    match render::view(view, space()).content {
+        Content::Lines { heading, .. } => heading,
+        other => panic!("not the map: {other:?}"),
+    }
+}
+
+fn click_tile(view: &mut CodeView, path: &str) {
+    let (x, y) = view
+        .map_view()
+        .expect("measured")
+        .tiles((80, 20))
+        .into_iter()
+        .find(|tile| tile.path == path)
+        .unwrap_or_else(|| panic!("no tile for {path}"))
+        .frame
+        .center();
+    handle_mouse(
+        view,
+        Some(ViewHit::PlaceCaret {
+            line: y as usize,
+            cell: x as usize,
+        }),
+        space(),
+    );
+}
+
+fn trail(view: &CodeView) -> Vec<String> {
+    render::view(view, space())
+        .trail
+        .into_iter()
+        .map(|step| step.name)
+        .collect()
+}
+
+/// A map not measured yet has nothing to step out of: esc closes.
+#[test]
+fn esc_on_a_map_still_measuring_closes_the_surface() {
+    let mut view = files_at("/repo");
+    press(&mut view, Command::ToggleMap);
+    assert!(matches!(
+        press(&mut view, Command::Close),
+        CodeOutcome::Close
+    ));
+}
+
+/// Every arrow picks a tile on a map with none picked.
+#[test]
+fn every_arrow_picks_a_tile_on_the_map() {
+    for command in [
+        Command::SelectPrevious,
+        Command::SelectNext,
+        Command::Collapse,
+        Command::Expand,
+    ] {
+        let mut view = on_the_map();
+        let unpicked = map_heading(&view);
+        press(&mut view, command);
+        assert_ne!(map_heading(&view), unpicked, "{command:?} picked nothing");
+    }
+}
+
+/// Enter on a picked directory goes into it.
+#[test]
+fn enter_goes_into_the_picked_directory_on_the_map() {
+    let mut view = on_the_map();
+    click_tile(&mut view, "src");
+    assert_eq!(trail(&view), ["repo"], "picked, not entered");
+    press(&mut view, Command::Activate);
+    assert_eq!(trail(&view), ["repo", "src"]);
+    handle_mouse(&mut view, Some(ViewHit::SelectTrail(0)), space());
+    assert_eq!(trail(&view), ["repo"], "the trail's first step is the top");
+}
+
+/// The map's renderings come round in order, from the key and from the
+/// chips, and a rendering picked on the map leaves it where it was opened.
+#[test]
+fn the_maps_renderings_come_round_and_leaving_the_map_still_works() {
+    let mut view = on_the_map();
+    let active = |view: &CodeView| -> Vec<String> {
+        render::view(view, space())
+            .modes
+            .into_iter()
+            .filter(|mode| mode.active)
+            .map(|mode| mode.label)
+            .collect()
+    };
+    assert_eq!(active(&view), ["Unicode"]);
+    press(&mut view, Command::NextMode);
+    assert_eq!(active(&view), ["ASCII"]);
+    press(&mut view, Command::NextMode);
+    assert_eq!(active(&view), ["Ranking"]);
+    press(&mut view, Command::NextMode);
+    assert_eq!(active(&view), ["Unicode"]);
+    handle_mouse(&mut view, Some(ViewHit::SelectMode(1)), space());
+    assert_eq!(active(&view), ["ASCII"]);
+    press(&mut view, Command::ToggleMap);
+    assert_eq!(view.showing(), ContentMode::Contents, "off the map again");
+}
+
+#[test]
+fn the_maps_chips_and_close_button_answer_on_the_map() {
+    let mut view = on_the_map();
+    assert!(matches!(
+        handle_mouse(&mut view, Some(ViewHit::Close), space()),
+        CodeOutcome::Close
+    ));
+    handle_mouse(&mut view, Some(ViewHit::SelectSubject(0)), space());
+    assert_ne!(view.showing(), ContentMode::Map, "the files half");
+}
+
+/// A checkout that is no repository says so on the map rather than
+/// waiting for a measurement that will not come.
+#[test]
+fn a_checkout_that_cannot_be_measured_says_so_on_the_map() {
+    let mut view = files_at("/repo");
+    press(&mut view, Command::ToggleMap);
+    let message = |view: &CodeView| match render::view(view, space()).content {
+        Content::Message { text, .. } => text,
+        other => panic!("not a message: {other:?}"),
+    };
+    assert_eq!(message(&view), "Measuring the checkout…");
+    view.absorb_unmeasurable();
+    assert_eq!(message(&view), "Nothing to measure outside a repository");
+    assert!(!view.wants_measure());
+}
+
+fn three_kept_tabs() -> (CodeView, FakeMachine) {
+    let machine = FakeMachine::default()
+        .with_directory("/w/a")
+        .with_directory("/w/b")
+        .with_file("/w/a/mod.rs", "a\n")
+        .with_file("/w/b/mod.rs", "b\n")
+        .with_file("/w/c.txt", "c\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    for path in ["/w/a/mod.rs", "/w/b/mod.rs", "/w/c.txt"] {
+        view.select(PathBuf::from(path));
+        view.load_selection(None);
+        settle(&mut view, &machine);
+        view.pin_tab(Path::new(path));
+    }
+    (view, machine)
+}
+
+fn tabs_drawn(view: &CodeView) -> Vec<(String, String, bool)> {
+    render::view(view, space())
+        .tabs
+        .into_iter()
+        .map(|tab| (tab.name, tab.detail, tab.active))
+        .collect()
+}
+
+/// Two tabs of one name say which directory each is in; a name of its
+/// own needs no more.
+#[test]
+fn only_tabs_sharing_a_name_say_their_directory() {
+    let (view, _machine) = three_kept_tabs();
+    assert_eq!(
+        tabs_drawn(&view),
+        [
+            ("mod.rs".to_owned(), "a".to_owned(), false),
+            ("mod.rs".to_owned(), "b".to_owned(), false),
+            ("c.txt".to_owned(), String::new(), true),
+        ]
+    );
+}
+
+/// The tab keys step to the tab beside the one on show, round the ends.
+#[test]
+fn the_tab_keys_step_round_the_ends() {
+    let (mut view, machine) = three_kept_tabs();
+    let on_show = |view: &CodeView| view.open.as_ref().map(|open| open.path.clone());
+    press(&mut view, Command::NextTab);
+    settle(&mut view, &machine);
+    assert_eq!(on_show(&view), Some(PathBuf::from("/w/a/mod.rs")));
+    press(&mut view, Command::PreviousTab);
+    settle(&mut view, &machine);
+    assert_eq!(on_show(&view), Some(PathBuf::from("/w/c.txt")));
+    press(&mut view, Command::PreviousTab);
+    settle(&mut view, &machine);
+    assert_eq!(on_show(&view), Some(PathBuf::from("/w/b/mod.rs")));
+}
+
+/// Tabs are a file's: the map draws none and offers no way to close one,
+/// and with no tab nothing offers to close one either.
+#[test]
+fn tabs_stand_only_beside_a_file() {
+    let (mut view, _machine) = three_kept_tabs();
+    view.absorb_measure(measured());
+    press(&mut view, Command::ToggleMap);
+    let drawn = render::view(&view, space());
+    assert!(drawn.tabs.is_empty());
+    assert!(!drawn.footer.contains(&Command::CloseTab));
+
+    let empty = files_at("/w");
+    assert!(
+        !render::view(&empty, space())
+            .footer
+            .contains(&Command::CloseTab)
+    );
+}
+
+/// A file deleted takes its own tab and nothing else's.
+#[test]
+fn a_deleted_file_takes_only_its_own_tab_and_unsaved_work() {
+    let (mut view, machine) = three_kept_tabs();
+    view.select(PathBuf::from("/w/a/mod.rs"));
+    view.load_selection(None);
+    settle(&mut view, &machine);
+    press(&mut view, Command::Edit);
+    type_text(&mut view, "x");
+    press(&mut view, Command::Close);
+    view.select(PathBuf::from("/w/c.txt"));
+    view.load_selection(None);
+    settle(&mut view, &machine);
+    view.absorb(FileAnswer::Deleted {
+        path: PathBuf::from("/w/b/mod.rs"),
+        outcome: Ok(()),
+    });
+    let names: Vec<String> = tabs_drawn(&view)
+        .into_iter()
+        .map(|(name, detail, _)| format!("{detail}/{name}"))
+        .collect();
+    assert_eq!(names, ["/mod.rs", "/c.txt"]);
+    assert!(
+        view.is_unsaved(Path::new("/w/a/mod.rs")),
+        "another file's unsaved work stays"
+    );
+}
+
+/// An unedited file renamed is read again under its new name.
+#[test]
+fn an_unedited_file_renamed_is_read_again_under_its_new_name() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+    let mut view = reading(&machine, "/w/a.txt");
+    view.absorb(FileAnswer::Renamed {
+        from: PathBuf::from("/w/a.txt"),
+        to: PathBuf::from("/w/z.txt"),
+        outcome: Ok(()),
+    });
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/z.txt")));
+    assert!(
+        requests(&mut view).contains(&FileRequest::Read(PathBuf::from("/w/z.txt"))),
+        "read again"
+    );
+}
+
+/// Saving a file other than the editor settings leaves the tree's
+/// exclusions as they were read.
+#[test]
+fn saving_any_other_file_does_not_read_the_exclusions_again() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+    let mut view = reading(&machine, "/w/a.txt");
+    view.absorb(FileAnswer::Saved {
+        path: PathBuf::from("/w/a.txt"),
+        outcome: Ok(()),
+    });
+    assert!(
+        !requests(&mut view)
+            .iter()
+            .any(|request| matches!(request, FileRequest::Exclusions(_)))
+    );
+}
+
+/// The checkout itself unreadable is a broken surface; a directory in it
+/// unreadable folds shut and says why, the tree still standing.
+#[test]
+fn only_an_unreadable_checkout_breaks_the_surface() {
+    let (mut view, _machine) = tree_fixture();
+    view.absorb(FileAnswer::Listed {
+        path: PathBuf::from("/w/src"),
+        entries: Err("denied".to_owned()),
+        chain: Vec::new(),
+    });
+    assert!(view.error.is_none());
+    assert!(!view.files.expanded.contains(Path::new("/w/src")));
+    assert_eq!(
+        view.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("denied")
+    );
+
+    let mut view = files_at("/w");
+    view.absorb(FileAnswer::Listed {
+        path: PathBuf::from("/w"),
+        entries: Err("gone".to_owned()),
+        chain: Vec::new(),
+    });
+    assert_eq!(view.error.as_deref(), Some("gone"));
+}
+
+/// A place left on a file reads it again; one left on a directory reads
+/// nothing.
+#[test]
+fn a_place_resumed_reads_a_file_and_not_a_directory() {
+    let root = Path::new("/w");
+    let mut on_file =
+        files_at("/w").resuming(CodePlace::at(root, Path::new("/w/src/main.rs"), false));
+    assert!(requests(&mut on_file).contains(&FileRequest::Read(PathBuf::from("/w/src/main.rs"))));
+    let mut on_directory = files_at("/w").resuming(CodePlace::at(root, Path::new("/w/src"), true));
+    assert!(
+        !requests(&mut on_directory)
+            .iter()
+            .any(|request| matches!(request, FileRequest::Read(_)))
+    );
+}
+
+#[test]
+fn the_caption_names_the_branch_the_checkout_is_on() {
+    let mut view = files_at("/w");
+    view.set_branch("feature/naming".to_owned());
+    let caption: String = render::view(&view, space())
+        .caption
+        .iter()
+        .map(|span| span.text.as_str())
+        .collect();
+    assert!(caption.contains("feature/naming"), "{caption}");
+}
+
+#[test]
+fn the_surface_waits_while_a_request_is_out() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+    let mut view = files_at("/w");
+    assert!(view.waiting());
+    settle(&mut view, &machine);
+    assert!(!view.waiting());
+}
+
+/// Switching a document between its source and its preview keeps the
+/// line the reader was on.
+#[test]
+fn a_document_switched_between_its_modes_keeps_the_readers_line() {
+    let machine = long_document();
+    let mut view = reading(&machine, "/w/long.md");
+    press(&mut view, Command::TogglePreview);
+    if view.showing() == ContentMode::Preview {
+        press(&mut view, Command::TogglePreview);
+    }
+    assert_eq!(view.showing(), ContentMode::Contents);
+    view.open.as_mut().unwrap().caret = Caret { line: 9, column: 0 };
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.open.as_ref().unwrap().caret.line, 9);
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.open.as_ref().unwrap().caret.line, 9);
+}
+
+/// A file read whole has all of its colour already: nothing more is
+/// asked, nor for one still being read.
+#[test]
+fn colour_is_asked_only_for_a_file_read_in_part() {
+    let machine = FakeMachine::default().with_file("/w/a.rs", "fn a() {}\n");
+    let mut view = reading(&machine, "/w/a.rs");
+    assert!(!view.open.as_ref().unwrap().partial);
+    view.colour_the_rest();
+    assert!(view.take_request().is_none());
+    let open = view.open.as_mut().unwrap();
+    open.partial = true;
+    open.loading = true;
+    view.colour_the_rest();
+    assert!(view.take_request().is_none(), "still being read");
+}
+
+/// The way down stops on the tree's last row.
+#[test]
+fn the_way_down_stops_on_the_last_row() {
+    let (mut view, _machine) = tree_fixture();
+    view.select(PathBuf::from("/w/README.md"));
+    view.focus = Focus::Navigator;
+    press(&mut view, Command::SelectNext);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/README.md")));
+    press(&mut view, Command::SelectPrevious);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src/main.rs")));
+}
+
+/// Left and right fold and open the tree only while the tree has the
+/// keys; enter on the content does not reach it either.
+#[test]
+fn the_tree_folds_only_while_it_has_the_keys() {
+    let (mut view, _machine) = tree_fixture();
+    let src = Path::new("/w/src");
+    view.focus = Focus::Content;
+    press(&mut view, Command::Collapse);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src/main.rs")));
+    view.select(src.to_path_buf());
+    view.focus = Focus::Content;
+    press(&mut view, Command::Activate);
+    assert!(view.files.expanded.contains(src), "enter on the content");
+    view.focus = Focus::Navigator;
+    press(&mut view, Command::Collapse);
+    assert!(!view.files.expanded.contains(src));
+    view.focus = Focus::Content;
+    press(&mut view, Command::Expand);
+    assert!(!view.files.expanded.contains(src), "right on the content");
+}
+
+/// Left on a folded directory steps out to the one holding it.
+#[test]
+fn left_on_a_folded_directory_steps_out_to_its_parent() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/inner")
+        .with_file("/w/src/inner/x.rs", "x\n")
+        .with_file("/w/src/main.rs", "m\n")
+        .with_file("/w/README.md", "r\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/src/inner"));
+    view.focus = Focus::Navigator;
+    press(&mut view, Command::Collapse);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+}
+
+/// A click on a directory's disclosure folds it and selects it.
+#[test]
+fn a_click_on_a_disclosure_folds_its_directory() {
+    let (mut view, _machine) = tree_fixture();
+    handle_mouse(&mut view, Some(ViewHit::ToggleGroup(0)), space());
+    assert!(!view.files.expanded.contains(Path::new("/w/src")));
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+    assert!(matches!(
+        handle_mouse(&mut view, Some(ViewHit::Close), space()),
+        CodeOutcome::Close
+    ));
+}
+
+/// The page keys move what is read by a screen.
+#[test]
+fn the_page_keys_move_a_file_being_read_by_a_screen() {
+    let machine = long_document();
+    let mut view = reading(&machine, "/w/long.md");
+    view.focus = Focus::Content;
+    press(&mut view, Command::ScrollPageDown);
+    assert_eq!(view.scroll, usize::from(space().height));
+    press(&mut view, Command::ScrollPageUp);
+    assert_eq!(view.scroll, 0);
+}
+
+/// Only a document has a preview to toggle to.
+#[test]
+fn a_file_that_is_no_document_has_no_preview_to_toggle_to() {
+    let machine = FakeMachine::default().with_file("/w/a.rs", "fn a() {}\n");
+    let mut view = reading(&machine, "/w/a.rs");
+    press(&mut view, Command::TogglePreview);
+    assert_eq!(view.showing(), ContentMode::Contents);
+}
+
+fn searched_fog() -> (CodeView, FakeMachine) {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "fog\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    press(&mut view, Command::Find);
+    type_text(&mut view, "fog");
+    settle(&mut view, &machine);
+    (view, machine)
+}
+
+fn found_collapsed(view: &CodeView) -> bool {
+    navigator_of_tree(view)
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            NavigatorRow::Found { collapsed, .. } => Some(*collapsed),
+            _ => None,
+        })
+        .expect("a file found")
+}
+
+/// Left folds the file the search's cursor is in; right does not fold it.
+#[test]
+fn left_folds_the_searched_file_the_cursor_is_in() {
+    let (mut view, _machine) = searched_fog();
+    press(&mut view, Command::SelectNext);
+    view.focus = Focus::Navigator;
+    press(&mut view, Command::Expand);
+    assert!(!found_collapsed(&view));
+    press(&mut view, Command::Collapse);
+    assert!(found_collapsed(&view));
+}
+
+/// A search's list is lines, not files: delete asks about nothing.
+#[test]
+fn delete_on_a_search_asks_about_nothing() {
+    let (mut view, _machine) = searched_fog();
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Delete);
+    assert!(view.confirming_delete.is_none());
+}
+
+/// In the search's field backspace takes the last character away, and
+/// tab hands the keys to the content.
+#[test]
+fn the_search_field_erases_and_hands_the_keys_on() {
+    let (mut view, _machine) = searched_fog();
+    press(&mut view, Command::EraseBack);
+    assert_eq!(view.search.query, "fo");
+    press(&mut view, Command::FocusNext);
+    assert!(!view.typing());
+    assert_eq!(view.focus, Focus::Content);
+}
+
+/// A click anywhere but the field takes the keys out of it; a click on
+/// the field puts them back.
+#[test]
+fn a_click_off_the_field_takes_the_keys_out_of_it() {
+    let (mut view, _machine) = searched_fog();
+    assert!(view.typing());
+    handle_mouse(&mut view, Some(ViewHit::SelectTab(99)), space());
+    assert!(!view.typing());
+    handle_mouse(&mut view, Some(ViewHit::FocusField), space());
+    assert!(view.typing());
+}
+
+/// A line opened from a search or from another surface stands with
+/// `SEARCH_CONTEXT` lines of what comes before it above it.
+#[test]
+fn a_line_gone_to_stands_below_a_little_of_what_comes_before() {
+    let machine = long_document();
+    let mut view = files_at("/w");
+    search_opened_far_down(&mut view, &machine);
+    let fog = 301;
+    assert_eq!(view.scroll, fog - 1 - SEARCH_CONTEXT);
+
+    let mut view = reading(&machine, "/w/long.md");
+    view.go_to_line(100);
+    assert_eq!(view.scroll, 100 - 1 - SEARCH_CONTEXT);
+}
+
+/// The caret moved above the screen brings the screen up to it.
+#[test]
+fn the_caret_moved_above_the_screen_brings_it_up() {
+    let machine = long_document();
+    let mut view = editing(&machine, "/w/long.md");
+    view.open.as_mut().unwrap().caret = Caret {
+        line: 10,
+        column: 0,
+    };
+    view.scroll = 10;
+    press(&mut view, Command::SelectPrevious);
+    assert_eq!(view.scroll, 9);
+}
+
+/// Enter splits the line at the caret and delete takes the character
+/// after it.
+#[test]
+fn enter_splits_the_line_and_delete_takes_the_next_character() {
+    let machine = FakeMachine::default().with_file("/w/a.txt", "abc\n");
+    let mut view = editing(&machine, "/w/a.txt");
+    view.open.as_mut().unwrap().caret = Caret { line: 0, column: 0 };
+    press(&mut view, Command::EraseForward);
+    press(&mut view, Command::CaretRight);
+    press(&mut view, Command::Newline);
+    assert_eq!(buffer(&view), "b\nc\n");
+}
+
+/// A directory folded again before its listing lands stays folded, and
+/// the selection stays on its row rather than following a chain nobody
+/// opened.
+#[test]
+fn a_directory_folded_before_its_listing_lands_stays_folded() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/src")
+        .with_directory("/w/src/main")
+        .with_directory("/w/src/main/java")
+        .with_file("/w/src/main/java/App.java", "class App {}\n")
+        .with_file("/w/README.md", "# hi\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.focus = Focus::Navigator;
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+    press(&mut view, Command::Activate);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    assert_eq!(view.selected.as_deref(), Some(Path::new("/w/src")));
+    assert!(!view.files.expanded.contains(Path::new("/w/src/main")));
+}
+
+/// Esc on the delete question cancels it and says so.
+#[test]
+fn esc_on_the_delete_question_cancels_it() {
+    let (mut view, _machine) = tree_fixture();
+    view.focus = Focus::Navigator;
+    press(&mut view, Command::Delete);
+    assert!(view.confirming_delete.is_some());
+    press(&mut view, Command::Close);
+    assert!(view.confirming_delete.is_none());
+    assert!(view.take_request().is_none(), "nothing deleted");
+    assert_eq!(
+        view.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("delete cancelled")
+    );
+}

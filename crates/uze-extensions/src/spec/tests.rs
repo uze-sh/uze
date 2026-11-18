@@ -1749,3 +1749,397 @@ mod hosted {
         assert_eq!(on_show, Some(SpecPlace::change("held")));
     }
 }
+
+// --- the surface, on units laid out by hand ---------------------------------
+
+const HAND_ROOT: &str = "/hand";
+
+fn hand_artifact(unit: &str, relative: &str, role: Role, text: &str) -> super::catalog::Artifact {
+    super::catalog::Artifact {
+        path: Path::new(HAND_ROOT).join(unit).join(relative),
+        relative: relative.to_owned(),
+        role,
+        name: relative.trim_end_matches(".md").to_owned(),
+        rank: 0,
+        text: Ok(text.to_owned()),
+    }
+}
+
+fn hand_unit(
+    subject: Subject,
+    name: &str,
+    own: bool,
+    artifacts: Vec<super::catalog::Artifact>,
+) -> Unit {
+    Unit {
+        subject,
+        name: name.to_owned(),
+        relative: name.to_owned(),
+        dialect: "OpenSpec",
+        archives: true,
+        artifacts,
+        progress: None,
+        own,
+        standing: None,
+    }
+}
+
+fn hand_answer(units: Vec<Unit>) -> SpecAnswer {
+    SpecAnswer {
+        root: Path::new(HAND_ROOT).to_path_buf(),
+        branch: String::new(),
+        theme: crate::shared::highlight::FALLBACK_SYNTAX_THEME.to_owned(),
+        found: Found::Units {
+            dialects: vec!["OpenSpec"],
+            units,
+        },
+        subjects: vec![Subject::Changes, Subject::Specs],
+    }
+}
+
+/// Two changes in flight, each with two documents, and two specs, the
+/// second of them this checkout's own.
+fn by_hand() -> SpecView {
+    let change = |name: &str| {
+        hand_unit(
+            Subject::Changes,
+            name,
+            false,
+            vec![
+                hand_artifact(name, "proposal.md", Role::Why, "## Why\n"),
+                hand_artifact(name, "notes.md", Role::Other, "notes\n"),
+            ],
+        )
+    };
+    let spec = |name: &str, own: bool| {
+        hand_unit(
+            Subject::Specs,
+            name,
+            own,
+            vec![hand_artifact(name, "spec.md", Role::Contract, "# spec\n")],
+        )
+    };
+    opened(hand_answer(vec![
+        change("first"),
+        change("second"),
+        spec("theirs", false),
+        spec("mine", true),
+    ]))
+}
+
+fn selected_names(state: &SpecView) -> Vec<String> {
+    let navigator = view(state, space()).navigator.expect("a navigator");
+    let names: Vec<String> = navigator
+        .rows
+        .iter()
+        .filter_map(|row| match row {
+            NavigatorRow::Item { name, selected, .. } if *selected => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
+    let anchored = navigator.anchor.map(|id| match &navigator.rows[id] {
+        NavigatorRow::Item { name, .. } => name.clone(),
+        other => panic!("anchored on {other:?}"),
+    });
+    assert_eq!(
+        anchored.as_ref(),
+        names.first(),
+        "the anchor is the selection"
+    );
+    names
+}
+
+fn row_detail(state: &SpecView, wanted: &str) -> (String, String) {
+    view(state, space())
+        .navigator
+        .expect("a navigator")
+        .rows
+        .iter()
+        .find_map(|row| match row {
+            NavigatorRow::Item {
+                name,
+                detail,
+                marker,
+                ..
+            } if name == wanted => Some((detail.clone(), marker.text.clone())),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no row {wanted}"))
+}
+
+/// The arrows walk the units and their open documents; the navigator
+/// lights the one selected and no other.
+#[test]
+fn the_arrows_walk_the_list_and_only_the_selected_row_is_lit() {
+    let mut state = by_hand();
+    assert_eq!(selected_names(&state), ["first"]);
+    handle_command(&mut state, Command::SelectNext, space());
+    assert_eq!(selected_names(&state), ["second"]);
+    handle_command(&mut state, Command::SelectPrevious, space());
+    assert_eq!(selected_names(&state), ["first"]);
+    handle_command(&mut state, Command::Expand, space());
+    handle_command(&mut state, Command::Expand, space());
+    assert_eq!(
+        selected_names(&state),
+        ["proposal"],
+        "an open unit's expand steps into its first document"
+    );
+    handle_command(&mut state, Command::SelectNext, space());
+    assert_eq!(selected_names(&state), ["notes"]);
+    handle_command(&mut state, Command::Collapse, space());
+    assert_eq!(selected_names(&state), ["first"], "back on its unit");
+    assert!(
+        !row_names(&state).iter().any(|row| row.contains("notes")),
+        "and the unit closed"
+    );
+}
+
+/// A document's role is named beside it where its name does not say it.
+#[test]
+fn a_document_whose_name_does_not_say_its_role_is_marked_with_it() {
+    let mut state = by_hand();
+    handle_command(&mut state, Command::Expand, space());
+    assert_eq!(row_detail(&state, "notes").1, "other");
+    handle_command(&mut state, Command::FocusNext, space());
+    handle_command(&mut state, Command::Expand, space());
+    assert_eq!(row_detail(&state, "spec").1, "contract");
+}
+
+/// A change in flight carries how far along its steps are.
+#[test]
+fn a_change_in_flight_is_marked_with_its_progress() {
+    let mut first = hand_unit(Subject::Changes, "first", false, Vec::new());
+    first.progress = Some(super::progress::Progress { done: 1, total: 2 });
+    let state = opened(hand_answer(vec![first]));
+    assert_eq!(row_detail(&state, "first").1, "1/2");
+}
+
+/// Outside the changes, which say it with a band, this checkout's own
+/// units come first and say they are its own.
+#[test]
+fn outside_the_changes_this_checkouts_own_units_come_first_and_say_so() {
+    let mut state = by_hand();
+    assert_eq!(row_detail(&state, "first").0, "");
+    handle_command(&mut state, Command::FocusNext, space());
+    assert_eq!(row_names(&state), ["mine", "theirs"], "no bands");
+    assert_eq!(row_detail(&state, "mine").0, "this checkout");
+    assert_eq!(row_detail(&state, "theirs").0, "");
+}
+
+#[test]
+fn a_change_this_checkout_touched_says_so_with_its_band_alone() {
+    let mut mine = hand_unit(
+        Subject::Changes,
+        "mine",
+        true,
+        vec![hand_artifact("mine", "proposal.md", Role::Why, "x\n")],
+    );
+    mine.progress = None;
+    let state = opened(hand_answer(vec![mine]));
+    assert_eq!(row_detail(&state, "mine").0, "");
+}
+
+/// Tab steps through the subjects and comes round to the first; the
+/// subject on show is the one lit, and a click on another goes there.
+#[test]
+fn tab_steps_through_the_subjects_round_their_end() {
+    let mut state = by_hand();
+    let active = |state: &SpecView| -> Vec<String> {
+        view(state, space())
+            .subjects
+            .into_iter()
+            .filter(|subject| subject.active)
+            .map(|subject| subject.label)
+            .collect()
+    };
+    assert_eq!(active(&state), [Subject::Changes.label()]);
+    handle_command(&mut state, Command::FocusNext, space());
+    assert_eq!(active(&state), [Subject::Specs.label()]);
+    assert_eq!(
+        selected_names(&state),
+        ["mine"],
+        "on the subject's first unit"
+    );
+    handle_command(&mut state, Command::FocusNext, space());
+    assert_eq!(active(&state), [Subject::Changes.label()]);
+    handle_mouse(&mut state, Some(ViewHit::SelectSubject(1)), space());
+    assert_eq!(active(&state), [Subject::Specs.label()]);
+    handle_mouse(&mut state, Some(ViewHit::SelectSubject(1)), space());
+    assert_eq!(
+        selected_names(&state),
+        ["mine"],
+        "a click on the subject on show keeps the selection"
+    );
+}
+
+/// A unit with no documents says so rather than asking for a pick, and
+/// landing on this checkout's own such unit selects the unit itself.
+#[test]
+fn a_unit_with_no_documents_says_it_holds_none() {
+    let state = opened(hand_answer(vec![
+        hand_unit(Subject::Changes, "empty", true, Vec::new()),
+        hand_unit(
+            Subject::Changes,
+            "full",
+            false,
+            vec![hand_artifact("full", "proposal.md", Role::Why, "x\n")],
+        ),
+    ]));
+    assert_eq!(selected_names(&state), ["empty"]);
+    let Content::Message { text, .. } = view(&state, space()).content else {
+        panic!("a message");
+    };
+    assert_eq!(text, "This unit holds no documents");
+}
+
+/// The footer offers the surface's keys and the modes say which way the
+/// document is shown; a click on a mode shows it that way.
+#[test]
+fn the_modes_say_how_the_document_is_shown_and_a_click_switches_them() {
+    let mut state = by_hand();
+    let drawn = view(&state, space());
+    assert!(drawn.footer.contains(&Command::Close), "{:?}", drawn.footer);
+    let active = |state: &SpecView| -> Vec<(String, bool)> {
+        view(state, space())
+            .modes
+            .into_iter()
+            .map(|mode| (mode.label, mode.active))
+            .collect()
+    };
+    assert_eq!(
+        active(&state),
+        [("Preview".to_owned(), true), ("Source".to_owned(), false)]
+    );
+    handle_mouse(&mut state, Some(ViewHit::SelectMode(1)), space());
+    assert_eq!(
+        active(&state),
+        [("Preview".to_owned(), false), ("Source".to_owned(), true)]
+    );
+    let Content::Lines { lines, .. } = view(&state, space()).content else {
+        panic!("lines");
+    };
+    assert_eq!(lines[0].number, "1", "the source is numbered");
+}
+
+#[test]
+fn esc_and_the_close_button_close_the_surface() {
+    let mut state = by_hand();
+    assert_eq!(
+        handle_command(&mut state, Command::Close, space()),
+        SpecOutcome::Close
+    );
+    assert_eq!(
+        handle_mouse(&mut state, Some(ViewHit::Close), space()),
+        SpecOutcome::Close
+    );
+}
+
+/// A click on a unit selects it and opens it; a click on a document
+/// selects that document.
+#[test]
+fn a_click_on_a_unit_selects_and_opens_it() {
+    let mut state = by_hand();
+    handle_mouse(&mut state, Some(ViewHit::SelectItem(2)), space());
+    assert_eq!(selected_names(&state), ["second"]);
+    assert!(
+        row_names(&state).contains(&"    notes".to_owned()),
+        "opened"
+    );
+    handle_mouse(&mut state, Some(ViewHit::SelectItem(4)), space());
+    assert_eq!(selected_names(&state), ["notes"]);
+}
+
+/// Twenty numbered lines, shown as their source.
+fn long_source() -> SpecView {
+    let text: String = (1..=20).map(|line| format!("line {line}\n")).collect();
+    let mut state = opened(hand_answer(vec![hand_unit(
+        Subject::Changes,
+        "long",
+        false,
+        vec![hand_artifact("long", "notes.txt", Role::Other, &text)],
+    )]));
+    handle_command(&mut state, Command::TogglePreview, space());
+    state
+}
+
+fn first_shown(state: &SpecView, space: Size) -> usize {
+    match view(state, space).content {
+        Content::Lines { first, .. } => first,
+        other => panic!("not lines: {other:?}"),
+    }
+}
+
+/// Paging moves by the space's height but a line, the wheel by three, a
+/// point on the scrollbar to its line; none goes past the last line.
+#[test]
+fn paging_the_wheel_and_the_scrollbar_move_within_the_document() {
+    let mut state = long_source();
+    let small = Size {
+        width: 80,
+        height: 6,
+    };
+    handle_command(&mut state, Command::ScrollPageDown, small);
+    assert_eq!(first_shown(&state, small), 5);
+    handle_command(&mut state, Command::ScrollPageUp, small);
+    assert_eq!(first_shown(&state, small), 0);
+    super::handle_scroll(&mut state, crate::view::ScrollDirection::Down);
+    assert_eq!(first_shown(&state, small), 3);
+    super::handle_scroll(&mut state, crate::view::ScrollDirection::Up);
+    assert_eq!(first_shown(&state, small), 0);
+    super::scroll_to(&mut state, 7);
+    assert_eq!(first_shown(&state, small), 7);
+    super::scroll_to(&mut state, 500);
+    assert_eq!(state.scroll, 19, "the last line");
+}
+
+/// A rendered document's table is fitted to the width it is shown at,
+/// and what is copied from it is what was shown.
+#[test]
+fn a_rendered_document_wraps_to_its_width_and_copies_as_shown() {
+    let paragraph = format!(
+        "| what | why |\n|---|---|\n| {} | x |\n",
+        "word ".repeat(60)
+    );
+    let state = opened(hand_answer(vec![hand_unit(
+        Subject::Changes,
+        "wide",
+        false,
+        vec![hand_artifact("wide", "proposal.md", Role::Why, &paragraph)],
+    )]));
+    let narrow = Size {
+        width: 40,
+        height: 20,
+    };
+    let wide = Size {
+        width: 400,
+        height: 20,
+    };
+    let total = |space: Size| {
+        let Content::Lines { total, .. } = view(&state, space).content else {
+            panic!("lines");
+        };
+        total
+    };
+    let fitted = total(narrow);
+    assert!(fitted > total(wide), "the table folds to the narrow width");
+    let fitted = total(narrow);
+    assert_eq!(text(&state, 0..usize::MAX).len(), fitted);
+}
+
+/// A subject is offered only where a tool that was read lists it.
+#[test]
+fn a_subject_is_offered_only_where_a_tool_read_lists_it() {
+    let dir = openspec_checkout("spec-one-subject");
+    let changes_only = Dialect {
+        collections: &OPENSPEC.collections[..1],
+        ..OPENSPEC
+    };
+    let answer = read_with(
+        &DiskHost,
+        dir.path(),
+        None,
+        &[changes_only],
+        &ArtifactSource::Undeclared,
+    );
+    assert_eq!(answer.subjects, [Subject::Changes]);
+}

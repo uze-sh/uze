@@ -2309,3 +2309,366 @@ fn a_press_in_the_composer_past_wide_glyphs_lands_on_its_character() {
     handle_hit(&mut view, ViewHit::PlaceCaret { line, cell }, SPACE);
     assert_eq!(view.composer.as_ref().unwrap().caret.column, 4, "on the o");
 }
+
+/// The operator's own preference: a file read to its end is marked viewed
+/// unless they turn it off, so it is declared on by default.
+#[test]
+fn the_review_declares_marking_viewed_once_read_on_by_default() {
+    let declared = preferences();
+    assert_eq!(declared.len(), 1);
+    assert_eq!(declared[0].name, MARK_VIEWED_AUTOMATICALLY);
+    assert_eq!(declared[0].kind, uze_contract::PreferenceKind::Toggle);
+    assert_eq!(declared[0].default, serde_json::Value::from(true));
+}
+
+fn caret(view: &ReviewView) -> (usize, usize) {
+    let caret = view.composer.as_ref().expect("a composer").caret;
+    (caret.line, caret.column)
+}
+
+fn composer_lines(view: &ReviewView) -> Vec<String> {
+    view.composer.as_ref().expect("a composer").lines.clone()
+}
+
+/// While a comment is written the keys edit it, as a text field's do.
+#[test]
+fn the_comment_being_written_takes_the_editing_keys() {
+    let mut view = reviewing();
+    view.mark_cell(2, false);
+    handle_command(&mut view, Command::Comment, SPACE);
+    for character in "ab".chars() {
+        handle_command(&mut view, Command::Type(character), SPACE);
+    }
+    handle_command(&mut view, Command::Newline, SPACE);
+    assert_eq!(caret(&view), (1, 0));
+    for character in "cd".chars() {
+        handle_command(&mut view, Command::Type(character), SPACE);
+    }
+    assert_eq!(composer_lines(&view), ["ab", "cd"]);
+    handle_command(&mut view, Command::SelectPrevious, SPACE);
+    assert_eq!(caret(&view), (0, 2), "up a line");
+    handle_command(&mut view, Command::CaretLineStart, SPACE);
+    assert_eq!(caret(&view), (0, 0));
+    handle_command(&mut view, Command::CaretRight, SPACE);
+    assert_eq!(caret(&view), (0, 1));
+    handle_command(&mut view, Command::CaretLineEnd, SPACE);
+    assert_eq!(caret(&view), (0, 2));
+    handle_command(&mut view, Command::CaretLeft, SPACE);
+    assert_eq!(caret(&view), (0, 1));
+    handle_command(&mut view, Command::EraseForward, SPACE);
+    assert_eq!(composer_lines(&view), ["a", "cd"]);
+    handle_command(&mut view, Command::EraseBack, SPACE);
+    assert_eq!(composer_lines(&view), ["", "cd"]);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    assert_eq!(caret(&view).0, 1, "down a line");
+    assert!(view.typing(), "no key put the composer away");
+}
+
+/// The discard question starts on its safe answer; the keys that move
+/// between answers swap it, and enter gives the one standing.
+#[test]
+fn the_discard_question_moves_between_its_answers_and_enter_gives_one() {
+    let mut view = reviewing();
+    ask_to_discard(&mut view);
+    let on_confirm = |view: &ReviewView| view.discarding.as_ref().unwrap().on_confirm;
+    assert!(!on_confirm(&view));
+    handle_command(&mut view, Command::FocusNext, SPACE);
+    assert!(on_confirm(&view));
+    handle_command(&mut view, Command::Collapse, SPACE);
+    assert!(!on_confirm(&view));
+    handle_command(&mut view, Command::Expand, SPACE);
+    assert!(on_confirm(&view));
+    handle_command(&mut view, Command::Activate, SPACE);
+    assert!(view.discarding.is_none(), "answered");
+    assert_eq!(
+        view.restore,
+        Some(vec![PathBuf::from("/w").join("naming.rs")])
+    );
+}
+
+#[test]
+fn the_files_menu_highlight_steps_back_and_stays_open() {
+    let mut view = reviewing();
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    handle_command(&mut view, Command::SelectPrevious, SPACE);
+    assert_eq!(view.menu.as_ref().map(|menu| menu.highlighted), Some(1));
+}
+
+/// Hovering past the menu's last entry lights nothing.
+#[test]
+fn the_pointer_past_the_menus_last_entry_lights_nothing() {
+    let mut view = reviewing();
+    handle_command(&mut view, Command::OpenMenu, SPACE);
+    let entries = view.menu.as_ref().unwrap().acts.len();
+    assert!(!hover(&mut view, Some(ViewHit::MenuEntry(entries))));
+    assert_eq!(view.menu.as_ref().unwrap().highlighted, 0);
+}
+
+/// Esc lets go of a mark first, and only with nothing marked closes the
+/// review.
+#[test]
+fn esc_lets_go_of_the_mark_before_it_closes_the_review() {
+    let mut view = reviewing();
+    selected(&mut view, 2..4, "fn apply() {");
+    assert!(view.marked().is_some());
+    assert!(matches!(
+        handle_command(&mut view, Command::Close, SPACE),
+        Asked::Stay
+    ));
+    assert_eq!(view.marked(), None);
+    assert!(view.excerpt.is_empty(), "the quote goes with the mark");
+    assert!(matches!(
+        handle_command(&mut view, Command::Close, SPACE),
+        Asked::Close
+    ));
+}
+
+/// The arrows walk the list where the list has the focus and the diff's
+/// lines where the diff has it; tab hands the focus over and enter on
+/// the list hands it to the diff, where enter starts a comment.
+#[test]
+fn the_arrows_walk_whichever_side_has_the_focus() {
+    let mut view = reviewing();
+    view.focus = Focus::Content;
+    view.cursor = 0;
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    assert_eq!(view.cursor, 2);
+    handle_command(&mut view, Command::SelectPrevious, SPACE);
+    assert_eq!(view.cursor, 1);
+    handle_command(&mut view, Command::FocusNext, SPACE);
+    assert_eq!(view.focus, Focus::Navigator);
+    handle_command(&mut view, Command::SelectNext, SPACE);
+    assert_eq!(view.selected_index(), Some(1), "the next file");
+    handle_command(&mut view, Command::FocusNext, SPACE);
+    assert_eq!(view.focus, Focus::Content);
+    handle_command(&mut view, Command::FocusNext, SPACE);
+    handle_command(&mut view, Command::Activate, SPACE);
+    assert_eq!(view.focus, Focus::Content);
+    assert!(!view.typing(), "enter on the list only crosses over");
+}
+
+#[test]
+fn enter_on_the_diff_starts_a_comment_on_the_cursors_line() {
+    let mut view = reviewing();
+    view.focus = Focus::Content;
+    view.cursor = 2;
+    handle_command(&mut view, Command::Activate, SPACE);
+    assert!(view.typing());
+}
+
+/// A space four rows tall shows one text row.
+const ONE_ROW: Size = Size {
+    width: 100,
+    height: 4,
+};
+
+/// Paging moves the diff by the space's height and stops on its last
+/// line; the wheel moves it by three, and not down past the end.
+#[test]
+fn paging_and_the_wheel_move_the_diff_within_its_lines() {
+    let mut view = reviewing();
+    let last = render::lines(&view).len() - 1;
+    assert!(last >= 5, "a diff long enough to scroll");
+    let space = Size {
+        width: 100,
+        height: 2,
+    };
+    handle_command(&mut view, Command::ScrollPageDown, space);
+    assert_eq!(view.scroll, 2);
+    handle_command(&mut view, Command::ScrollPageUp, space);
+    assert_eq!(view.scroll, 0);
+    for _ in 0..last {
+        handle_command(&mut view, Command::ScrollPageDown, space);
+    }
+    assert_eq!(view.scroll, last, "never past the last line");
+    view.scroll = 0;
+    handle_scroll(&mut view, ScrollDirection::Down, false);
+    assert_eq!(view.scroll, 3);
+    handle_scroll(&mut view, ScrollDirection::Down, true);
+    assert_eq!(view.scroll, 3, "at the end the wheel down stays");
+    handle_scroll(&mut view, ScrollDirection::Up, false);
+    assert_eq!(view.scroll, 0);
+    for _ in 0..last {
+        handle_scroll(&mut view, ScrollDirection::Down, false);
+    }
+    assert_eq!(view.scroll, last);
+}
+
+fn line_of(view: &ReviewView, wanted: Line) -> usize {
+    render::lines(view)
+        .iter()
+        .position(|drawn| drawn.line == wanted)
+        .expect("drawn")
+}
+
+/// The cursor moved off the screen brings the diff with it.
+#[test]
+fn the_diff_follows_the_cursor_off_the_screen() {
+    let mut view = reviewing();
+    view.focus = Focus::Content;
+    view.cursor = 0;
+    for _ in 0..5 {
+        handle_command(&mut view, Command::SelectNext, ONE_ROW);
+    }
+    assert_eq!(view.cursor, 5);
+    assert_eq!(view.scroll, line_of(&view, Line::Cell(5)));
+    handle_command(&mut view, Command::ExtendMark(ScrollDirection::Up), ONE_ROW);
+    assert_eq!(view.scroll, line_of(&view, Line::Cell(4)));
+}
+
+/// The line being written stays on the screen as the comment grows.
+#[test]
+fn the_diff_follows_the_line_being_written() {
+    let mut view = reviewing();
+    view.mark_cell(1, false);
+    handle_command(&mut view, Command::Comment, ONE_ROW);
+    for _ in 0..6 {
+        handle_command(&mut view, Command::Newline, ONE_ROW);
+    }
+    assert_eq!(view.scroll, line_of(&view, Line::Composer(6)));
+}
+
+/// `r` puts away the answered comment at or below the cursor before one
+/// above it.
+#[test]
+fn resolve_takes_the_answered_comment_at_or_below_the_cursor() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    thread_on(&mut view, 2, "naming.rs", 4, "}");
+    for comment in &mut view.record.comments {
+        comment.status = CommentStatus::Answered;
+    }
+    view.cursor = 3;
+    handle_command(&mut view, Command::Resolve, SPACE);
+    let status = |view: &ReviewView, id: u64| {
+        view.record
+            .comments
+            .iter()
+            .find(|comment| comment.id == id)
+            .unwrap()
+            .status
+    };
+    assert_eq!(status(&view, 2), CommentStatus::Resolved);
+    assert_eq!(status(&view, 1), CommentStatus::Answered);
+}
+
+/// A comment taken away while the diff stands scrolled to its very end
+/// brings the last line back onto the one row on show.
+#[test]
+fn a_comment_taken_away_at_the_very_end_brings_the_last_line_back() {
+    let mut measured = scrolled_to_an_answered_comment(ONE_ROW);
+    handle_command(&mut measured, Command::Resolve, ONE_ROW);
+    let total = render::lines(&measured).len();
+    let mut view = scrolled_to_an_answered_comment(ONE_ROW);
+    view.scroll = total;
+    handle_command(&mut view, Command::Resolve, ONE_ROW);
+    assert_eq!(view.scroll, total - 1);
+}
+
+#[test]
+fn a_click_on_the_close_or_on_a_file_answers_it() {
+    let mut view = reviewing();
+    view.focus = Focus::Content;
+    handle_hit(&mut view, ViewHit::SelectItem(1), SPACE);
+    assert_eq!(view.selected_index(), Some(1));
+    assert_eq!(view.focus, Focus::Navigator);
+    assert!(matches!(
+        handle_hit(&mut view, ViewHit::Close, SPACE),
+        Asked::Close
+    ));
+}
+
+/// A click on a comment's button does what the button says, wherever on
+/// it the click lands.
+#[test]
+fn a_click_placed_on_a_drafts_button_does_what_it_says() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    let drawn = render::lines(&view);
+    let (line, delete) = drawn
+        .iter()
+        .enumerate()
+        .find_map(|(line, drawn)| {
+            drawn
+                .acts
+                .iter()
+                .find(|(_, act)| *act == Act::Delete(1))
+                .map(|(range, _)| (line, range.start))
+        })
+        .expect("the draft offers its delete");
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell: delete }, SPACE);
+    assert!(view.drafts().is_empty());
+}
+
+/// A click on the composer's own room puts the caret at the end of what
+/// is written.
+#[test]
+fn a_click_on_the_composers_room_puts_the_caret_at_the_end() {
+    let mut view = reviewing();
+    view.mark_cell(2, false);
+    handle_command(&mut view, Command::Comment, SPACE);
+    for command in [
+        Command::Type('a'),
+        Command::Newline,
+        Command::Type('b'),
+        Command::Type('c'),
+        Command::SelectPrevious,
+    ] {
+        handle_command(&mut view, command, SPACE);
+    }
+    let pad = render::lines(&view)
+        .iter()
+        .position(|drawn| drawn.line == Line::ComposerPad && drawn.acts.is_empty())
+        .expect("the composer has room");
+    handle_hit(&mut view, ViewHit::PlaceCaret { line: pad, cell: 0 }, SPACE);
+    assert_eq!(caret(&view), (1, 2));
+}
+
+/// A click on a diff line moves the cursor there and lets go of the mark;
+/// while a comment is written the cursor stays where the comment is.
+#[test]
+fn a_click_on_a_diff_line_moves_the_cursor_unless_a_comment_is_written() {
+    let mut view = reviewing();
+    view.mark_cell(1, false);
+    view.focus = Focus::Navigator;
+    let line = line_of(&view, Line::Cell(4));
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell: 40 }, SPACE);
+    assert_eq!(view.cursor, 4);
+    assert_eq!(view.mark, None);
+    assert_eq!(view.focus, Focus::Content);
+
+    view.mark_cell(1, false);
+    handle_command(&mut view, Command::Comment, SPACE);
+    let line = line_of(&view, Line::Cell(4));
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell: 40 }, SPACE);
+    assert_eq!(view.cursor, 1);
+}
+
+/// Copying a selection gives the text of the lines it covered.
+#[test]
+fn a_copied_selection_is_the_text_of_its_lines() {
+    let view = reviewing();
+    let all = line_texts(&view);
+    assert_eq!(text(&view, 1..3), all[1..3].to_vec());
+    assert!(
+        text(&view, 1..3)
+            .iter()
+            .any(|line| line.contains("fn old()"))
+    );
+}
+
+/// A selection's quote is kept whole up to 160 characters and cut with an
+/// ellipsis past them.
+#[test]
+fn a_selections_quote_is_cut_only_past_160_characters() {
+    let mut view = reviewing();
+    let whole = "a".repeat(160);
+    selected(&mut view, 2..3, &whole);
+    assert_eq!(view.excerpt, whole);
+    let long = "b".repeat(200);
+    selected(&mut view, 2..3, &long);
+    assert_eq!(view.excerpt, format!("{}…", "b".repeat(160)));
+}
