@@ -2339,6 +2339,12 @@ fn a_task_settled_without_its_branch_is_told_by_what_it_had() {
     settle_without_checkout(primary, TARGET, &mut shelved);
     assert_eq!(shelved.state, WorkState::Integrated);
 
+    let mut delivered = task("was-delivered");
+    delivered.state = WorkState::Integrated;
+    isolation(&mut delivered).base_commit = base.clone();
+    settle_without_checkout(primary, TARGET, &mut delivered);
+    assert_eq!(delivered.state, WorkState::Integrated, "it stays delivered");
+
     let mut fresh = task("never-committed");
     fresh.state = WorkState::Running;
     isolation(&mut fresh).base_commit = base;
