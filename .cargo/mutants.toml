@@ -467,4 +467,17 @@ exclude_re = [
   'uze-terminal/src/state\.rs.*replace match guard before == tab with false in Session::reorder_tab$',
   # An insertion index equal to the tab's own is only the tab itself as the target, which has returned.
   'uze-terminal/src/state\.rs.*replace > with >= in Session::reorder_tab$',
+  # uze-extensions code2
+  # A cut range ending where the kept text starts is empty, and the first match's start equals `indent + LEAD` either way.
+  'uze-extensions/src/code/search\.rs.*replace > with >= in marked$',
+  # The loop guard stops on an empty free area whichever dimension ran out first.
+  'uze-extensions/src/code/treemap\.rs.*replace \|\| with && in squarified$',
+  # The last strip takes the whole free area, so the free area is empty by the time every weight is laid.
+  'uze-extensions/src/code/treemap\.rs.*replace < with <= in squarified$',
+  # Only the instant a measurement turns exactly MEASURE_FRESH old tells them apart.
+  'uze-extensions/src/code/extension\.rs.*replace < with <= in CodeExtension::measure_job$',
+  # Only the instant a history turns exactly TIMELINE_REFRESH old tells them apart.
+  'uze-extensions/src/code/extension\.rs.*replace < with <= in CodeExtension::history_job$',
+  # GAP is 1, and multiplying by one is dividing by one.
+  'uze-extensions/src/code/map\.rs.*replace \* with / in bordered$',
 ]
