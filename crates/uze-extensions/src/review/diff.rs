@@ -235,6 +235,27 @@ mod tests {
         assert!(cells[1].spans.len() > 1, "{:?}", cells[1].spans);
     }
 
+    /// A script given its shebang on this branch is coloured by the line
+    /// the new file starts with, not by the one it replaced.
+    #[test]
+    fn a_script_given_a_shebang_is_coloured_by_the_new_first_line() {
+        let output = "@@ -1,2 +1,2 @@\n-echo plain\n+#!/usr/bin/env bash\n export NAME=\"$HOME\"\n";
+        let cells = read(output, Path::new("bin/run"), FALLBACK_SYNTAX_THEME);
+        assert!(cells[2].spans.len() > 1, "{:?}", cells[2].spans);
+    }
+
+    #[test]
+    fn only_gits_binary_notes_say_a_file_is_binary() {
+        assert!(is_binary(
+            "diff --git a/i.png b/i.png\nBinary files a/i.png and b/i.png differ\n"
+        ));
+        assert!(is_binary(
+            "diff --git a/i.png b/i.png\nGIT binary patch\nliteral 10\n"
+        ));
+        assert!(!is_binary("@@ -1 +1 @@\n-a\n+b\n"));
+        assert!(!is_binary("@@ -1 +1 @@\n+GIT binary patch, the words\n"));
+    }
+
     /// A diff longer than colouring pays for keeps every line and every
     /// byte; only the lines past the bound are drawn in one ink.
     #[test]
