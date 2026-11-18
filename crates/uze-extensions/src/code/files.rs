@@ -426,4 +426,37 @@ mod tests {
         assert!(!shut[0].expanded);
         assert_eq!(shut.len(), 2);
     }
+    /// Folding a directory that is its own row leaves the directory it
+    /// sits in open: only a compact row's own chain folds with it.
+    #[test]
+    fn folding_a_directory_leaves_its_parent_open() {
+        let root = PathBuf::from("/w");
+        let mut files = Files::default();
+        files
+            .listings
+            .insert(root.clone(), vec![entry("src", true)]);
+        files.listings.insert(
+            root.join("src"),
+            vec![entry("ui", true), entry("main.rs", false)],
+        );
+        files
+            .listings
+            .insert(root.join("src/ui"), vec![entry("view.rs", false)]);
+        files.expanded.insert(root.join("src"));
+        files.expanded.insert(root.join("src/ui"));
+
+        files.fold(&root, &root.join("src/ui"));
+        let names: Vec<String> = files.rows(&root).into_iter().map(|row| row.name).collect();
+        assert_eq!(names, ["src", "ui", "main.rs"]);
+    }
+
+    /// A name that says what it is without an extension is read whole,
+    /// and data files are told apart from code and documents.
+    #[test]
+    fn a_rows_mark_says_what_kind_of_file_it_is() {
+        assert_eq!(icon_for("README", false, false), RowIcon::Markup);
+        assert_eq!(icon_for("CHANGELOG", false, false), RowIcon::Markup);
+        assert_eq!(icon_for("table.csv", false, false), RowIcon::Data);
+        assert_eq!(icon_for("store.sqlite", false, false), RowIcon::Data);
+    }
 }
