@@ -75,7 +75,21 @@ pub fn caption(display_root: &str, branch: &str) -> Vec<Span> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{architect, architect::ArchitectView, code, view::Size};
+    use crate::{architect, architect::ArchitectView, code, shared::DiskHost, view::Size};
+
+    /// The branch a checkout is on, `detached HEAD` once it is on none,
+    /// and nothing at all where there is no repository to ask.
+    #[test]
+    fn a_checkout_names_its_branch_or_says_it_is_on_none() {
+        let repository = uze_testkit::git::Repository::new("checkout-branch-of");
+        let root = repository.root();
+        repository.git(&["checkout", "--quiet", "-b", "fix/naming"]);
+        assert_eq!(super::branch_of(&DiskHost, root), "fix/naming");
+        repository.git(&["checkout", "--quiet", "--detach"]);
+        assert_eq!(super::branch_of(&DiskHost, root), "detached HEAD");
+        let outside = root.parent().expect("the fixture's own directory");
+        assert_eq!(super::branch_of(&DiskHost, outside), "");
+    }
 
     /// The checkout's own name is what stands out, however the host's
     /// platform separates the directories leading to it.

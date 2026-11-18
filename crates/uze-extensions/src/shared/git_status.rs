@@ -142,6 +142,46 @@ pub(crate) fn parse_porcelain_status(output: &str, root: &Path) -> Vec<ChangedFi
 mod tests {
     use super::*;
 
+    const EVERY_STATUS: [FileStatus; 5] = [
+        FileStatus::Modified,
+        FileStatus::Added,
+        FileStatus::Deleted,
+        FileStatus::Renamed,
+        FileStatus::Untracked,
+    ];
+
+    /// Each kind of change is marked with a letter of its own, so a row
+    /// says what happened to its file without a colour.
+    #[test]
+    fn every_status_is_marked_with_a_letter_of_its_own() {
+        let glyphs: Vec<&str> = EVERY_STATUS.iter().map(|status| status.glyph()).collect();
+        for glyph in &glyphs {
+            assert_eq!(glyph.chars().count(), 1, "{glyph:?}");
+            assert!(glyph.chars().all(|ch| ch.is_ascii_uppercase()), "{glyph:?}");
+        }
+        let mut distinct = glyphs.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(distinct.len(), glyphs.len(), "{glyphs:?}");
+    }
+
+    /// The colour says the kind of change: a new file, tracked or not, is
+    /// one kind; a deletion, a modification and a rename each another.
+    #[test]
+    fn a_status_is_coloured_by_the_kind_of_change() {
+        assert_eq!(FileStatus::Added.role(), FileStatus::Untracked.role());
+        let kinds = [
+            FileStatus::Added.role(),
+            FileStatus::Deleted.role(),
+            FileStatus::Modified.role(),
+            FileStatus::Renamed.role(),
+        ];
+        for (at, kind) in kinds.iter().enumerate() {
+            assert_ne!(*kind, Role::Default, "a status always carries a hue");
+            assert!(!kinds[at + 1..].contains(kind), "{kinds:?}");
+        }
+    }
+
     #[test]
     fn parses_ordinary_status_codes() {
         let root = Path::new("/repo");
