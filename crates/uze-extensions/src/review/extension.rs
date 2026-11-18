@@ -1752,6 +1752,24 @@ mod tests {
         assert_eq!(jobs.len(), 1, "once its time came");
     }
 
+    /// A write for a review no longer open that fails is not dropped: it
+    /// waits to be written again.
+    #[test]
+    fn a_failed_write_for_a_closed_review_waits_to_be_written_again() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        extension.close(super::SURFACE);
+        let mut jobs = Vec::new();
+        extension.write_job(&mut jobs);
+        assert!(extension.waiting.is_empty(), "out for writing");
+        extension.absorb(Opaque::new(super::Written {
+            of: of("/w"),
+            record: Err("refused".to_owned()),
+        }));
+        assert_eq!(extension.waiting, [(of("/w"), vec![draft("one")])]);
+    }
+
     #[test]
     fn the_open_review_writes_its_own_changes_before_what_waits_for_another() {
         let mut extension = ReviewExtension::default();
