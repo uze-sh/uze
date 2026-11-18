@@ -156,4 +156,27 @@ mod tests {
             assert_eq!(since_ms(&bad), None, "{bad}");
         }
     }
+
+    #[test]
+    fn the_calendar_and_the_clock_hold_their_bounds() {
+        assert_eq!(
+            since_ms(&json!("2000-02-29T00:00:00Z")),
+            Some(951_782_400_000),
+            "a century divisible by 400 leaps"
+        );
+        assert_eq!(
+            since_ms(&json!("2023-11-14T19:43:20-02:30")),
+            Some(1_700_000_000_000),
+            "an offset's minutes count"
+        );
+        for bad in [
+            "1900-02-29T00:00:00Z",
+            "2023-04-31T00:00:00Z",
+            "2023-11-14T24:00:00Z",
+            "2023-11-14T23:60:00Z",
+            "2023/11-14T22:13:20Z",
+        ] {
+            assert_eq!(since_ms(&json!(bad)), None, "{bad}");
+        }
+    }
 }

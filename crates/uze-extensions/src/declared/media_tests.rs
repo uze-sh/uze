@@ -374,3 +374,102 @@ fn a_read_from_before_a_new_compile_is_never_taken_as_the_new_ones() {
     };
     assert_eq!(picture.map(|picture| picture.width), Some(2));
 }
+
+#[test]
+fn a_name_that_is_never_read_is_said_on_the_next_frame() {
+    let mut engine = hosted(vec![n(NodeName::Image).arg("../cat.png").item()], json!({}));
+    tree(&engine);
+    let host = Showing {
+        files: BTreeMap::new(),
+    };
+    assert_eq!(read_all(&mut engine, &host), 0, "nothing is read");
+    let NodeKind::Image { refused, .. } = image(&engine) else {
+        unreachable!()
+    };
+    assert!(refused.is_some(), "the refusal is drawn");
+}
+
+/// A host whose source answers and whose program left `shot.png` in its
+/// scratch, counting the reads of it.
+struct Scratch {
+    showing: Showing,
+    reads: std::cell::Cell<usize>,
+}
+
+impl crate::Host for Scratch {
+    fn git(&self, root: &Path, args: &[&str], answers: &[i32]) -> Result<String, String> {
+        self.showing.git(root, args, answers)
+    }
+    fn repository_root(&self, path: &Path) -> Result<PathBuf, String> {
+        self.showing.repository_root(path)
+    }
+    fn read_file(&self, path: &Path) -> Result<String, crate::Unreadable> {
+        self.showing.read_file(path)
+    }
+    fn list_dir(&self, path: &Path) -> Result<Vec<crate::DirEntry>, String> {
+        self.showing.list_dir(path)
+    }
+    fn write_file(&self, root: &Path, path: &Path, contents: &str) -> Result<(), String> {
+        self.showing.write_file(root, path, contents)
+    }
+    fn delete_file(&self, root: &Path, path: &Path) -> Result<(), String> {
+        self.showing.delete_file(root, path)
+    }
+    fn restore_to_head(&self, root: &Path, paths: &[PathBuf]) -> Result<(), String> {
+        self.showing.restore_to_head(root, paths)
+    }
+    fn syntax_theme(&self) -> String {
+        String::new()
+    }
+    fn answer(&self, _: Question) -> Answer {
+        super::source_tests::answered(json!({}))
+    }
+    fn media(&self, identity: &uze_contract::Identity, name: &str) -> Result<Vec<u8>, String> {
+        self.reads.set(self.reads.get() + 1);
+        self.showing.media(identity, name)
+    }
+}
+
+#[test]
+fn a_picture_a_program_wrote_is_read_again_once_its_source_answers_again() {
+    let mut engine = hosted(
+        vec![n(NodeName::Image).arg("scratch:shot.png").item()],
+        json!({}),
+    );
+    engine.open(VIEW, &super::source_tests::checkout("/work/a"));
+    let host = Scratch {
+        showing: Showing {
+            files: BTreeMap::from([("scratch:shot.png".to_owned(), png(2, 2, [1, 2, 3, 255]))]),
+        },
+        reads: std::cell::Cell::new(0),
+    };
+    let settle = |engine: &mut DeclaredExtension| {
+        for _ in 0..3 {
+            tree(engine);
+            let jobs = engine.jobs();
+            for job in jobs {
+                let answer = (job.run)(&host);
+                engine.absorb(answer);
+            }
+        }
+    };
+    settle(&mut engine);
+    assert_eq!(host.reads.get(), 1, "read once");
+    engine.rerun(super::tests::SOURCE, json!({}));
+    settle(&mut engine);
+    assert_eq!(host.reads.get(), 2, "read again after the new answer");
+}
+
+#[test]
+fn a_sprite_whose_sheet_is_refused_says_why() {
+    let engine = &mut sprite_engine("idle");
+    sprite(engine);
+    let host = Showing {
+        files: BTreeMap::new(),
+    };
+    read_all(engine, &host);
+    let NodeKind::Sprite { refused, .. } = sprite(engine) else {
+        unreachable!()
+    };
+    assert_eq!(refused.as_deref(), Some("`pet.png` is not there"));
+}

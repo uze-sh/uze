@@ -1845,3 +1845,340 @@ fn a_composed_answer_is_checked_against_the_catalog() {
         "{refused}"
     );
 }
+
+#[test]
+fn a_when_no_item_answers_is_found_missing() {
+    let view = compiled_view(
+        vec![
+            n(NodeName::List)
+                .child(
+                    n(NodeName::Text)
+                        .each("servers")
+                        .arg("{name}")
+                        .when("tools"),
+                )
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    );
+    let fixtures = BTreeMap::from([(
+        SOURCE.to_owned(),
+        json!({"servers": [{"name": "sentry"}, {"name": "github"}]}),
+    )]);
+    let missing = super::missing_fields(&extension(view), &fixtures, "en");
+    let fields: Vec<&str> = missing.iter().map(|field| field.field.as_str()).collect();
+    assert_eq!(fields, ["tools"], "{missing:#?}");
+}
+
+/// Two tabs of `choices` values each, and a field reached only once both
+/// stand on their last value.
+fn two_tabs_and_a_field_under_both(choices: usize) -> CompiledView {
+    let tabs = |id: &str| {
+        let mut tabs = n(NodeName::Tabs).prop("id", id);
+        for value in 0..choices {
+            let value = format!("v{value}");
+            tabs = tabs.child(n(NodeName::Tab).arg(&value).prop("value", &value));
+        }
+        tabs.item()
+    };
+    let last = format!("v{}", choices - 1);
+    compiled_view(
+        vec![
+            tabs("one"),
+            tabs("two"),
+            n(NodeName::Stack)
+                .show("one", &last)
+                .child(n(NodeName::Text).arg("{deep}").show("two", &last))
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+#[test]
+fn up_to_the_cap_every_combination_of_tab_choices_is_bound() {
+    let fixtures = BTreeMap::from([(SOURCE.to_owned(), json!({}))]);
+    for choices in [2, 8] {
+        assert!(choices * choices <= TAB_COMBINATIONS_MAX);
+        let view = two_tabs_and_a_field_under_both(choices);
+        let missing = super::missing_fields(&extension(view), &fixtures, "en");
+        assert!(
+            missing.iter().any(|field| field.field == "deep"),
+            "{choices} choices: {missing:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_box_reads_its_layout_words_and_roles() {
+    let items = vec![
+        n(NodeName::Box)
+            .literal("direction", json!("row"))
+            .literal("justify", json!("center"))
+            .literal("ground", json!("accent"))
+            .literal("tone", json!("soft"))
+            .literal("border", json!("round"))
+            .literal("border-role", json!("danger"))
+            .item(),
+        n(NodeName::Box)
+            .literal("justify", json!("end"))
+            .literal("ground", json!(""))
+            .literal("tone", json!("solid"))
+            .literal("border", json!("line"))
+            .item(),
+        n(NodeName::Box)
+            .literal("justify", json!("between"))
+            .prop("ground", "{none}")
+            .literal("border", json!("heavy"))
+            .item(),
+        n(NodeName::Box).item(),
+    ];
+    let root = tree(&hosted(items, json!({ "none": null })));
+    let layouts: Vec<view::BoxLayout> = root
+        .children
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Box(layout) => *layout,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert!(layouts[0].row && !layouts[1].row);
+    assert_eq!(
+        layouts
+            .iter()
+            .map(|layout| layout.justify)
+            .collect::<Vec<_>>(),
+        [
+            view::Justify::Center,
+            view::Justify::End,
+            view::Justify::Between,
+            view::Justify::Start
+        ]
+    );
+    assert_eq!(
+        layouts[0].ground,
+        Some(view::Ground {
+            role: Role::Accent,
+            soft: true
+        })
+    );
+    assert_eq!(layouts[1].ground, None, "an empty ground is none");
+    assert_eq!(layouts[2].ground, None, "nor is a null one");
+    assert_eq!(
+        layouts
+            .iter()
+            .map(|layout| layout.border)
+            .collect::<Vec<_>>(),
+        [
+            Some(view::Border {
+                style: view::BorderStyle::Round,
+                role: Role::Danger
+            }),
+            Some(view::Border {
+                style: view::BorderStyle::Line,
+                role: Role::Faint
+            }),
+            Some(view::Border {
+                style: view::BorderStyle::Heavy,
+                role: Role::Faint
+            }),
+            None
+        ]
+    );
+}
+
+#[test]
+fn an_icon_is_the_hosts_or_one_the_manifest_declares() {
+    let mut compiled = extension_of(vec![
+        n(NodeName::Icon).arg("cauldron").item(),
+        n(NodeName::Icon).arg("ghost").item(),
+    ]);
+    compiled.manifest.icons = vec![uze_contract::IconDecl {
+        name: "cauldron".to_owned(),
+        nerd: "N".to_owned(),
+        unicode: "U".to_owned(),
+        ascii: "R".to_owned(),
+    }];
+    let mut extension = DeclaredExtension::new(compiled, "en");
+    extension.set_data(SOURCE, Ok(json!({})));
+    let glyphs: Vec<view::IconGlyph> = tree(&extension)
+        .children
+        .iter()
+        .map(|node| match &node.kind {
+            NodeKind::Icon { glyph, .. } => glyph.clone(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        glyphs,
+        [
+            view::IconGlyph::Declared {
+                nerd: "N".to_owned(),
+                unicode: "U".to_owned(),
+                ascii: "R".to_owned()
+            },
+            view::IconGlyph::Unknown
+        ]
+    );
+}
+
+#[test]
+fn a_grid_takes_a_string_cell_and_keeps_out_a_wide_one_and_a_flat_region() {
+    let regions = json!([
+        { "x": 0, "y": 0, "w": 0, "h": 1, "action": "go" },
+        { "x": 0, "y": 0, "w": 1, "h": 0, "action": "go" },
+    ]);
+    let items = vec![
+        n(NodeName::Cells)
+            .prop("rows", "{grid}")
+            .prop("regions", "{regions}")
+            .item(),
+    ];
+    let root = tree(&hosted(
+        items,
+        json!({ "grid": [["z", "\u{6f22}"]], "regions": regions }),
+    ));
+    let NodeKind::Cells { rows, regions } =
+        first(&root, |kind| matches!(kind, NodeKind::Cells { .. })).kind
+    else {
+        unreachable!()
+    };
+    let chars: Vec<char> = rows[0].iter().map(|glyph| glyph.ch).collect();
+    assert_eq!(
+        chars,
+        ['z', ' '],
+        "a wide glyph would push its row out of line"
+    );
+    assert!(regions.is_empty(), "a region with no width or no height");
+}
+
+#[test]
+fn a_row_aligns_its_children_to_the_center_and_a_log_splits_one_string() {
+    let items = vec![
+        n(NodeName::Row).literal("align", json!("center")).item(),
+        n(NodeName::Log).prop("lines", "{log}").item(),
+    ];
+    let root = tree(&hosted(items, json!({ "log": "one\ntwo" })));
+    assert_eq!(
+        root.children[0].kind,
+        NodeKind::Row {
+            gap: 0,
+            align: view::Align::Center
+        }
+    );
+    let NodeKind::Log { lines } = &root.children[1].kind else {
+        panic!("{:?}", root.children[1])
+    };
+    let lines: Vec<&str> = lines.iter().map(|span| span.text.as_str()).collect();
+    assert_eq!(lines, ["one", "two"]);
+}
+
+#[test]
+fn a_held_selection_past_the_rows_is_none_and_a_picker_opens_on_its_first() {
+    let list = || {
+        vec![
+            n(NodeName::List)
+                .prop("id", "pick")
+                .each("rows")
+                .child(n(NodeName::Text).arg("{name}"))
+                .item(),
+        ]
+    };
+    let is_list = |kind: &NodeKind| matches!(kind, NodeKind::List { .. });
+    let selected = |extension: &DeclaredExtension| match first(&tree(extension), is_list).kind {
+        NodeKind::List { selected, .. } => selected,
+        _ => unreachable!(),
+    };
+    let two = json!({ "rows": [{ "name": "a" }, { "name": "b" }] });
+    let mut held = hosted(list(), two.clone());
+    held.set_ui(VIEW, "pick".to_owned(), "2".to_owned());
+    assert_eq!(selected(&held), None);
+
+    let picker = |data: Value| {
+        let mut compiled = extension_of(list());
+        compiled.manifest.surfaces[0].slot = Slot::Overlay;
+        let mut extension = DeclaredExtension::new(compiled, "en");
+        extension.set_data(SOURCE, Ok(data));
+        extension
+    };
+    assert_eq!(selected(&picker(two)), Some(0));
+    assert_eq!(selected(&picker(json!({ "rows": [] }))), None);
+}
+
+#[test]
+fn a_row_whose_item_draws_nothing_is_no_row() {
+    let items = vec![
+        n(NodeName::List)
+            .each("rows")
+            .child(n(NodeName::Text).arg("{name}").when("shown"))
+            .item(),
+    ];
+    let data = json!({ "rows": [
+        { "name": "a", "shown": true },
+        { "name": "b" },
+        { "name": "c", "shown": true },
+    ] });
+    let root = tree(&hosted(items, data));
+    let list = first(&root, |kind| matches!(kind, NodeKind::List { .. }));
+    assert_eq!(list.children.len(), 2);
+}
+
+#[test]
+fn a_filter_looks_into_an_items_text_and_numbers_three_levels_down() {
+    let items = vec![
+        n(NodeName::List)
+            .each("rows")
+            .literal("filter", json!("ui.q"))
+            .child(n(NodeName::Text).arg("{name}"))
+            .item(),
+    ];
+    let data = json!({ "rows": [
+        { "name": "alpha", "meta": { "tags": ["deep"] } },
+        { "name": "beta", "n": 42 },
+        { "name": "gamma", "a": { "b": { "c": { "d": "buried" } } } },
+        { "name": "delta", "x": { "y": { "z": ["sunk"] } } },
+        { "name": "eps", "l": [{ "m": { "o": "lost" } }] },
+    ] });
+    let mut extension = hosted(items, data);
+    let mut kept = |typed: &str| {
+        extension.set_ui(VIEW, "q".to_owned(), typed.to_owned());
+        texts(&tree(&extension))
+    };
+    assert_eq!(kept("deep"), ["alpha"]);
+    assert_eq!(kept("42"), ["beta"]);
+    for beyond in ["buried", "sunk", "lost"] {
+        assert!(kept(beyond).is_empty(), "{beyond} is past the depth");
+    }
+}
+
+#[test]
+fn a_trace_counts_a_template_drawn_and_an_each_that_could_not_repeat() {
+    let items = vec![
+        n(NodeName::Stack).uses("shown").item(),
+        n(NodeName::Stack).uses("hidden").item(),
+        n(NodeName::Text).arg("x").each("nope").item(),
+    ];
+    let templates = vec![
+        ("shown", vec![n(NodeName::Text).arg("a").item()]),
+        (
+            "hidden",
+            vec![n(NodeName::Text).arg("b").when("nope").item()],
+        ),
+    ];
+    let extension = hosted_view(compiled_view(items, templates, Vec::new()), json!({}), "en");
+    let trace = extension.trace(VIEW).expect("a trace");
+    let used: Vec<u32> = trace.items[..2]
+        .iter()
+        .map(|stack| stack.children[0].drawn)
+        .collect();
+    assert_eq!(used, [1, 0], "a use is drawn when its template draws");
+    assert_eq!(trace.items[2].reached, 1);
+    assert_eq!(
+        trace.items[2].absent,
+        [Absence::EachMissing {
+            field: "nope".into()
+        }]
+    );
+}

@@ -596,3 +596,24 @@ fn a_confirmed_open_names_the_surface_it_opens() {
     press(&mut engine, 0);
     assert_eq!(engine.asking(VIEW).expect("asks first").body, "Opens GSD");
 }
+
+#[test]
+fn a_copy_of_exactly_the_unasked_bound_is_copied_at_once() {
+    let bound = "x".repeat(COPY_UNASKED_MAX);
+    let mut engine = board(vec![action("go", Does::Clipboard(bound.clone()))]);
+    assert_eq!(press(&mut engine, 0), Outcome::Copy(bound));
+}
+
+#[test]
+fn a_section_action_that_asks_first_asks_in_the_first_view() {
+    let mut go = action("go", Does::Refresh(vec![SOURCE.to_owned()]));
+    go.on = SECTION.to_owned();
+    go.confirm = Some("Again?".to_owned());
+    let mut engine = board(vec![go]);
+    let outcome = engine.act_on(SECTION, "go", Value::Null);
+    assert_eq!(outcome, Outcome::Show(VIEW.to_owned()));
+    assert_eq!(
+        engine.asking(VIEW).expect("asked in the view").title,
+        "Again?"
+    );
+}

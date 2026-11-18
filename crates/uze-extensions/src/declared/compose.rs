@@ -318,4 +318,39 @@ mod tests {
             refused(json!({"type": "Stack", "children": wide})).contains("more than 2000 nodes")
         );
     }
+
+    #[test]
+    fn a_node_takes_between_its_required_and_its_declared_arguments() {
+        assert!(refused(json!({"type": "Icon"})).contains("argument(s)"));
+        assert!(refused(json!({"type": "Icon", "args": ["a", "b"]})).contains("argument(s)"));
+        for (given, text) in [(json!(3), "3"), (json!(true), "true")] {
+            let view = compose(
+                &json!({"type": "Icon", "args": [given]}),
+                &manifest(),
+                "board.uze",
+            )
+            .expect("a scalar is text");
+            let Item::Node(icon) = &view.items[0] else {
+                panic!("a node")
+            };
+            assert_eq!(icon.args[0], Binding::Literal(json!(text)));
+        }
+    }
+
+    #[test]
+    fn a_word_is_one_of_those_its_property_names() {
+        let row = json!({"type": "Box", "props": {"direction": "row"}});
+        assert!(compose(&row, &manifest(), "board.uze").is_ok());
+        assert!(
+            refused(json!({"type": "Box", "props": {"direction": "diagonal"}}))
+                .contains("one of column, row")
+        );
+    }
+
+    #[test]
+    fn an_answer_of_exactly_the_cap_is_taken() {
+        let wide: Vec<Value> = (1..NODE_CAP).map(|_| json!({"type": "Rule"})).collect();
+        let tree = json!({"type": "Stack", "children": wide});
+        assert!(compose(&tree, &manifest(), "board.uze").is_ok());
+    }
 }

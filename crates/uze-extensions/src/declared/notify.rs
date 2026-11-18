@@ -277,6 +277,35 @@ mod tests {
     }
 
     #[test]
+    fn a_notification_or_a_cue_alone_is_handed_over() {
+        let start = Instant::now();
+        let mut engine = showing(vec![Grant::Notify]);
+        let silent = Envelope {
+            sound: None,
+            ..notifying("Done")
+        };
+        answers(&mut engine, silent, start);
+        assert_eq!(engine.notifications().len(), 1, "a notification alone");
+        let cue = Envelope {
+            notify: None,
+            ..notifying("Done")
+        };
+        answers(&mut engine, cue, start + INTERVAL);
+        assert_eq!(engine.notifications().len(), 1, "a cue alone");
+    }
+
+    #[test]
+    fn an_empty_notice_of_its_own_is_not_joined_to_why() {
+        let mut engine = showing(Vec::new());
+        let said = Envelope {
+            notice: Some(String::new()),
+            ..notifying("Done")
+        };
+        answers(&mut engine, said, Instant::now());
+        assert_eq!(notice(&engine).as_deref(), Some(UNGRANTED));
+    }
+
+    #[test]
     fn the_notice_counts_what_was_dropped() {
         assert_eq!(
             dropped_notice(4),

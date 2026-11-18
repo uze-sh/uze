@@ -76,6 +76,7 @@ fn a_source_fed_by_its_fixture_asks_nothing_until_switched_back() {
     let mut engine = board();
     engine.focus(Some(&checkout("/work/a")));
     ask(&mut engine, 1);
+    assert!(!engine.fed_by_fixture(SOURCE), "live until fed");
     engine.feed_fixture(SOURCE, Ok(json!({ "count": 99 })));
     assert!(engine.fed_by_fixture(SOURCE));
     assert!(ask(&mut engine, 1).is_empty(), "the fixture feeds it");
@@ -87,6 +88,7 @@ fn a_source_fed_by_its_fixture_asks_nothing_until_switched_back() {
         "asked of what answers it again"
     );
     assert_eq!(texts(&tree(&engine)), ["2"]);
+    assert!(!engine.fed_by_fixture(SOURCE));
 }
 
 #[test]
@@ -128,6 +130,7 @@ fn fake_agents_stand_in_for_the_workspaces_until_taken_away() {
     let mut engine = DeclaredExtension::new(compiled, "pt");
     let real = json!([{ "agent": "real" }]);
     engine.agents(&real);
+    assert!(!engine.faking_agents(), "the workspace's own at first");
     engine.fake_agents(true);
     assert!(engine.faking_agents());
     assert_eq!(engine.data("agents"), Some(&Ok(fake_agents())));
@@ -167,4 +170,43 @@ fn a_newer_compile_is_weighed_again() {
     compiled.manifest.description = "a description".repeat(100);
     engine.replace(compiled);
     assert!(engine.approximate_bytes() > before + 1_000);
+}
+
+#[test]
+fn what_an_engine_holds_counts_its_data_its_events_and_each_node_it_built() {
+    let json_bytes = |value: &serde_json::Value| serde_json::to_vec(value).unwrap().len();
+    let mut engine = board();
+    engine.focus(Some(&checkout("/work/a")));
+    let empty = engine.approximate_bytes();
+    let data = json!({ "count": 1, "note": "x".repeat(500) });
+    engine.set_data(SOURCE, Ok(data.clone()));
+    let with_data = engine.approximate_bytes();
+    assert_eq!(with_data - empty, json_bytes(&data), "its data as JSON");
+
+    let bigger = json!({ "count": 2, "note": "y".repeat(5_000) });
+    engine.set_data(SOURCE, Ok(bigger.clone()));
+    let with_bigger = engine.approximate_bytes();
+    assert_eq!(with_bigger - empty, json_bytes(&bigger), "weighed again");
+
+    engine.emit(&EventName::CheckoutChanged, Instant::now());
+    let event = engine.events_seen().next().cloned().expect("an event seen");
+    let with_event = engine.approximate_bytes();
+    assert_eq!(
+        with_event - with_bigger,
+        json_bytes(&event),
+        "its events as JSON"
+    );
+
+    let lines = (0..100)
+        .map(|line| n(NodeName::Text).arg(&format!("line {line}")).item())
+        .collect();
+    let drawn_view = super::tests::hosted(lines, json!({}));
+    let before = drawn_view.approximate_bytes();
+    let drawn = super::tests::nodes(&tree(&drawn_view)).len();
+    let built = drawn_view.approximate_bytes() - before;
+    let node = std::mem::size_of::<crate::view::Node>();
+    assert!(
+        built >= (drawn - 1) * node && built < drawn * node * 2,
+        "{drawn} nodes reckoned at {built} bytes"
+    );
 }

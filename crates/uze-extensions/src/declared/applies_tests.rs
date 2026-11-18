@@ -155,6 +155,12 @@ fn a_source_that_does_not_apply_is_never_asked_and_says_why() {
     ask(&mut engine, &host);
     assert_eq!(questions(&host), vec![SOURCE.to_owned()]);
     assert_eq!(engine.withheld(SOURCE), None);
+    ask(&mut engine, &host);
+    assert_eq!(
+        questions(&host),
+        vec![SOURCE.to_owned()],
+        "answered, it is not asked again"
+    );
 }
 
 #[test]
@@ -217,4 +223,15 @@ fn a_surface_drawn_for_a_test_takes_every_path_as_held() {
     assert!(!engine.applies(SECTION));
     engine.assume_every_path_there();
     assert!(engine.applies(SECTION));
+}
+
+#[test]
+fn an_open_view_applies_by_the_checkout_it_was_opened_on() {
+    let mut engine = marked(Some(".planning"), None);
+    engine.open(VIEW, &checkout("/work/a"));
+    engine.focus(Some(&checkout("/work/b")));
+    let host = Marked::with(&["/work/a/.planning"]);
+    ask(&mut engine, &host);
+    assert!(engine.applies(VIEW), "opened on a checkout holding it");
+    assert!(!engine.applies(SECTION), "the one in front does not");
 }

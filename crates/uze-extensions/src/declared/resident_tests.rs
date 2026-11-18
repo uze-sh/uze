@@ -434,3 +434,104 @@ fn a_session_shown_in_a_section_renders_again_once_the_section_is_drawn() {
     run(&mut engine, &host);
     assert_eq!(renders(&host), 2, "the drawn section is a frame");
 }
+
+#[test]
+fn a_session_starts_told_the_slot_of_the_surface_in_view() {
+    let mut engine = game();
+    let host = Session::new();
+    engine.focus(Some(&checkout("/work/a")));
+    pass(&mut engine, Instant::now(), &[SECTION]);
+    run(&mut engine, &host);
+    let start = host.calls.borrow()[0].clone();
+    assert_eq!(start.0, ResidentCall::Start);
+    assert_eq!(start.1["slot"], "section");
+}
+
+#[test]
+fn an_answer_from_a_session_since_closed_is_dropped() {
+    let mut engine = game();
+    let host = Session::new();
+    let start = Instant::now();
+    engine.open(VIEW, &checkout("/work/a"));
+    pass(&mut engine, start, &[VIEW]);
+    let stale = engine.jobs();
+    engine.close(VIEW);
+    pass(&mut engine, start, &[]);
+    engine.open(VIEW, &checkout("/work/a"));
+    pass(&mut engine, start, &[VIEW]);
+    drop(engine.jobs());
+    for job in stale {
+        let answer = (job.run)(&host);
+        engine.absorb(answer);
+    }
+    draw(&engine);
+    assert_eq!(
+        run(&mut engine, &host),
+        0,
+        "the new session's start is still out"
+    );
+}
+
+#[test]
+fn what_the_operator_allowed_changing_starts_the_session_again() {
+    let mut engine = game();
+    let host = Session::new();
+    let start = Instant::now();
+    engine.open(VIEW, &checkout("/work/a"));
+    pass(&mut engine, start, &[VIEW]);
+    run(&mut engine, &host);
+    engine.reconsider();
+    pass(&mut engine, start, &[VIEW]);
+    run(&mut engine, &host);
+    assert_eq!(
+        host.calls(),
+        [ResidentCall::Start, ResidentCall::Stop, ResidentCall::Start]
+    );
+}
+
+#[test]
+fn a_session_with_a_call_out_is_asked_nothing_more_and_its_input_is_bounded() {
+    let mut engine = game();
+    let host = Session::new();
+    let start = Instant::now();
+    engine.open(VIEW, &checkout("/work/a"));
+    pass(&mut engine, start, &[VIEW]);
+    let out = engine.jobs();
+    for _ in 0..INPUT_QUEUED + 5 {
+        engine.raw_input(
+            VIEW,
+            RawInput::Key {
+                key: "up".to_owned(),
+                mods: Vec::new(),
+            },
+        );
+    }
+    assert!(engine.jobs().is_empty(), "its start is still out");
+    for job in out {
+        let answer = (job.run)(&host);
+        engine.absorb(answer);
+    }
+    while run(&mut engine, &host) > 0 {}
+    let inputs = host
+        .calls()
+        .iter()
+        .filter(|call| **call == ResidentCall::Input)
+        .count();
+    assert_eq!(inputs, INPUT_QUEUED);
+}
+
+#[test]
+fn a_session_that_asks_for_no_redraw_is_not_rendered() {
+    let mut engine = game();
+    let host = Session {
+        redraw: false,
+        ..Session::new()
+    };
+    let start = Instant::now();
+    engine.open(VIEW, &checkout("/work/a"));
+    pass(&mut engine, start, &[VIEW]);
+    run(&mut engine, &host);
+    draw(&engine);
+    assert_eq!(run(&mut engine, &host), 0);
+    assert_eq!(host.calls(), [ResidentCall::Start]);
+}
