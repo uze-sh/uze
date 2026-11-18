@@ -462,6 +462,7 @@ pub(super) fn marked(text: &str, query: &str) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::Rgb;
 
     #[test]
     fn git_greps_records_become_files_of_lines() {
@@ -658,5 +659,20 @@ mod tests {
         let line = format!("{}needle", "x".repeat(100));
         let spans = marked(&line, "needle");
         assert_eq!(spans[1].text, "x".repeat(LEAD));
+    }
+    /// A match in a syntax-coloured line is drawn in the match's own hue,
+    /// the colour of the text around it left to the rest.
+    #[test]
+    fn a_match_in_coloured_text_takes_the_matchs_own_hue() {
+        let coloured = Span {
+            color: Some(Rgb(1, 2, 3)),
+            ..Span::new("let fog", Role::Default)
+        };
+        let spans = grounded(vec![coloured], &occurrences("let fog", "fog"));
+        let pieces: Vec<(&str, Option<Rgb>)> = spans
+            .iter()
+            .map(|span| (span.text.as_str(), span.color))
+            .collect();
+        assert_eq!(pieces, [("let ", Some(Rgb(1, 2, 3))), ("fog", None)]);
     }
 }
