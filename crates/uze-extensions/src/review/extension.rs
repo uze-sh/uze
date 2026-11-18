@@ -1875,8 +1875,10 @@ mod tests {
     /// The turn a send went into is the agent's while it stays open.
     #[test]
     fn the_turn_sent_into_ends_only_with_its_agent_gone() {
-        let mut extension = ReviewExtension::default();
-        extension.working = Some("a1".to_owned());
+        let mut extension = ReviewExtension {
+            working: Some("a1".to_owned()),
+            ..ReviewExtension::default()
+        };
         extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
         assert_eq!(extension.working.as_deref(), Some("a1"));
         extension.agents(&serde_json::json!([]));
