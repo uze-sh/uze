@@ -108,6 +108,13 @@ mod tests {
         assert_eq!(count(text), Some(Progress { done: 0, total: 1 }));
     }
 
+    /// A fence closes only on the marker that opened it.
+    #[test]
+    fn a_fence_is_not_closed_by_the_other_marker() {
+        let text = "```\n~~~\n- [ ] example\n```\n- [ ] real\n";
+        assert_eq!(count(text), Some(Progress { done: 0, total: 1 }));
+    }
+
     #[test]
     fn a_link_that_looks_like_a_box_is_not_one() {
         assert_eq!(
