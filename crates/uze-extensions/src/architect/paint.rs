@@ -1164,4 +1164,97 @@ mod tests {
         assert!(x + text_width(meaning) < canvas.width, "with a margin");
         assert!(scene.placement.width < canvas.width);
     }
+
+    /// A scene of hand-placed boxes, routed as the surface would.
+    fn placed(source: &str, nodes: Vec<Frame>, clusters: Vec<Frame>) -> Scene {
+        let Diagram::Graph(graph) = mermaid::parse(source).unwrap() else {
+            panic!("expected a graph");
+        };
+        let placement = Placement {
+            nodes,
+            clusters,
+            width: 30,
+            height: 30,
+        };
+        let routes = route::route(&graph, &placement);
+        Scene {
+            graph,
+            placement,
+            routes,
+        }
+    }
+
+    fn small(x: i32, y: i32) -> Frame {
+        Frame { x, y, w: 3, h: 3 }
+    }
+
+    /// A line that passes beside a region's corner, on the row or column
+    /// of its wall, is not joined to the wall it does not cross.
+    #[test]
+    fn a_line_passing_beside_a_regions_corner_is_not_joined_to_its_wall() {
+        let wall = Frame {
+            x: 10,
+            y: 10,
+            w: 10,
+            h: 4,
+        };
+        let (left, right) = (wall.x - 1, wall.x + wall.w);
+        let down = placed(
+            "flowchart TD\n subgraph r [R]\n m\n end\n a --> b\n c --> d",
+            // m, then each column's two boxes centred on it.
+            vec![
+                small(0, 26),
+                small(right - 1, 0),
+                small(right - 1, 24),
+                small(left - 1, 0),
+                small(left - 1, 24),
+            ],
+            vec![wall],
+        );
+        let canvas = paint(&down, Glyphs::Unicode, None, &[]);
+        for x in [left, right] {
+            for y in [wall.y, wall.y + wall.h - 1] {
+                assert_eq!(glyph(&canvas, x, y), '│', "({x},{y}): {}", row(&canvas, y));
+            }
+        }
+        // Narrow, so going round costs more than passing it.
+        let wall = Frame {
+            x: 10,
+            y: 10,
+            w: 4,
+            h: 10,
+        };
+        let (above, below) = (wall.y - 1, wall.y + wall.h);
+        let across = placed(
+            "flowchart TD\n subgraph r [R]\n m\n end\n a --> b\n c --> d",
+            // m, then each row's two boxes centred on it.
+            vec![
+                small(26, 26),
+                small(0, above - 1),
+                small(26, above - 1),
+                small(0, below - 1),
+                small(26, below - 1),
+            ],
+            vec![wall],
+        );
+        let canvas = paint(&across, Glyphs::Unicode, None, &[]);
+        for y in [above, below] {
+            for x in [wall.x, wall.x + wall.w - 1] {
+                assert_eq!(glyph(&canvas, x, y), '─', "({x},{y}): {}", row(&canvas, y));
+            }
+        }
+    }
+
+    /// A line with no head still reaches its box: where another line
+    /// crosses the cell beside the box, the two meet as a crossing.
+    #[test]
+    fn a_line_without_a_head_reaches_into_its_box() {
+        let scene = placed(
+            "flowchart TD\n a --- b\n c --> d",
+            vec![small(10, 0), small(10, 10), small(0, 8), small(20, 8)],
+            vec![],
+        );
+        let canvas = paint(&scene, Glyphs::Unicode, None, &[]);
+        assert_eq!(glyph(&canvas, 11, 9), '┼', "{}", row(&canvas, 9));
+    }
 }
