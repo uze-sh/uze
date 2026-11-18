@@ -2672,3 +2672,296 @@ fn a_selections_quote_is_cut_only_past_160_characters() {
     selected(&mut view, 2..3, &long);
     assert_eq!(view.excerpt, format!("{}…", "b".repeat(160)));
 }
+
+// --- What the surface says (render.rs) ---------------------------------
+
+fn spoken(drawn: &render::Drawn) -> String {
+    drawn
+        .content
+        .spans
+        .iter()
+        .map(|span| span.text.as_str())
+        .collect()
+}
+
+/// What the drawn line standing for `wanted` says.
+fn said_on(view: &ReviewView, wanted: Line) -> String {
+    let drawn = render::lines(view);
+    spoken(&drawn[line_of(view, wanted)])
+}
+
+/// A list that holds nothing, or could not be read, is no list.
+#[test]
+fn a_review_with_nothing_listed_shows_no_list() {
+    let mut view = ReviewView::opening(PathBuf::from("/w"), "/w".to_owned());
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Ok(Listing::default()),
+    );
+    assert!(super::view(&view, SPACE).navigator.is_none());
+    view.absorb_listing(
+        Filter::All,
+        Base::default(),
+        "fix/naming".to_owned(),
+        Err("unreadable".to_owned()),
+    );
+    assert!(super::view(&view, SPACE).navigator.is_none());
+}
+
+/// The list says whether it has the keys, which file is on show, and
+/// down its leading column which files were viewed.
+#[test]
+fn the_list_says_its_focus_its_selection_and_what_was_viewed() {
+    use crate::view::{NavigatorRow, RowIcon};
+    let mut view = reviewing();
+    view.toggle_viewed(false);
+    let navigator = super::view(&view, SPACE).navigator.expect("a list");
+    assert!(navigator.focused);
+    let rows: Vec<(bool, RowIcon)> = navigator
+        .rows
+        .iter()
+        .map(|row| match row {
+            NavigatorRow::Item { selected, icon, .. } => (*selected, *icon),
+            other => panic!("a file's row: {other:?}"),
+        })
+        .collect();
+    assert_eq!(rows, [(true, RowIcon::Viewed), (false, RowIcon::NotViewed)]);
+    view.focus = Focus::Content;
+    assert!(!super::view(&view, SPACE).navigator.unwrap().focused);
+}
+
+#[test]
+fn the_filter_on_show_is_the_lit_chip() {
+    let mut view = reviewing();
+    let lit = |view: &ReviewView| -> Vec<String> {
+        super::view(view, SPACE)
+            .subjects
+            .iter()
+            .filter(|chip| chip.active)
+            .map(|chip| chip.label.clone())
+            .collect()
+    };
+    assert_eq!(lit(&view), ["all"]);
+    view.set_filter(Filter::Uncommitted);
+    assert_eq!(lit(&view), ["uncommitted"]);
+}
+
+/// The walk's first chip steps back: from no thread gone to, to the last.
+#[test]
+fn the_walks_first_chip_steps_back_among_the_threads() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    thread_on(&mut view, 2, "naming.rs", 3, "    rename();");
+    handle_hit(&mut view, ViewHit::SelectMode(0), SPACE);
+    assert_eq!(view.thread, Some(2));
+    assert_eq!(view.viewed(Path::new("/w/naming.rs")), surface::Viewed::No);
+}
+
+/// The diff's heading names the file, and says when what is shown is
+/// only what is not committed.
+#[test]
+fn the_heading_says_when_only_the_uncommitted_is_shown() {
+    let mut view = reviewing();
+    let heading = |view: &ReviewView| match super::view(view, SPACE).content {
+        Content::Lines { heading, .. } => heading,
+        other => panic!("lines: {other:?}"),
+    };
+    assert_eq!(heading(&view), "DIFF · naming.rs · uncommitted");
+    view.base.commit = Some("f00d".to_owned());
+    assert_eq!(heading(&view), "DIFF · naming.rs");
+    view.filter = Filter::Uncommitted;
+    assert_eq!(heading(&view), "DIFF · naming.rs · uncommitted");
+}
+
+/// The cursor's line is lit only while the diff has the keys and nothing
+/// is marked; a mark lights its own lines instead.
+#[test]
+fn the_cursors_line_is_lit_only_with_the_keys_and_no_mark() {
+    let mut view = reviewing();
+    let lit = |view: &ReviewView| -> Vec<Line> {
+        render::lines(view)
+            .iter()
+            .filter(|drawn| drawn.content.marked)
+            .map(|drawn| drawn.line)
+            .collect()
+    };
+    view.cursor = 2;
+    view.focus = Focus::Navigator;
+    assert_eq!(lit(&view), []);
+    view.focus = Focus::Content;
+    assert_eq!(lit(&view), [Line::Cell(2)]);
+    view.mark = Some((4, 4));
+    assert_eq!(lit(&view), [Line::Cell(4)]);
+}
+
+/// With nothing marked, the comment is written under the cursor's line,
+/// and only there; the caret stands where the next character lands.
+#[test]
+fn the_comment_is_written_under_the_cursors_line_with_the_caret_in_it() {
+    let mut view = reviewing();
+    view.focus = Focus::Content;
+    view.cursor = 2;
+    handle_command(&mut view, Command::Comment, SPACE);
+    for character in "ab".chars() {
+        handle_command(&mut view, Command::Type(character), SPACE);
+    }
+    let drawn = render::lines(&view);
+    let headers: Vec<usize> = drawn
+        .iter()
+        .enumerate()
+        .filter(|(_, drawn)| drawn.line == Line::ComposerHeader)
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(headers.len(), 1, "one comment is being written");
+    assert!(line_of(&view, Line::Cell(2)) < headers[0]);
+    assert!(headers[0] < line_of(&view, Line::Cell(3)));
+    let Content::Lines { caret, .. } = super::view(&view, SPACE).content else {
+        panic!("lines")
+    };
+    assert_eq!(
+        caret,
+        Some(crate::view::Caret {
+            line: line_of(&view, Line::Composer(0)),
+            column: 2 + render::RULE.chars().count(),
+        })
+    );
+}
+
+/// A comment, kept or being written, names the line it is on, or the
+/// first and last of its run.
+#[test]
+fn a_comment_names_its_line_or_its_run() {
+    let mut view = reviewing();
+    view.change(change::Change::Draft {
+        id: 1,
+        path: "naming.rs".to_owned(),
+        rows: [(2, "fn apply() {"), (3, "    rename();"), (4, "}")]
+            .into_iter()
+            .map(|(line, text)| Row {
+                kind: crate::review::RowKind::Added,
+                line,
+                text: text.to_owned(),
+            })
+            .collect(),
+        excerpt: String::new(),
+        text: "a run".to_owned(),
+    });
+    thread_on(&mut view, 2, "naming.rs", 5, "fn branch() {}");
+    view.record.comments[1].rows[0].kind = crate::review::RowKind::Context;
+    assert!(said_on(&view, Line::CardHeader(1)).contains(" L2–4 · "));
+    assert!(said_on(&view, Line::CardHeader(2)).contains(" L5 · "));
+
+    view.mark = Some((2, 4));
+    handle_command(&mut view, Command::Comment, SPACE);
+    assert!(said_on(&view, Line::ComposerHeader).contains(" L2–4 · new comment"));
+    handle_command(&mut view, Command::Close, SPACE);
+    view.mark = Some((2, 2));
+    handle_command(&mut view, Command::Comment, SPACE);
+    assert!(said_on(&view, Line::ComposerHeader).contains(" L2 · new comment"));
+}
+
+/// An answered comment offers its resolve on its card; the agent's
+/// answer is set apart from the operator's words, its code still code.
+#[test]
+fn an_answered_comment_offers_its_resolve_and_sets_its_answer_apart() {
+    use crate::view::Role;
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    let comment = &mut view.record.comments[0];
+    comment.status = CommentStatus::Answered;
+    comment.sent = Some((1, 1));
+    comment.answers = vec!["renamed with `refreshed`".to_owned()];
+    view.recolour();
+    let drawn = render::lines(&view);
+    assert!(
+        drawn
+            .iter()
+            .any(|drawn| drawn.acts.iter().any(|(_, act)| *act == Act::Resolve(1))),
+        "a resolve to press"
+    );
+    let spans: Vec<(String, Role)> = drawn
+        .iter()
+        .flat_map(|drawn| &drawn.content.spans)
+        .filter(|span| span.text == "renamed with " || span.text == "refreshed")
+        .map(|span| (span.text.clone(), span.role))
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            ("renamed with ".to_owned(), Role::Secondary),
+            ("refreshed".to_owned(), Role::Info)
+        ]
+    );
+}
+
+/// The comment being written quotes the selection it is on, when there is
+/// one, and offers a placeholder only while nothing is written.
+#[test]
+fn the_comment_being_written_quotes_its_selection_and_offers_a_placeholder() {
+    let placeholder = "what should change here, and why";
+    let mut view = reviewing();
+    view.mark_cell(2, false);
+    handle_command(&mut view, Command::Comment, SPACE);
+    let quotes = |view: &ReviewView| {
+        render::lines(view)
+            .iter()
+            .any(|drawn| spoken(drawn).contains("on “"))
+    };
+    assert!(!quotes(&view), "nothing selected, nothing quoted");
+    assert!(said_on(&view, Line::Composer(0)).contains(placeholder));
+    handle_command(&mut view, Command::Type('a'), SPACE);
+    let first = said_on(&view, Line::Composer(0));
+    assert!(
+        first.ends_with('a') && !first.contains(placeholder),
+        "{first}"
+    );
+    handle_command(&mut view, Command::Close, SPACE);
+
+    selected(&mut view, 2..3, "apply");
+    handle_command(&mut view, Command::Comment, SPACE);
+    assert!(quotes(&view), "the selection quoted");
+}
+
+/// The comment affordance answers a press anywhere on its line.
+#[test]
+fn a_press_anywhere_on_the_affordance_starts_the_comment() {
+    let mut view = reviewing();
+    view.mark_cell(2, false);
+    let line = line_of(&view, Line::Affordance);
+    handle_hit(&mut view, ViewHit::PlaceCaret { line, cell: 0 }, SPACE);
+    assert!(view.typing());
+}
+
+/// The footer offers resolve only while an answer waits.
+#[test]
+fn the_footer_offers_resolve_only_while_an_answer_waits() {
+    let mut view = reviewing();
+    thread_on(&mut view, 1, "naming.rs", 2, "fn apply() {");
+    let footer = super::view(&view, SPACE).footer;
+    assert!(footer.contains(&Command::Comment), "{footer:?}");
+    assert!(!footer.contains(&Command::Resolve), "{footer:?}");
+    view.record.comments[0].status = CommentStatus::Answered;
+    assert!(super::view(&view, SPACE).footer.contains(&Command::Resolve));
+}
+
+#[test]
+fn a_review_that_cannot_be_kept_says_so() {
+    let mut view = reviewing();
+    view.record_error = Some("the disk is full".to_owned());
+    let notice = super::view(&view, SPACE).notice.expect("a notice");
+    assert!(notice.text.contains("cannot be kept: the disk is full"));
+}
+
+/// Discarding a file the last commit lacks deletes it, and says so.
+#[test]
+fn discarding_an_added_file_says_it_deletes_it() {
+    let mut view = reviewing();
+    view.discarding = Some(Discarding {
+        path: PathBuf::from("/w").join("tests.rs"),
+        on_confirm: false,
+    });
+    let body = super::view(&view, SPACE).confirm.expect("asked").body;
+    assert!(body.starts_with("Deletes the file"), "{body}");
+}
