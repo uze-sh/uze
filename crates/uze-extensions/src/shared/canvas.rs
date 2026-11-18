@@ -396,3 +396,242 @@ pub fn wrapped(text: &str, width: i32) -> Vec<String> {
     }
     lines
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cell_is_blank_until_something_is_written_to_it() {
+        let mut canvas = Canvas::new(3, 1, Glyphs::Unicode);
+        assert!(canvas.is_blank(1, 0));
+        canvas.put(1, 0, ' ', Role::Default, false);
+        assert!(!canvas.is_blank(1, 0), "a space written is the drawing's");
+        assert!(
+            !canvas.is_blank(3, 0),
+            "outside the board is not a free cell"
+        );
+    }
+
+    /// A double-width glyph occupies the cell after it, and what follows
+    /// is written past both.
+    #[test]
+    fn text_takes_one_cell_per_column_it_occupies() {
+        let mut canvas = Canvas::new(8, 1, Glyphs::Unicode);
+        let after = canvas.text(2, 0, "\u{6f22}a", Role::Default, false);
+        assert_eq!(after, 5);
+        assert_eq!(canvas.to_text(), "  \u{6f22}a");
+        assert!(canvas.is_blank(1, 0), "nothing is written before the text");
+        assert!(!canvas.is_blank(3, 0), "the wide glyph's second column");
+        assert_eq!(canvas.cell(4, 0).map(|cell| cell.glyph), Some('a'));
+    }
+
+    #[test]
+    fn a_cell_reads_back_what_was_written_and_nothing_outside_the_board() {
+        let mut canvas = Canvas::new(2, 2, Glyphs::Unicode);
+        canvas.put(1, 1, 'x', Role::Accent, true);
+        let written = canvas.cell(1, 1).expect("inside the board");
+        assert_eq!(
+            (written.glyph, written.role, written.bold),
+            ('x', Role::Accent, true)
+        );
+        assert_eq!(canvas.cell(2, 1), None);
+        let replaced = Cell {
+            glyph: 'y',
+            role: Role::Muted,
+            ground: Some(Role::Info),
+            bold: false,
+            solid: true,
+        };
+        canvas.set(0, 1, replaced);
+        assert_eq!(canvas.cell(0, 1), Some(replaced));
+    }
+
+    #[test]
+    fn a_line_turns_a_corner_rounded() {
+        let mut canvas = Canvas::new(1, 1, Glyphs::Unicode);
+        canvas.line(0, 0, EAST | SOUTH, Stroke::Solid, Role::Default);
+        assert_eq!(canvas.cell(0, 0).map(|cell| cell.glyph), Some('\u{256d}'));
+    }
+
+    /// The frame's border is exactly its rectangle: nothing drawn outside
+    /// it, every side and corner inside it.
+    #[test]
+    fn a_frame_borders_exactly_its_rectangle() {
+        let mut canvas = Canvas::new(7, 6, Glyphs::Unicode);
+        let frame = Frame {
+            x: 1,
+            y: 1,
+            w: 4,
+            h: 3,
+        };
+        canvas.frame(frame, Corners::Square, Role::Faint);
+        assert_eq!(
+            canvas.to_text(),
+            "\n \u{250c}\u{2500}\u{2500}\u{2510}\n \u{2502}  \u{2502}\n \u{2514}\u{2500}\u{2500}\u{2518}\n\n"
+        );
+        let mut ascii = Canvas::new(7, 6, Glyphs::Ascii);
+        ascii.frame(frame, Corners::Rounded, Role::Faint);
+        assert_eq!(ascii.to_text(), "\n +--+\n |  |\n +--+\n\n");
+    }
+
+    /// A row is said in as few spans as its look allows, and no fewer.
+    #[test]
+    fn a_row_changes_span_wherever_its_look_changes() {
+        let mut canvas = Canvas::new(6, 1, Glyphs::Unicode);
+        canvas.text(0, 0, "ab", Role::Accent, false);
+        canvas.text(2, 0, "cd", Role::Muted, false);
+        canvas.text(4, 0, "ef", Role::Muted, true);
+        let spans = &canvas.lines()[0].spans;
+        let said: Vec<(&str, Role, bool)> = spans
+            .iter()
+            .map(|span| (span.text.as_str(), span.role, span.bold))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("ab", Role::Accent, false),
+                ("cd", Role::Muted, false),
+                ("ef", Role::Muted, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_frame_contains_its_cells_and_not_the_ones_past_its_edges() {
+        let frame = Frame {
+            x: 1,
+            y: 2,
+            w: 4,
+            h: 6,
+        };
+        assert!(frame.contains(1, 2));
+        assert!(frame.contains(4, 7), "its last cell");
+        assert!(!frame.contains(5, 2), "one past its right edge");
+        assert!(!frame.contains(1, 8), "one past its bottom edge");
+        assert_eq!(frame.center(), (3, 5));
+    }
+
+    /// Further into the drawing and out of it are two marks, each said in
+    /// the glyph set the board is drawn in.
+    #[test]
+    fn the_two_leads_are_told_apart_in_either_glyph_set() {
+        for glyphs in [Glyphs::Unicode, Glyphs::Ascii] {
+            let inward = leads_glyph(false, glyphs);
+            let outward = leads_glyph(true, glyphs);
+            assert!(!inward.is_empty() && !outward.is_empty(), "{glyphs:?}");
+            assert_ne!(inward, outward, "{glyphs:?}");
+            assert!(
+                text_width(inward) <= 2 && text_width(outward) <= 2,
+                "{glyphs:?}"
+            );
+        }
+        assert!(leads_glyph(false, Glyphs::Ascii).is_ascii());
+        assert!(leads_glyph(true, Glyphs::Ascii).is_ascii());
+    }
+
+    #[test]
+    fn text_that_fits_is_kept_whole() {
+        assert_eq!(fitted("abcd", 4, Glyphs::Unicode), "abcd");
+    }
+
+    /// The cut mark takes a column of the width, so the cut text and its
+    /// mark together fill it and no more.
+    #[test]
+    fn text_too_wide_is_cut_to_the_width_and_says_so() {
+        assert_eq!(fitted("abcdef", 4, Glyphs::Unicode), "abc\u{2026}");
+        assert_eq!(fitted("abcdef", 4, Glyphs::Ascii), "abc~");
+        assert_eq!(
+            fitted("\u{6f22}\u{5b57}x", 4, Glyphs::Unicode),
+            "\u{6f22}\u{2026}"
+        );
+        assert_eq!(fitted("abcdef", 1, Glyphs::Unicode), "\u{2026}");
+        assert_eq!(fitted("abcdef", 0, Glyphs::Unicode), "");
+    }
+
+    /// Each box-drawing glyph, by the sides Unicode names it leaving by.
+    const BOX_DRAWING: &[(u8, char)] = &[
+        (NORTH | SOUTH, '\u{2502}'),
+        (EAST | WEST, '\u{2500}'),
+        (NORTH | EAST | SOUTH, '\u{251c}'),
+        (NORTH | SOUTH | WEST, '\u{2524}'),
+        (EAST | SOUTH | WEST, '\u{252c}'),
+        (NORTH | EAST | WEST, '\u{2534}'),
+        (NORTH | EAST | SOUTH | WEST, '\u{253c}'),
+    ];
+
+    #[test]
+    fn a_line_leaving_by_some_sides_is_drawn_with_the_glyph_that_leaves_by_them() {
+        for &(sides, glyph) in BOX_DRAWING {
+            for corners in [Corners::Square, Corners::Rounded, Corners::Marked] {
+                let drawn = line_glyph(sides, Stroke::Solid, Glyphs::Unicode, corners);
+                assert_eq!(drawn, glyph, "sides {sides:04b}, {corners:?}");
+            }
+        }
+        assert_eq!(
+            line_glyph(0, Stroke::Solid, Glyphs::Unicode, Corners::Square),
+            ' '
+        );
+    }
+
+    #[test]
+    fn a_corner_is_drawn_square_rounded_or_marked() {
+        let corners: &[(u8, char, char)] = &[
+            (NORTH | EAST, '\u{2514}', '\u{2570}'),
+            (EAST | SOUTH, '\u{250c}', '\u{256d}'),
+            (SOUTH | WEST, '\u{2510}', '\u{256e}'),
+            (NORTH | WEST, '\u{2518}', '\u{256f}'),
+        ];
+        for &(sides, square, rounded) in corners {
+            let drawn = |corners| line_glyph(sides, Stroke::Solid, Glyphs::Unicode, corners);
+            assert_eq!(drawn(Corners::Square), square, "sides {sides:04b}");
+            assert_eq!(drawn(Corners::Rounded), rounded, "sides {sides:04b}");
+            assert_eq!(drawn(Corners::Marked), '\u{25c7}', "sides {sides:04b}");
+        }
+    }
+
+    /// Only a straight run carries its stroke: a corner or a junction is
+    /// drawn the same whatever the line's stroke.
+    #[test]
+    fn only_a_straight_run_carries_its_stroke() {
+        let unicode = |sides, stroke| line_glyph(sides, stroke, Glyphs::Unicode, Corners::Square);
+        assert_eq!(unicode(NORTH | SOUTH, Stroke::Dotted), '\u{2506}');
+        assert_eq!(unicode(NORTH | SOUTH, Stroke::Thick), '\u{2503}');
+        assert_eq!(unicode(EAST | WEST, Stroke::Dotted), '\u{2504}');
+        assert_eq!(unicode(EAST | WEST, Stroke::Thick), '\u{2501}');
+        for sides in [EAST | SOUTH, NORTH | EAST | SOUTH] {
+            for stroke in [Stroke::Dotted, Stroke::Thick] {
+                assert_eq!(unicode(sides, stroke), unicode(sides, Stroke::Solid));
+            }
+        }
+    }
+
+    #[test]
+    fn the_ascii_set_draws_runs_by_stroke_and_every_turn_as_a_junction() {
+        let ascii = |sides, stroke, corners| line_glyph(sides, stroke, Glyphs::Ascii, corners);
+        let square = Corners::Square;
+        assert_eq!(ascii(NORTH | SOUTH, Stroke::Solid, square), '|');
+        assert_eq!(ascii(NORTH | SOUTH, Stroke::Thick, square), '|');
+        assert_eq!(ascii(NORTH | SOUTH, Stroke::Dotted, square), ':');
+        assert_eq!(ascii(EAST | WEST, Stroke::Solid, square), '-');
+        assert_eq!(ascii(EAST | WEST, Stroke::Thick, square), '=');
+        assert_eq!(ascii(EAST | WEST, Stroke::Dotted, square), '.');
+        for sides in [EAST | SOUTH, NORTH | EAST | SOUTH | WEST] {
+            assert_eq!(ascii(sides, Stroke::Dotted, Corners::Rounded), '+');
+            assert_eq!(ascii(sides, Stroke::Solid, Corners::Marked), '*');
+        }
+    }
+
+    #[test]
+    fn words_wrap_at_the_width_counting_the_space_between_them() {
+        assert_eq!(wrapped("ab cd", 5), ["ab cd"]);
+        assert_eq!(wrapped("ab cd", 4), ["ab", "cd"]);
+        assert_eq!(wrapped("one two three", 7), ["one two", "three"]);
+        assert!(wrapped("   ", 4).is_empty());
+    }
+
+    #[test]
+    fn a_word_wider_than_the_line_keeps_a_line_to_itself() {
+        assert_eq!(wrapped("a enormous b", 3), ["a", "enormous", "b"]);
+    }
+}
