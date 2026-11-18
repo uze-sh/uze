@@ -5264,7 +5264,8 @@ fn an_attach_sizes_the_pane_it_lands_on_only_with_both_dimensions() {
     let project = scratch.join("project");
     let sizeless = scratch.join("sizeless");
     let half_sized = scratch.join("half-sized");
-    for directory in [&uze_home, &project, &sizeless, &half_sized] {
+    let other_half = scratch.join("other-half");
+    for directory in [&uze_home, &project, &sizeless, &half_sized, &other_half] {
         std::fs::create_dir_all(directory).unwrap();
     }
     let mut env = uze_testkit::env::scope();
@@ -5305,7 +5306,11 @@ fn an_attach_sizes_the_pane_it_lands_on_only_with_both_dimensions() {
     attached(attach(100, 30, crate::Seating::WhereItLeftOff));
     assert_eq!(size_of(first), (100, 30));
 
-    for (root, (columns, rows)) in [(&sizeless, (0, 0)), (&half_sized, (120, 0))] {
+    for (root, (columns, rows)) in [
+        (&sizeless, (0, 0)),
+        (&half_sized, (120, 0)),
+        (&other_half, (0, 30)),
+    ] {
         attached(attach(columns, rows, crate::Seating::Open(seat_at(root))));
         let opened = server
             .session
