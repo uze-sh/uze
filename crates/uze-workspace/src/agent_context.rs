@@ -376,4 +376,46 @@ mod tests {
         let document = compose("", &[section(&"x".repeat(10_000), 1_000)]).unwrap();
         assert!(document.len() <= PREAMBLE.len() + 1_000 + 1);
     }
+
+    /// A share that ends inside a character cuts before it, never past it.
+    #[test]
+    fn a_section_cut_inside_a_character_stays_within_its_share() {
+        let share = 1_000;
+        let text = "é".repeat(share);
+        let document = compose("", &[section(&text, share)]).unwrap();
+        assert!(
+            document.len() <= PREAMBLE.len() + share + 1,
+            "{} bytes",
+            document.len()
+        );
+    }
+
+    #[test]
+    fn a_section_opens_under_its_own_heading() {
+        let document = compose("", &[section("what happened", 100)]).unwrap();
+        let heading = document.find("## Briefing").expect("the section is titled");
+        assert!(heading < document.find("what happened").unwrap());
+    }
+
+    #[test]
+    fn the_notes_alone_are_what_follows_the_instructions() {
+        assert_eq!(notes(&[]), None);
+        assert_eq!(notes(&[section(" \n", 100)]), None);
+        let sections = [section("what happened", 100)];
+        let alone = notes(&sections).unwrap();
+        assert!(alone.starts_with(PREAMBLE), "{alone}");
+        assert!(alone.contains("what happened"), "{alone}");
+        let whole = compose("## Rules\n\n- do it", &sections).unwrap();
+        assert!(whole.ends_with(&alone), "{whole}");
+    }
+
+    /// The room is measured with the instructions in place, so a section
+    /// given all of it fills the context exactly.
+    #[test]
+    fn the_room_after_instructions_is_what_compose_leaves_of_the_bound() {
+        let instructions = "## Rules\n\n- do it";
+        let briefing = [section("what happened", BRIEFING_SHARE)];
+        let composed = compose(instructions, &briefing).unwrap();
+        assert_eq!(composed.len() + room_after(instructions, &briefing), BOUND);
+    }
 }

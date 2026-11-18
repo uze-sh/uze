@@ -628,6 +628,67 @@ mod tests {
         assert!(cut.ends_with("(cut)"));
     }
 
+    /// A comment over several lines names them as a range, one over a
+    /// single line names that line, and a quoted excerpt is shown only when
+    /// there is one.
+    #[test]
+    fn the_agent_is_shown_the_lines_and_the_excerpt_each_comment_is_on() {
+        let (home, root, first, _) = two_agents("review-shown-lines");
+        let row = |line| Row {
+            kind: RowKind::Context,
+            line,
+            text: "let x = 1;".to_owned(),
+        };
+        let sent = |id, rows, excerpt: &str| Comment {
+            id,
+            path: "naming.rs".to_owned(),
+            rows,
+            excerpt: excerpt.to_owned(),
+            text: "Look here.".to_owned(),
+            status: CommentStatus::Sent,
+            sent: Some((1, u32::try_from(id).unwrap())),
+            agent: Some(first.0.as_str().to_owned()),
+            ..Comment::default()
+        };
+        update(&home, &root, &first.0, |record| {
+            record
+                .comments
+                .push(sent(1, vec![row(52), row(54), row(53)], "x = 1"));
+            record.comments.push(sent(2, vec![row(7)], ""));
+        })
+        .unwrap();
+
+        let shown = show(&home, claim(&first, &root)).unwrap();
+        assert!(shown.contains("1/1  naming.rs:52-54\n"), "{shown}");
+        assert!(shown.contains("1/2  naming.rs:7\n"), "{shown}");
+        assert_eq!(shown.matches("  on \"").count(), 1, "{shown}");
+        assert!(shown.contains("  on \"x = 1\""), "{shown}");
+    }
+
+    /// The person's own change never answers a comment the agent left
+    /// unanswered.
+    #[test]
+    fn the_person_reviewing_never_marks_an_unanswered_comment_answered() {
+        let (home, root, first, _) = two_agents("review-unanswered-stands");
+        sent_to(&home, &root, &first.0);
+        let kept = update_checkout(&home, &root, Some(first.0.as_str()), |record| {
+            record.viewed.insert("naming.rs".to_owned(), 7);
+        })
+        .unwrap();
+        assert_eq!(kept.comments[0].status, CommentStatus::Sent);
+        assert!(kept.comments[0].answers.is_empty());
+    }
+
+    /// The bound falls inside a character: the cut lands before it.
+    #[test]
+    fn an_answer_cut_inside_a_character_stays_within_its_bound() {
+        let long = format!("a{}", "é".repeat(ANSWER_MAX));
+        let cut = bounded(&long);
+        let kept = cut.strip_suffix(" … (cut)").expect("it says it was cut");
+        assert!(kept.len() <= ANSWER_MAX, "{} bytes", kept.len());
+        assert!(kept.len() >= ANSWER_MAX - 1, "{} bytes", kept.len());
+    }
+
     #[test]
     fn a_reference_is_a_send_and_a_number() {
         assert_eq!(parse_reference("3/1"), Some((3, 1)));

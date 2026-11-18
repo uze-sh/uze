@@ -433,6 +433,70 @@ mod tests {
         assert_eq!(entry_at(0).age(&clock), PromptAge::Older);
     }
 
+    /// Each unit starts at its first whole one: a minute, an hour and a
+    /// day read as `1m`, `1h` and `1d`, never as the unit below.
+    #[test]
+    fn compact_age_turns_over_at_each_whole_unit() {
+        let clock = PromptClock::at(1_000_000, 0);
+        assert_eq!(entry_at(1_000_000 - 59).compact_age(&clock), "now");
+        assert_eq!(entry_at(1_000_000 - 60).compact_age(&clock), "1m");
+        assert_eq!(entry_at(1_000_000 - 3600).compact_age(&clock), "1h");
+        assert_eq!(entry_at(1_000_000 - SECS_PER_DAY).compact_age(&clock), "1d");
+    }
+
+    #[test]
+    fn a_prompt_exactly_as_old_as_the_recent_window_is_no_longer_recent() {
+        let day_start = 1_000 * SECS_PER_DAY;
+        let now = day_start + 2 * 3600;
+        let clock = PromptClock::at(now, day_start);
+        assert_eq!(
+            entry_at(now - RECENT_WINDOW_SECS).age(&clock),
+            PromptAge::EarlierToday
+        );
+    }
+
+    /// The recent group opens the listing and needs no heading; every
+    /// other group is headed, each by its own words.
+    #[test]
+    fn every_group_but_the_recent_one_is_headed_by_its_own_label() {
+        assert_eq!(PromptAge::Recent.label(), None);
+        let labels: Vec<&str> = [
+            PromptAge::EarlierToday,
+            PromptAge::Yesterday,
+            PromptAge::Older,
+        ]
+        .into_iter()
+        .map(|age| age.label().expect("a labelled group"))
+        .collect();
+        assert!(labels.iter().all(|label| !label.trim().is_empty()));
+        let mut distinct = labels.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), labels.len(), "{labels:?}");
+    }
+
+    #[test]
+    fn a_prompt_is_stamped_with_the_moment_it_was_recorded() {
+        let before = uze_platform::clock::since_epoch().as_secs();
+        let entry = PromptEntry::new(&origin(1, "agent"), "prompt").unwrap();
+        let after = uze_platform::clock::since_epoch().as_secs();
+        assert!(
+            (before..=after).contains(&entry.timestamp_secs),
+            "{before} <= {} <= {after}",
+            entry.timestamp_secs
+        );
+    }
+
+    /// Without a local time zone, the day starts at the UTC midnight at or
+    /// before the moment.
+    #[test]
+    fn the_utc_day_starts_at_the_midnight_before() {
+        let midnight = 20_000 * SECS_PER_DAY;
+        assert_eq!(utc_day_start(midnight), midnight);
+        assert_eq!(utc_day_start(midnight + 1), midnight);
+        assert_eq!(utc_day_start(midnight + SECS_PER_DAY - 1), midnight);
+    }
+
     #[test]
     fn the_live_clock_starts_its_day_within_the_last_twenty_four_hours() {
         let clock = PromptClock::now();

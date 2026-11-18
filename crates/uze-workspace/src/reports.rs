@@ -436,6 +436,140 @@ mod tests {
         assert_eq!(sorted, delivered, "nothing was delivered twice");
     }
 
+    fn stamped(at: u64) -> Report {
+        Report {
+            at,
+            ..report("tool.finished")
+        }
+    }
+
+    fn stamps(home: &UzeHome) -> Vec<u64> {
+        read_from(home, "a1", &Cursor::default())
+            .0
+            .into_iter()
+            .map(|report| report.at)
+            .collect()
+    }
+
+    /// A journal holds up to its line bound; one line past it, the oldest
+    /// half goes, whole lines only.
+    #[test]
+    fn a_journal_keeps_its_line_bound_and_past_it_its_newest_half() {
+        let root = uze_testkit::temp::scratch("agent-reports-line-bound");
+        let home = UzeHome::at(root.join("uze"));
+        // Stamps of one width, so every line is the same length.
+        let first = 1_000;
+        for at in first..first + REPORTS_MAX as u64 {
+            append(&home, "a1", stamped(at)).unwrap();
+        }
+        assert_eq!(
+            stamps(&home),
+            (first..first + REPORTS_MAX as u64).collect::<Vec<_>>(),
+            "a journal at its bound keeps every line"
+        );
+
+        append(&home, "a1", stamped(first + REPORTS_MAX as u64)).unwrap();
+        let kept = stamps(&home);
+        let last = first + REPORTS_MAX as u64;
+        assert_eq!(kept.last(), Some(&last));
+        assert!(
+            kept.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "no hole: {kept:?}"
+        );
+        let lines = REPORTS_MAX + 1;
+        assert_eq!(kept.len(), lines - lines / 2, "the newest half, whole");
+    }
+
+    /// A report whose serialized line, newline included, is `bytes` long.
+    fn sized(at: u64, bytes: usize) -> Report {
+        let with = |padding: usize| Report {
+            at,
+            tool: Some("t".repeat(FIELD_MAX)),
+            path: Some("p".repeat(padding)),
+            ..report("tool.finished")
+        };
+        let base = serde_json::to_vec(&with(0)).unwrap().len() + 1;
+        with(bytes - base)
+    }
+
+    #[test]
+    fn a_journal_holds_up_to_its_byte_bound_and_is_cut_past_it() {
+        let root = uze_testkit::temp::scratch("agent-reports-byte-bound");
+        let home = UzeHome::at(root.join("uze"));
+        let line = 512;
+        let count = REPORTS_BYTES as usize / line;
+        assert!(count < REPORTS_MAX, "the byte bound is reached first");
+        let first = 1_000;
+        for at in first..first + count as u64 {
+            append(&home, "a1", sized(at, line)).unwrap();
+        }
+        assert_eq!(
+            std::fs::metadata(home.agent_reports_path("a1"))
+                .unwrap()
+                .len(),
+            REPORTS_BYTES
+        );
+        assert_eq!(
+            stamps(&home).len(),
+            count,
+            "exactly the bound is kept whole"
+        );
+
+        append(&home, "a1", sized(first + count as u64, line)).unwrap();
+        assert!(
+            std::fs::metadata(home.agent_reports_path("a1"))
+                .unwrap()
+                .len()
+                <= REPORTS_BYTES,
+            "past the bound the journal is cut"
+        );
+        assert_eq!(stamps(&home).last(), Some(&(first + count as u64)));
+    }
+
+    /// A line still being written is not delivered, and the reader stands
+    /// at its start, so it is delivered whole once it is finished.
+    #[test]
+    fn a_line_still_being_written_is_read_whole_next_time() {
+        use std::io::Write as _;
+        let root = uze_testkit::temp::scratch("agent-reports-partial");
+        let home = UzeHome::at(root.join("uze"));
+        append(&home, "a1", report("turn.started")).unwrap();
+        let path = home.agent_reports_path("a1");
+        let complete = std::fs::metadata(&path).unwrap().len();
+        let mut line = serde_json::to_vec(&report("turn.finished")).unwrap();
+        line.push(b'\n');
+        let (head, tail) = line.split_at(line.len() / 2);
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(head).unwrap();
+
+        let (first, cursor) = read_from(&home, "a1", &Cursor::default());
+        assert_eq!(first, [report("turn.started")]);
+        assert_eq!(cursor.offset, complete, "it stands after what it delivered");
+
+        file.write_all(tail).unwrap();
+        drop(file);
+        let (next, _) = read_from(&home, "a1", &cursor);
+        assert_eq!(next, [report("turn.finished")]);
+    }
+
+    /// Two reports alike in every field are two reports: the second is
+    /// delivered though it equals the last one delivered.
+    #[test]
+    fn a_report_equal_to_the_last_one_delivered_is_still_delivered() {
+        let root = uze_testkit::temp::scratch("agent-reports-alike");
+        let home = UzeHome::at(root.join("uze"));
+        append(&home, "a1", report("tool.finished")).unwrap();
+        let (first, cursor) = read_from(&home, "a1", &Cursor::default());
+        assert_eq!(first, [report("tool.finished")]);
+
+        append(&home, "a1", report("tool.finished")).unwrap();
+        let (next, _) = read_from(&home, "a1", &cursor);
+        assert_eq!(next, [report("tool.finished")]);
+    }
+
     fn record_agents(home: &UzeHome, project: &str, agents: &[&str]) {
         let store = crate::task::AgentStore {
             agents: agents
