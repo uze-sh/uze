@@ -158,3 +158,13 @@ fn what_an_engine_holds_grows_with_its_data_and_stays_under_d28s_budget() {
     assert!(full > empty + 4_000, "{empty} then {full}");
     assert!(full < 1024 * 1024, "{full} bytes");
 }
+
+#[test]
+fn a_newer_compile_is_weighed_again() {
+    let mut engine = board();
+    let before = engine.approximate_bytes();
+    let mut compiled = engine.compiled().clone();
+    compiled.manifest.description = "a description".repeat(100);
+    engine.replace(compiled);
+    assert!(engine.approximate_bytes() > before + 1_000);
+}

@@ -198,3 +198,23 @@ fn the_host_answers_a_path_that_climbs_out_with_nothing() {
     ));
     assert!(host.listed.borrow().is_empty());
 }
+
+#[test]
+fn a_drawer_that_does_not_apply_is_not_drawn_and_an_open_view_still_is() {
+    let mut engine = marked(Some(".planning"), None);
+    engine.compiled.manifest.surfaces[1].slot = uze_contract::Slot::Drawer;
+    engine.set_data(SOURCE, Ok(json!({ "count": 1 })));
+    engine.focus(Some(&checkout("/work/a")));
+    assert!(!engine.applies(SECTION));
+    assert!(engine.view(SECTION, super::tests::SPACE).is_none());
+    assert!(engine.view(VIEW, super::tests::SPACE).is_some());
+}
+
+#[test]
+fn a_surface_drawn_for_a_test_takes_every_path_as_held() {
+    let mut engine = marked(Some(".planning"), None);
+    engine.focus(Some(&checkout("/work/a")));
+    assert!(!engine.applies(SECTION));
+    engine.assume_every_path_there();
+    assert!(engine.applies(SECTION));
+}

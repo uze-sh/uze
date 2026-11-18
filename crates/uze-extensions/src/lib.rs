@@ -340,3 +340,87 @@ pub trait Host {
         Err("this host keeps no reviews".to_owned())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    /// A host that implements only what every host must, holding one
+    /// file of three lines.
+    struct Least;
+
+    impl Host for Least {
+        fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+            Err("no git here".to_owned())
+        }
+        fn repository_root(&self, _: &Path) -> Result<PathBuf, String> {
+            Err("no git here".to_owned())
+        }
+        fn read_file(&self, _: &Path) -> Result<String, Unreadable> {
+            Ok("one\ntwo\nthree\n".to_owned())
+        }
+        fn list_dir(&self, _: &Path) -> Result<Vec<DirEntry>, String> {
+            Ok(Vec::new())
+        }
+        fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+            Ok(())
+        }
+        fn restore_to_head(&self, _: &Path, _: &[PathBuf]) -> Result<(), String> {
+            Ok(())
+        }
+        fn syntax_theme(&self) -> String {
+            String::new()
+        }
+    }
+
+    #[test]
+    fn a_host_grants_no_more_than_it_implements() {
+        let host = Least;
+        let root = Path::new("work");
+        let file = root.join("a.txt");
+        assert_eq!(host.read_bytes(&file), Err(Unreadable::NotText));
+        assert!(host.delete_dir(root, &root.join("src")).is_err());
+        assert!(host.rename_path(root, &file, &root.join("b.txt")).is_err());
+        assert_eq!(host.delivery_target(root), None);
+        let identity = uze_contract::Identity {
+            marketplace: "market".to_owned(),
+            plugin: "gsd".to_owned(),
+            id: "gsd".to_owned(),
+        };
+        assert!(host.media(&identity, "pet.png").is_err());
+        assert!(host.review_record(root, None).is_err());
+    }
+
+    #[test]
+    fn a_host_counts_lines_from_the_contents_it_reads() {
+        assert_eq!(Least.count_lines(Path::new("a.txt")), 3);
+    }
+
+    #[test]
+    fn unreadable_says_why_in_a_sentence() {
+        assert_eq!(Unreadable::NotText.to_string(), "not readable as text");
+        assert_eq!(
+            Unreadable::Failed("permission denied".to_owned()).to_string(),
+            "permission denied"
+        );
+    }
+
+    #[test]
+    fn a_directory_compares_before_a_file() {
+        let directory = DirEntry {
+            directory: true,
+            name: "zeta".to_owned(),
+        };
+        let file = DirEntry {
+            directory: false,
+            name: "alpha".to_owned(),
+        };
+        assert!(directory < file);
+        assert_eq!(directory.partial_cmp(&file), Some(std::cmp::Ordering::Less));
+    }
+}

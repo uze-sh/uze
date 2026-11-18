@@ -416,3 +416,91 @@ fn a_source_slower_than_its_every_is_not_asked_again_until_it_answers() {
     assert_eq!(asked.len(), 1, "asked again once the answer landed");
     assert_eq!(host.asked.borrow()[1].asking, Asking::Refresh);
 }
+
+#[test]
+fn agent_events_in_one_window_reach_a_latest_source_as_the_last_of_them() {
+    use uze_contract::AgentEvent;
+    let start = Instant::now();
+    let mut engine = board(None, vec![EventName::Agent(AgentEvent::TurnFinished)]);
+    engine.focus(Some(&checkout("/work/a")));
+    events_asked(&mut engine, start, &[]);
+    engine.agent_events(
+        &[
+            happened(AgentEvent::TurnFinished, "a1"),
+            happened(AgentEvent::TurnFinished, "a2"),
+        ],
+        start,
+    );
+    let mut asked = events_asked(&mut engine, start + COALESCE, &[]);
+    asked.extend(events_asked(&mut engine, start + COALESCE * 2, &[]));
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert_eq!(asked[0]["agent"], "a2");
+}
+
+#[test]
+fn consent_given_hands_the_agents_source_what_it_was_handed_before() {
+    let mut engine = board(None, Vec::new());
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    let agents = json!([{ "id": "a1" }]);
+    engine.agents(&agents);
+    engine.workspace_sources_withheld(Some("needs consent"));
+    assert_eq!(engine.data(super::tests::SOURCE), None);
+    engine.workspace_sources_withheld(None);
+    assert_eq!(engine.withheld(super::tests::SOURCE), None);
+    engine.agents(&agents);
+    assert_eq!(engine.data(super::tests::SOURCE).cloned(), Some(Ok(agents)));
+}
+
+#[test]
+fn agents_unchanged_and_never_withheld_do_not_lay_a_composed_source_out_again() {
+    let mut engine = board(None, Vec::new());
+    engine.compiled.manifest.sources[0].kind = uze_contract::SourceKind::Agents;
+    engine.compiled.manifest.sources[0].output = uze_contract::Output::View;
+    engine
+        .compiled
+        .manifest
+        .actions
+        .push(uze_contract::ActionDecl {
+            id: "copy".to_owned(),
+            label: "Copy".to_owned(),
+            on: VIEW.to_owned(),
+            key: None,
+            confirm: None,
+            does: uze_contract::Does::Clipboard("{name}".to_owned()),
+            with: Vec::new(),
+            then: None,
+        });
+    let start = Instant::now();
+    let at = |engine: &mut DeclaredExtension, now: Instant| {
+        engine.pass(&Pass {
+            now,
+            visible: &[],
+            happened: &[],
+        });
+    };
+    at(&mut engine, start);
+    let tree = json!({"type": "Button", "args": ["Copy"], "props": {"action": "copy"}, "item": {"name": "a1"}});
+    engine.workspace_sources_withheld(None);
+    engine.agents(&tree);
+    let later = start + Duration::from_secs(1);
+    at(&mut engine, later);
+    engine.workspace_sources_withheld(None);
+    engine.agents(&tree);
+    let button = super::tests::first(&super::tests::tree(&engine), |kind| {
+        matches!(kind, crate::view::NodeKind::Button { .. })
+    })
+    .id;
+    let space = crate::view::Size {
+        width: 40,
+        height: 4,
+    };
+    let press = crate::view::ViewHit::Node {
+        node: button,
+        act: crate::view::NodeAct::Press,
+    };
+    assert_eq!(
+        engine.hit(VIEW, press, space),
+        Outcome::Copy("a1".to_owned()),
+        "the same tree a second later is no new layout"
+    );
+}

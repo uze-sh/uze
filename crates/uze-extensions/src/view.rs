@@ -1512,5 +1512,25 @@ mod tests {
         assert!(sprite_moves(4, 10, false, at(250)));
         assert!(!sprite_moves(4, 10, false, at(300)), "on its last frame");
         assert!(!sprite_moves(1, 10, true, at(0)), "one frame never moves");
+        assert!(
+            !sprite_moves(4, 0, false, at(0)),
+            "nor a sprite with no rate"
+        );
+    }
+
+    #[test]
+    fn a_tab_takes_its_fixed_width_when_a_cell_is_turned_into_a_column() {
+        assert_eq!(column_at_cell("\tx", TAB_WIDTH - 1), 0, "inside the tab");
+        assert_eq!(column_at_cell("\tx", TAB_WIDTH), 1, "the letter after it");
+    }
+
+    #[test]
+    fn prose_is_inset_on_both_sides_and_text_leaves_the_heading_and_padding() {
+        let space = Size {
+            width: 40,
+            height: 20,
+        };
+        assert_eq!(prose_width(space), 36);
+        assert_eq!(text_height(space), 17);
     }
 }

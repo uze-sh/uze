@@ -786,6 +786,7 @@ fn a_list_repeats_its_rows_and_holds_its_selection() {
             ..
         }
     ));
+    extension.hit(VIEW, act(list.id, NodeAct::Row(2)), SPACE);
     extension.hit(VIEW, act(list.id, NodeAct::Row(7)), SPACE);
     assert_eq!(extension.ui(VIEW).expect("ui state")["phase"], "1");
     extension.command(VIEW, Command::SelectPrevious, SPACE);
@@ -1593,7 +1594,7 @@ fn a_composed_answer_draws_itself_and_holds_back_a_hasty_click() {
         "a click as the tree lands is held back"
     );
     extension.pass(&Pass {
-        now: start + std::time::Duration::from_millis(400),
+        now: start + RELAYOUT_GUARD,
         visible: &[],
         happened: &[],
     });
@@ -1651,4 +1652,196 @@ fn a_cut_line_is_still_only_when_asked_and_a_button_primary_only_when_marked() {
         })
         .collect();
     assert_eq!(primary, [false, true]);
+}
+
+#[test]
+fn the_arrows_walk_a_list_from_its_first_row_and_stop_on_its_last() {
+    let items = vec![
+        n(NodeName::List)
+            .prop("id", "phase")
+            .each("phases")
+            .child(n(NodeName::Text).arg("{name}"))
+            .item(),
+    ];
+    let data = json!({ "phases": [{ "name": "a" }, { "name": "b" }, { "name": "c" }] });
+    let mut extension = hosted(items, data);
+    let selected = |extension: &mut DeclaredExtension| {
+        extension.command(VIEW, Command::SelectNext, SPACE);
+        extension.ui(VIEW).expect("ui state")["phase"].clone()
+    };
+    assert_eq!(
+        selected(&mut extension),
+        "0",
+        "nothing selected starts at the top"
+    );
+    assert_eq!(selected(&mut extension), "1");
+    assert_eq!(selected(&mut extension), "2");
+    assert_eq!(selected(&mut extension), "2", "the last row holds");
+}
+
+#[test]
+fn the_wheel_scrolls_the_content_and_leaves_the_rest() {
+    let lines = (0..6)
+        .map(|line| n(NodeName::Text).arg(&format!("line {line}")).item())
+        .collect();
+    let mut extension = hosted(lines, json!({}));
+    let scroll = |extension: &DeclaredExtension| match extension.view(VIEW, SPACE) {
+        Some(View {
+            content: Content::Tree { scroll, .. },
+            ..
+        }) => scroll,
+        _ => panic!("a tree"),
+    };
+    let wheel = |extension: &mut DeclaredExtension, target, direction| {
+        extension.scroll(VIEW, target, direction, SPACE);
+    };
+    wheel(
+        &mut extension,
+        ScrollTarget::Navigator,
+        ScrollDirection::Down,
+    );
+    assert_eq!(scroll(&extension), 0, "a tree has no navigator to scroll");
+    wheel(&mut extension, ScrollTarget::Content, ScrollDirection::Down);
+    wheel(&mut extension, ScrollTarget::Content, ScrollDirection::Down);
+    assert_eq!(scroll(&extension), 2, "a row a notch");
+    wheel(&mut extension, ScrollTarget::Content, ScrollDirection::Up);
+    assert_eq!(scroll(&extension), 1);
+}
+
+#[test]
+fn a_click_is_read_against_the_room_its_view_was_drawn_in() {
+    let mut compiled = extension(compiled_view(
+        vec![
+            n(NodeName::Button)
+                .arg("Copy width")
+                .literal("action", json!("width"))
+                .prop("item", "{context.size}")
+                .item(),
+        ],
+        Vec::new(),
+        Vec::new(),
+    ));
+    compiled.manifest.actions.push(uze_contract::ActionDecl {
+        id: "width".to_owned(),
+        label: "Width".to_owned(),
+        on: VIEW.to_owned(),
+        key: None,
+        confirm: None,
+        does: uze_contract::Does::Clipboard("{width}".to_owned()),
+        with: Vec::new(),
+        then: None,
+    });
+    let mut extension = DeclaredExtension::new(compiled, "en");
+    extension.set_data(SOURCE, Ok(json!({})));
+    let button = first(&tree(&extension), |kind| {
+        matches!(kind, NodeKind::Button { .. })
+    });
+    assert_eq!(
+        extension.hit(VIEW, act(button.id, NodeAct::Press), SPACE),
+        Outcome::Copy(SPACE.width.to_string())
+    );
+}
+
+#[test]
+fn a_view_reading_a_preference_is_drawn_again_when_it_changes() {
+    let mut compiled = extension_of(vec![n(NodeName::Text).arg("{pref.detail}").item()]);
+    compiled.manifest.preferences = vec![uze_contract::PreferenceDecl {
+        name: "detail".to_owned(),
+        label: "Detail".to_owned(),
+        kind: uze_contract::PreferenceKind::Toggle,
+        default: json!(true),
+    }];
+    let mut extension = DeclaredExtension::new(compiled, "en");
+    extension.set_data(SOURCE, Ok(json!({})));
+    extension.configure(&json!({}));
+    assert_eq!(texts(&tree(&extension)), ["true"], "the default");
+    extension.configure(&json!({ "detail": false }));
+    assert_eq!(texts(&tree(&extension)), ["false"]);
+}
+
+#[test]
+fn an_extension_names_itself_as_its_identity_and_speaks_its_locale() {
+    let extension = hosted(Vec::new(), json!({}));
+    assert_eq!(extension.identity(), "gsd@market/gsd-band");
+    assert_eq!(extension.locale(), "pt");
+}
+
+#[test]
+fn a_band_and_a_bar_item_stand_where_they_are_declared() {
+    let mut compiled = extension_of(Vec::new());
+    let band = |place| uze_contract::BandDecl { rows: 2, place };
+    let bar = |align| uze_contract::BarDecl { align, opens: None };
+    let mut surfaces = Vec::new();
+    for (id, slot, place, align) in [
+        (
+            "top",
+            Slot::Band,
+            uze_contract::BandPlace::Top,
+            uze_contract::BarAlign::Left,
+        ),
+        (
+            "bottom",
+            Slot::Band,
+            uze_contract::BandPlace::Bottom,
+            uze_contract::BarAlign::Left,
+        ),
+        (
+            "left",
+            Slot::Bar,
+            uze_contract::BandPlace::Top,
+            uze_contract::BarAlign::Left,
+        ),
+        (
+            "right",
+            Slot::Bar,
+            uze_contract::BandPlace::Top,
+            uze_contract::BarAlign::Right,
+        ),
+    ] {
+        let mut decl = compiled.manifest.surfaces[0].clone();
+        decl.id = id.to_owned();
+        decl.slot = slot;
+        decl.band = Some(band(place));
+        decl.bar = Some(bar(align));
+        surfaces.push(decl);
+    }
+    compiled.manifest.surfaces = surfaces;
+    let slots: Vec<SurfaceSlot> = DeclaredExtension::new(compiled, "en")
+        .surfaces()
+        .into_iter()
+        .map(|surface| surface.slot)
+        .collect();
+    assert_eq!(
+        slots,
+        [
+            SurfaceSlot::Band {
+                rows: 2,
+                bottom: false
+            },
+            SurfaceSlot::Band {
+                rows: 2,
+                bottom: true
+            },
+            SurfaceSlot::Bar { right: false },
+            SurfaceSlot::Bar { right: true },
+        ]
+    );
+}
+
+#[test]
+fn a_composed_answer_is_checked_against_the_catalog() {
+    let compiled = extension_of(Vec::new());
+    assert_eq!(
+        validate_composed(
+            &json!({"type": "Text", "args": ["3 open"]}),
+            &compiled.manifest
+        ),
+        Ok(())
+    );
+    let refused = validate_composed(&json!({"type": "iframe"}), &compiled.manifest)
+        .expect_err("a node the catalog lacks is refused");
+    assert!(
+        refused.contains("a node the catalog does not have"),
+        "{refused}"
+    );
 }
