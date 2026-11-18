@@ -337,6 +337,134 @@ mod tests {
         );
     }
 
+    fn writing(text: &str) -> Composer {
+        let mut composer =
+            Composer::new(std::path::PathBuf::from("a.rs"), Vec::new(), String::new());
+        typed(&mut composer, text);
+        composer
+    }
+
+    fn at(composer: &Composer) -> (usize, usize) {
+        (composer.caret.line, composer.caret.column)
+    }
+
+    /// A draft opened again to edit holds its text, with the caret at its
+    /// very end.
+    #[test]
+    fn a_draft_edited_again_opens_with_the_caret_at_its_end() {
+        let composer = Composer::editing(
+            7,
+            std::path::PathBuf::from("a.rs"),
+            Vec::new(),
+            String::new(),
+            "first\nsecond",
+        );
+        assert_eq!(composer.lines, ["first", "second"]);
+        assert_eq!(at(&composer), (1, 6));
+        assert_eq!(composer.editing, Some(7));
+    }
+
+    /// Pasted text keeps its line breaks and loses its control characters.
+    #[test]
+    fn pasted_control_characters_are_left_out() {
+        let composer = writing("a\u{7}b\r\nc\u{1b}");
+        assert_eq!(composer.lines, ["ab", "c"]);
+    }
+
+    #[test]
+    fn backspace_takes_the_character_before_the_caret() {
+        let mut composer = writing("aéb");
+        composer.left();
+        composer.erase_back();
+        assert_eq!(composer.lines, ["ab"]);
+        assert_eq!(at(&composer), (0, 1));
+        composer.line_start();
+        composer.erase_back();
+        assert_eq!(composer.lines, ["ab"], "nothing before the first character");
+        assert_eq!(at(&composer), (0, 0));
+    }
+
+    #[test]
+    fn delete_takes_the_character_under_the_caret_or_joins_the_next_line() {
+        let mut composer = writing("ab\ncd\nef");
+        composer.place(1, 0);
+        composer.erase_forward();
+        assert_eq!(composer.lines, ["ab", "d", "ef"]);
+        composer.line_end();
+        composer.erase_forward();
+        assert_eq!(composer.lines, ["ab", "def"]);
+        composer.line_end();
+        composer.erase_forward();
+        assert_eq!(composer.lines, ["ab", "def"], "nothing after the last line");
+        composer.place(0, 2);
+        composer.erase_forward();
+        assert_eq!(composer.lines, ["abdef"]);
+    }
+
+    /// Left and right walk the text across its lines and stop at its ends.
+    #[test]
+    fn left_and_right_walk_across_lines_and_stop_at_the_ends() {
+        let mut composer = writing("ab\ncd");
+        composer.place(1, 0);
+        composer.left();
+        assert_eq!(at(&composer), (0, 2), "to the end of the line above");
+        composer.left();
+        assert_eq!(at(&composer), (0, 1));
+        composer.place(0, 0);
+        composer.left();
+        assert_eq!(at(&composer), (0, 0), "nothing before the start");
+        composer.place(0, 1);
+        composer.right();
+        assert_eq!(at(&composer), (0, 2));
+        composer.right();
+        assert_eq!(at(&composer), (1, 0), "to the start of the line below");
+        composer.line_end();
+        composer.right();
+        assert_eq!(at(&composer), (1, 2), "nothing after the end");
+    }
+
+    /// Up and down move a line and keep the column the line allows.
+    #[test]
+    fn up_and_down_keep_the_column_the_line_allows() {
+        let mut composer = writing("abcd\nx\nefgh");
+        composer.place(0, 3);
+        composer.down();
+        assert_eq!(at(&composer), (1, 1), "the short line's end");
+        composer.place(2, 2);
+        composer.down();
+        assert_eq!(at(&composer), (2, 2), "nothing below the last line");
+        composer.up();
+        assert_eq!(at(&composer), (1, 1));
+        composer.place(0, 2);
+        composer.up();
+        assert_eq!(at(&composer), (0, 2), "nothing above the first line");
+        composer.place(1, 0);
+        composer.up();
+        assert_eq!(at(&composer), (0, 0));
+    }
+
+    #[test]
+    fn end_goes_to_the_end_of_the_caret_line() {
+        let mut composer = writing("abc\nde");
+        composer.place(0, 1);
+        composer.line_end();
+        assert_eq!(at(&composer), (0, 3));
+    }
+
+    /// A press below the last line, or past a line's end, lands at the end
+    /// of what is written.
+    #[test]
+    fn a_place_past_the_text_lands_at_its_end() {
+        let mut composer = writing("ab\ncde");
+        composer.place(usize::MAX, usize::MAX);
+        assert_eq!(at(&composer), (1, 3));
+        composer.place(0, 0);
+        composer.place_at_cell(9, 99);
+        assert_eq!(at(&composer), (1, 3));
+        composer.place_at_cell(0, 1);
+        assert_eq!(at(&composer), (0, 1));
+    }
+
     #[test]
     fn a_fenced_block_is_drawn_as_code_and_a_backticked_span_as_inline_code() {
         let drawn = rich(
