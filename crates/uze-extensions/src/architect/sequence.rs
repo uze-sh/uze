@@ -279,7 +279,11 @@ mod tests {
         assert_eq!(arrow[bob], '┆', "the receiver's lifeline goes on");
 
         let (_, back) = find(&grid, "back");
-        assert!(back > out + 1, "time runs down the page");
+        assert_eq!(
+            back,
+            out + 3,
+            "time runs down the page, a blank row between steps"
+        );
         let arrow = &grid[back + 1];
         assert_eq!(arrow[bob], '┤', "{}", row_text(&grid, back + 1));
         assert!(
@@ -354,7 +358,10 @@ mod tests {
         assert!(grid[y + 1][alice + 2..far].iter().all(|&c| c == '─'));
         assert!(x > far + 1, "the words stand clear of the loop");
         let (_, next) = find(&grid, "next");
-        assert!(next > y + 1, "the loop takes its own rows");
+        assert!(
+            next > y + 2,
+            "the loop takes its own rows, and a blank one after"
+        );
         assert!(
             (top..=y + 1).all(|row| grid[row][alice] != ' '),
             "the lifeline is unbroken"
@@ -419,6 +426,13 @@ mod tests {
             assert_eq!(grid[row][grid[row].len() - 1], ' ', "short of the edge");
         }
         assert!(x < alice, "named at the left: {}", row_text(&grid, y));
+        let rule_starts = grid[y].iter().position(|&c| c != ' ').unwrap();
+        assert_eq!(
+            rule_starts,
+            find(&grid, "╭").0,
+            "the rule starts under the first head"
+        );
+        assert!(x > rule_starts, "the name is written on the rule");
     }
 
     #[test]
