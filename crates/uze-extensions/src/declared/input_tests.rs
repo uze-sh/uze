@@ -275,7 +275,9 @@ fn a_press_elsewhere_ends_the_typing() {
     engine.hit(VIEW, act(select.id, NodeAct::Step { forward: true }), SPACE);
     assert!(!engine.typing(VIEW));
 
+    let field = node_of(&engine, is_field, 0);
     engine.hit(VIEW, act(field.id, NodeAct::Edit), SPACE);
+    assert!(engine.typing(VIEW));
     engine.missed(VIEW, SPACE);
     assert!(!engine.typing(VIEW), "a press on nothing ends it too");
 }
