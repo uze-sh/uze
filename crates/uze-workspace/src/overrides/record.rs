@@ -739,6 +739,52 @@ mod tests {
         );
     }
 
+    /// A record a newer build wrote is left as it was, and the launch is
+    /// refused rather than written over it.
+    #[test]
+    fn a_record_a_newer_build_wrote_is_neither_set_aside_nor_written_over() {
+        let fixture = Fixture::new("overrides-newer");
+        let path = fixture.home.launches_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let newer = br#"{"schema_version": 99}"#;
+        std::fs::write(&path, newer).unwrap();
+
+        let launched = record_launch(
+            &fixture.home,
+            &fixture.here,
+            &agent("a1"),
+            "first",
+            CATALOG,
+            &crate::overrides::split("--model opus").unwrap(),
+        );
+
+        assert!(launched.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), newer, "left as it was");
+    }
+
+    #[test]
+    fn a_launch_is_remembered_as_used_when_it_was_recorded() {
+        let fixture = Fixture::new("overrides-used-at");
+        let before = uze_platform::clock::since_epoch().as_secs();
+        record_launch(
+            &fixture.home,
+            &fixture.here,
+            &agent("a1"),
+            "first",
+            CATALOG,
+            &crate::overrides::split("--model opus").unwrap(),
+        )
+        .unwrap();
+        let after = uze_platform::clock::since_epoch().as_secs();
+
+        let recent = recent_entries(&fixture.home, "first", &fixture.here);
+        let used = recent.first().expect("remembered").last_used_unix;
+        assert!(
+            (before..=after).contains(&used),
+            "{before} <= {used} <= {after}"
+        );
+    }
+
     // Unix file modes, which Windows does not keep.
     #[cfg(unix)]
     #[test]
