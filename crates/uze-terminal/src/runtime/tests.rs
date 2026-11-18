@@ -309,8 +309,9 @@ fn an_endpoint_that_cannot_exist_is_reported_at_once() {
         super::connect_waiting(&impossible),
         Err(RuntimeError::Io(_))
     ));
+    // Outlives the wait for a server to start, so only the error can end it.
     let mut starting = std::process::Command::new("sleep")
-        .arg("30")
+        .arg("300")
         .spawn()
         .unwrap();
     let answer = super::connect_starting(&impossible, &mut starting);
