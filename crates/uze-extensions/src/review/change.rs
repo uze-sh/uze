@@ -198,6 +198,133 @@ mod tests {
         assert_eq!(record.comments[0].text, "one");
     }
 
+    fn draft(id: u64, path: &str, text: &str) -> Change {
+        Change::Draft {
+            id,
+            path: path.to_owned(),
+            rows: Vec::new(),
+            excerpt: "the quoted part".to_owned(),
+            text: text.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_draft_keeps_the_excerpt_it_quotes() {
+        let mut record = ReviewRecord::default();
+        draft(1, "a.rs", "one").apply(&mut record);
+        assert_eq!(record.comments[0].excerpt, "the quoted part");
+    }
+
+    /// Two clients drafting at once can hand out the same id: the second
+    /// draft steps past the first rather than being lost, and only the
+    /// same draft laid again is a repeat.
+    #[test]
+    fn a_draft_under_an_id_another_took_steps_past_it() {
+        let mut record = ReviewRecord::default();
+        draft(1, "a.rs", "one").apply(&mut record);
+        draft(1, "a.rs", "another text").apply(&mut record);
+        draft(1, "b.rs", "one").apply(&mut record);
+        let kept: Vec<(u64, &str, &str)> = record
+            .comments
+            .iter()
+            .map(|c| (c.id, c.path.as_str(), c.text.as_str()))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                (1, "a.rs", "one"),
+                (2, "a.rs", "another text"),
+                (3, "b.rs", "one")
+            ]
+        );
+        draft(1, "a.rs", "one").apply(&mut record);
+        assert_eq!(record.comments.len(), 3, "the same draft again is a repeat");
+    }
+
+    #[test]
+    fn the_next_comment_takes_the_id_after_the_last_drafted() {
+        let mut record = ReviewRecord::default();
+        draft(5, "a.rs", "five").apply(&mut record);
+        assert_eq!(record.next_comment, 6);
+    }
+
+    #[test]
+    fn an_edit_rewrites_a_draft() {
+        let mut record = ReviewRecord::default();
+        let id = drafted(&mut record, "one");
+        Change::Edit {
+            id,
+            text: "changed".to_owned(),
+        }
+        .apply(&mut record);
+        assert_eq!(record.comments[0].text, "changed");
+    }
+
+    #[test]
+    fn a_send_takes_only_the_drafts_it_names() {
+        let mut record = ReviewRecord::default();
+        let first = drafted(&mut record, "one");
+        drafted(&mut record, "two");
+        Change::Sent {
+            ids: vec![first],
+            agent: "a1".to_owned(),
+        }
+        .apply(&mut record);
+        let statuses: Vec<CommentStatus> = record.comments.iter().map(|c| c.status).collect();
+        assert_eq!(statuses, [CommentStatus::Sent, CommentStatus::Draft]);
+    }
+
+    #[test]
+    fn a_send_of_nothing_takes_no_number() {
+        let mut record = ReviewRecord::default();
+        Change::Sent {
+            ids: vec![7],
+            agent: "a1".to_owned(),
+        }
+        .apply(&mut record);
+        let id = drafted(&mut record, "one");
+        Change::Sent {
+            ids: vec![id],
+            agent: "a1".to_owned(),
+        }
+        .apply(&mut record);
+        assert_eq!(record.comments[0].reference().as_deref(), Some("1/1"));
+    }
+
+    #[test]
+    fn resolve_puts_away_the_comment_it_names_and_only_once_sent() {
+        let mut record = ReviewRecord::default();
+        let first = drafted(&mut record, "one");
+        let second = drafted(&mut record, "two");
+        let draft = drafted(&mut record, "three");
+        Change::Sent {
+            ids: vec![first, second],
+            agent: "a1".to_owned(),
+        }
+        .apply(&mut record);
+        Change::Resolve(second).apply(&mut record);
+        Change::Resolve(draft).apply(&mut record);
+        let statuses: Vec<CommentStatus> = record.comments.iter().map(|c| c.status).collect();
+        assert_eq!(
+            statuses,
+            [
+                CommentStatus::Sent,
+                CommentStatus::Resolved,
+                CommentStatus::Draft
+            ]
+        );
+    }
+
+    #[test]
+    fn the_send_summary_counts_the_comments_and_names_no_command() {
+        let one = send_summary(1);
+        assert!(one.contains("your comment waits"), "{one}");
+        let three = send_summary(3);
+        assert!(three.contains("your 3 comments wait"), "{three}");
+        assert!(three.contains("answers each one here"), "{three}");
+        assert!(!three.contains("uze agent"), "{three}");
+    }
+
     #[test]
     fn the_send_line_is_one_line_the_bridge_takes() {
         let line = send_line(2, 3);
