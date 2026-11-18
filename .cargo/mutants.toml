@@ -443,6 +443,8 @@ exclude_re = [
   'uze-terminal/src/runtime/server\.rs.*replace Server::has_stale_client -> bool with true$',
   # A shift is never 0, since a row votes only for a row other than itself.
   'uze-terminal/src/selection\.rs.*replace > with >= in FollowedSelection::follow$',
+  # Both ends on one cell: either side order covers that cell, and a later extend reads the same anchor.
+  'uze-terminal/src/selection\.rs.*replace < with <= in spanning$',
   # Without the guard, a target equal to the one moved is found at its own index, lands where it is, and the same false is answered.
   'uze-terminal/src/state\.rs.*replace match guard before == space with false in Session::reorder_space$',
   'uze-terminal/src/state\.rs.*replace match guard before == tab with false in Session::reorder_tab$',
