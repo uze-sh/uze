@@ -1215,4 +1215,132 @@ mod tests {
         let cells = &routes.routes[0].cells;
         assert_eq!(bends(&routes.routes[0]), 0, "{cells:?}");
     }
+
+    /// The cheapest a line from `from` to `to` can cost on `grid`, found by
+    /// trying every way out, one state at a time in order of cost — the
+    /// search's answer with none of its shortcuts.
+    fn cheapest(grid: &Grid, flow: Flow, from: Frame, to: Frame, passage: Passage) -> Option<i32> {
+        use std::collections::HashMap;
+        let exit = facing(flow, from, to);
+        let entry = opposite(exit);
+        let arrival: HashMap<(i32, i32, usize), i32> = ports(to)
+            .into_iter()
+            .filter(|&(x, y, _, _)| grid.index(x, y).is_some())
+            .map(|(x, y, side, off)| ((x, y, opposite(side)), side_cost(side, entry) + off))
+            .collect();
+        let mut open = BinaryHeap::new();
+        for (x, y, side, off) in ports(from) {
+            if let Some(cost) = grid.entering(x, y, side, passage) {
+                open.push(Reverse((
+                    cost + side_cost(side, exit) + off,
+                    x,
+                    y,
+                    side,
+                    true,
+                )));
+            }
+        }
+        let mut settled: HashMap<(i32, i32, usize), ()> = HashMap::new();
+        let mut answer: Option<i32> = None;
+        while let Some(Reverse((cost, x, y, heading, first))) = open.pop() {
+            if answer.is_some_and(|known| cost >= known) {
+                break;
+            }
+            if settled.insert((x, y, heading), ()).is_some() {
+                continue;
+            }
+            if let Some(&last) = arrival.get(&(x, y, heading)) {
+                answer = Some(answer.map_or(cost + last, |known| known.min(cost + last)));
+            }
+            let index = grid.index(x, y).unwrap();
+            for (next, (dx, dy)) in HEADINGS.iter().enumerate() {
+                let turning = next != heading;
+                if next == opposite(heading)
+                    || (turning && (first || !grid.may_turn(index, passage)))
+                {
+                    continue;
+                }
+                if let Some(step) = grid.entering(x + dx, y + dy, next, passage) {
+                    let total = cost + step + if turning { TURN } else { 0 };
+                    open.push(Reverse((total, x + dx, y + dy, next, false)));
+                }
+            }
+        }
+        answer
+    }
+
+    /// What `cells` cost as a line from `from` to `to` on `grid`.
+    fn cost_of(
+        grid: &Grid,
+        flow: Flow,
+        from: Frame,
+        to: Frame,
+        passage: Passage,
+        cells: &[(i32, i32, usize)],
+    ) -> i32 {
+        let exit = facing(flow, from, to);
+        let (x, y, heading) = cells[0];
+        let off = ports(from)
+            .into_iter()
+            .find(|&(px, py, side, _)| (px, py, side) == (x, y, heading))
+            .expect("it leaves by a port")
+            .3;
+        let mut cost =
+            grid.entering(x, y, heading, passage).unwrap() + side_cost(heading, exit) + off;
+        for pair in cells.windows(2) {
+            let ((_, _, before), (x, y, heading)) = (pair[0], pair[1]);
+            cost += grid.entering(x, y, heading, passage).unwrap();
+            if heading != before {
+                cost += TURN;
+            }
+        }
+        let &(x, y, heading) = cells.last().unwrap();
+        let (_, _, side, off) = ports(to)
+            .into_iter()
+            .find(|&(px, py, side, _)| (px, py, opposite(side)) == (x, y, heading))
+            .expect("it arrives by a port");
+        cost + side_cost(side, opposite(exit)) + off
+    }
+
+    /// Every edge of each diagram is drawn the cheapest way there is, given
+    /// the lines already drawn before it.
+    #[test]
+    fn every_line_takes_the_cheapest_way_there_is() {
+        for source in [
+            TANGLE,
+            FAN,
+            "flowchart LR\n a --> b & c\n d --> b\n c --> d\n e --> a",
+            "flowchart TD\n a --> m --> z\n a --> z\n subgraph region [Region]\n m\n end",
+            "flowchart TD\n subgraph r [R]\n a[A wide box] --> b\n c\n end\n d --> c\n b --> d",
+        ] {
+            let graph = graph_of(source);
+            let placement = layout::place(&graph);
+            let mut grid = Grid::new(&graph, &placement);
+            let mut search = Search::new(grid.blocked.len() * 4);
+            for edge in &graph.edges {
+                if edge.from == edge.to {
+                    continue;
+                }
+                let ends = (edge.from, edge.to);
+                let passage = Passage {
+                    ends,
+                    inside: regions_of(&graph, ends.0) | regions_of(&graph, ends.1),
+                };
+                let (from, to) = (placement.nodes[ends.0], placement.nodes[ends.1]);
+                let wanted = cheapest(&grid, graph.flow, from, to, passage);
+                let found = shortest(&grid, &mut search, graph.flow, from, to, passage);
+                let cost = found
+                    .as_ref()
+                    .map(|cells| cost_of(&grid, graph.flow, from, to, passage, cells));
+                assert_eq!(cost, wanted, "{source}: {ends:?}");
+                for (position, &(x, y, heading)) in found.iter().flatten().enumerate() {
+                    let index = grid.index(x, y).unwrap();
+                    grid.claim(index, heading, ends);
+                    if let Some(&(_, _, leaving)) = found.as_ref().unwrap().get(position + 1) {
+                        grid.claim(index, leaving, ends);
+                    }
+                }
+            }
+        }
+    }
 }
