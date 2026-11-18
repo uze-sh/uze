@@ -1588,4 +1588,66 @@ mod tests {
         map.pick_toward(PanDirection::Down, space);
         assert_eq!(map.picked, middle, "{tiles:?}");
     }
+    fn labelled(name: &str, changed: bool, frame: Frame) -> Vec<String> {
+        let tile = Tile {
+            frame,
+            kind: TileKind::File,
+            path: name.to_owned(),
+            name: name.to_owned(),
+            lines: 10,
+            files: 1,
+            commits: 0,
+            changed,
+            heat: Heat::Touched,
+        };
+        let mut canvas = Canvas::new(frame.w + 6, frame.h, Glyphs::Unicode);
+        label(&mut canvas, &tile, frame, false);
+        canvas
+            .to_text()
+            .lines()
+            .map(|row| row.trim_end().to_owned())
+            .collect()
+    }
+
+    /// A box as small as a name allows still says it, cut to its room; one
+    /// any narrower or shorter says nothing rather than spill over its
+    /// border.
+    #[test]
+    fn a_name_is_written_only_where_a_box_has_room_for_it() {
+        let at = |w, h| Frame { x: 0, y: 0, w, h };
+        assert_eq!(labelled("main.rs", false, at(20, 3))[1].trim(), "main.rs");
+        assert_eq!(
+            labelled("main.rs", false, at(7, 3))[1].chars().count(),
+            2 + 3
+        );
+        assert!(
+            labelled("main.rs", false, at(6, 3))
+                .iter()
+                .all(|row| row.trim().is_empty())
+        );
+        assert!(
+            labelled("main.rs", false, at(20, 2))
+                .iter()
+                .all(|row| row.trim().is_empty())
+        );
+    }
+
+    /// A changed file's mark stays inside the box: the name gives way to
+    /// it.
+    #[test]
+    fn the_changed_mark_is_kept_and_the_name_cut_for_it() {
+        let row = labelled(
+            "abcdefghijkl.rs",
+            true,
+            Frame {
+                x: 0,
+                y: 0,
+                w: 12,
+                h: 3,
+            },
+        )[1]
+        .clone();
+        assert!(row.ends_with('●'), "{row}");
+        assert_eq!(row.chars().count(), 2 + 8, "{row}");
+    }
 }
