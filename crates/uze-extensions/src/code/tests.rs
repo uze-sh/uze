@@ -4581,3 +4581,89 @@ fn esc_on_the_delete_question_cancels_it() {
         Some("delete cancelled")
     );
 }
+
+/// Up in the menu steps the highlight back and leaves the menu open.
+#[test]
+fn the_rows_menu_highlight_steps_back_and_stays_open() {
+    let (mut view, _machine) = tree_fixture();
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectPrevious);
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(1));
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
+    );
+}
+
+/// A click on an entry picks it; the pointer past the last entry lights
+/// nothing.
+#[test]
+fn a_click_on_a_menu_entry_picks_it_and_past_the_last_lights_nothing() {
+    let (mut view, _machine) = tree_fixture();
+    press(&mut view, Command::OpenMenu);
+    let entries = menu_of(&view).expect("open").1.len();
+    assert!(!handle_hover(&mut view, Some(ViewHit::MenuEntry(entries))));
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(0));
+    assert_eq!(
+        handle_mouse(&mut view, Some(ViewHit::MenuEntry(1)), space()),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
+    );
+    assert!(menu_of(&view).is_none());
+}
+
+/// The rename dialog's buttons answer it: one renames what was typed, the
+/// other leaves it; a click anywhere else does neither.
+#[test]
+fn the_rename_dialogs_buttons_rename_or_leave() {
+    let machine = FakeMachine::default().with_file("/w/main.rs", "\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/main.rs"));
+
+    pick_from_menu(&mut view, 2);
+    type_text(&mut view, "x");
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    assert!(view.typing(), "still open");
+    handle_mouse(&mut view, Some(ViewHit::Answer(false)), space());
+    assert!(!view.typing());
+    assert!(view.peek_request().is_none());
+
+    pick_from_menu(&mut view, 2);
+    type_text(&mut view, "x");
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
+    assert!(!view.typing());
+    assert_eq!(
+        view.peek_request(),
+        Some(&FileRequest::Rename {
+            root: PathBuf::from("/w"),
+            from: PathBuf::from("/w/main.rs"),
+            to: PathBuf::from("/w/main.rsx"),
+        })
+    );
+}
+
+/// No name at all, and the names a directory already answers to, are
+/// refused where they are typed.
+#[test]
+fn a_rename_refuses_no_name_and_the_directorys_own_names() {
+    let machine = FakeMachine::default().with_file("/w/a", "\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/a"));
+
+    for typed in ["", ".", ".."] {
+        pick_from_menu(&mut view, 2);
+        press(&mut view, Command::EraseBack);
+        type_text(&mut view, typed);
+        press(&mut view, Command::Newline);
+        assert!(view.typing(), "{typed:?} leaves the dialog open");
+        assert_eq!(
+            view.notice.as_ref().map(|notice| notice.role),
+            Some(Role::Warning)
+        );
+        assert!(view.peek_request().is_none(), "{typed:?}");
+        press(&mut view, Command::Close);
+    }
+}
