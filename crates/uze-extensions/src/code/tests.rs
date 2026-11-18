@@ -2564,8 +2564,8 @@ fn a_folded_directory_stays_folded_when_the_surface_is_opened_again() {
 
 mod hosted {
     use super::*;
-    use crate::contract::{Checkout, Entry, Extension, Opaque, Outcome};
-    use crate::view::Layout;
+    use crate::contract::{Checkout, Entry, Extension, Lanes, Opaque, Outcome, SurfaceSlot};
+    use crate::view::{Layout, ScrollTarget};
 
     fn checkout(root: &str) -> Checkout {
         Checkout {
@@ -3158,6 +3158,240 @@ mod hosted {
         assert!(
             extension.section(TIMELINE, false).is_none(),
             "and none in front"
+        );
+    }
+
+    /// What each of `extension`'s jobs answers, run against `host`.
+    fn answers(extension: &mut CodeExtension, host: &dyn Host) -> Vec<Opaque> {
+        extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(host))
+            .collect()
+    }
+
+    fn asks_for_the_branch(extension: &mut CodeExtension, host: &dyn Host) -> bool {
+        answers(extension, host)
+            .into_iter()
+            .any(|answer| answer.downcast::<BranchRead>().is_some())
+    }
+
+    /// The extension is the code surface and the timeline section, known
+    /// to the host by the catalog's id.
+    #[test]
+    fn the_extension_offers_the_code_surface_and_the_timeline() {
+        let extension = CodeExtension::default();
+        assert_eq!(extension.identity(), "code");
+        let surfaces: Vec<(String, SurfaceSlot)> = extension
+            .surfaces()
+            .into_iter()
+            .map(|surface| (surface.id, surface.slot))
+            .collect();
+        assert_eq!(
+            surfaces,
+            [
+                (SURFACE.to_owned(), SurfaceSlot::View),
+                (TIMELINE.to_owned(), SurfaceSlot::Section)
+            ]
+        );
+        assert_eq!(
+            extension.lanes(),
+            Lanes::Parallel,
+            "a listing goes alongside the read before it"
+        );
+    }
+
+    /// An open surface is drawn; the section is not a view.
+    #[test]
+    fn only_the_open_surface_is_drawn_as_a_view() {
+        let extension = opened(FILES, "/w");
+        assert!(extension.view(SURFACE, space()).is_some());
+        assert!(extension.view(TIMELINE, space()).is_none());
+        assert!(CodeExtension::default().view(SURFACE, space()).is_none());
+    }
+
+    /// The branch read for the checkout on show names it; one read for
+    /// another checkout does not.
+    #[test]
+    fn the_branch_read_for_the_checkout_on_show_is_its_caption() {
+        let mut extension = opened(FILES, "/w");
+        extension.absorb(Opaque::new(BranchRead {
+            root: PathBuf::from("/elsewhere"),
+            branch: "other".to_owned(),
+        }));
+        assert_eq!(extension.code_view().unwrap().branch, "");
+        extension.absorb(Opaque::new(BranchRead {
+            root: PathBuf::from("/w"),
+            branch: "feature".to_owned(),
+        }));
+        assert_eq!(extension.code_view().unwrap().branch, "feature");
+    }
+
+    /// Every opening asks which branch the checkout is on, once.
+    #[test]
+    fn each_opening_asks_for_the_branch_once() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+        let mut extension = opened(FILES, "/w");
+        assert!(asks_for_the_branch(&mut extension, &machine));
+        assert!(!asks_for_the_branch(&mut extension, &machine), "once");
+        extension.close(SURFACE);
+        extension.open(SURFACE, &checkout("/w"));
+        assert!(
+            asks_for_the_branch(&mut extension, &machine),
+            "asked again on the next opening"
+        );
+    }
+
+    /// A checkout found unmeasurable says so on the surface showing it.
+    #[test]
+    fn an_unmeasurable_checkout_is_said_on_its_own_surface() {
+        let mut extension = opened(FILES, "/repo");
+        extension.absorb(Opaque::new(MeasureRead {
+            root: PathBuf::from("/elsewhere"),
+            measure: None,
+        }));
+        assert!(!extension.code_view().unwrap().unmeasurable());
+        extension.absorb(Opaque::new(MeasureRead {
+            root: PathBuf::from("/repo"),
+            measure: None,
+        }));
+        assert!(extension.code_view().unwrap().unmeasurable());
+    }
+
+    /// A door this surface does not have does nothing to it.
+    #[test]
+    fn a_door_the_surface_does_not_have_changes_nothing() {
+        let mut extension = opened(FILES, "/w");
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door("elsewhere".to_owned())),
+            Outcome::Stay
+        );
+        assert_eq!(extension.code_view().unwrap().showing(), ContentMode::Map);
+    }
+
+    /// The wheel over the content scrolls it and the scrollbar places it;
+    /// the wheel over the list is the host's.
+    #[test]
+    fn the_wheel_and_the_scrollbar_reach_the_content_only() {
+        let mut extension = opened(FILES, "/w");
+        extension.scroll(
+            SURFACE,
+            ScrollTarget::Navigator,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert_eq!(extension.code_view().unwrap().scroll, 0);
+        extension.scroll(
+            SURFACE,
+            ScrollTarget::Content,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert_eq!(extension.code_view().unwrap().scroll, 3);
+        extension.scroll_to(SURFACE, 7, space());
+        assert_eq!(extension.code_view().unwrap().scroll, 7);
+    }
+
+    /// The pointer over the row menu lights its entry, and a click off the
+    /// surface shuts the menu.
+    #[test]
+    fn the_pointer_and_a_click_off_the_surface_reach_the_menu() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        extension.command(SURFACE, Command::OpenMenu, space());
+        assert!(extension.hover(SURFACE, Some(ViewHit::MenuEntry(1))));
+        assert!(!extension.hover(SURFACE, Some(ViewHit::MenuEntry(1))));
+        assert!(extension.code_view().unwrap().menu.is_some());
+        extension.missed(SURFACE, space());
+        assert!(extension.code_view().unwrap().menu.is_none());
+    }
+
+    /// Unsaved work kept over a return comes back on the half it was
+    /// left on: only a door says which half.
+    #[test]
+    fn unsaved_work_returned_to_comes_back_on_its_own_half() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        view.content = ContentMode::Map;
+        view.before_map = ContentMode::Contents;
+        extension.close(SURFACE);
+
+        extension.enter(SURFACE, Entry::Return);
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().unwrap();
+        assert!(view.has_unsaved(), "the kept surface");
+        assert_eq!(view.showing(), ContentMode::Map);
+    }
+
+    /// The history is read again for the checkout moved to, once the read
+    /// before it has answered.
+    #[test]
+    fn moving_to_another_checkout_reads_its_history() {
+        let machine = FakeMachine::default();
+        let mut extension = CodeExtension::default();
+        extension.focus(Some(&checkout("/one")));
+        let reads = answers(&mut extension, &machine);
+        assert_eq!(reads.len(), 1);
+        for read in reads {
+            extension.absorb(read);
+        }
+        assert!(answers(&mut extension, &machine).is_empty(), "fresh");
+        extension.focus(Some(&checkout("/two")));
+        let reads: Vec<PathBuf> = answers(&mut extension, &machine)
+            .into_iter()
+            .filter_map(|answer| answer.downcast::<TimelineRead>())
+            .map(|read| read.cwd)
+            .collect();
+        assert_eq!(reads, [PathBuf::from("/two")]);
+    }
+
+    /// A delete or a rename that failed after the surface closed is said
+    /// all the same, naming what it was about.
+    #[test]
+    fn a_delete_or_rename_that_failed_after_the_surface_closed_is_still_said() {
+        let mut extension = opened(FILES, "/w");
+        extension.close(SURFACE);
+        let deleted = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: FileAnswer::Deleted {
+                path: PathBuf::from("/w/a.rs"),
+                outcome: Err("busy".to_owned()),
+            },
+        }));
+        assert_eq!(
+            deleted,
+            Outcome::Failed {
+                title: "delete failed".to_owned(),
+                detail: "a.rs: busy".to_owned(),
+            }
+        );
+        let renamed = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: FileAnswer::Renamed {
+                from: PathBuf::from("/w/b.rs"),
+                to: PathBuf::from("/w/c.rs"),
+                outcome: Err("busy".to_owned()),
+            },
+        }));
+        assert_eq!(
+            renamed,
+            Outcome::Failed {
+                title: "rename failed".to_owned(),
+                detail: "b.rs: busy".to_owned(),
+            }
         );
     }
 }
