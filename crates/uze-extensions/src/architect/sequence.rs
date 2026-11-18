@@ -307,6 +307,11 @@ mod tests {
             "centred over the line: {}",
             row_text(&grid, y)
         );
+        assert!(
+            (x - alice - 1) + (bob - end) <= 5,
+            "the columns stand no further apart than the label needs: {}",
+            row_text(&grid, y)
+        );
     }
 
     #[test]
@@ -339,9 +344,11 @@ mod tests {
 
     #[test]
     fn a_message_to_itself_loops_out_and_back_with_its_words_beside_the_loop() {
-        let grid = grid(&drawn(&format!("{TWO} A->>A: think\n A->>B: next")));
+        let grid = grid(&drawn(&format!(
+            "{TWO} A->>A: think about it at some length\n A->>B: next"
+        )));
         let alice = lifeline(&grid, "Alice");
-        let (x, y) = find(&grid, "think");
+        let (x, y) = find(&grid, "think about it at some length");
         let top = y - 1;
         assert_eq!(grid[top][alice], '├', "{}", row_text(&grid, top));
         let far = (alice + 1..x)
@@ -357,6 +364,11 @@ mod tests {
         );
         assert!(grid[y + 1][alice + 2..far].iter().all(|&c| c == '─'));
         assert!(x > far + 1, "the words stand clear of the loop");
+        let bob = lifeline(&grid, "Bob");
+        assert!(
+            x + "think about it at some length".len() < bob,
+            "the next lifeline stands clear of the words"
+        );
         let (_, next) = find(&grid, "next");
         assert!(
             next > y + 2,
@@ -499,5 +511,26 @@ mod tests {
             (1..=3).contains(&below),
             "{below} rows of lifeline below the last step"
         );
+    }
+
+    #[test]
+    fn heads_with_nothing_long_between_them_are_packed_side_by_side() {
+        let grid = grid(&drawn(
+            "sequenceDiagram\n participant A as A\n participant B as A participant with a long name\n \
+             participant C as C\n A->>B: hi\n B->>C: hi",
+        ));
+        let mut borders: Vec<(usize, usize)> = Vec::new();
+        for title in ["A", "A participant with a long name", "C"] {
+            let framed = format!("│ {title} │");
+            let (x, _) = find(&grid, &framed);
+            borders.push((x, x + framed.chars().count() - 1));
+        }
+        for pair in borders.windows(2) {
+            let blank = pair[1].0 - pair[0].1 - 1;
+            assert!(
+                (2..=5).contains(&blank),
+                "{blank} columns between heads: {borders:?}"
+            );
+        }
     }
 }
