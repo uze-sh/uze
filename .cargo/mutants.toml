@@ -336,6 +336,13 @@ exclude_re = [
   'uze-extensions/src/architect/extension\.rs.*replace <impl Extension for ArchitectExtension>::drags -> bool with true$',
   # A rank already one past its source is set to that same value again: only a bounded pass more.
   'uze-extensions/src/architect/layout\.rs.*replace < with <= in rank_by_longest_path$',
+  # uze-extensions architect2
+  # A cell's sides are one bit each, so or-ing two different sides is xor-ing them; a line never names one side twice, as it never turns back and crosses a wall only square on.
+  'uze-extensions/src/architect/(paint|sequence)\.rs.*replace \| with \^ in (paint|paint_node|write_inline|write_beside|message|self_message)$',
+  # `message` joins two different lifelines, which never share a column, so `to == from` never reaches it.
+  'uze-extensions/src/architect/sequence\.rs.*replace > with >= in message$',
+  # A gap already as wide as the message needs is widened by nothing.
+  'uze-extensions/src/architect/sequence\.rs.*replace < with <= in centres$',
   # uze-extensions engine
   # A default answered as `Vec::new()` is the `vec![]` the mutant puts back.
   'uze-extensions/src/contract\.rs.*replace Extension::(requests|notifications|text|watches|jobs) -> Vec<\w+> with vec!\[\]$',

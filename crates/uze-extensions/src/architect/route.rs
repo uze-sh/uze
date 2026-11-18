@@ -1010,8 +1010,14 @@ mod tests {
         );
         let (x, y) = open_ground(&grid);
         let open = grid.entering(x, y, 1, OUTSIDE).unwrap();
+        // A member pays nothing for standing in its region, so what is
+        // left is the wall alone.
+        let member = Passage {
+            ends: (100, 101),
+            inside: u64::MAX,
+        };
         let across = grid
-            .entering(wall.x, wall.y + wall.h / 2, 1, OUTSIDE)
+            .entering(wall.x, wall.y + wall.h / 2, 1, member)
             .unwrap();
         assert!(across > open, "{across} > {open}");
     }
