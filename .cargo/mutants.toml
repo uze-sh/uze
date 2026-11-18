@@ -491,4 +491,17 @@ exclude_re = [
   'uze-extensions/src/shared/highlight\.rs.*replace \|\| with && in vendored_fence_grammar$',
   # The bundled TOML grammar lists these four lockfiles by name, and a lookup by name comes before the lockfile rule.
   'uze-extensions/src/shared/highlight\.rs.*delete match arm "Cargo\.lock" \| "poetry\.lock" \| "uv\.lock" \| "pdm\.lock" in lockfile_language$',
+  # uze-extensions shared2
+  # An item always ends right before the next item starts or its list ends, and both flush the line.
+  'uze-extensions/src/shared/markdown\.rs.*delete match arm TagEnd::Item in Document::end$',
+  # Outside a quote the mark is `│ ` repeated zero times: an empty span, which draws nothing.
+  'uze-extensions/src/shared/markdown\.rs.*replace > with >= in Document::push$',
+  # `parse` refuses every non-digit but a leading `+`, and no record is named `ADR+0001`.
+  'uze-extensions/src/spec/decision\.rs.*replace && with \|\| in record_number$',
+  # No shipped dialect's pattern ends in a bare `*`.
+  'uze-extensions/src/spec/dialect\.rs.*replace > with >= in classify$',
+  # A summary aged SUMMARY_REFRESH to the nanosecond.
+  'uze-extensions/src/spec/extension\.rs.*replace < with <= in SpecExtension::counted_fresh$',
+  # Only whether the read and the count queue behind each other, never what they answer.
+  'uze-extensions/src/spec/extension\.rs.*replace <impl Extension for SpecExtension>::lanes -> crate::contract::Lanes with Default::default\(\)$',
 ]
