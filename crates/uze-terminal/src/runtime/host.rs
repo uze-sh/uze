@@ -109,11 +109,11 @@ mod tests {
     #[test]
     fn an_empty_uze_shell_is_the_persons_own_shell() {
         let mut env = uze_testkit::env::scope();
+        // Only ever set to empty: a pane another test starts meanwhile
+        // reads it too, and empty is what it would get anyway.
         env.set("UZE_SHELL", "");
         assert_eq!(default_shell(), uze_platform::shell::interactive());
         assert!(!default_shell().is_empty());
-        env.set("UZE_SHELL", "chosen-shell");
-        assert_eq!(default_shell(), "chosen-shell");
     }
 
     /// A server started with no terminal of its own still tells a pane's

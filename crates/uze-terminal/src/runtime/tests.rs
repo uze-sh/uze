@@ -5447,8 +5447,8 @@ fn a_client_lands_in_the_space_it_creates_and_in_the_space_of_a_tab_it_selects()
 
 /// A client's scroll moves the pane's view, its selection selects the
 /// pane's text, and the pane's output reaches it as damage.
-// Unix only: `cat` as the pane's shell prints nothing until it is typed
-// to, so the text fed to the pane is all it shows.
+// Unix only: `sleep` in the pane prints nothing, so the text fed to the
+// pane is all it shows.
 #[cfg(unix)]
 #[test]
 fn a_client_scrolls_and_selects_in_a_pane_and_is_sent_its_output() {
@@ -5459,7 +5459,7 @@ fn a_client_scrolls_and_selects_in_a_pane_and_is_sent_its_output() {
         std::fs::create_dir_all(directory).unwrap();
     }
     let mut env = uze_testkit::env::scope();
-    env.set("UZE_HOME", &uze_home).set("UZE_SHELL", "cat");
+    env.set("UZE_HOME", &uze_home);
     let (server, damage) = Server::new(
         seat_at(&project),
         Palette::default(),
@@ -5468,12 +5468,30 @@ fn a_client_scrolls_and_selects_in_a_pane_and_is_sent_its_output() {
     .unwrap();
     let server = Arc::new(server);
     super::spawn_damage_broadcaster(Arc::clone(&server), damage);
+    let shell = server.session.lock().unwrap().selected_tab().pane.id;
+
+    let (mut writer, mut reader, serving) = client_of(&server);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::CreateTab {
+            space: None,
+            label: "quiet".into(),
+            agent: None,
+            columns: 80,
+            rows: 24,
+            cwd: Some(project.clone()),
+            command: Some(vec!["sleep".into(), "30".into()]),
+            env: Vec::new(),
+        },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, shell);
     let pane = server.session.lock().unwrap().selected_tab().pane.id;
+    assert_ne!(pane, shell);
     let runtime = server.runtime(pane).expect("the pane runs");
     let lines: String = (0..60).map(|line| format!("line {line}\r\n")).collect();
     draw(&runtime, format!("hello\r\n{lines}").as_bytes());
 
-    let (mut writer, mut reader, serving) = client_of(&server);
     send_request(
         &mut writer,
         &crate::ClientRequest::Input {
