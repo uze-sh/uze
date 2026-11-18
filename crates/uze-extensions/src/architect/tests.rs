@@ -1428,6 +1428,36 @@ fn the_check_notes_where_a_view_departs_from_c4_notation() {
     assert_eq!(notes.len(), 6, "{notes:?}");
 }
 
+#[test]
+fn the_check_names_the_level_above_a_view_zooms_into_when_none_draws_its_scope() {
+    let containers = notes_of(
+        vec![(
+            "shop.mmd",
+            "---\ntitle: Shop\n---\nC4Container\n\
+             System_Boundary(shop, \"Shop\") {\n\
+             Container(api, \"API\", \"Rust\", \"Serves\")\n}\n",
+        )],
+        "shop.mmd",
+    );
+    assert_eq!(
+        containers,
+        ["the view zooms into `shop`, which no view draws as a system in a context view"]
+    );
+    let components = notes_of(
+        vec![(
+            "api.mmd",
+            "---\ntitle: API\n---\nC4Component\n\
+             Container_Boundary(api, \"API\") {\n\
+             Component(router, \"Router\", \"Rust\", \"Routes\")\n}\n",
+        )],
+        "api.mmd",
+    );
+    assert_eq!(
+        components,
+        ["the view zooms into `api`, which no view draws as a container in a container view"]
+    );
+}
+
 /// The repository's own C4 views are the model's example: they are held
 /// to no notes at all.
 #[test]

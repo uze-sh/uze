@@ -355,3 +355,150 @@ fn normal(path: &Path) -> PathBuf {
         .filter(|component| *component != Component::CurDir)
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::architect::{mermaid, model::Diagram};
+
+    fn graph(source: &str) -> Graph {
+        match mermaid::parse(source).expect("the diagram parses") {
+            Diagram::Graph(graph) => graph,
+            Diagram::Sequence(_) => panic!("expected a graph"),
+        }
+    }
+
+    /// The tree read off `files`, each a view at its path in the project.
+    fn zoom_of(files: &[(&str, &str)]) -> Zoom {
+        let graphs: Vec<Graph> = files.iter().map(|(_, source)| graph(source)).collect();
+        let views: Vec<Option<Viewed<'_>>> = graphs
+            .iter()
+            .zip(files)
+            .map(|(graph, (path, _))| {
+                Some(Viewed {
+                    graph,
+                    path: PathBuf::from(path),
+                })
+            })
+            .collect();
+        Zoom::of(&views, Path::new("project"))
+    }
+
+    #[test]
+    fn a_context_with_one_system_of_its_own_is_that_systems_context() {
+        let zoom = zoom_of(&[(
+            "context.mmd",
+            "C4Context\nSystem(shop, \"Shop\")\nSystem_Ext(bank, \"Bank\")\nRel(shop, bank, \"Pays\")",
+        )]);
+        assert_eq!(zoom.place(0), Some(Place::Context));
+        assert_eq!(zoom.scope(0), Some("shop"));
+    }
+
+    #[test]
+    fn a_context_with_no_system_of_its_own_or_an_enterprise_is_a_landscape() {
+        let zoom = zoom_of(&[
+            ("bare.mmd", "C4Context\nSystem_Ext(bank, \"Bank\")"),
+            (
+                "enterprise.mmd",
+                "C4Context\nEnterprise_Boundary(corp, \"Corp\") {\nSystem(shop, \"Shop\")\n}",
+            ),
+        ]);
+        assert_eq!(zoom.place(0), Some(Place::Landscape));
+        assert_eq!(zoom.place(1), Some(Place::Landscape));
+    }
+
+    #[test]
+    fn a_deployment_view_takes_the_deployment_place() {
+        let zoom = zoom_of(&[(
+            "deployment.mmd",
+            "C4Deployment\nDeployment_Node(host, \"Laptop\", \"Linux\") {\nContainer(api, \"API\")\n}",
+        )]);
+        assert_eq!(zoom.place(0), Some(Place::Deployment));
+    }
+
+    #[test]
+    fn a_view_zooms_into_the_system_it_is_drawn_inside_even_with_no_view_above() {
+        let zoom = zoom_of(&[(
+            "containers.mmd",
+            "C4Container\nContainer_Boundary(web, \"Web\") {\nContainer(page, \"Page\")\n}\n\
+             System_Boundary(shop, \"Shop\") {\nContainer(api, \"API\")\n}",
+        )]);
+        assert_eq!(zoom.parent(0), None);
+        assert_eq!(zoom.scope(0), Some("shop"), "the system, not the container");
+    }
+
+    #[test]
+    fn a_plain_boundary_bounds_what_its_type_names() {
+        let zoom = zoom_of(&[
+            (
+                "system.mmd",
+                "C4Container\nBoundary(shop, \"Shop\", \"Software System\") {\nContainer(api, \"API\")\n}",
+            ),
+            (
+                "container.mmd",
+                "C4Component\nBoundary(api, \"API\", \"container\") {\nComponent(router, \"Router\")\n}",
+            ),
+            (
+                "team.mmd",
+                "C4Container\nBoundary(people, \"People\", \"team\") {\nContainer(api, \"API\")\n}",
+            ),
+        ]);
+        assert_eq!(zoom.scope(0), Some("shop"));
+        assert_eq!(zoom.scope(1), Some("api"));
+        assert_eq!(zoom.scope(2), None);
+    }
+
+    #[test]
+    fn a_box_leads_only_into_the_views_drawn_inside_it() {
+        let zoom = zoom_of(&[
+            (
+                "landscape.mmd",
+                "C4Context\nSystem(shop, \"Shop\")\nSystem(blog, \"Blog\")",
+            ),
+            (
+                "shop.mmd",
+                "C4Container\nSystem_Boundary(shop, \"Shop\") {\nContainer(api, \"API\")\n}",
+            ),
+            (
+                "blog.mmd",
+                "C4Container\nSystem_Boundary(blog, \"Blog\") {\nContainer(cms, \"CMS\")\n}",
+            ),
+        ]);
+        assert_eq!(zoom.place(0), Some(Place::Landscape));
+        assert_eq!(zoom.inside(0, "shop"), vec![1]);
+        assert_eq!(zoom.inside(0, "blog"), vec![2]);
+    }
+
+    #[test]
+    fn a_link_from_a_view_to_itself_leaves_the_way_in_to_the_view_that_links_to_it() {
+        let zoom = zoom_of(&[
+            (
+                "containers.mmd",
+                "C4Container\nContainer(api, \"API\", \"Rust\", \"Serves\", $link=\"containers.mmd\")",
+            ),
+            (
+                "context.mmd",
+                "C4Context\nSystem(shop, \"Shop\", \"Sells\", $link=\"containers.mmd\")",
+            ),
+        ]);
+        assert_eq!(zoom.parent(0), Some(1));
+        assert_eq!(zoom.through(0), Some("shop"));
+    }
+
+    #[test]
+    fn a_view_two_links_lead_into_keeps_the_first_way_in() {
+        let zoom = zoom_of(&[
+            (
+                "first.mmd",
+                "C4Context\nSystem(shop, \"Shop\", \"Sells\", $link=\"containers.mmd\")",
+            ),
+            (
+                "second.mmd",
+                "C4Context\nSystem(store, \"Store\", \"Sells\", $link=\"containers.mmd\")",
+            ),
+            ("containers.mmd", "C4Container\nContainer(api, \"API\")"),
+        ]);
+        assert_eq!(zoom.parent(2), Some(0));
+        assert_eq!(zoom.through(2), Some("shop"));
+    }
+}
