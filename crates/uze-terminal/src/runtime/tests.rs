@@ -966,6 +966,9 @@ fn a_programs_query_is_answered_on_its_terminal() {
 
 #[test]
 fn damage_since_last_is_sparse_after_a_small_change() {
+    // The pane starts the default shell, which reads `UZE_SHELL`: hold the
+    // environment still while it does, as other tests point it elsewhere.
+    let _env = uze_testkit::env::scope();
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(9),
@@ -1006,6 +1009,9 @@ fn damage_since_last_is_sparse_after_a_small_change() {
 
 #[test]
 fn pane_process_keeps_output_until_explicit_stop() {
+    // The pane starts the default shell, which reads `UZE_SHELL`: hold the
+    // environment still while it does, as other tests point it elsewhere.
+    let _env = uze_testkit::env::scope();
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
