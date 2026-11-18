@@ -185,3 +185,248 @@ fn self_message(canvas: &mut Canvas, at: i32, y: i32, text: &str, stroke: Stroke
     );
     canvas.text(far + 2, y + 1, text, Role::Secondary, false);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::architect::{mermaid, model::Diagram};
+
+    fn drawn(source: &str) -> Canvas {
+        match mermaid::parse(source).expect("the diagram parses") {
+            Diagram::Sequence(sequence) => paint(&sequence, Glyphs::Unicode),
+            Diagram::Graph(_) => panic!("expected a sequence"),
+        }
+    }
+
+    /// The drawing as rows of glyphs, every column kept.
+    fn grid(canvas: &Canvas) -> Vec<Vec<char>> {
+        (0..canvas.height)
+            .map(|y| {
+                (0..canvas.width)
+                    .map(|x| canvas.cell(x, y).map_or(' ', |cell| cell.glyph))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn row_text(grid: &[Vec<char>], y: usize) -> String {
+        grid[y].iter().collect()
+    }
+
+    /// Where `text` first appears, as (column, row).
+    fn find(grid: &[Vec<char>], text: &str) -> (usize, usize) {
+        let wanted: Vec<char> = text.chars().collect();
+        for (y, row) in grid.iter().enumerate() {
+            if let Some(x) = row
+                .windows(wanted.len())
+                .position(|w| w == wanted.as_slice())
+            {
+                return (x, y);
+            }
+        }
+        panic!("`{text}` is not drawn");
+    }
+
+    /// The column a participant's lifeline runs down: the middle of the
+    /// head its title is framed in.
+    fn lifeline(grid: &[Vec<char>], title: &str) -> usize {
+        let framed = format!("│ {title} │");
+        let (x, y) = find(grid, &framed);
+        assert_eq!(y, 1, "a head is on top");
+        x + framed.chars().count() / 2
+    }
+
+    const TWO: &str = "sequenceDiagram\n participant A as Alice\n participant B as Bob\n";
+
+    #[test]
+    fn every_participant_heads_a_column_and_its_lifeline_runs_to_the_foot() {
+        let canvas = drawn(&format!("{TWO} A->>B: hello"));
+        let grid = grid(&canvas);
+        for title in ["Alice", "Bob"] {
+            let framed = format!("│ {title} │");
+            let (left, _) = find(&grid, &framed);
+            let right = left + framed.chars().count() - 1;
+            assert_eq!(grid[0][left], '╭', "{title}");
+            assert_eq!(grid[0][right], '╮', "{title}");
+            assert_eq!(grid[2][left], '╰', "{title}");
+            assert_eq!(grid[2][right], '╯', "{title}");
+            let column = lifeline(&grid, title);
+            assert_eq!(grid[3][column], '┆', "{title}: under the head");
+            assert_eq!(grid[grid.len() - 1][column], '┆', "{title}: at the foot");
+        }
+        let (alice, bob) = (lifeline(&grid, "Alice"), lifeline(&grid, "Bob"));
+        assert!(alice < bob, "columns in the order declared");
+        assert!(
+            find(&grid, "│ Alice │").0 + 9 < find(&grid, "│ Bob │").0,
+            "heads stand apart"
+        );
+    }
+
+    #[test]
+    fn a_message_runs_from_its_senders_lifeline_to_a_head_beside_its_receivers() {
+        let grid = grid(&drawn(&format!("{TWO} A->>B: hello\n B-->>A: back")));
+        let (alice, bob) = (lifeline(&grid, "Alice"), lifeline(&grid, "Bob"));
+        let (_, out) = find(&grid, "hello");
+        let arrow = &grid[out + 1];
+        assert_eq!(arrow[alice], '├', "{}", row_text(&grid, out + 1));
+        assert!(arrow[alice + 1..bob - 1].iter().all(|&c| c == '─'));
+        assert_eq!(arrow[bob - 1], '►');
+        assert_eq!(arrow[bob], '┆', "the receiver's lifeline goes on");
+
+        let (_, back) = find(&grid, "back");
+        assert!(back > out + 1, "time runs down the page");
+        let arrow = &grid[back + 1];
+        assert_eq!(arrow[bob], '┤', "{}", row_text(&grid, back + 1));
+        assert!(
+            arrow[alice + 2..bob].iter().all(|&c| c == '┄'),
+            "a reply is dotted"
+        );
+        assert_eq!(arrow[alice + 1], '◄');
+        assert_eq!(arrow[alice], '┆');
+    }
+
+    #[test]
+    fn a_message_label_sits_over_its_line_between_the_two_lifelines() {
+        let label = "a long message between the two of them";
+        let grid = grid(&drawn(&format!("{TWO} A->>B: {label}")));
+        let (alice, bob) = (lifeline(&grid, "Alice"), lifeline(&grid, "Bob"));
+        let (x, y) = find(&grid, label);
+        let end = x + label.chars().count();
+        assert!(alice + 1 < x && end < bob, "{}", row_text(&grid, y));
+        assert!(
+            (x - alice - 1).abs_diff(bob - end) <= 1,
+            "centred over the line: {}",
+            row_text(&grid, y)
+        );
+    }
+
+    #[test]
+    fn columns_part_wherever_a_message_needs_the_room() {
+        let three = "sequenceDiagram\n participant A as Ann\n participant B as Bob\n participant C as Cid\n";
+        let label = "a message far longer than any head";
+        for (source, from, to) in [
+            (format!("{three} A->>B: {label}"), "Ann", "Bob"),
+            (format!("{three} B->>C: {label}"), "Bob", "Cid"),
+            (format!("{three} A->>C: {label}"), "Ann", "Cid"),
+            (format!("{three} C->>A: {label}"), "Ann", "Cid"),
+        ] {
+            let grid = grid(&drawn(&source));
+            let (left, right) = (lifeline(&grid, from), lifeline(&grid, to));
+            let (x, _) = find(&grid, label);
+            assert!(left < x && x + label.chars().count() < right, "{source}");
+        }
+        let grid = grid(&drawn(&format!("{three} A->>B: hi")));
+        let (ann, bob, cid) = (
+            lifeline(&grid, "Ann"),
+            lifeline(&grid, "Bob"),
+            lifeline(&grid, "Cid"),
+        );
+        assert_eq!(
+            bob - ann,
+            cid - bob,
+            "a short message leaves the columns packed"
+        );
+    }
+
+    #[test]
+    fn a_message_to_itself_loops_out_and_back_with_its_words_beside_the_loop() {
+        let grid = grid(&drawn(&format!("{TWO} A->>A: think\n A->>B: next")));
+        let alice = lifeline(&grid, "Alice");
+        let (x, y) = find(&grid, "think");
+        let top = y - 1;
+        assert_eq!(grid[top][alice], '├', "{}", row_text(&grid, top));
+        let far = (alice + 1..x)
+            .find(|&column| grid[top][column] == '╮')
+            .expect("the loop turns down");
+        assert!(grid[top][alice + 1..far].iter().all(|&c| c == '─'));
+        assert_eq!(grid[y][far], '│');
+        assert_eq!(grid[y + 1][far], '╯');
+        assert_eq!(
+            grid[y + 1][alice + 1],
+            '◄',
+            "the head points back at the lifeline"
+        );
+        assert!(grid[y + 1][alice + 2..far].iter().all(|&c| c == '─'));
+        assert!(x > far + 1, "the words stand clear of the loop");
+        let (_, next) = find(&grid, "next");
+        assert!(next > y + 1, "the loop takes its own rows");
+        assert!(
+            (top..=y + 1).all(|row| grid[row][alice] != ' '),
+            "the lifeline is unbroken"
+        );
+    }
+
+    #[test]
+    fn a_reply_to_itself_is_drawn_dotted() {
+        let grid = grid(&drawn(&format!("{TWO} A-->>A: wait")));
+        let alice = lifeline(&grid, "Alice");
+        let (_, y) = find(&grid, "wait");
+        assert_eq!(grid[y - 1][alice + 1], '┄', "{}", row_text(&grid, y - 1));
+        assert_eq!(grid[y][alice + 4], '┆');
+    }
+
+    #[test]
+    fn a_note_is_framed_over_its_participants_lifeline() {
+        let grid = grid(&drawn(&format!("{TWO} Note over B: a note\n A->>B: after")));
+        let bob = lifeline(&grid, "Bob");
+        let (x, y) = find(&grid, "│ a note │");
+        let right = x + "│ a note │".chars().count() - 1;
+        assert!(x < bob && bob < right, "{}", row_text(&grid, y));
+        assert!((bob - x).abs_diff(right - bob) <= 1, "centred over it");
+        assert_eq!(grid[y - 1][x], '┌');
+        assert_eq!(grid[y - 1][right], '┐');
+        assert_eq!(grid[y + 1][x], '└');
+        assert_eq!(grid[y + 1][right], '┘');
+        let (_, after) = find(&grid, "after");
+        assert!(after > y + 1, "the next step comes below the note");
+    }
+
+    #[test]
+    fn a_note_on_the_last_lifeline_is_drawn_whole() {
+        let text = "a note wider than any head here";
+        let grid = grid(&drawn(&format!(
+            "sequenceDiagram\n participant A as A participant with a long title\n \
+             participant B as Bob\n Note over B: {text}"
+        )));
+        let framed = format!("│ {text} │");
+        let (x, _) = find(&grid, &framed);
+        assert!(x + framed.chars().count() < grid[0].len(), "with a margin");
+    }
+
+    #[test]
+    fn a_divider_is_a_rule_across_every_lifeline_naming_its_block() {
+        let grid = grid(&drawn(&format!("{TWO} loop\n B->>A: tick\n end")));
+        let (alice, bob) = (lifeline(&grid, "Alice"), lifeline(&grid, "Bob"));
+        let (x, y) = find(&grid, " loop ");
+        let (_, tick) = find(&grid, "tick");
+        let (_, end) = find(&grid, " end ");
+        assert!(
+            y < tick && tick < end,
+            "the block opens above and closes below"
+        );
+        for row in [y, end] {
+            assert!(
+                grid[row][..x.min(alice)]
+                    .iter()
+                    .all(|&c| c == ' ' || c == '┄')
+            );
+            assert_eq!(grid[row][bob], '┄', "{}", row_text(&grid, row));
+            assert_eq!(grid[row][grid[row].len() - 1], ' ', "short of the edge");
+        }
+        assert!(x < alice, "named at the left: {}", row_text(&grid, y));
+    }
+
+    #[test]
+    fn the_drawing_is_wide_enough_for_whatever_reaches_furthest() {
+        let words = "a self message with a great many words";
+        let grid = grid(&drawn(&format!("{TWO} B->>B: {words}")));
+        let (x, _) = find(&grid, words);
+        assert!(x + words.chars().count() < grid[0].len(), "with a margin");
+        let long = "Participant with a long name";
+        let grid = self::grid(&drawn(&format!(
+            "sequenceDiagram\n participant A as Al\n participant B as {long}\n"
+        )));
+        let (x, _) = find(&grid, &format!("│ {long} │"));
+        assert!(x + long.chars().count() + 4 < grid[0].len());
+    }
+}
