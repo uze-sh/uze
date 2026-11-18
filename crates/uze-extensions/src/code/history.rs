@@ -511,6 +511,17 @@ mod repository_tests {
                 .count(),
             1
         );
+        // A target with no ref of its own falls back to the upstream.
+        assert!(!ref_exists(&TestHost, &root, "no-such-target"));
+        let by_missing_target =
+            timeline(&TestHost, &root, 10, Some("no-such-target")).expect("history");
+        assert_eq!(
+            flags(by_missing_target)
+                .iter()
+                .filter(|(_, ahead)| *ahead)
+                .count(),
+            1
+        );
 
         repository.git(&["checkout", "--quiet", &target]);
         let on_target = timeline(&TestHost, &root, 10, Some(&target)).expect("history");
