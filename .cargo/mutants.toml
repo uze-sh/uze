@@ -484,4 +484,9 @@ exclude_re = [
   'uze-extensions/src/code/map\.rs.*replace \|\| with && in Grid::add$',
   # The sides OR-ed together are distinct bits, so XOR gives the same set.
   'uze-extensions/src/code/map\.rs.*replace \| with \^ in Grid::outline$',
+  # uze-extensions shared1
+  # The sides are distinct bits: or-ing them and xor-ing them name the same sides.
+  'uze-extensions/src/shared/canvas\.rs.*replace \| with \^ in (Canvas::frame|line_glyph)$',
+  # Every vendored grammar is one the bundled set lacks, so a token the bundled set knows finds nothing vendored, and an empty token finds nothing in either.
+  'uze-extensions/src/shared/highlight\.rs.*replace \|\| with && in vendored_fence_grammar$',
 ]
