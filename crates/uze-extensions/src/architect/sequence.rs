@@ -459,4 +459,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_lifelines_end_just_below_the_last_step() {
+        let grid = grid(&drawn(&format!(
+            "{TWO} A->>B: one\n B->>A: two\n A->>A: three\n Note over A: four\n loop\n end"
+        )));
+        let lifelines = [lifeline(&grid, "Alice"), lifeline(&grid, "Bob")];
+        let last_step = (0..grid.len())
+            .rev()
+            .find(|&y| {
+                grid[y]
+                    .iter()
+                    .enumerate()
+                    .any(|(x, &c)| c != ' ' && !lifelines.contains(&x))
+            })
+            .unwrap();
+        let below = grid.len() - 1 - last_step;
+        assert!(
+            (1..=3).contains(&below),
+            "{below} rows of lifeline below the last step"
+        );
+    }
 }
