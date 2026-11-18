@@ -873,6 +873,12 @@ mod tests {
         for y in frame.y + 1..frame.y + frame.h - 1 {
             assert_eq!(glyph(&canvas, wall, y), '│', "{rows:?}");
         }
+        assert_eq!(
+            glyph(&canvas, wall, frame.y),
+            '─',
+            "the wall stays inside the border"
+        );
+        assert_eq!(glyph(&canvas, wall, frame.y + frame.h - 1), '─');
         for (row, text) in [(0, "Jobs"), (1, "[Container: Redis]"), (3, "Holds work")] {
             let before_the_wall: String = rows[row]
                 .chars()
@@ -1000,6 +1006,10 @@ mod tests {
         assert_eq!(
             broken_in_two("aa bbbbbbbb"),
             Some(("aa".to_owned(), "bbbbbbbb".to_owned()))
+        );
+        assert_eq!(
+            broken_in_two("aaaa bb cc dd"),
+            Some(("aaaa bb".to_owned(), "cc dd".to_owned()))
         );
         assert_eq!(broken_in_two("single"), None);
     }
@@ -1256,5 +1266,105 @@ mod tests {
         );
         let canvas = paint(&scene, Glyphs::Unicode, None, &[]);
         assert_eq!(glyph(&canvas, 11, 9), '┼', "{}", row(&canvas, 9));
+    }
+
+    /// A level stretch one cell too short for a label and a line on both
+    /// sides of it is left alone: the label goes beside the line instead,
+    /// and never over a bend.
+    #[test]
+    fn a_label_is_never_squeezed_into_a_stretch_without_line_on_both_sides() {
+        let scene = placed(
+            "flowchart TD\n a -->|ab| b",
+            vec![small(2, 0), small(8, 12)],
+            vec![],
+        );
+        let canvas = paint(&scene, Glyphs::Unicode, None, &[]);
+        let route = &scene.routes.routes[0];
+        let level = route
+            .cells
+            .windows(2)
+            .filter(|pair| pair[0].2 == 1 && pair[1].2 == 1)
+            .count();
+        assert!(level < "ab".len() + 4, "the stretch is too short");
+        let (x, y) = find(&canvas, "ab").expect("the label is written");
+        for column in x..x + 2 {
+            assert!(
+                !route
+                    .cells
+                    .iter()
+                    .any(|&(cx, cy, _)| (cx, cy) == (column, y)),
+                "({column},{y}) is on the line: {}",
+                row(&canvas, y)
+            );
+        }
+    }
+
+    /// A straight line down column `x` from the top of the board to the
+    /// bottom, labelled `label`, beside whatever else `others` places.
+    fn upright(x: i32, label: &str, others: Vec<Frame>) -> (Scene, Canvas) {
+        let mut source = format!("flowchart TD\n a -->|{label}| b");
+        let mut nodes = vec![small(x - 1, 0), small(x - 1, 26)];
+        for (index, frame) in others.into_iter().enumerate() {
+            source.push_str(&format!("\n c{index}"));
+            nodes.push(frame);
+        }
+        let scene = placed(&source, nodes, vec![]);
+        let canvas = paint(&scene, Glyphs::Unicode, None, &[]);
+        (scene, canvas)
+    }
+
+    #[test]
+    fn a_label_beside_a_line_keeps_one_column_from_it_on_whichever_side_has_room() {
+        let (_, canvas) = upright(4, "writes", vec![]);
+        let (x, y) = find(&canvas, "writes").unwrap();
+        assert_eq!(x, 6, "right of the line: {}", row(&canvas, y));
+        let (_, canvas) = upright(27, "writes", vec![]);
+        let (x, y) = find(&canvas, "writes").unwrap();
+        assert_eq!(x + 6, 26, "left of the line: {}", row(&canvas, y));
+    }
+
+    #[test]
+    fn a_label_beside_a_long_line_stands_by_its_middle() {
+        let (scene, canvas) = upright(10, "writes", vec![]);
+        let rows: Vec<i32> = scene.routes.routes[0]
+            .cells
+            .iter()
+            .map(|&(_, y, _)| y)
+            .collect();
+        let middle = (rows.iter().min().unwrap() + rows.iter().max().unwrap()) / 2;
+        let (_, y) = find(&canvas, "writes").unwrap();
+        assert!((y - middle).abs() <= 1, "row {y}, middle {middle}");
+    }
+
+    #[test]
+    fn a_label_too_wide_for_one_row_beside_its_line_is_broken_over_two() {
+        let (first, second) = ("a".repeat(12), "b".repeat(12));
+        let (_, canvas) = upright(14, &format!("{first} {second}"), vec![]);
+        let (x, y) = find(&canvas, &first).expect("the first half");
+        assert_eq!(x, 16);
+        assert_eq!(
+            find(&canvas, &second),
+            Some((x, y + 1)),
+            "the second under it"
+        );
+    }
+
+    #[test]
+    fn a_label_never_touches_a_box_beside_its_line() {
+        let tall = |x: i32| Frame {
+            x,
+            y: 2,
+            w: 5,
+            h: 24,
+        };
+        for (line, beside) in [(4, tall(12)), (27, tall(15))] {
+            let (scene, canvas) = upright(line, "writes", vec![beside]);
+            let (_, y) = find(&canvas, "writes").expect("said somewhere");
+            assert!(
+                y > scene.placement.height,
+                "no room beside the line, so it is in the key: {}",
+                row(&canvas, y)
+            );
+        }
     }
 }
