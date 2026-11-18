@@ -486,8 +486,8 @@ mod tests {
     use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp};
 
     use super::{
-        FALLBACK_SYNTAX_THEME, highlighter, highlighter_for_language, line, lines, plain,
-        syntax_for, vendored_definitions,
+        FALLBACK_SYNTAX_THEME, fence_closed, fence_opened, highlighter, highlighter_for_language,
+        line, lines, lockfile_language, plain, syntax_for, vendored_definitions,
     };
 
     /// syntect compiles a pattern the first time a line reaches it, and a
@@ -1003,5 +1003,89 @@ fn answer(input, context) {
         assert_eq!(colour_of("let"), let_alone, "the script is read as Rhai");
         let foreground = plain(FALLBACK_SYNTAX_THEME, "")[0].0;
         assert_ne!(colour_of("view"), foreground, "a tag line is markup");
+    }
+
+    /// Each package manager's lockfile is read in the format it writes,
+    /// though `.lock` names none.
+    #[test]
+    fn a_known_lockfile_is_read_in_the_format_its_package_manager_writes() {
+        for (name, language) in [
+            ("Cargo.lock", "TOML"),
+            ("composer.lock", "JSON"),
+            ("yarn.lock", "YAML"),
+            ("mix.lock", "Elixir"),
+        ] {
+            assert_eq!(syntax_for(Path::new(name), None).name, language, "{name}");
+        }
+    }
+
+    /// A lockfile no known package manager wrote is read from its first
+    /// line: JSON opens a brace, TOML a table or an assignment, YAML a key.
+    #[test]
+    fn an_unknown_lockfile_is_read_from_its_first_line() {
+        for (first, language) in [
+            ("[[package]]", Some("toml")),
+            ("version = 4", Some("toml")),
+            ("packages:", Some("yaml")),
+            ("version: 4", Some("yaml")),
+            ("checksum", None),
+        ] {
+            assert_eq!(
+                lockfile_language("tool.lock", Some(first)),
+                language,
+                "{first}"
+            );
+        }
+        assert_eq!(
+            syntax_for(Path::new("tool.lock"), Some("{ \"version\": 1 }")).name,
+            "JSON"
+        );
+        assert_eq!(lockfile_language("tool.lock", None), None);
+        assert_eq!(lockfile_language("notes.txt", Some("version = 4")), None);
+    }
+
+    /// Where more than one grammar claims an extension, the one a checkout
+    /// most often means is chosen.
+    #[test]
+    fn an_extension_two_grammars_claim_is_read_as_the_common_one() {
+        assert_eq!(syntax_for(Path::new("main.fs"), None).name, "F#");
+        assert_eq!(syntax_for(Path::new("lib.h"), None).name, "C++");
+    }
+
+    /// Spellings no grammar lists are read in the language they are
+    /// written in.
+    #[test]
+    fn an_unlisted_spelling_is_read_as_its_language() {
+        for (path, language) in [
+            ("index.mjs", "JavaScript"),
+            ("index.cjs", "JavaScript"),
+            ("view.jsx", "TypeScriptReact"),
+            ("settings.jsonc", "JSON"),
+            ("settings.json5", "JSON"),
+            ("page.mdx", "Markdown"),
+        ] {
+            assert_eq!(syntax_for(Path::new(path), None).name, language, "{path}");
+        }
+    }
+
+    /// A fence opens after at most three spaces, with three or more
+    /// backticks or tildes; four spaces make an indented code block.
+    #[test]
+    fn a_fence_opens_after_at_most_three_spaces() {
+        assert_eq!(fence_opened("   ```kdl"), Some(("```".to_owned(), "kdl")));
+        assert_eq!(fence_opened("~~~~ rhai"), Some(("~~~~".to_owned(), "rhai")));
+        assert_eq!(fence_opened("    ```kdl"), None);
+        assert_eq!(fence_opened("``kdl"), None);
+    }
+
+    /// A fence closes on as many of its characters or more, and nothing
+    /// after them.
+    #[test]
+    fn a_fence_closes_on_at_least_as_long_a_run_of_its_marker() {
+        assert!(fence_closed("```", "```"));
+        assert!(fence_closed("  `````  ", "```"));
+        assert!(!fence_closed("``", "```"));
+        assert!(!fence_closed("~~~", "```"));
+        assert!(!fence_closed("``` rust", "```"));
     }
 }
