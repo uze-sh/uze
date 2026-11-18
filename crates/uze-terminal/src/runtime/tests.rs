@@ -212,6 +212,210 @@ fn the_listener_is_told_apart_by_what_it_runs() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A server that does not act on the request to stop is ended outright,
+/// so it cannot keep the workspace from the server replacing it.
+#[test]
+fn a_server_that_ignores_the_request_to_stop_is_ended_all_the_same() {
+    let scratch = uze_testkit::temp::socket_scratch("retire-deaf");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
+
+    let mut deaf = ClaimHolder::spawn_deaf(
+        &another_build_of_this_binary(&scratch),
+        &uze_home,
+        &super::stop_channel(&socket),
+    );
+    assert!(workspace_is_claimed());
+
+    assert!(retire(deaf.pid(), None, &socket), "it was retired");
+    assert!(!workspace_is_claimed(), "and let go of the workspace");
+    assert!(!deaf.process.wait().unwrap().success(), "it was ended");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server is asked to stop under its endpoint's own name, whatever
+/// directory holds the endpoint, so any build can ask any other.
+#[test]
+fn a_stop_is_asked_under_the_endpoints_own_name() {
+    let here = Path::new("state").join("uze-1.sock");
+    let elsewhere = Path::new("other").join("place").join("uze-1.sock");
+    let another = Path::new("state").join("uze-2.sock");
+    assert_eq!(super::stop_channel(&here), super::stop_channel(&elsewhere));
+    assert_ne!(super::stop_channel(&here), super::stop_channel(&another));
+}
+
+/// A server is started from a binary that is on disk: this one, here.
+#[test]
+fn a_server_is_started_from_a_binary_on_disk() {
+    let executable = super::server_executable().expect("this binary is on disk");
+    assert!(executable.is_file(), "{}", executable.display());
+}
+
+/// A server that has yet to bind is waited for, a moment; one that never
+/// does is reported as not ready rather than as a missing file.
+#[test]
+fn a_server_binding_its_endpoint_late_is_waited_for_and_one_that_never_does_is_not_ready() {
+    let scratch = uze_testkit::temp::socket_scratch("connect-waiting");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+
+    let late = super::transport::scratch_endpoint(&scratch, "late.sock");
+    let binding = {
+        let late = late.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            let listener = super::transport::bind(&late).unwrap();
+            drop(super::transport::accept(&listener));
+        })
+    };
+    assert!(
+        super::connect_waiting(&late).is_ok(),
+        "a server binding a moment after the client looked is reached"
+    );
+    let _ = binding.join();
+
+    let never = super::transport::scratch_endpoint(&scratch, "never.sock");
+    assert!(matches!(
+        super::connect_waiting(&never),
+        Err(RuntimeError::Protocol(_))
+    ));
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// An endpoint that cannot be reached for a reason other than nobody
+/// listening yet is that error, at once — never a wait for a server.
+// Unix only: an endpoint is a socket file, and one under a regular file is
+// a path the kernel refuses outright; a named pipe has no directory.
+#[cfg(unix)]
+#[test]
+fn an_endpoint_that_cannot_exist_is_reported_at_once() {
+    let scratch = uze_testkit::temp::socket_scratch("connect-refused");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let file = scratch.join("a-file");
+    std::fs::write(&file, "").unwrap();
+    let impossible = file.join("test.sock");
+
+    assert!(matches!(
+        super::connect_waiting(&impossible),
+        Err(RuntimeError::Io(_))
+    ));
+    let mut starting = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let answer = super::connect_starting(&impossible, &mut starting);
+    let _ = starting.kill();
+    let _ = starting.wait();
+    assert!(
+        matches!(answer, Err(RuntimeError::Io(_))),
+        "a server still starting is not waited on for an endpoint it can never bind"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A starting server waits out a client asking whether the workspace is
+/// claimed: each asks for an instant, and only a server is a refusal.
+#[test]
+fn a_starting_server_waits_out_a_client_asking_about_the_claim() {
+    let scratch = uze_testkit::temp::scratch("terminal-lock-waits");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+
+    let asker = super::open_workspace_lock().unwrap();
+    super::try_lock(&asker, super::LockMode::Shared).expect("an asker takes it shared");
+    let letting_go = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        super::unlock(&asker);
+    });
+    let claimed = WorkspaceLock::acquire();
+    let _ = letting_go.join();
+
+    assert!(
+        claimed.is_ok(),
+        "the asker let go, and the claim is the server's"
+    );
+    drop(claimed);
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The key is written back when its file goes missing or is changed under
+/// a live server, or every client after that is turned away.
+#[test]
+fn the_runtimes_key_is_written_back_when_it_goes_missing_or_changes() {
+    let scratch = uze_testkit::temp::scratch("terminal-key-kept");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+    std::fs::create_dir_all(super::key_path().parent().unwrap()).unwrap();
+
+    let key = super::ServerKey::mint().unwrap();
+    assert!(key.admits(&super::server_key()));
+
+    std::fs::remove_file(super::key_path()).unwrap();
+    key.keep();
+    assert!(key.admits(&super::server_key()), "a key cleaned away");
+
+    std::fs::write(super::key_path(), "another").unwrap();
+    key.keep();
+    assert!(key.admits(&super::server_key()), "a key overwritten");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Where the kernel seals a pane, the person's endpoint is published for
+/// the person's clients, and published again when its record goes missing
+/// or is changed under a live server.
+// Linux only: the person's endpoint stands where a pane can be sealed, a
+// Landlock scope no other kernel has.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_persons_endpoint_is_published_again_when_its_record_goes() {
+    if !uze_platform::seal::available() {
+        eprintln!("skipped: this kernel cannot seal a pane");
+        return;
+    }
+    let scratch = uze_testkit::temp::scratch("terminal-door-kept");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+    std::fs::create_dir_all(super::operator_path().parent().unwrap()).unwrap();
+    let published = || {
+        std::fs::read_to_string(super::operator_path())
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+    };
+
+    let (door, _listener) = super::PersonDoor::open(true).expect("opened where a pane is sealed");
+    assert_eq!(published(), door.name());
+    assert!(
+        uze_platform::seal::connect(door.name()).is_ok(),
+        "the name published is where the endpoint listens"
+    );
+
+    std::fs::remove_file(super::operator_path()).unwrap();
+    door.keep();
+    assert_eq!(published(), door.name(), "a record cleaned away");
+
+    std::fs::write(super::operator_path(), "uze-person-another").unwrap();
+    door.keep();
+    assert_eq!(published(), door.name(), "a record overwritten");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// A server of another build — a `make install` over a running one — is
 /// ended, and not merely abandoned: it holds the workspace claim, and a
 /// fresh server cannot restore the workspace until it lets go.
@@ -3489,6 +3693,10 @@ const SERVING_HOLDER: &str = "UZE_TERMINAL_TEST_SERVES";
 /// does, whatever else it can read.
 const REFUSING_HOLDER: &str = "UZE_TERMINAL_TEST_REFUSES";
 
+/// Set, to a stop channel, on the holder that is to hear a request to stop
+/// on it and do nothing: a server that has stopped answering.
+const DEAF_HOLDER: &str = "UZE_TERMINAL_TEST_IGNORES_STOP";
+
 /// The other server in the two claim tests: a process of its own that
 /// takes the workspace claim under the `UZE_HOME` it is given, says so,
 /// and keeps it for as long as its stdin stays open.
@@ -3556,6 +3764,9 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
         }
         None => Some(WorkspaceLock::acquire().expect("the holder's claim is granted")),
     };
+    if let Some(channel) = std::env::var_os(DEAF_HOLDER) {
+        uze_platform::process::listen_for_stop(&channel.to_string_lossy(), || {});
+    }
     println!("{CLAIM_HELD}");
     let mut until_eof = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut until_eof);
@@ -3587,6 +3798,13 @@ impl ClaimHolder {
     /// attach asks of a server before it decides anything about it.
     fn spawn_serving(executable: &Path, uze_home: &Path, project: &Path) -> Self {
         Self::spawn_with(executable, uze_home, Some(project))
+    }
+
+    /// A holder that does nothing when asked to stop on `channel`.
+    fn spawn_deaf(executable: &Path, uze_home: &Path, channel: &str) -> Self {
+        let mut command = std::process::Command::new(executable);
+        command.env(DEAF_HOLDER, channel);
+        Self::spawn_command(command, uze_home)
     }
 
     /// A holder that is a server of another release: it binds this
@@ -4392,6 +4610,51 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A repaint can reach a client before its snapshot does: talk before
+/// the answer is not an answer either way, and the snapshot after it is.
+#[test]
+fn a_server_that_talks_before_its_snapshot_still_serves_this_build() {
+    let scratch = uze_testkit::temp::socket_scratch("serves-talking");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "talking.sock");
+    let listener = super::transport::bind(&socket).unwrap();
+    let answering = std::thread::spawn(move || {
+        let mut stream = super::transport::accept(&listener).unwrap();
+        let _ = read_message::<_, crate::ClientRequest>(&mut std::io::BufReader::new(
+            stream.try_clone().unwrap(),
+        ));
+        let _ = write_message(&mut stream, &crate::ClientEvent::Detached);
+        let _ = write_message(
+            &mut stream,
+            &crate::ClientEvent::Snapshot {
+                session: Session::new(seat_at(Path::new("/tmp/a")), 80, 24),
+            },
+        );
+    });
+    assert!(serves_this_build(&socket));
+    let _ = answering.join();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that keeps talking and never answers is a "no" once the
+/// question's bound runs out, however often it speaks.
+#[test]
+fn a_server_that_talks_without_ever_answering_does_not_serve_this_build() {
+    let scratch = uze_testkit::temp::socket_scratch("serves-chatty");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "chatty.sock");
+    let listener = super::transport::bind(&socket).unwrap();
+    let talking = std::thread::spawn(move || {
+        let mut stream = super::transport::accept(&listener).unwrap();
+        while write_message(&mut stream, &crate::ClientEvent::Detached).is_ok() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+    assert!(!serves_this_build(&socket));
+    let _ = talking.join();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// The state the question exists to find: something is listening at the
 /// endpoint of a claimed workspace and cannot be talked to — a server
 /// built to another framing, one that refuses this build's version, one
@@ -4614,6 +4877,74 @@ fn the_answer_to_an_attach_is_the_snapshot_or_the_reason_there_is_none() {
     );
 }
 
+/// A reader that hands over `said`, then fails with `kind`.
+struct EndsWith {
+    said: std::io::Cursor<Vec<u8>>,
+    kind: std::io::ErrorKind,
+}
+
+impl std::io::Read for EndsWith {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.said.read(buffer)? {
+            0 => Err(std::io::Error::from(self.kind)),
+            read => Ok(read),
+        }
+    }
+}
+
+/// A server that hangs up after saying why is reported by its reason
+/// however the platform reports the hang-up; any other failure to read is
+/// that failure.
+#[test]
+fn a_hang_up_after_a_reason_is_the_reason_and_another_failure_is_itself() {
+    let mut said = Vec::new();
+    write_message(
+        &mut said,
+        &crate::ClientEvent::Refused {
+            message: "turned away".into(),
+        },
+    )
+    .unwrap();
+    for kind in [
+        std::io::ErrorKind::UnexpectedEof,
+        std::io::ErrorKind::ConnectionReset,
+        std::io::ErrorKind::ConnectionAborted,
+        std::io::ErrorKind::BrokenPipe,
+    ] {
+        let mut reader = EndsWith {
+            said: std::io::Cursor::new(said.clone()),
+            kind,
+        };
+        let answer = super::answer_to_attach(&mut reader).expect_err("turned away");
+        assert_eq!(
+            answer.to_string(),
+            "terminal runtime protocol error: turned away",
+            "{kind:?}"
+        );
+    }
+    let mut reader = EndsWith {
+        said: std::io::Cursor::new(said),
+        kind: std::io::ErrorKind::PermissionDenied,
+    };
+    assert!(matches!(
+        super::answer_to_attach(&mut reader),
+        Err(RuntimeError::Io(error)) if error.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+}
+
+/// Once the peer has said who it is, silence is a person reading: the
+/// handshake's deadline no longer applies.
+#[test]
+fn an_attached_peer_may_be_silent_past_the_handshake_deadline() {
+    let (mut peer, socket) = super::transport::pair().unwrap();
+    let mut handshake = super::Handshake::new(socket, Duration::from_millis(50));
+    handshake.attached();
+    std::thread::sleep(Duration::from_millis(150));
+    std::io::Write::write_all(&mut peer, b"x").unwrap();
+    let mut byte = [0u8; 1];
+    assert_eq!(std::io::Read::read(&mut handshake, &mut byte).unwrap(), 1);
+}
+
 /// `SO_RCVTIMEO` restarts on every successful read, so a deadline
 /// spelled with it alone is no deadline at all: a peer dribbling a byte
 /// just inside it holds a reader thread, a writer thread and whatever
@@ -4683,6 +5014,20 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
     assert!(
         attach.len() < super::MAX_HANDSHAKE_FRAME as usize,
         "and the bound still has to fit what a handshake actually says"
+    );
+
+    let deepest = Path::new("/").join("d".repeat(4096));
+    let attach = bincode::serialize(&crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns: 200,
+        rows: 50,
+        seating: crate::Seating::Open(seat_at(&deepest)),
+        key: super::server_key(),
+    })
+    .unwrap();
+    assert!(
+        attach.len() < super::MAX_HANDSHAKE_FRAME as usize,
+        "a root as long as a path can be still fits"
     );
 }
 
