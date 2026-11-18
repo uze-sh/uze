@@ -352,4 +352,49 @@ exclude_re = [
   'uze-extensions/src/declared\.rs.*replace \|\| with && in DeclaredExtension::awaiting$',
   # Withholding again for the same reason changes nothing: the data is gone, the digest and reason the same.
   'uze-extensions/src/declared\.rs.*replace match guard self\.withheld\.get\(&source\)\.map\(String::as_str\) != Some\(reason\) with true in <impl Extension for DeclaredExtension>::workspace_sources_withheld$',
+  # uze-workspace workspace survivors
+  # The record's version is stamped on every write and read nowhere; its Default is 0 as well.
+  'uze-workspace/src/review\.rs.*replace shape -> u32 with (0|1)$',
+  # `record::ensure` has already made the history's directory, owner-only.
+  'uze-workspace/src/prompt_history\.rs.*replace create_private_dir -> Result<\(\)> with Ok\(\(\)\)$',
+  # Compacting at exactly 64 KiB rather than one byte past keeps the same newest entries.
+  'uze-workspace/src/prompt_history\.rs.*replace > with >= in record$',
+  # An offset equal to the size reads from 0 and drains through the last report delivered: nothing, at the same offset.
+  'uze-workspace/src/reports\.rs.*replace > with >= in read_from$',
+  # `nothing` is `Self::default()`.
+  'uze-workspace/src/continuity\.rs.*replace LaunchPlan::nothing -> Self with Default::default\(\)$',
+  # A fast path: an empty claim id finds no record, and no launches file holds none.
+  'uze-workspace/src/continuity\.rs.*replace \|\| with && in overrides_left_behind$',
+  # The catch-all spells `types()`, which for Unset is the conventional list joined the same way.
+  'uze-workspace/src/worktree\.rs.*delete match arm Self::Unset in BranchVocabulary::spelled$',
+  # Read only by the architecture suite, and every entry is Unbounded, so never due.
+  'uze-workspace/src/checkout/earlier\.rs.*replace earlier -> Vec<Earlier> with vec!\[\]$',
+  # A rename's original path follows as a record of its own and reads as work through the catch-all.
+  'uze-workspace/src/checkout/git_facts\.rs.*replace match guard code\.starts_with\(\[.R., .C.\]\) with false in holds_uncommitted_work$',
+  # The next arm asks whether a commit descends from itself, and answers the same commit.
+  'uze-workspace/src/checkout/integration\.rs.*replace match guard local == remote with false in BranchTips::target_reach$',
+  # Only whether an answer is remembered, never what it is.
+  'uze-workspace/src/checkout/integration\.rs.*(delete match arm Some\(1\) in descends|replace >= with < in descends|replace is_object_id -> bool with false)$',
+  # A candidate no tip names is skipped before anything is asked about it.
+  'uze-workspace/src/checkout/integration\.rs.*replace agent_branches -> Vec<String> with vec!\[(String::new\(\)|"xyzzy"\.into\(\))\]$',
+  # A fast path: a target that does not resolve carries no shelf either.
+  'uze-workspace/src/checkout/lifecycle\.rs.*replace \|\| with && in collect_shelves_among$',
+  # An idle age equal to the pool's to the nanosecond.
+  'uze-workspace/src/checkout/lifecycle\.rs.*replace < with <= in trim_free_slots$',
+  # Only whether the index is refreshed ahead of time; every status still hashes what it doubts.
+  'uze-workspace/src/checkout/lifecycle\.rs.*(replace index_may_be_racy -> bool with (true|false)|replace <= with > in index_may_be_racy|replace \+ with - in index_may_be_racy)$',
+  # Every caller asks Git about the target next, which answers nothing for one that does not resolve.
+  'uze-workspace/src/checkout/lifecycle\.rs.*replace Refs::resolves -> bool with true$',
+  # Only the info line saying records were forgotten.
+  'uze-workspace/src/checkout/lifecycle\.rs.*delete ! in collect$',
+  # uze-platform's words for the keychain, passed through.
+  'uze-workspace/src/extensions/secrets\.rs.*replace kept_in -> &.static str with (""|"xyzzy")$',
+  # A missing ref is refused either way, by the next check; only the reason's words differ.
+  'uze-workspace/src/landing/sync\.rs.*replace \|\| with && in move_ref_forward$',
+  # A blank tip is refused either way, by Git; only the reason's words differ.
+  'uze-workspace/src/checkout/pool\.rs.*replace match guard !tip\.trim\(\)\.is_empty\(\) with true in resume$',
+  # A link is refused either way, as not a directory.
+  'uze-workspace/src/checkout/pool\.rs.*replace match guard metadata\.file_type\(\)\.is_symlink\(\) with false in isolation_directory_is_the_projects_own$',
+  # An exclude file that cannot be read cannot be replaced either: an error either way.
+  'uze-workspace/src/checkout/accounting\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with true in exclude_isolation_directory$',
 ]
