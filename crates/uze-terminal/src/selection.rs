@@ -966,21 +966,24 @@ mod tests {
         assert_eq!(screen.text(), "");
     }
 
-    /// A full-screen program whose content reaches the last row, with no
-    /// prompt kept in place below it.
+    /// A blank line between the lines a move carried moved with them, and
+    /// is still the line it was: selected on its own, it stays selected.
     #[test]
-    fn content_scrolling_into_the_last_row_carries_the_selection() {
-        let mut screen = FullScreen::showing(10);
-        let lines = |first: usize| -> Vec<String> {
-            (first..first + 5)
-                .map(|line| format!("line {line}"))
-                .collect()
-        };
-        screen.draw_rows(&lines(10), 0..5);
-        screen.apply(begin((0, 2), (6, 2)));
+    fn a_blank_line_between_carried_lines_keeps_its_own_line() {
+        let mut screen = FullScreen::showing_rows(10, 10);
+        screen.draw_rows(&spaced(10), 0..10);
+        screen.apply(begin((0, 4), (9, 4)));
         screen.apply(SelectionGesture::Release);
-        screen.draw_rows(&lines(11), 0..5);
-        assert_eq!(screen.selected(), ["", "line 12", "", "", ""]);
+        screen.draw_rows(&spaced(11), 0..10);
+        let selected = screen.selected();
+        assert_eq!(selected[3], " ".repeat(10), "{selected:?}");
+        assert!(
+            selected
+                .iter()
+                .enumerate()
+                .all(|(row, text)| row == 3 || text.is_empty()),
+            "{selected:?}"
+        );
     }
 
     /// Half the screen rewritten where it stands is still the same screen,
