@@ -2060,6 +2060,12 @@ fn the_server_works_in_no_checkout() {
         command.get_current_dir(),
         Some(super::host::server_directory().as_path())
     );
+    let directory = super::host::server_directory();
+    assert!(
+        directory.is_absolute() && directory.is_dir(),
+        "the server stands in a directory that exists: {}",
+        directory.display()
+    );
 }
 
 /// A server a `uze` inside a pane started does not carry that pane's mark,
