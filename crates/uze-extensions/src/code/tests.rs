@@ -5110,3 +5110,22 @@ fn the_caret_is_drawn_only_while_editing() {
     assert_eq!(caret(&reading(&machine, "/w/a.txt")), None);
     assert!(caret(&editing(&machine, "/w/a.txt")).is_some());
 }
+
+/// A directory's row says whether it is open or folded.
+#[test]
+fn a_directory_row_says_whether_it_is_open() {
+    let (mut view, _machine) = tree_fixture();
+    let collapsed = |view: &CodeView| {
+        navigator_of_tree(view)
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                NavigatorRow::Group { collapsed, .. } => Some(*collapsed),
+                _ => None,
+            })
+    };
+    assert_eq!(collapsed(&view), Some(false), "src is open");
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Collapse);
+    assert_eq!(collapsed(&view), Some(true));
+}
