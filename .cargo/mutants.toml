@@ -489,4 +489,6 @@ exclude_re = [
   'uze-extensions/src/shared/canvas\.rs.*replace \| with \^ in (Canvas::frame|line_glyph)$',
   # Every vendored grammar is one the bundled set lacks, so a token the bundled set knows finds nothing vendored, and an empty token finds nothing in either.
   'uze-extensions/src/shared/highlight\.rs.*replace \|\| with && in vendored_fence_grammar$',
+  # The bundled TOML grammar lists these four lockfiles by name, and a lookup by name comes before the lockfile rule.
+  'uze-extensions/src/shared/highlight\.rs.*delete match arm "Cargo\.lock" \| "poetry\.lock" \| "uv\.lock" \| "pdm\.lock" in lockfile_language$',
 ]
