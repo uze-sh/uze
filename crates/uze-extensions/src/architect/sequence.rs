@@ -26,7 +26,10 @@ pub fn paint(sequence: &Sequence, glyphs: Glyphs) -> Canvas {
             SequenceStep::Message { from, to, text, .. } if from == to => {
                 centres[*from] + LOOP_WIDTH + 2 + text_width(text)
             }
-            SequenceStep::Note { over, text } => centres[*over] + text_width(text) / 2 + 3,
+            SequenceStep::Note { over, text } => {
+                let frame = note_frame(centres[*over], text, 0);
+                frame.x + frame.w + 1
+            }
             _ => 0,
         })
         .chain((0..centres.len()).map(|index| centres[index] + head(index) / 2 + 1))
@@ -73,13 +76,7 @@ pub fn paint(sequence: &Sequence, glyphs: Glyphs) -> Canvas {
                 stroke,
             } => message(&mut canvas, centres[*from], centres[*to], y, text, *stroke),
             SequenceStep::Note { over, text } => {
-                let w = text_width(text) + 4;
-                let frame = Frame {
-                    x: (centres[*over] - w / 2).max(0),
-                    y,
-                    w,
-                    h: 3,
-                };
+                let frame = note_frame(centres[*over], text, y);
                 canvas.frame(frame, Corners::Square, Role::Faint);
                 canvas.text(frame.x + 1, y + 1, &format!(" {text} "), Role::Muted, false);
             }
@@ -93,6 +90,19 @@ pub fn paint(sequence: &Sequence, glyphs: Glyphs) -> Canvas {
         y += step_height(step);
     }
     canvas
+}
+
+/// A note's frame, centred over its lifeline unless that would cross the
+/// left edge, where it is pushed right: the drawing's width is measured from
+/// this same frame, so a pushed note is never cut off on the right.
+fn note_frame(centre: i32, text: &str, y: i32) -> Frame {
+    let w = text_width(text) + 4;
+    Frame {
+        x: (centre - w / 2).max(0),
+        y,
+        w,
+        h: 3,
+    }
 }
 
 fn step_height(step: &SequenceStep) -> i32 {
@@ -417,6 +427,22 @@ mod tests {
         let framed = format!("│ {text} │");
         let (x, _) = find(&grid, &framed);
         assert!(x + framed.chars().count() < grid[0].len(), "with a margin");
+    }
+
+    #[test]
+    fn a_note_pushed_off_the_left_edge_is_drawn_whole() {
+        let text = "a note much wider than the head it hangs from";
+        let grid = grid(&drawn(&format!("{TWO} Note over A: {text}")));
+        let framed = format!("│ {text} │");
+        let (x, y) = find(&grid, &framed);
+        let right = x + framed.chars().count() - 1;
+        assert!(
+            right < grid[0].len() - 1,
+            "with a margin: {}",
+            row_text(&grid, y)
+        );
+        assert_eq!(grid[y - 1][right], '┐');
+        assert_eq!(grid[y + 1][right], '┘');
     }
 
     #[test]
