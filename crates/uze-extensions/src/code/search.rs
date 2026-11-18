@@ -649,7 +649,7 @@ mod tests {
     /// through a character that lowercases to two.
     #[test]
     fn a_match_starts_on_a_character_of_the_text() {
-        assert_eq!(occurrences("ab", "b"), [1..2]);
+        assert_eq!(occurrences("ab", "b"), vec![(1..2)]);
         assert!(occurrences("\u{130}x", "\u{307}x").is_empty());
     }
 
