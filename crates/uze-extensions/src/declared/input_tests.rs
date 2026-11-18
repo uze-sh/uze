@@ -409,3 +409,56 @@ fn a_failed_first_step_sends_no_prompt() {
         "{outcomes:?}"
     );
 }
+
+/// A view of nothing but `items`, its source answered with no rows.
+fn only(items: Vec<uze_contract::Item>) -> DeclaredExtension {
+    let mut engine = DeclaredExtension::new(
+        extension(compiled_view(items, Vec::new(), Vec::new())),
+        "en",
+    );
+    engine.set_data(super::tests::SOURCE, Ok(json!({})));
+    engine
+}
+
+#[test]
+fn a_select_stepped_back_from_its_first_choice_lands_on_its_last() {
+    let mut select = n(NodeName::Select).literal("id", json!("size"));
+    for size in ["s", "m", "l"] {
+        select = select.child(n(NodeName::Choice).arg(size).literal("value", json!(size)));
+    }
+    let mut engine = only(vec![select.item()]);
+    let select = node_of(&engine, is_select, 0);
+    engine.hit(
+        VIEW,
+        act(select.id, NodeAct::Step { forward: false }),
+        SPACE,
+    );
+    assert_eq!(engine.ui(VIEW).unwrap()["size"], "l");
+}
+
+#[test]
+fn tab_while_typing_types_into_the_next_field() {
+    let field = |id: &str| n(NodeName::Field).arg(id).literal("id", json!(id)).item();
+    let mut engine = only(vec![field("first"), field("second")]);
+    let first = node_of(&engine, is_field, 0);
+    engine.hit(VIEW, act(first.id, NodeAct::Edit), SPACE);
+    engine.command(VIEW, Command::FocusNext, SPACE);
+    assert!(engine.typing(VIEW), "still typing");
+    type_text(&mut engine, "x");
+    assert_eq!(engine.ui(VIEW).unwrap().get("first"), None);
+    assert_eq!(engine.ui(VIEW).unwrap()["second"], "x");
+}
+
+#[test]
+fn enter_on_a_focused_form_sends_it() {
+    let mut engine = inputs(vec![script("comment", &["form.*"])]);
+    for _ in 0..3 {
+        engine.command(VIEW, Command::FocusNext, SPACE);
+    }
+    assert!(matches!(
+        node_of(&engine, is_form, 0).kind,
+        NodeKind::Form { focused: true, .. }
+    ));
+    let sent = engine.command(VIEW, Command::Activate, SPACE);
+    assert!(matches!(sent, Outcome::Notice(_)), "{sent:?}");
+}

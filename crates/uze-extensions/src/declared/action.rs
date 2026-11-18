@@ -803,5 +803,11 @@ mod tests {
             template_scope(&Value::Null),
             serde_json::json!({ "item": null })
         );
+        let own = serde_json::json!({ "item": 7, "name": "a" });
+        assert_eq!(
+            template_scope(&own),
+            serde_json::json!({ "item": own }),
+            "an item with a field of that name is only wrapped, its own fields never shadowed"
+        );
     }
 }

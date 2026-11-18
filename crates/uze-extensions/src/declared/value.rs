@@ -202,3 +202,25 @@ fn role(name: RoleName) -> Role {
         RoleName::Heat4 => Role::Heat4,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn the_whole_item_is_written_as_a_dot_for_the_inspector() {
+        let whole = Path::parse(".").expect("a reference parses");
+        assert_eq!(path_text(&whole), ".");
+        let field = Path::parse("ui.tab").expect("a reference parses");
+        assert_eq!(path_text(&field), "ui.tab");
+    }
+
+    #[test]
+    fn the_word_false_is_no_flag_and_any_other_word_is_one() {
+        assert!(!as_flag(&json!("false")));
+        assert!(as_flag(&json!("yes")));
+        assert!(!as_flag(&json!("")));
+    }
+}

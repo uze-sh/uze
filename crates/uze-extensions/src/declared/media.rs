@@ -439,4 +439,131 @@ mod tests {
             "a let go"
         );
     }
+
+    #[test]
+    fn a_file_of_exactly_its_bound_is_decoded() {
+        let at = vec![0u8; IMAGE_FILE_MAX];
+        let Held::Refused(why) = decoded("big.png", &at, usize::MAX, None) else {
+            panic!("zeroes are no picture");
+        };
+        assert_eq!(why, "`big.png` is not a picture it can read");
+    }
+
+    /// A sheet of `width` by `height` pixels, each pixel's red its index.
+    fn numbered(width: usize, height: usize) -> Picture {
+        Picture {
+            width,
+            height,
+            pixels: (0..width * height)
+                .map(|index| [index as u8, 0, 0, 255])
+                .collect::<Vec<_>>()
+                .into(),
+        }
+    }
+
+    fn cut(width: usize, height: usize, frame: (u32, u32), columns: u32) -> Option<Vec<Picture>> {
+        let sprite = SpriteDecl {
+            frame,
+            columns,
+            ..sprite()
+        };
+        frames(&numbered(width, height), &sprite)
+    }
+
+    #[test]
+    fn a_sheet_of_rows_is_cut_row_by_row_and_one_not_of_whole_frames_is_not() {
+        let frames = cut(4, 4, (2, 2), 2).expect("whole frames");
+        let reds: Vec<Vec<u8>> = frames
+            .iter()
+            .map(|frame| frame.pixels.iter().map(|pixel| pixel[0]).collect())
+            .collect();
+        assert_eq!(
+            reds,
+            [
+                vec![0, 1, 4, 5],
+                vec![2, 3, 6, 7],
+                vec![8, 9, 12, 13],
+                vec![10, 11, 14, 15],
+            ]
+        );
+        assert_eq!(cut(4, 1, (1, 1), 2).map(|frames| frames.len()), Some(2));
+        for (width, height, frame, columns) in [
+            (0, 4, (0, 2), 2),
+            (4, 0, (2, 0), 2),
+            (4, 4, (0, 2), 2),
+            (4, 4, (2, 0), 2),
+            (4, 4, (2, 2), 0),
+            (5, 4, (2, 2), 2),
+            (4, 5, (2, 2), 2),
+            (4, 4, (2, 2), 3),
+        ] {
+            assert!(
+                cut(width, height, frame, columns).is_none(),
+                "{width}x{height} by {frame:?} in {columns}"
+            );
+        }
+    }
+
+    /// A host holding one file, whatever it is asked for.
+    struct One(Vec<u8>);
+
+    impl crate::Host for One {
+        fn git(&self, _: &Path, _: &[&str], _: &[i32]) -> Result<String, String> {
+            Err("no git here".to_owned())
+        }
+        fn repository_root(&self, _: &Path) -> Result<std::path::PathBuf, String> {
+            Err("no git here".to_owned())
+        }
+        fn read_file(&self, _: &Path) -> Result<String, crate::Unreadable> {
+            Err(crate::Unreadable::NotText)
+        }
+        fn list_dir(&self, _: &Path) -> Result<Vec<crate::DirEntry>, String> {
+            Ok(Vec::new())
+        }
+        fn write_file(&self, _: &Path, _: &Path, _: &str) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn delete_file(&self, _: &Path, _: &Path) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn restore_to_head(&self, _: &Path, _: &[std::path::PathBuf]) -> Result<(), String> {
+            Err("read only".to_owned())
+        }
+        fn syntax_theme(&self) -> String {
+            String::new()
+        }
+        fn media(&self, _: &Identity, _: &str) -> Result<Vec<u8>, String> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn a_read_has_the_room_the_other_pictures_held_leave() {
+        let identity = Identity {
+            marketplace: "m".to_owned(),
+            plugin: "p".to_owned(),
+            id: "e".to_owned(),
+        };
+        let held = MediaKey::Image("held.png".to_owned());
+        let new = MediaKey::Image("new.png".to_owned());
+        let wanted: BTreeSet<MediaKey> = [held.clone(), new].into();
+        let four_pixels = png(2, 2, &[9; 16]);
+        let read_leaving = |pixels_left: usize| {
+            let mut shelf = Shelf::default();
+            let pixels = MEDIA_BYTES_MAX / 4 - pixels_left;
+            shelf
+                .held
+                .insert(held.clone(), Held::Picture(numbered(pixels, 1)));
+            let job = shelf
+                .next(&wanted, &identity, &[])
+                .expect("the new one is read");
+            let answer = (job.run)(&One(four_pixels.clone()));
+            answer.downcast::<MediaAnswer>().expect("a read").held
+        };
+        assert!(matches!(read_leaving(4), Held::Picture(_)), "room for it");
+        assert!(
+            matches!(read_leaving(3), Held::Refused(why) if why.contains("would hold over")),
+            "a pixel short"
+        );
+    }
 }

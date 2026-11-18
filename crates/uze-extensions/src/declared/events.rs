@@ -245,4 +245,18 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn an_agent_event_is_a_reason_only_for_the_same_event() {
+        use uze_contract::AgentEvent;
+        let turn = EventName::Agent(AgentEvent::TurnFinished);
+        assert!(is_reason(
+            &turn,
+            &EventName::Agent(AgentEvent::TurnFinished)
+        ));
+        assert!(!is_reason(
+            &turn,
+            &EventName::Agent(AgentEvent::ToolStarted)
+        ));
+    }
 }

@@ -399,4 +399,17 @@ exclude_re = [
   'uze-workspace/src/checkout/pool\.rs.*replace match guard metadata\.file_type\(\)\.is_symlink\(\) with false in isolation_directory_is_the_projects_own$',
   # An exclude file that cannot be read cannot be replaced either: an error either way.
   'uze-workspace/src/checkout/accounting\.rs.*replace match guard error\.kind\(\) == std::io::ErrorKind::NotFound with true in exclude_isolation_directory$',
+  # No build reads a marker: whether a surface applies is asked before it is built, so the bump only rebuilds the same tree.
+  'uze-extensions/src/declared/applies\.rs.*replace != with == in DeclaredExtension::absorb_marker$',
+  'uze-extensions/src/declared/applies\.rs.*replace \+= with \*= in DeclaredExtension::absorb_marker$',
+  # A cache that is never taken only weighs the same compile or data again: the same number.
+  'uze-extensions/src/declared/authoring\.rs.*replace match guard generation == self\.generation with false in DeclaredExtension::approximate_bytes$',
+  'uze-extensions/src/declared/authoring\.rs.*replace == with != in DeclaredExtension::approximate_bytes$',
+  'uze-extensions/src/declared/authoring\.rs.*replace match guard \*at == now with false in DeclaredExtension::approximate_bytes$',
+  # A series of zeros: 0/0 is NaN, which the level's cast turns into the 0 the guard gives.
+  'uze-extensions/src/declared/bind\.rs.*replace > with >= in chart$',
+  # A JSON number is always finite: serde_json holds no NaN or infinity.
+  'uze-extensions/src/declared/compose\.rs.*replace match guard number\.is_finite\(\) with true in literal$',
+  # `clear` is called by `replace` alone, which clears every build and bumps the engine's generation.
+  'uze-extensions/src/declared/media\.rs.*replace \+= with \*= in Shelf::clear$',
 ]

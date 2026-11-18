@@ -129,3 +129,27 @@ impl TraceNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_node_says_each_reason_once_and_no_more_than_its_share() {
+        let mut node = TraceNode::of(&Item::Use {
+            template: "row".to_owned(),
+            span: Span::default(),
+        });
+        let missing = |field: usize| Absence::Missing {
+            field: format!("field{field}"),
+        };
+        node.absent(missing(0));
+        node.absent(missing(0));
+        assert_eq!(node.absent, [missing(0)], "said once");
+        for field in 1..REASONS_MAX + 3 {
+            node.absent(missing(field));
+        }
+        assert_eq!(node.absent.len(), REASONS_MAX);
+        assert_eq!(node.absent.last(), Some(&missing(REASONS_MAX - 1)));
+    }
+}
