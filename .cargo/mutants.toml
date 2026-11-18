@@ -421,4 +421,31 @@ exclude_re = [
   'uze-extensions/src/declared/compose\.rs.*replace match guard number\.is_finite\(\) with true in literal$',
   # `clear` is called by `replace` alone, which clears every build and bumps the engine's generation.
   'uze-extensions/src/declared/media\.rs.*replace \+= with \*= in Shelf::clear$',
+  # uze-terminal workspace survivors
+  # Every entry it gathers is Unbounded, so the architecture suite reading the list finds none due either way.
+  'uze-terminal/src/earlier\.rs.*replace earlier -> Vec<Earlier> with vec!\[\]$',
+  # Only the span name and a warn field: nothing reads the request's name back.
+  'uze-terminal/src/protocol\.rs.*replace ClientRequest::kind -> &.static str with ',
+  # Differs only at the nanosecond the bound falls on.
+  'uze-terminal/src/runtime/endpoint\.rs.*replace < with <= in serves_this_build$',
+  'uze-terminal/src/runtime/pane\.rs.*replace < with <= in wait_for_hangup$',
+  'uze-terminal/src/runtime/process\.rs.*replace < with <= in (connect_waiting_within|retire)$',
+  'uze-terminal/src/runtime/usage\.rs.*replace < with <= in Server::usage$',
+  # The TermMode mouse flags share no bit, so `^` of two of them is `|`.
+  'uze-terminal/src/runtime/pane\.rs.*replace \| with \^ in mouse_mode$',
+  # Never read: uze_document reads the shape before the record, and a climb stamps schema_version.
+  'uze-terminal/src/runtime/persist\.rs.*replace first_workspace_schema -> u32 with [01]$',
+  # Both arms answer that the record is neither restored nor written; only the warn text differs.
+  'uze-terminal/src/runtime/persist\.rs.*replace match guard reason\.written_by_a_newer_build\(\) with (true|false) in load_persisted_workspace_at$',
+  # Only whether a warning is logged.
+  'uze-terminal/src/runtime/process\.rs.*delete ! in start_server$',
+  # Only wakes the broadcaster on its 8 ms tick; resync_stale_clients then finds nobody awaiting one.
+  'uze-terminal/src/runtime/server\.rs.*replace Server::has_stale_client -> bool with true$',
+  # A shift is never 0, since a row votes only for a row other than itself.
+  'uze-terminal/src/selection\.rs.*replace > with >= in FollowedSelection::follow$',
+  # Without the guard, a target equal to the one moved is found at its own index, lands where it is, and the same false is answered.
+  'uze-terminal/src/state\.rs.*replace match guard before == space with false in Session::reorder_space$',
+  'uze-terminal/src/state\.rs.*replace match guard before == tab with false in Session::reorder_tab$',
+  # An insertion index equal to the tab's own is only the tab itself as the target, which has returned.
+  'uze-terminal/src/state\.rs.*replace > with >= in Session::reorder_tab$',
 ]
