@@ -524,4 +524,45 @@ mod tests {
         );
         assert!(lit.iter().any(|&(_, row, _)| row == last.1 / 4), "{lit:?}");
     }
+
+    /// A click points at the middle of the stretch of board its cell
+    /// stands for, not at one end of it.
+    #[test]
+    fn a_click_points_at_the_middle_of_what_its_cell_stands_for() {
+        let map = Minimap::of((560, 40), (120, 40)).unwrap();
+        let column = CELLS.0 / 2;
+        let covered: Vec<i32> = (0..560)
+            .filter(|&x| map.dot_of(x, 0).0 / 2 == column)
+            .collect();
+        let (first, last) = (covered[0], covered[covered.len() - 1]);
+        let (x, _) = map
+            .board_cell_at(map.frame.x + 1 + column, map.frame.y + 1)
+            .unwrap();
+        assert!(first < x && x < last, "{x} within {first}..={last}");
+    }
+
+    /// In seven-bit characters a box is filled and only the outline of the
+    /// part looked at is drawn as corners.
+    #[test]
+    fn in_ascii_a_box_and_the_outline_are_told_apart() {
+        let board = (560, 40);
+        let left = Frame {
+            x: 0,
+            y: 0,
+            w: 56,
+            h: 40,
+        };
+        let right = Frame {
+            x: 400,
+            y: 0,
+            w: 100,
+            h: 40,
+        };
+        let (map, canvas) = painted(board, &[left], right, Glyphs::Ascii);
+        let row = map.dot_of(0, 20).1 / 4;
+        let boxed = map.dot_of(20, 20).0 / 2;
+        let outlined = map.dot_of(400, 20).0 / 2;
+        assert_eq!(braille(&map, &canvas, boxed, row).glyph, '#');
+        assert_eq!(braille(&map, &canvas, outlined, row).glyph, '+');
+    }
 }

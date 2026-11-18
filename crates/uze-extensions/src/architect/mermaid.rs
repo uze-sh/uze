@@ -938,4 +938,18 @@ mod tests {
         assert_eq!(ids, ["A", "B"]);
         assert_eq!(sequence.steps.len(), 3);
     }
+
+    #[test]
+    fn a_box_only_a_line_names_is_titled_by_its_name() {
+        let flowchart = graph("flowchart TD\n  a --> b");
+        let titles: Vec<&str> = flowchart
+            .nodes
+            .iter()
+            .map(|node| node.title.as_str())
+            .collect();
+        assert_eq!(titles, ["a", "b"]);
+        let c4 = graph("C4Context\n  Rel(user, shop, \"Uses\")");
+        let titles: Vec<&str> = c4.nodes.iter().map(|node| node.title.as_str()).collect();
+        assert_eq!(titles, ["user", "shop"]);
+    }
 }
