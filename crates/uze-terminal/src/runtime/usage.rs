@@ -265,6 +265,26 @@ mod tests {
         assert_eq!(kinds[&bootstrap], (Kind::Shell, true));
     }
 
+    /// What makes a tab an agent's is the agent identity in its launch,
+    /// not that its launch carried anything at all.
+    #[test]
+    fn a_launch_without_the_agent_identity_is_a_shell() {
+        let mut pane = PaneId(0);
+        let session = session_of(|session, space, _| {
+            pane = session.add_tab(space, "tool".into(), None, 80, 24, "/p".into());
+            let tab = session
+                .workspace
+                .spaces
+                .iter_mut()
+                .flat_map(|space| &mut space.tabs)
+                .find(|tab| tab.pane.id == pane)
+                .unwrap();
+            tab.env = vec![("RUST_LOG".into(), "debug".into())];
+        });
+
+        assert_eq!(kinds(&session)[&pane], (Kind::Shell, true));
+    }
+
     /// The process asking for usage from inside a pane, and what it
     /// started, are not that pane's: the report is the same wherever it is
     /// asked from.

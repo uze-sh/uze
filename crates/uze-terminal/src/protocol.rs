@@ -570,6 +570,13 @@ mod tests {
     }
 
     #[test]
+    fn the_default_dark_palette_survives_its_spelling_too() {
+        let palette = Palette::default();
+        assert_eq!(palette.scheme, Scheme::Dark);
+        assert_eq!(Palette::from_spelling(&palette.spelling()), Some(palette));
+    }
+
+    #[test]
     fn a_spelling_no_client_wrote_is_refused_rather_than_repaired() {
         // `aéaaa` is six bytes with a character boundary inside a channel.
         for spelling in [
