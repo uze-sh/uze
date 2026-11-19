@@ -523,6 +523,81 @@ mod tests {
         );
     }
 
+    /// A class names the characters it holds and no other: one alone, a
+    /// range, a dash at its end as itself, a `]` first as a member, and a
+    /// leading `!` or `^` taking the complement.
+    #[test]
+    fn a_class_matches_its_members_and_nothing_else() {
+        let settings = r#"{
+            "files.exclude": {
+                "[x]1": true,
+                "[a-c]2": true,
+                "[q-]3": true,
+                "[]k]4": true,
+                "[!]]5": true,
+                "[^m-o]6": true
+            }
+        }"#;
+        let listing = [
+            ("x1", false),
+            ("y1", false),
+            ("b2", false),
+            ("d2", false),
+            ("q3", false),
+            ("-3", false),
+            ("r3", false),
+            ("]4", false),
+            ("k4", false),
+            ("j4", false),
+            ("a5", false),
+            ("]5", false),
+            ("z6", false),
+            ("n6", false),
+        ];
+        assert_eq!(
+            shown(settings, "", &listing),
+            ["y1", "d2", "r3", "j4", "]5", "n6"]
+        );
+    }
+
+    /// Braces inside braces are alternatives of their own: the outer
+    /// pair splits only at its own commas.
+    #[test]
+    fn nested_braces_stand_for_every_inner_alternative() {
+        let settings = r#"{ "files.exclude": { "{x,{y,z}}.log": true } }"#;
+        let listing = [
+            ("x.log", false),
+            ("y.log", false),
+            ("z.log", false),
+            ("w.log", false),
+        ];
+        assert_eq!(shown(settings, "", &listing), ["w.log"]);
+    }
+
+    /// Comments are taken out wherever they close, a block one holding
+    /// a slash included, and a string keeps an escaped quote and
+    /// whatever follows it as its own.
+    #[test]
+    fn comments_end_where_they_close_and_strings_keep_their_escapes() {
+        let settings = r#"{ /* a/b */ "files.exclude": { "x\"//y": true, "dist": true } }"#;
+        assert_eq!(
+            shown(settings, "", &[("dist", true), ("lib", true)]),
+            ["lib"]
+        );
+    }
+
+    /// A slash that opens no comment is not the dialect, so the settings
+    /// say they do not parse rather than lose what follows it.
+    #[test]
+    fn a_stray_slash_is_not_a_comment() {
+        let error =
+            Exclusions::from_settings(r#"{ "files.exclude": { "dist": true } } /"#).unwrap_err();
+        assert!(
+            error.starts_with(".vscode/settings.json does not parse"),
+            "{error}"
+        );
+    }
+
     #[test]
     fn settings_without_the_key_hide_nothing_and_broken_ones_say_so() {
         assert!(Exclusions::from_settings("{}").unwrap().is_empty());

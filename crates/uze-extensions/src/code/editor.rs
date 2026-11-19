@@ -536,3 +536,203 @@ fn byte_offset(text: &str, column: usize) -> usize {
         .map(|(at, _)| at)
         .unwrap_or(text.len())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A buffer holding `text`, the caret where `caret` puts it.
+    fn holding(text: &str, line: usize, column: usize) -> OpenFile {
+        let mut open = OpenFile::opening(PathBuf::from("notes.txt"));
+        open.install(LoadedFile::of(text));
+        open.caret = Caret { line, column };
+        open
+    }
+
+    fn at(open: &OpenFile) -> (usize, usize) {
+        (open.caret.line, open.caret.column)
+    }
+
+    fn preview_text(open: &OpenFile, width: usize) -> Vec<String> {
+        open.preview(0, usize::MAX, Some(width))
+            .1
+            .iter()
+            .map(|line| line.spans.iter().map(|span| span.text.as_str()).collect())
+            .collect()
+    }
+
+    /// A lone unterminated line that happens to end in `\r` holds no line
+    /// break at all, so it says nothing about the file's convention and
+    /// keeps every byte it was given.
+    #[test]
+    fn a_file_with_no_line_break_keeps_a_trailing_carriage_return() {
+        let open = holding("a\r", 0, 0);
+        assert_eq!(open.contents(), "a\r");
+        assert_eq!(open.line_len(0), 2);
+    }
+
+    /// A CRLF file's lines hold their text only, so a line broken at its
+    /// end is broken with the file's own terminator.
+    #[test]
+    fn a_line_added_to_a_crlf_file_ends_crlf() {
+        let mut open = holding("a\r\n", 0, 0);
+        open.move_caret(Command::CaretLineEnd);
+        assert_eq!(at(&open), (0, 1), "the end of the text, not of the bytes");
+        open.split_line();
+        open.insert('b');
+        assert_eq!(open.contents(), "a\r\nb\r\n");
+    }
+
+    /// Enter breaks the line at the caret and leaves the caret at the
+    /// start of the second half, wherever in the file it is.
+    #[test]
+    fn enter_breaks_the_line_at_the_caret() {
+        let mut open = holding("hello\n", 0, 2);
+        open.split_line();
+        assert_eq!(open.contents(), "he\nllo\n");
+        assert_eq!(at(&open), (1, 0));
+
+        let mut open = holding("top\nhello\nend\n", 1, 2);
+        open.split_line();
+        open.insert('X');
+        assert_eq!(open.contents(), "top\nhe\nXllo\nend\n");
+        assert_eq!(at(&open), (1 + 1, 1));
+        assert!(open.modified);
+    }
+
+    /// Backspace takes the character before the caret; at the start of a
+    /// line it joins the line to the one above, the caret where they
+    /// meet; at the very start of the file it does nothing.
+    #[test]
+    fn backspace_takes_what_is_before_the_caret() {
+        let mut open = holding("abc\n", 0, 2);
+        open.backspace();
+        assert_eq!(open.contents(), "ac\n");
+        assert_eq!(at(&open), (0, 1));
+
+        let mut open = holding("ab\ncd\nef\n", 2, 0);
+        open.backspace();
+        assert_eq!(open.contents(), "ab\ncdef\n");
+        assert_eq!(at(&open), (1, 2));
+        open.insert('X');
+        assert_eq!(open.contents(), "ab\ncdXef\n");
+
+        let mut open = holding("ab\ncd\n", 1, 0);
+        open.backspace();
+        assert_eq!(at(&open), (0, 2));
+
+        let mut open = holding("ab\n", 0, 0);
+        open.backspace();
+        assert_eq!(open.contents(), "ab\n");
+        assert_eq!(at(&open), (0, 0));
+        assert!(!open.modified);
+    }
+
+    /// Delete takes the character under the caret, and at the end of a
+    /// line the break after it; at the end of the file it does nothing.
+    /// The caret stays where it is.
+    #[test]
+    fn delete_takes_what_is_under_the_caret() {
+        let mut open = holding("abc\n", 0, 1);
+        open.delete_forward();
+        assert_eq!(open.contents(), "ac\n");
+        assert_eq!(at(&open), (0, 1));
+
+        let mut open = holding("abc\n", 0, 2);
+        open.delete_forward();
+        assert_eq!(open.contents(), "ab\n");
+
+        let mut open = holding("ab\ncd\nef\n", 1, 2);
+        open.delete_forward();
+        assert_eq!(open.contents(), "ab\ncdef\n");
+        assert_eq!(at(&open), (1, 2));
+
+        let mut open = holding("ab\ncd\n", 0, 2);
+        open.delete_forward();
+        assert_eq!(open.contents(), "abcd\n");
+
+        let mut open = holding("ab\ncd\n", 1, 2);
+        open.delete_forward();
+        assert_eq!(open.contents(), "ab\ncd\n");
+        assert!(!open.modified);
+    }
+
+    /// Left and right walk the text: past a line's start to the end of
+    /// the one above, past its end to the start of the next, and no
+    /// further than the file's two ends.
+    #[test]
+    fn left_and_right_walk_the_text_across_lines() {
+        let mut open = holding("ab\ncde\n", 1, 2);
+        open.move_caret(Command::CaretLeft);
+        assert_eq!(at(&open), (1, 1));
+        open.move_caret(Command::CaretLeft);
+        open.move_caret(Command::CaretLeft);
+        assert_eq!(at(&open), (0, 2), "the end of the line above");
+        open.move_caret(Command::CaretLeft);
+        open.move_caret(Command::CaretLeft);
+        open.move_caret(Command::CaretLeft);
+        assert_eq!(at(&open), (0, 0), "nothing before the file's start");
+
+        open.move_caret(Command::CaretRight);
+        assert_eq!(at(&open), (0, 1));
+        open.move_caret(Command::CaretRight);
+        assert_eq!(at(&open), (0, 2), "the end of the line is a place");
+        open.move_caret(Command::CaretRight);
+        assert_eq!(at(&open), (1, 0), "the start of the next");
+        for _ in 0..5 {
+            open.move_caret(Command::CaretRight);
+        }
+        assert_eq!(at(&open), (1, 3), "nothing after the file's end");
+    }
+
+    /// Up and down change line and keep the column where the line is long
+    /// enough, stopping at the first and last lines.
+    #[test]
+    fn up_and_down_keep_the_column_the_line_allows() {
+        let mut open = holding("abcd\nx\nefgh\n", 0, 3);
+        open.move_caret(Command::SelectPrevious);
+        assert_eq!(at(&open), (0, 3), "nothing above the first line");
+        open.move_caret(Command::SelectNext);
+        assert_eq!(at(&open), (1, 1), "clamped to a shorter line");
+        open.move_caret(Command::SelectNext);
+        assert_eq!(at(&open), (2, 1));
+        open.move_caret(Command::SelectNext);
+        assert_eq!(at(&open), (2, 1), "nothing below the last line");
+        open.caret.column = 4;
+        open.move_caret(Command::SelectPrevious);
+        assert_eq!(at(&open), (1, 1));
+        open.move_caret(Command::SelectPrevious);
+        assert_eq!(at(&open), (0, 1));
+    }
+
+    /// Home and End go to the two ends of the caret's own line.
+    #[test]
+    fn home_and_end_go_to_the_ends_of_the_line() {
+        let mut open = holding("ab\ncdef\n", 1, 2);
+        open.move_caret(Command::CaretLineStart);
+        assert_eq!(at(&open), (1, 0));
+        open.move_caret(Command::CaretLineEnd);
+        assert_eq!(at(&open), (1, 4));
+    }
+
+    /// The document view shows the text as it is now and as wide as it is
+    /// asked for, however recently it was last drawn: a table folds its
+    /// cells into the columns it is given.
+    #[test]
+    fn the_preview_follows_the_text_and_the_width() {
+        let mut open = holding(
+            "intro\n\n| a | b |\n|---|---|\n| alpha beta gamma delta | epsilon zeta eta theta |\n",
+            0,
+            0,
+        );
+        assert!(preview_text(&open, 80).concat().starts_with("intro"));
+        let wide = preview_text(&open, 80).len();
+        let narrow = preview_text(&open, 20).len();
+        assert!(narrow > wide, "a narrower column folds into more lines");
+        assert_eq!(preview_text(&open, 80).len(), wide);
+
+        open.move_caret(Command::CaretLineEnd);
+        open.insert('!');
+        assert!(preview_text(&open, 80).concat().starts_with("intro!"));
+    }
+}
