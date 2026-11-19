@@ -325,6 +325,23 @@ exclude_re = [
   'uze-extensions/src/spec\.rs.*replace match guard state\.units\(\)\[target\.unit\(\)\]\.artifacts\.is_empty\(\) with true in content$',
   # No notes prefix only blank lines, and CommonMark drops leading blank lines.
   'uze-extensions/src/spec\.rs.*replace match guard !standing\.notes\.is_empty\(\) with true in with_standing$',
+  # uze-extensions review2
+  # Git never writes an empty status or path in `--name-status -z`; only a trailing NUL ends the list.
+  'uze-extensions/src/review/git\.rs.*replace \|\| with && in parse_name_status$',
+  # A picture is drawn only for a binary diff, so one decoded for a text diff is never shown.
+  'uze-extensions/src/review/git\.rs.*replace && with \|\| in file_diff$',
+  # Counting the quiet ids down keeps them unique and far below any id a press answers.
+  'uze-extensions/src/review/drawer\.rs.*replace \+= with -= in drawer$',
+  # Only the instant a retry or the door's read falls due to the nanosecond.
+  'uze-extensions/src/review/extension\.rs.*replace < with <= in ReviewExtension::(write_job|door_job)$',
+  # Colouring every comment again draws the same lines; the guard only saves the work.
+  'uze-extensions/src/review/surface\.rs.*replace match guard drawn\.text == comment\.text && drawn\.answers == comment\.answers with false in ReviewView::recolour$',
+  # `select_file` ignores an index past the list.
+  'uze-extensions/src/review/surface\.rs.*replace < with <= in ReviewView::step_file$',
+  # No gesture opens a composer while one is written: it takes the keys, and no affordance is drawn.
+  'uze-extensions/src/review/surface\.rs.*replace \|\| with && in ReviewView::open_composer$',
+  # A line on the scroll's own row sets the scroll to what it already is.
+  'uze-extensions/src/review/surface\.rs.*replace < with <= in ReviewView::follow$',
   # uze-extensions architect
   # `reach` pins the source's corner to column 0 and rows from 0, so `home` is clamped to (0, 0) either way.
   'uze-extensions/src/architect\.rs.*delete match arm Showing::Source in ArchitectView::home$',

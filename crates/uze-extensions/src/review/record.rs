@@ -91,3 +91,28 @@ impl Comment {
         self.sent.map(|(send, n)| format!("{send}/{n}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_free_id_is_one_no_comment_holds_and_never_zero() {
+        let mut record = ReviewRecord::default();
+        assert_eq!(record.free_id(), 1, "the first comment is 1");
+        for id in [1, 2] {
+            record.comments.push(Comment {
+                id,
+                ..Comment::default()
+            });
+        }
+        let free = record.free_id();
+        assert!(
+            !record.comments.iter().any(|comment| comment.id == free),
+            "{free} is held"
+        );
+        assert_eq!(free, 3);
+        record.next_comment = 9;
+        assert_eq!(record.free_id(), 9, "the record's own next id is kept to");
+    }
+}

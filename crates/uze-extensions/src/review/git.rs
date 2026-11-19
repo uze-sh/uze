@@ -481,6 +481,108 @@ mod tests {
         assert!(stamps.contains_key(&root.join("a.rs")), "{stamps:?}");
     }
 
+    /// A base remembered for tips that have since moved is not the base
+    /// any more: it is found again.
+    #[test]
+    fn a_base_known_for_other_tips_is_found_again() {
+        let repository = uze_testkit::git::Repository::new("review-base-moved");
+        let main = repository.branch();
+        let fork = repository.head();
+        repository.git(&["checkout", "-b", "fix/naming"]);
+        repository.commit_file("a.rs", "fn a() {}\n");
+        let known = Base {
+            commit: Some("remembered".to_owned()),
+            reason: None,
+            tips: Some(("moved".to_owned(), "away".to_owned())),
+        };
+        let found = base(&DiskHost, repository.root(), Some(&main), &known);
+        assert_eq!(found.commit.as_deref(), Some(fork.as_str()));
+    }
+
+    #[test]
+    fn against_a_base_a_file_git_does_not_track_is_listed_too() {
+        let repository = uze_testkit::git::Repository::new("review-untracked-listed");
+        let root = repository.root();
+        std::fs::write(root.join("new.rs"), "fn new() {}\n").unwrap();
+        let listed = listing(&DiskHost, root, Some("HEAD")).unwrap();
+        let read: Vec<(PathBuf, FileStatus)> = listed
+            .files
+            .into_iter()
+            .map(|file| (file.path, file.status))
+            .collect();
+        assert_eq!(read, [(root.join("new.rs"), FileStatus::Untracked)]);
+    }
+
+    /// A file taken out of the index but left on disk is both gone from
+    /// the base's view and untracked: it is listed once.
+    #[test]
+    fn a_file_untracked_after_being_committed_is_listed_once() {
+        let repository = uze_testkit::git::Repository::new("review-listed-once");
+        let root = repository.root();
+        repository.commit_file("a.rs", "fn a() {}\n");
+        repository.commit_file("b.rs", "fn b() {}\n");
+        repository.git(&["rm", "--cached", "--quiet", "a.rs"]);
+        std::fs::write(root.join("c.rs"), "fn c() {}\n").unwrap();
+        let listed = listing(&DiskHost, root, Some("HEAD^^")).unwrap();
+        let paths: Vec<PathBuf> = listed.files.into_iter().map(|file| file.path).collect();
+        assert_eq!(
+            paths,
+            [root.join("a.rs"), root.join("b.rs"), root.join("c.rs")]
+        );
+    }
+
+    #[test]
+    fn a_listing_names_the_commit_checked_out() {
+        let repository = uze_testkit::git::Repository::new("review-listing-head");
+        let listed = listing(&DiskHost, repository.root(), None).unwrap();
+        assert_eq!(listed.head, Some(repository.head()));
+    }
+
+    /// A deleted file has nothing on disk to hash, and is still stamped,
+    /// so it can be marked viewed.
+    #[test]
+    fn a_deleted_file_is_stamped_too() {
+        let repository = uze_testkit::git::Repository::new("review-deleted-stamp");
+        let root = repository.root();
+        repository.commit_file("gone.rs", "fn gone() {}\n");
+        std::fs::remove_file(root.join("gone.rs")).unwrap();
+        let stamps = listing(&DiskHost, root, None).unwrap().stamps;
+        assert!(stamps.contains_key(&root.join("gone.rs")), "{stamps:?}");
+    }
+
+    #[test]
+    fn a_file_git_does_not_track_reads_as_added_whole() {
+        let repository = uze_testkit::git::Repository::new("review-untracked-diff");
+        let root = repository.root();
+        let path = root.join("new.rs");
+        std::fs::write(&path, "fn a() {}\nfn b() {}\n").unwrap();
+        let read = file_diff(&DiskHost, root, None, &path, FileStatus::Untracked).unwrap();
+        let kinds: Vec<diff::DiffLineKind> = read.cells.iter().map(|cell| cell.kind).collect();
+        assert_eq!(
+            kinds,
+            [diff::DiffLineKind::Added, diff::DiffLineKind::Added]
+        );
+    }
+
+    /// The door counts what the diff adds and removes, and an untracked
+    /// file, which no diff names, as added in full.
+    #[test]
+    fn the_totals_count_an_untracked_file_as_added_whole() {
+        let repository = uze_testkit::git::Repository::new("review-totals");
+        let root = repository.root();
+        repository.commit_file("a.rs", "one\n");
+        std::fs::write(root.join("a.rs"), "one\ntwo\n").unwrap();
+        std::fs::write(root.join("b.rs"), "1\n2\n3\n").unwrap();
+        assert_eq!(
+            totals(&DiskHost, root, None),
+            Some(Totals {
+                additions: 4,
+                deletions: 0,
+                files: 2,
+            })
+        );
+    }
+
     #[test]
     fn a_fingerprint_is_the_same_number_on_every_build() {
         assert_eq!(fingerprint(""), 0xcbf2_9ce4_8422_2325);
