@@ -34,11 +34,20 @@ mod tests {
     use super::*;
 
     fn icon(entries: &[(u8, &[u8])]) -> Vec<u8> {
+        let entries: Vec<_> = entries
+            .iter()
+            .map(|&(side, image)| ((side, side), image))
+            .collect();
+        icon_sized(&entries)
+    }
+
+    /// An icon whose directory claims each entry's width and height.
+    fn icon_sized(entries: &[((u8, u8), &[u8])]) -> Vec<u8> {
         let mut file = vec![0, 0, 1, 0];
         file.extend((entries.len() as u16).to_le_bytes());
         let mut offset = 6 + entries.len() * 16;
-        for (side, image) in entries {
-            file.extend([*side, *side, 0, 0, 1, 0, 32, 0]);
+        for ((width, height), image) in entries {
+            file.extend([*width, *height, 0, 0, 1, 0, 32, 0]);
             file.extend((image.len() as u32).to_le_bytes());
             file.extend((offset as u32).to_le_bytes());
             offset += image.len();
@@ -68,6 +77,31 @@ mod tests {
         let image = decode(&icon(&[(1, &small), (2, &large)])).unwrap();
         assert_eq!((image.width, image.height), (2, 2));
         assert_eq!(image.pixels[0], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn the_largest_entry_is_drawn_wherever_it_is_listed() {
+        let small = png_of(1, [255, 0, 0, 255]);
+        let large = png_of(2, [0, 0, 255, 255]);
+        let image = decode(&icon(&[(2, &large), (1, &small)])).unwrap();
+        assert_eq!((image.width, image.height), (2, 2));
+    }
+
+    #[test]
+    fn a_side_listed_as_zero_is_256_and_outranks_every_other() {
+        let small = png_of(1, [255, 0, 0, 255]);
+        let large = png_of(2, [0, 0, 255, 255]);
+        let image = decode(&icon(&[(0, &large), (255, &small)])).unwrap();
+        assert_eq!((image.width, image.height), (2, 2));
+    }
+
+    #[test]
+    fn the_largest_entry_is_the_one_with_the_most_pixels() {
+        // Six by one is longer on a side, and only six pixels against nine.
+        let wide = png_of(1, [255, 0, 0, 255]);
+        let square = png_of(2, [0, 0, 255, 255]);
+        let image = decode(&icon_sized(&[((6, 1), &wide), ((3, 3), &square)])).unwrap();
+        assert_eq!((image.width, image.height), (2, 2));
     }
 
     #[test]
