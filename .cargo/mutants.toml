@@ -504,4 +504,7 @@ exclude_re = [
   'uze-extensions/src/spec/extension\.rs.*replace < with <= in SpecExtension::counted_fresh$',
   # Only whether the read and the count queue behind each other, never what they answer.
   'uze-extensions/src/spec/extension\.rs.*replace <impl Extension for SpecExtension>::lanes -> crate::contract::Lanes with Default::default\(\)$',
+  # uze-extensions picture
+  # A zero width is refused either way, by the decoded image's own check.
+  'uze-extensions/src/shared/picture/bmp\.rs.*replace > with >= in dib$',
 ]

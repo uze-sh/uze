@@ -341,6 +341,10 @@ mod tests {
         let rgb = decode(path, &encoded(1, 1, png::ColorType::Rgb, &[10, 20, 30])).unwrap();
         assert_eq!((rgb.width, rgb.height), (1, 1));
         assert_eq!(*rgb.pixels, [[10, 20, 30, 255]]);
+
+        let gray_alpha = encoded(1, 1, png::ColorType::GrayscaleAlpha, &[90, 40]);
+        let gray_alpha = decode(path, &gray_alpha).unwrap();
+        assert_eq!(*gray_alpha.pixels, [[90, 90, 90, 40]]);
     }
 
     #[test]
@@ -388,6 +392,56 @@ mod tests {
         assert_eq!(
             picture.pixels[3][3], 0,
             "what the first frame leaves is transparent"
+        );
+    }
+
+    /// A GIF of a `canvas` (width, height) whose one frame, `frame.0`
+    /// pixels wide, is placed at `at` (left, top), each pixel an index
+    /// into a palette of red, green, blue and white.
+    fn gif_with_frame(canvas: (u16, u16), at: (u16, u16), frame: (u16, &[u8])) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let palette = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
+            let mut encoder = gif::Encoder::new(&mut bytes, canvas.0, canvas.1, &palette).unwrap();
+            let mut first = gif::Frame::default();
+            (first.left, first.top) = at;
+            first.width = frame.0;
+            first.height = frame.1.len() as u16 / frame.0;
+            first.buffer = std::borrow::Cow::Owned(frame.1.to_vec());
+            encoder.write_frame(&first).unwrap();
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_gif_frame_is_laid_where_it_says_on_the_canvas() {
+        let bytes = gif_with_frame((3, 3), (1, 1), (2, &[0, 1, 2, 3]));
+        let picture = decode(Path::new("a.gif"), &bytes).unwrap();
+        let clear = [0, 0, 0, 0];
+        assert_eq!(
+            *picture.pixels,
+            [
+                clear,
+                clear,
+                clear,
+                clear,
+                [255, 0, 0, 255],
+                [0, 255, 0, 255],
+                clear,
+                [0, 0, 255, 255],
+                [255, 255, 255, 255]
+            ]
+        );
+    }
+
+    #[test]
+    fn what_a_gif_frame_holds_past_the_canvas_is_not_drawn() {
+        let bytes = gif_with_frame((2, 2), (0, 0), (3, &[0, 1, 2]));
+        let picture = decode(Path::new("a.gif"), &bytes).unwrap();
+        let clear = [0, 0, 0, 0];
+        assert_eq!(
+            *picture.pixels,
+            [[255, 0, 0, 255], [0, 255, 0, 255], clear, clear]
         );
     }
 
@@ -457,6 +511,29 @@ mod tests {
             decode(path, &image).is_some(),
             "the bound ends with the decode it was set for"
         );
+    }
+
+    #[test]
+    fn a_bounded_decode_asks_a_bitmap_header_before_its_rows() {
+        let path = Path::new("a.bmp");
+        let rows = [0; 16];
+        let bitmap = bmp::tests::file(2, 2, 24, 0, &[], &rows);
+        assert_eq!(
+            decode_within(path, &bitmap, 2 * 2 * 4 - 1),
+            Err(Refused::PastBound),
+            "four pixels are 16 bytes"
+        );
+        assert!(decode_within(path, &bitmap, 2 * 2 * 4).is_ok());
+    }
+
+    #[test]
+    fn a_shrunk_pixel_is_the_average_of_the_block_it_stands_for() {
+        // A 4×4 gradient halved: each kept pixel averages a 2×2 block.
+        let source = (0..16u8).map(|at| [at * 4, 0, 0, 255]).collect();
+        let picture = shrunk(4, 4, source, 2);
+        assert_eq!((picture.width, picture.height), (2, 2));
+        let reds: Vec<u8> = picture.pixels.iter().map(|pixel| pixel[0]).collect();
+        assert_eq!(reds, [10, 18, 42, 50]);
     }
 
     #[test]
