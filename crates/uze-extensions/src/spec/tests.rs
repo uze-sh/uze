@@ -1464,6 +1464,192 @@ fn a_decisions_relations_are_said_above_it_and_its_status_beside_it() {
     assert!(shown.contains("Related to 001 Keep one lock"), "{shown}");
 }
 
+fn decisions_in(root: &Path) -> SpecAnswer {
+    read_with(&DiskHost, root, None, SHIPPED, &declared(root, &["docs"]))
+}
+
+fn standing_of(answer: &SpecAnswer, name: &str) -> super::decision::Standing {
+    unit(answer, Subject::Decisions, name)
+        .standing
+        .clone()
+        .unwrap_or_else(|| panic!("{name} has a standing"))
+}
+
+/// One record superseding another, which links back to it, is a pair
+/// said once as the supersession it is.
+#[test]
+fn a_supersession_and_a_link_back_between_two_records_is_said_once() {
+    let dir = TempDir::new("spec-decisions-pair");
+    let root = dir.path();
+    write(
+        root,
+        "docs/adr/0001-one.md",
+        "# One\n\nStatus: Accepted, see [two](0002-two.md)\n",
+    );
+    write(
+        root,
+        "docs/adr/0002-two.md",
+        "# Two\n\n- Status: accepted\n- Supersedes: [one](0001-one.md)\n",
+    );
+    let answer = decisions_in(root);
+
+    let one = standing_of(&answer, "0001 One");
+    assert!(one.superseded);
+    assert_eq!(one.notes, ["Superseded by 0002 Two"]);
+    assert_eq!(
+        standing_of(&answer, "0002 Two").notes,
+        ["Supersedes 0001 One"]
+    );
+}
+
+/// `ADR-0002` is the record numbered 2, and no other.
+#[test]
+fn a_record_named_by_number_is_the_one_with_that_number() {
+    let dir = TempDir::new("spec-decisions-number");
+    let root = dir.path();
+    write(root, "docs/adr/0001-one.md", "# One\n\nStatus: Accepted\n");
+    write(root, "docs/adr/0002-two.md", "# Two\n\nStatus: Accepted\n");
+    write(
+        root,
+        "docs/adr/0003-three.md",
+        "# Three\n\n- Status: accepted\n- Supersedes: ADR-0002\n",
+    );
+    let answer = decisions_in(root);
+
+    let two = standing_of(&answer, "0002 Two");
+    assert!(two.superseded);
+    assert_eq!(two.notes, ["Superseded by 0003 Three"]);
+    assert!(standing_of(&answer, "0001 One").notes.is_empty());
+    assert!(!standing_of(&answer, "0001 One").superseded);
+}
+
+/// A link names the file beside the record, else the one file of that
+/// name anywhere in the places.
+#[test]
+fn a_link_names_the_record_beside_it_else_the_only_one_of_its_name() {
+    let dir = TempDir::new("spec-decisions-resolve");
+    let root = dir.path();
+    write(
+        root,
+        "docs/adr/0001-one.md",
+        "# One\n\nStatus: Superseded by [two](0002-two.md)\n",
+    );
+    write(root, "docs/adr/0002-two.md", "# Two\n\nStatus: Accepted\n");
+    write(
+        root,
+        "docs/old/0002-two.md",
+        "# Old two\n\nStatus: Accepted\n",
+    );
+    write(
+        root,
+        "docs/adr/0003-three.md",
+        "# Three\n\nStatus: Superseded by [four](0004-four.md)\n",
+    );
+    write(
+        root,
+        "docs/decisions/0004-four.md",
+        "# Four\n\nStatus: Accepted\n",
+    );
+    let answer = decisions_in(root);
+
+    assert_eq!(
+        standing_of(&answer, "0002 Two").notes,
+        ["Supersedes 0001 One"]
+    );
+    assert!(standing_of(&answer, "0002 Old two").notes.is_empty());
+    assert_eq!(
+        standing_of(&answer, "0004 Four").notes,
+        ["Supersedes 0003 Three"]
+    );
+}
+
+/// Records are looked for a few levels under a declared place, and no
+/// further.
+#[test]
+fn a_record_deeper_than_the_places_reach_is_not_read() {
+    let dir = TempDir::new("spec-decisions-depth");
+    let root = dir.path();
+    write(root, "docs/a/b/c/d/e/0001-near.md", "# Near\n");
+    write(root, "docs/a/b/c/d/e/f/0002-far.md", "# Far\n");
+    assert_eq!(
+        names(units(&decisions_in(root)), Subject::Decisions),
+        ["0001 Near"]
+    );
+}
+
+/// A directory of files lists its documents: not what is hidden, not a
+/// picture, not a directory.
+#[test]
+fn a_directory_of_files_lists_only_its_documents() {
+    let dir = superpowers_checkout("spec-superpowers-documents");
+    let root = dir.path();
+    write(root, "docs/superpowers/plans/.draft.md", "- [ ] hidden\n");
+    write(root, "docs/superpowers/plans/diagram.png", "png");
+    write(root, "docs/superpowers/plans/assets/x.md", "# x\n");
+    let answer = read_with(&DiskHost, root, None, SHIPPED, &ArtifactSource::Undeclared);
+    assert_eq!(
+        names(units(&answer), Subject::Changes),
+        ["2026-09-29-share-links", "2026-09-15-offline-sync"]
+    );
+}
+
+fn openspec_layout(label: &str) -> TempDir {
+    let dir = TempDir::new(label);
+    write(dir.path(), "openspec/config.yaml", "schema: spec-driven\n");
+    dir
+}
+
+/// A unit lists its documents as deep as a change's
+/// `specs/<area>/<capability>/spec.md`, and nothing deeper or binary.
+#[test]
+fn a_unit_lists_its_documents_to_a_bounded_depth() {
+    let dir = openspec_layout("spec-unit-depth");
+    let root = dir.path();
+    write(root, "openspec/changes/x/proposal.md", "## Why\n");
+    write(root, "openspec/changes/x/diagram.png", "png");
+    write(
+        root,
+        "openspec/changes/x/specs/area/cap/spec.md",
+        "## ADDED\n",
+    );
+    write(
+        root,
+        "openspec/changes/x/specs/area/cap/deeper/spec.md",
+        "## ADDED\n",
+    );
+    let answer = read_with(
+        &DiskHost,
+        root,
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
+    let mut relatives: Vec<&str> = unit(&answer, Subject::Changes, "x")
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.relative.as_str())
+        .collect();
+    relatives.sort_unstable();
+    assert_eq!(relatives, ["proposal.md", "specs/area/cap/spec.md"]);
+}
+
+/// A capability is found however it is nested, to a bounded depth.
+#[test]
+fn a_capability_nested_past_the_reach_is_not_a_spec() {
+    let dir = openspec_layout("spec-capability-depth");
+    let root = dir.path();
+    write(root, "openspec/specs/a/b/c/d/spec.md", "## Purpose\n");
+    write(root, "openspec/specs/a/b/c/d/e/spec.md", "## Purpose\n");
+    let answer = read_with(
+        &DiskHost,
+        root,
+        None,
+        &[OPENSPEC],
+        &ArtifactSource::Undeclared,
+    );
+    assert_eq!(names(units(&answer), Subject::Specs), ["a/b/c/d"]);
+}
+
 /// The records this repository keeps are what the reader is for: every one
 /// under `docs/adr` reads as a decision, and a partial supersession leaves
 /// the older record standing, named by the newer one.
@@ -1564,8 +1750,9 @@ fn no_checkout_offers_more_than_three_subjects() {
 
 mod hosted {
     use super::*;
-    use crate::contract::{Checkout, Extension, Opaque, Outcome};
+    use crate::contract::{Checkout, Extension, Opaque, Outcome, SurfaceSlot};
     use crate::spec::{DOCUMENT, SUMMARY, SpecExtension};
+    use crate::view::{ScrollDirection, ScrollTarget};
 
     fn checkout(root: &Path, target: Option<String>) -> Checkout {
         Checkout {
@@ -1747,6 +1934,82 @@ mod hosted {
             .place(DOCUMENT)
             .and_then(|place| place.downcast::<SpecPlace>());
         assert_eq!(on_show, Some(SpecPlace::change("held")));
+    }
+
+    #[test]
+    fn the_extension_names_its_document_view_and_its_summary() {
+        let extension = SpecExtension::default();
+        assert_eq!(extension.identity(), "spec");
+        let surfaces: Vec<(String, SurfaceSlot)> = extension
+            .surfaces()
+            .into_iter()
+            .map(|surface| (surface.id, surface.slot))
+            .collect();
+        assert_eq!(
+            surfaces,
+            [
+                (DOCUMENT.to_owned(), SurfaceSlot::View),
+                (SUMMARY.to_owned(), SurfaceSlot::Section)
+            ]
+        );
+    }
+
+    fn first_line_shown(extension: &SpecExtension) -> usize {
+        match extension.view(DOCUMENT, space()).map(|view| view.content) {
+            Some(Content::Lines { first, .. }) => first,
+            other => panic!("not lines: {other:?}"),
+        }
+    }
+
+    /// The document view scrolls, jumps, copies and closes; the summary's
+    /// surface does none of that to it.
+    #[test]
+    fn the_document_view_scrolls_copies_and_closes_on_its_own_surface() {
+        let repository = uze_testkit::git::Repository::new("spec-hosted-long");
+        let target = repository.branch();
+        repository.commit_file("openspec/config.yaml", "schema: spec-driven\n");
+        repository.git(&["checkout", "--quiet", "-b", "work"]);
+        let proposal: String = (1..=60).map(|line| format!("line {line}\n\n")).collect();
+        repository.commit_file("openspec/changes/mine/proposal.md", &proposal);
+        let mut extension = SpecExtension::default();
+        extension.open(DOCUMENT, &checkout(repository.root(), Some(target)));
+        for answer in run(&mut extension) {
+            extension.absorb(answer);
+        }
+        assert!(
+            extension
+                .text(DOCUMENT, 0..200)
+                .iter()
+                .any(|line| line == "line 1"),
+            "what is copied is the document on show"
+        );
+        assert!(extension.text(SUMMARY, 0..200).is_empty());
+
+        extension.scroll(
+            DOCUMENT,
+            ScrollTarget::Navigator,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert_eq!(
+            first_line_shown(&extension),
+            0,
+            "the list scrolled, not the page"
+        );
+        extension.scroll(
+            DOCUMENT,
+            ScrollTarget::Content,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert!(first_line_shown(&extension) > 0, "the wheel moves the page");
+        extension.scroll_to(DOCUMENT, 7, space());
+        assert_eq!(first_line_shown(&extension), 7);
+
+        extension.close(SUMMARY);
+        assert!(extension.view(DOCUMENT, space()).is_some());
+        extension.close(DOCUMENT);
+        assert!(extension.view(DOCUMENT, space()).is_none());
     }
 }
 
@@ -1952,18 +2215,18 @@ fn tab_steps_through_the_subjects_round_their_end() {
             .map(|subject| subject.label)
             .collect()
     };
-    assert_eq!(active(&state), [Subject::Changes.label()]);
+    assert_eq!(active(&state), ["Changes"]);
     handle_command(&mut state, Command::FocusNext, space());
-    assert_eq!(active(&state), [Subject::Specs.label()]);
+    assert_eq!(active(&state), ["Specs"]);
     assert_eq!(
         selected_names(&state),
         ["mine"],
         "on the subject's first unit"
     );
     handle_command(&mut state, Command::FocusNext, space());
-    assert_eq!(active(&state), [Subject::Changes.label()]);
+    assert_eq!(active(&state), ["Changes"]);
     handle_mouse(&mut state, Some(ViewHit::SelectSubject(1)), space());
-    assert_eq!(active(&state), [Subject::Specs.label()]);
+    assert_eq!(active(&state), ["Specs"]);
     handle_mouse(&mut state, Some(ViewHit::SelectSubject(1)), space());
     assert_eq!(
         selected_names(&state),

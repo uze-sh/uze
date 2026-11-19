@@ -214,7 +214,6 @@ impl Document {
                 self.flush();
                 self.heading = Some(level);
             }
-            Tag::Paragraph => self.flush(),
             Tag::Emphasis => self.emphasis.italic = true,
             Tag::Strong => self.emphasis.bold = true,
             Tag::Strikethrough => self.emphasis.struck = true,
@@ -814,6 +813,15 @@ mod tests {
     }
 
     #[test]
+    fn a_loose_list_keeps_each_item_beside_its_marker() {
+        let lines = lines_of("- one\n\n- two\n\n1. three\n");
+
+        assert!(lines.iter().any(|line| line == "• one"), "{lines:?}");
+        assert!(lines.iter().any(|line| line == "• two"), "{lines:?}");
+        assert!(lines.iter().any(|line| line == "1. three"), "{lines:?}");
+    }
+
+    #[test]
     fn a_numbered_list_counts_and_a_nested_one_does_not_disturb_it() {
         let lines = lines_of("1. one\n2. two\n");
         assert!(lines.iter().any(|line| line == "1. one"), "{lines:?}");
@@ -981,6 +989,13 @@ mod tests {
         assert!(row.contains("ab "), "{row:?}");
     }
 
+    /// Words the markup parts with a space stay parted when folded.
+    #[test]
+    fn folding_a_cell_keeps_the_spaces_between_differently_marked_words() {
+        let lines = lines_of("| h |\n|---|\n| x **a** b |\n");
+        assert!(lines.iter().any(|line| line.contains("x a b")), "{lines:?}");
+    }
+
     #[test]
     fn toml_frontmatter_is_a_table_too() {
         let lines = lines_of("+++\ntitle = \"Hi\"\n+++\n");
@@ -1054,5 +1069,187 @@ mod tests {
     #[test]
     fn an_empty_document_still_has_a_line() {
         assert_eq!(rendered("").len(), 1);
+    }
+
+    fn span_named<'a>(lines: &'a [ContentLine], text: &str) -> &'a Span {
+        lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .find(|span| span.text.trim() == text)
+            .unwrap_or_else(|| panic!("{text:?} is drawn"))
+    }
+
+    /// A line break in the source is a space in the paragraph; two
+    /// trailing spaces ask for a new line, and get one.
+    #[test]
+    fn a_soft_break_joins_words_and_a_hard_break_starts_a_line() {
+        assert_eq!(lines_of("one\ntwo\n"), ["one two", ""]);
+        assert_eq!(lines_of("one  \ntwo\n"), ["one", "two", ""]);
+    }
+
+    #[test]
+    fn paragraphs_are_parted_by_a_blank_line() {
+        assert_eq!(lines_of("one\n\ntwo\n"), ["one", "", "two", ""]);
+    }
+
+    #[test]
+    fn a_thematic_break_is_drawn_as_a_rule_between_its_neighbours() {
+        let lines = lines_of("above\n\n***\n\nbelow\n");
+        let rule = lines
+            .iter()
+            .position(|line| line.starts_with('─'))
+            .unwrap_or_else(|| panic!("a rule is drawn: {lines:?}"));
+        let above = lines.iter().position(|line| line == "above").unwrap();
+        let below = lines.iter().position(|line| line == "below").unwrap();
+        assert!(above < rule && rule < below, "{lines:?}");
+    }
+
+    /// Inline HTML is part of the sentence it sits in, and a comment in it
+    /// reads as one.
+    #[test]
+    fn inline_html_is_shown_in_its_sentence() {
+        let lines = rendered("press <kbd>K</kbd> <!-- why --> now\n");
+        let line = text_of(&lines[0]);
+        assert!(line.contains("<kbd>") && line.contains("now"), "{line:?}");
+        assert!(span_named(&lines, "<!-- why -->").italic);
+        assert!(!span_named(&lines, "<kbd>").italic);
+    }
+
+    #[test]
+    fn emphasis_lasts_only_until_its_markup_closes() {
+        let lines = rendered("~~old~~ *thin* **bold** plain\n");
+
+        assert_eq!(
+            span_named(&lines, "old").role,
+            Role::Faint,
+            "struck text no longer counts"
+        );
+        assert!(span_named(&lines, "thin").italic);
+        assert!(span_named(&lines, "bold").bold);
+        let plain = span_named(&lines, "plain");
+        assert!(!plain.bold && !plain.italic, "{plain:?}");
+        assert_eq!(plain.role, Role::Default);
+    }
+
+    /// A quote is marked once at the head of each of its lines, a quote
+    /// inside a quote twice, and the mark ends with the quote.
+    #[test]
+    fn a_quote_is_marked_at_the_head_of_its_lines_and_ends_with_its_block() {
+        assert_eq!(
+            lines_of("> quoted *x* y\n\nafter\n"),
+            ["│ quoted x y", "", "after", ""]
+        );
+        assert!(
+            lines_of("> > deep\n").iter().any(|line| line == "│ │ deep"),
+            "{:?}",
+            lines_of("> > deep\n")
+        );
+    }
+
+    #[test]
+    fn a_nested_list_ends_where_it_ends_and_the_list_is_set_apart() {
+        assert_eq!(
+            lines_of("- one\n  - deep\n- two\n\nafter\n"),
+            ["• one", "  • deep", "• two", "", "after", ""]
+        );
+    }
+
+    #[test]
+    fn a_fenced_block_ends_at_its_fence_and_prose_follows_as_prose() {
+        let lines = rendered("```\ncode\n```\nafter *x*\n");
+        let texts: Vec<String> = lines.iter().map(text_of).collect();
+        assert_eq!(texts, ["  code", "", "after x", ""]);
+        assert!(span_named(&lines, "x").italic, "markup reads again");
+    }
+
+    #[test]
+    fn a_block_of_html_is_set_apart_from_what_follows() {
+        assert_eq!(
+            lines_of("<div>\nhi\n</div>\n\ntext\n"),
+            ["<div>", "hi", "</div>", "", "text", ""]
+        );
+    }
+
+    /// The head names the columns, so it is the row emphasised; a cell of
+    /// the head that is quoted stays quoted.
+    #[test]
+    fn a_tables_head_is_emphasised_and_its_body_is_not() {
+        let lines = rendered("| name | `id` |\n|---|---|\n| x | y |\n");
+
+        let name = span_named(&lines, "name");
+        assert!(name.bold);
+        assert_eq!(name.role, Role::Secondary);
+        let id = span_named(&lines, "id");
+        assert!(id.bold);
+        assert_eq!(id.role, Role::Info, "inline code still classifies");
+        let body = span_named(&lines, "x");
+        assert!(!body.bold);
+        assert_eq!(body.role, Role::Default);
+    }
+
+    /// A rule parts the rows, but none sits between the top edge and the
+    /// first row.
+    #[test]
+    fn a_tables_first_row_sits_under_its_top_edge() {
+        let lines = lines_of("| a |\n|---|\n| x |\n");
+        assert_eq!(lines, ["╭───╮", "│ a │", "├───┤", "│ x │", "╰───╯", ""]);
+    }
+
+    #[test]
+    fn a_centred_column_shares_its_slack_on_both_sides() {
+        let lines = lines_of("| n |\n|:-:|\n| 1 |\n| 100 |\n");
+        assert!(lines.iter().any(|line| line == "│  1  │"), "{lines:?}");
+        assert!(lines.iter().any(|line| line == "│  n  │"), "{lines:?}");
+    }
+
+    /// Columns fit as long as each keeps the narrowest width a column is
+    /// squeezed to; below that the table is left at its natural width.
+    #[test]
+    fn columns_are_squeezed_no_narrower_than_the_minimum() {
+        assert_eq!(fit_columns(&[3, 4], 10), [3, 4], "room enough");
+        assert_eq!(
+            fit_columns(&[20, 20], 2 * MIN_COLUMN_WIDTH),
+            [MIN_COLUMN_WIDTH, MIN_COLUMN_WIDTH]
+        );
+        assert_eq!(
+            fit_columns(&[20, 20], 2 * MIN_COLUMN_WIDTH - 1),
+            [20, 20],
+            "too narrow to fit at all"
+        );
+    }
+
+    fn folded(text: &str, width: usize) -> Vec<String> {
+        fold(&[Span::new(text, Role::Default)], width)
+            .iter()
+            .map(|line| line.iter().map(|span| span.text.as_str()).collect())
+            .collect()
+    }
+
+    /// Each folded line starts with a word and is no wider than the cell.
+    #[test]
+    fn a_cell_folds_at_word_boundaries_within_its_width() {
+        assert_eq!(folded("aaa bbb ccc", 7), ["aaa bbb", "ccc"]);
+        assert_eq!(folded("aaa bbb ccc", 6), ["aaa", "bbb", "ccc"]);
+    }
+
+    /// Indentation is kept while there is room for it beside a word, and
+    /// dropped when it would fill the line by itself.
+    #[test]
+    fn a_cells_indent_is_kept_only_while_it_leaves_room() {
+        assert_eq!(folded("  key", 10), ["  key"]);
+        assert_eq!(folded("    ab", 4), ["ab"]);
+        assert_eq!(folded("      word", 4), ["word"]);
+    }
+
+    #[test]
+    fn a_word_is_cut_where_its_first_columns_end() {
+        assert_eq!(cut_at("abcdefghij", 4), 4);
+        assert_eq!(cut_at("ab", 4), 2, "a word that fits is not cut");
+        assert_eq!(cut_at("日本語", 4), "日本".len(), "by columns, not bytes");
+        assert_eq!(
+            cut_at("日本", 1),
+            "日".len(),
+            "a character wider than the line still moves the cut on"
+        );
     }
 }
