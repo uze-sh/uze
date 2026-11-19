@@ -863,3 +863,153 @@ fn closing_a_shell_in_the_background_leaves_the_selection_alone() {
     session.remove_tab(one).expect("shell 1 closes");
     assert_eq!(session.selected_space().selected_tab, three);
 }
+
+/// The counter a restore is handed may lag behind the spaces it restores
+/// (a workspace whose counter was lost, or written before it existed): the
+/// next space is still given an id none of them carries.
+#[test]
+fn a_restored_spaces_id_is_never_handed_out_again_whatever_the_counter_says() {
+    let seed = SpaceSeed {
+        id: SpaceId(5),
+        label: "space 5".into(),
+        tabs: vec![TabSeed {
+            label: "shell".into(),
+            cwd: PathBuf::from("/tmp/seed"),
+            agent: None,
+            launch: Launch::Shell,
+        }],
+    };
+    let (mut session, _) = Session::restore(vec![seed], 1).expect("the space stands");
+    let NewSpace { space, .. } = session.create_space(None, PathBuf::from("/tmp"), 80, 24);
+    assert_eq!(
+        space,
+        SpaceId(6),
+        "the next id past the highest restored one"
+    );
+}
+
+/// A seed names the agent a tab belongs with by its position among the
+/// seed's tabs, so the restored tab points at the tab restored in that
+/// position — wherever in the space it stands — and a position past the
+/// seed's last tab points at nobody, not at whatever tab is minted next.
+#[test]
+fn a_seeds_agent_position_names_the_tab_restored_there_and_nothing_past_the_end() {
+    let tab = |label: &str, agent| TabSeed {
+        label: label.into(),
+        cwd: PathBuf::from("/tmp/a"),
+        agent,
+        launch: Launch::Shell,
+    };
+    let (session, _) = Session::restore(
+        vec![
+            SpaceSeed {
+                id: SpaceId(1),
+                label: "first".into(),
+                tabs: vec![
+                    tab("agent 1", None),
+                    tab("agent 2", None),
+                    tab("shell of agent 2", Some(1)),
+                    tab("one past the end", Some(4)),
+                ],
+            },
+            SpaceSeed {
+                id: SpaceId(2),
+                label: "second".into(),
+                tabs: vec![tab("agent", None)],
+            },
+        ],
+        3,
+    )
+    .expect("the spaces stand");
+
+    let tabs = &session.workspace.spaces[0].tabs;
+    assert_eq!(tabs[2].agent, Some(tabs[1].id));
+    assert_eq!(
+        tabs[3].agent, None,
+        "the position just past the seed's last tab is nobody"
+    );
+}
+
+/// A tab asked for in a space that has since closed lands in the space
+/// the session has selected, not in whichever space happens to be first.
+#[test]
+fn a_tab_for_a_closed_space_opens_in_the_selected_space() {
+    let mut session = Session::new(seat("/tmp/a"), 80, 24);
+    let first_space = session.workspace.selected_space;
+    session.add_space("frontend".into(), PathBuf::from("/tmp/frontend"), 80, 24);
+    let selected = session.workspace.selected_space;
+    assert_ne!(selected, first_space);
+
+    session.add_tab(
+        SpaceId(99),
+        "shell".into(),
+        None,
+        80,
+        24,
+        PathBuf::from("/tmp/frontend"),
+    );
+
+    assert_eq!(session.space(selected).unwrap().tabs.len(), 2);
+    assert_eq!(session.space(first_space).unwrap().tabs.len(), 1);
+}
+
+/// Selecting a tab shown in another space switches to that space, and the
+/// answer says whether anything moved: the tab, the space, or neither.
+#[test]
+fn selecting_a_tab_reports_whether_the_tab_or_its_space_moved() {
+    let mut session = Session::new(seat("/tmp/a"), 80, 24);
+    let first_space = session.workspace.selected_space;
+    let first_tab = session.selected_tab().id;
+    let second_tab_here = {
+        session.add_tab(
+            first_space,
+            "shell".into(),
+            None,
+            80,
+            24,
+            PathBuf::from("/tmp/a"),
+        );
+        session.selected_tab().id
+    };
+    session.add_space("frontend".into(), PathBuf::from("/tmp/frontend"), 80, 24);
+    let second_space = session.workspace.selected_space;
+    let elsewhere = session.selected_tab().id;
+
+    assert!(!session.select_tab(elsewhere), "already in front");
+    assert!(!session.select_tab(TabId(99)), "no such tab");
+
+    assert!(
+        session.select_tab(second_tab_here),
+        "only the space moved: the tab was already its space's selection"
+    );
+    assert_eq!(session.workspace.selected_space, first_space);
+    assert_eq!(session.selected_tab().id, second_tab_here);
+
+    assert!(session.select_tab(first_tab), "only the tab moved");
+    assert_eq!(session.workspace.selected_space, first_space);
+    assert_eq!(session.selected_tab().id, first_tab);
+
+    assert!(session.select_tab(elsewhere));
+    assert_eq!(session.workspace.selected_space, second_space);
+    assert_eq!(session.selected_tab().id, elsewhere);
+}
+
+/// Closing a tab that is not in front leaves the one in front where it is.
+#[test]
+fn closing_a_tab_behind_the_selected_one_keeps_the_selection() {
+    let mut session = Session::new(seat("/tmp/a"), 80, 24);
+    let space = session.workspace.selected_space;
+    let open = |session: &mut Session, label: &str| {
+        session.add_tab(space, label.into(), None, 80, 24, PathBuf::from("/tmp/a"));
+        session.selected_space().selected_tab
+    };
+    let behind = open(&mut session, "two");
+    let after = open(&mut session, "three");
+    let front = open(&mut session, "four");
+    session.select_tab(front);
+
+    session.remove_tab(behind).expect("tab two closes");
+
+    assert_eq!(session.selected_space().selected_tab, front);
+    assert_ne!(session.selected_space().selected_tab, after);
+}
