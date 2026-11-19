@@ -325,6 +325,23 @@ exclude_re = [
   'uze-extensions/src/spec\.rs.*replace match guard state\.units\(\)\[target\.unit\(\)\]\.artifacts\.is_empty\(\) with true in content$',
   # No notes prefix only blank lines, and CommonMark drops leading blank lines.
   'uze-extensions/src/spec\.rs.*replace match guard !standing\.notes\.is_empty\(\) with true in with_standing$',
+  # uze-extensions review2
+  # Git never writes an empty status or path in `--name-status -z`; only a trailing NUL ends the list.
+  'uze-extensions/src/review/git\.rs.*replace \|\| with && in parse_name_status$',
+  # A picture is drawn only for a binary diff, so one decoded for a text diff is never shown.
+  'uze-extensions/src/review/git\.rs.*replace && with \|\| in file_diff$',
+  # Counting the quiet ids down keeps them unique and far below any id a press answers.
+  'uze-extensions/src/review/drawer\.rs.*replace \+= with -= in drawer$',
+  # Only the instant a retry or the door's read falls due to the nanosecond.
+  'uze-extensions/src/review/extension\.rs.*replace < with <= in ReviewExtension::(write_job|door_job)$',
+  # Colouring every comment again draws the same lines; the guard only saves the work.
+  'uze-extensions/src/review/surface\.rs.*replace match guard drawn\.text == comment\.text && drawn\.answers == comment\.answers with false in ReviewView::recolour$',
+  # `select_file` ignores an index past the list.
+  'uze-extensions/src/review/surface\.rs.*replace < with <= in ReviewView::step_file$',
+  # No gesture opens a composer while one is written: it takes the keys, and no affordance is drawn.
+  'uze-extensions/src/review/surface\.rs.*replace \|\| with && in ReviewView::open_composer$',
+  # A line on the scroll's own row sets the scroll to what it already is.
+  'uze-extensions/src/review/surface\.rs.*replace < with <= in ReviewView::follow$',
   # uze-extensions architect
   # `reach` pins the source's corner to column 0 and rows from 0, so `home` is clamped to (0, 0) either way.
   'uze-extensions/src/architect\.rs.*delete match arm Showing::Source in ArchitectView::home$',
@@ -450,4 +467,44 @@ exclude_re = [
   'uze-terminal/src/state\.rs.*replace match guard before == tab with false in Session::reorder_tab$',
   # An insertion index equal to the tab's own is only the tab itself as the target, which has returned.
   'uze-terminal/src/state\.rs.*replace > with >= in Session::reorder_tab$',
+  # uze-extensions code2
+  # A cut range ending where the kept text starts is empty, and the first match's start equals `indent + LEAD` either way.
+  'uze-extensions/src/code/search\.rs.*replace > with >= in marked$',
+  # The loop guard stops on an empty free area whichever dimension ran out first.
+  'uze-extensions/src/code/treemap\.rs.*replace \|\| with && in squarified$',
+  # The last strip takes the whole free area, so the free area is empty by the time every weight is laid.
+  'uze-extensions/src/code/treemap\.rs.*replace < with <= in squarified$',
+  # Only the instant a measurement turns exactly MEASURE_FRESH old tells them apart.
+  'uze-extensions/src/code/extension\.rs.*replace < with <= in CodeExtension::measure_job$',
+  # Only the instant a history turns exactly TIMELINE_REFRESH old tells them apart.
+  'uze-extensions/src/code/extension\.rs.*replace < with <= in CodeExtension::history_job$',
+  # GAP is 1, and multiplying by one is dividing by one.
+  'uze-extensions/src/code/map\.rs.*replace \* with / in bordered$',
+  # A border lies inside its own tile's drawn box, which is within the map, so no bound is ever crossed.
+  'uze-extensions/src/code/map\.rs.*replace \|\| with && in Grid::add$',
+  # The sides OR-ed together are distinct bits, so XOR gives the same set.
+  'uze-extensions/src/code/map\.rs.*replace \| with \^ in Grid::outline$',
+  # uze-extensions shared1
+  # The sides are distinct bits: or-ing them and xor-ing them name the same sides.
+  'uze-extensions/src/shared/canvas\.rs.*replace \| with \^ in (Canvas::frame|line_glyph)$',
+  # Every vendored grammar is one the bundled set lacks, so a token the bundled set knows finds nothing vendored, and an empty token finds nothing in either.
+  'uze-extensions/src/shared/highlight\.rs.*replace \|\| with && in vendored_fence_grammar$',
+  # The bundled TOML grammar lists these four lockfiles by name, and a lookup by name comes before the lockfile rule.
+  'uze-extensions/src/shared/highlight\.rs.*delete match arm "Cargo\.lock" \| "poetry\.lock" \| "uv\.lock" \| "pdm\.lock" in lockfile_language$',
+  # uze-extensions shared2
+  # An item always ends right before the next item starts or its list ends, and both flush the line.
+  'uze-extensions/src/shared/markdown\.rs.*delete match arm TagEnd::Item in Document::end$',
+  # Outside a quote the mark is `│ ` repeated zero times: an empty span, which draws nothing.
+  'uze-extensions/src/shared/markdown\.rs.*replace > with >= in Document::push$',
+  # `parse` refuses every non-digit but a leading `+`, and no record is named `ADR+0001`.
+  'uze-extensions/src/spec/decision\.rs.*replace && with \|\| in record_number$',
+  # No shipped dialect's pattern ends in a bare `*`.
+  'uze-extensions/src/spec/dialect\.rs.*replace > with >= in classify$',
+  # A summary aged SUMMARY_REFRESH to the nanosecond.
+  'uze-extensions/src/spec/extension\.rs.*replace < with <= in SpecExtension::counted_fresh$',
+  # Only whether the read and the count queue behind each other, never what they answer.
+  'uze-extensions/src/spec/extension\.rs.*replace <impl Extension for SpecExtension>::lanes -> crate::contract::Lanes with Default::default\(\)$',
+  # uze-extensions picture
+  # A zero width is refused either way, by the decoded image's own check.
+  'uze-extensions/src/shared/picture/bmp\.rs.*replace > with >= in dib$',
 ]

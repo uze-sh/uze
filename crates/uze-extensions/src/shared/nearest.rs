@@ -60,4 +60,31 @@ mod tests {
             "with nothing picked, the nearest on any side"
         );
     }
+
+    /// Only where a candidate stands from the point counts, wherever on
+    /// the board the point is.
+    #[test]
+    fn ahead_is_measured_from_the_point_not_from_the_corner() {
+        let candidates = [("above", (10, 9)), ("below", (10, 12))];
+        assert_eq!(
+            toward((10, 10), PanDirection::Down, true, candidates),
+            Some("below")
+        );
+        assert_eq!(
+            toward((10, 10), PanDirection::Up, true, candidates),
+            Some("above")
+        );
+    }
+
+    /// Two rows aside are four columns, and straying costs double: one
+    /// column ahead and two rows aside is nine, eight straight ahead is
+    /// eight.
+    #[test]
+    fn straying_sideways_costs_twice_what_going_on_does() {
+        let candidates = [("aside", (1, 2)), ("ahead", (8, 0))];
+        assert_eq!(
+            toward((0, 0), PanDirection::Right, true, candidates),
+            Some("ahead")
+        );
+    }
 }

@@ -856,4 +856,97 @@ mod tests {
             }]
         );
     }
+
+    fn links(record: &Record) -> Vec<(Kind, &str)> {
+        record
+            .links
+            .iter()
+            .map(|link| (link.kind, link.target.as_str()))
+            .collect()
+    }
+
+    /// Only adr-tools' `1. ` number is taken off a title; a sentence in it
+    /// stays whole.
+    #[test]
+    fn a_title_keeps_a_sentence_that_is_not_a_number() {
+        let record = recognise("0004-prefer-rust.md", "# Prefer Rust. Then ship\n").unwrap();
+        assert_eq!(record.title, "Prefer Rust. Then ship");
+    }
+
+    /// MADR names the replacing record as `ADR-0123`, however the sentence
+    /// around it is punctuated, and a year in the sentence names nothing.
+    #[test]
+    fn a_superseded_status_names_its_record_by_number_within_a_sentence() {
+        for status in [
+            "superseded by ADR-0009.",
+            "Superseded in 2026 by ADR-0009",
+            "superseded by (ADR-0009)",
+        ] {
+            let record = recognise(
+                "0007-pick-a-parser.md",
+                &format!("# Pick a parser\n\nStatus: {status}\n"),
+            )
+            .unwrap();
+            assert_eq!(links(&record), [(Kind::ReplacedBy, "ADR-0009")], "{status}");
+        }
+    }
+
+    /// Every record the status links is named once, and a link with no
+    /// target is passed over.
+    #[test]
+    fn each_record_the_status_links_is_related_once() {
+        let record = recognise(
+            "0003-third.md",
+            "# Third\n\nStatus: Accepted, see [x](), [a](0001-a.md), [b](0002-b.md) \
+             and [a again](0001-a.md)\n",
+        )
+        .unwrap();
+        assert_eq!(
+            links(&record),
+            [
+                (Kind::References, "0001-a.md"),
+                (Kind::References, "0002-b.md")
+            ]
+        );
+    }
+
+    /// The same record named twice, once by its file and once by its
+    /// number, is one relation.
+    #[test]
+    fn a_record_named_by_file_and_by_number_is_one_relation() {
+        let record = recognise(
+            "0001-one.md",
+            "---\nstatus: superseded by [Two](0002-two.md)\nsupersededBy: ADR-0002\n---\n\n# One\n",
+        )
+        .unwrap();
+        assert_eq!(links(&record), [(Kind::ReplacedBy, "0002-two.md")]);
+    }
+
+    /// adrkit's list fields may hold a single value.
+    #[test]
+    fn a_front_matter_relation_may_be_one_bare_value() {
+        let record = recognise(
+            "0022-split-the-lock.md",
+            "---\nstatus: accepted\nsupersedes: 0005\n---\n\n# Split the lock\n",
+        )
+        .unwrap();
+        assert_eq!(links(&record), [(Kind::Replaces, "0005")]);
+    }
+
+    /// A `Supersedes:` field may link one record and name another.
+    #[test]
+    fn a_supersedes_field_takes_both_links_and_numbers() {
+        let record = recognise(
+            "0004-fourth.md",
+            "# Fourth\n\n- Status: accepted\n- Supersedes: [the parser](0003-parser.md), ADR-0001\n",
+        )
+        .unwrap();
+        assert_eq!(
+            links(&record),
+            [
+                (Kind::Replaces, "0003-parser.md"),
+                (Kind::Replaces, "ADR-0001")
+            ]
+        );
+    }
 }

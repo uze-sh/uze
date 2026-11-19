@@ -206,6 +206,12 @@ pub(super) mod tests {
     ) -> Vec<u8> {
         let mut dib = info_header(width, height, bits, compression);
         dib.extend_from_slice(extra);
+        file_of(dib, rows)
+    }
+
+    /// A `.bmp` around `dib` (its header, palette or masks), the rows
+    /// starting right after it.
+    fn file_of(dib: Vec<u8>, rows: &[u8]) -> Vec<u8> {
         let pixels_at = 14 + dib.len();
         let mut file = b"BM".to_vec();
         file.extend((pixels_at + rows.len()).to_le_bytes()[..4].iter());
@@ -274,6 +280,114 @@ pub(super) mod tests {
         let image = decode(&file(8, 1, 1, BI_RGB, &palette, &[0b1010_1010, 0, 0, 0])).unwrap();
         assert_eq!(image.pixels[0], [255, 255, 255, 255]);
         assert_eq!(image.pixels[1], [0, 0, 0, 255]);
+    }
+
+    /// `values` as consecutive little-endian bit masks.
+    fn masks(values: &[u32]) -> Vec<u8> {
+        values.iter().flat_map(|mask| mask.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn a_16_bit_bitmap_without_masks_is_five_bits_a_channel() {
+        // Red full and green at 16 of 31, then blue full; two bytes a
+        // pixel, the row already four bytes long.
+        let rows = [0x00, 0x7E, 0x1F, 0x00];
+        let image = decode(&file(2, 1, 16, BI_RGB, &[], &rows)).unwrap();
+        assert_eq!(
+            image.pixels,
+            [[255, 132, 0, 255], [0, 0, 255, 255]],
+            "each channel scaled to the nearest of 256 levels"
+        );
+    }
+
+    #[test]
+    fn every_pixel_of_a_32_bit_row_is_its_own_four_bytes() {
+        let rows = [1, 2, 3, 0, 4, 5, 6, 0];
+        let image = decode(&file(2, 1, 32, BI_RGB, &[], &rows)).unwrap();
+        assert_eq!(image.pixels, [[3, 2, 1, 255], [6, 5, 4, 255]]);
+
+        let rgb = masks(&[0x00FF_0000, 0x0000_FF00, 0x0000_00FF]);
+        let image = decode(&file(2, 1, 32, BI_BITFIELDS, &rgb, &rows)).unwrap();
+        assert_eq!(image.pixels, [[3, 2, 1, 255], [6, 5, 4, 255]]);
+    }
+
+    #[test]
+    fn a_later_header_keeps_its_alpha_mask_and_an_older_one_is_not_read() {
+        let mut dib = info_header(1, 1, 32, BI_BITFIELDS);
+        dib[..4].copy_from_slice(&108u32.to_le_bytes());
+        dib.extend(masks(&[0x00FF_0000, 0x0000_FF00, 0x0000_00FF, 0xFF00_0000]));
+        dib.resize(108, 0);
+        let image = decode(&file_of(dib, &[1, 2, 3, 128])).unwrap();
+        assert_eq!(image.pixels, [[3, 2, 1, 128]]);
+
+        let mut dib = info_header(1, 1, 24, BI_RGB);
+        dib[..4].copy_from_slice(&12u32.to_le_bytes());
+        assert!(decode(&file_of(dib, &[0, 0, 255, 0])).is_none());
+    }
+
+    #[test]
+    fn a_palette_as_long_as_the_colours_it_says_it_uses() {
+        let mut dib = info_header(2, 1, 8, BI_RGB);
+        dib[32..36].copy_from_slice(&2u32.to_le_bytes());
+        dib.extend([0, 0, 255, 0, 255, 0, 0, 0]);
+        let image = decode(&file_of(dib, &[1, 0, 0, 0])).unwrap();
+        assert_eq!(image.pixels, [[0, 0, 255, 255], [255, 0, 0, 255]]);
+    }
+
+    #[test]
+    fn a_4_bit_bitmap_holds_two_pixels_a_byte() {
+        let mut palette = vec![0; 16 * 4];
+        palette[4..8].copy_from_slice(&[0, 0, 255, 0]);
+        palette[8..12].copy_from_slice(&[255, 0, 0, 0]);
+        let image = decode(&file(3, 1, 4, BI_RGB, &palette, &[0x12, 0x00, 0, 0])).unwrap();
+        assert_eq!(
+            image.pixels,
+            [[255, 0, 0, 255], [0, 0, 255, 255], [0, 0, 0, 255]]
+        );
+    }
+
+    #[test]
+    fn an_icon_bitmap_finds_its_rows_after_its_masks_or_its_palette() {
+        let rgb = masks(&[0x00FF_0000, 0x0000_FF00, 0x0000_00FF]);
+        let mut entry = info_header(1, 2, 32, BI_BITFIELDS);
+        entry.extend(&rgb);
+        entry.extend([1, 2, 3, 0]);
+        assert_eq!(icon_entry(&entry).unwrap().pixels, [[3, 2, 1, 255]]);
+
+        let rgba = masks(&[0x00FF_0000, 0x0000_FF00, 0x0000_00FF, 0xFF00_0000]);
+        let mut entry = info_header(1, 2, 32, BI_ALPHABITFIELDS);
+        entry.extend(&rgba);
+        entry.extend([1, 2, 3, 200]);
+        assert_eq!(icon_entry(&entry).unwrap().pixels, [[3, 2, 1, 200]]);
+
+        // One pixel at one bit through a two-colour palette, then its
+        // mask row, nothing masked.
+        let mut entry = info_header(1, 2, 1, BI_RGB);
+        entry.extend([0, 0, 0, 0, 0, 0, 255, 0]);
+        entry.extend([0b1000_0000, 0, 0, 0]);
+        entry.extend([0, 0, 0, 0]);
+        assert_eq!(icon_entry(&entry).unwrap().pixels, [[255, 0, 0, 255]]);
+    }
+
+    #[test]
+    fn an_icon_mask_marks_each_pixel_of_each_row() {
+        // 2×2 at 24 bits, colour rows of eight bytes; the mask rows run
+        // bottom-up too, and only the bottom row is masked.
+        let mut entry = info_header(2, 4, 24, BI_RGB);
+        entry.extend([10, 10, 10, 20, 20, 20, 0, 0]);
+        entry.extend([30, 30, 30, 40, 40, 40, 0, 0]);
+        entry.extend([0b1100_0000, 0, 0, 0]);
+        entry.extend([0, 0, 0, 0]);
+        let image = icon_entry(&entry).unwrap();
+        assert_eq!(
+            image.pixels,
+            [
+                [30, 30, 30, 255],
+                [40, 40, 40, 255],
+                [10, 10, 10, 0],
+                [20, 20, 20, 0]
+            ]
+        );
     }
 
     #[test]

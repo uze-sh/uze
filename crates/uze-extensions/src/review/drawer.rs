@@ -255,3 +255,117 @@ fn state(comment: &Comment) -> (String, Role) {
         CommentStatus::Resolved => ("resolved".to_owned(), Role::Dim),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::review::record::{Row, RowKind};
+
+    fn comment(id: u64, path: &str, lines: &[u32], status: CommentStatus) -> Comment {
+        Comment {
+            id,
+            path: path.to_owned(),
+            rows: lines
+                .iter()
+                .map(|line| Row {
+                    kind: RowKind::Added,
+                    line: *line,
+                    text: String::new(),
+                })
+                .collect(),
+            text: format!("comment {id}"),
+            status,
+            sent: (status != CommentStatus::Draft).then_some((1, 1)),
+            ..Comment::default()
+        }
+    }
+
+    fn nodes(node: &Node) -> Vec<&Node> {
+        let mut all = vec![node];
+        for child in &node.children {
+            all.extend(nodes(child));
+        }
+        all
+    }
+
+    fn root(view: &View) -> &Node {
+        match &view.content {
+            Content::Tree { root, .. } => root,
+            other => panic!("a tree: {other:?}"),
+        }
+    }
+
+    /// What each comment's head says, in the drawer's order.
+    fn heads(view: &View) -> Vec<String> {
+        nodes(root(view))
+            .into_iter()
+            .filter_map(|node| match &node.kind {
+                NodeKind::Text { spans, .. } if spans.len() == 3 => {
+                    Some(spans.iter().map(|span| span.text.as_str()).collect())
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn lists(view: &View) -> Vec<usize> {
+        nodes(root(view))
+            .into_iter()
+            .filter(|node| matches!(node.kind, NodeKind::List { .. }))
+            .map(|node| node.id)
+            .collect()
+    }
+
+    #[test]
+    fn each_comment_says_its_lines_and_its_state_in_line_order() {
+        let record = ReviewRecord {
+            comments: vec![
+                comment(1, "a.rs", &[9], CommentStatus::Draft),
+                comment(2, "a.rs", &[3, 4, 5], CommentStatus::Sent),
+                comment(3, "a.rs", &[], CommentStatus::Answered),
+            ],
+            ..ReviewRecord::default()
+        };
+        let view = drawer(&record, true, None);
+        assert_eq!(
+            heads(&view),
+            ["file · answered 1/1", "L3–5 · sent 1/1", "L9 · draft"]
+        );
+    }
+
+    /// The drawer is a tree the host draws, whose node ids are unique.
+    #[test]
+    fn every_node_of_the_drawer_has_its_own_id() {
+        let record = ReviewRecord {
+            comments: vec![
+                comment(1, "a.rs", &[1], CommentStatus::Draft),
+                comment(2, "b.rs", &[2], CommentStatus::Draft),
+            ],
+            ..ReviewRecord::default()
+        };
+        let view = drawer(&record, true, None);
+        let ids: Vec<usize> = nodes(root(&view)).iter().map(|node| node.id).collect();
+        let unique: std::collections::BTreeSet<&usize> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "{ids:?}");
+    }
+
+    /// A press on a row of a file's list is read back as that row's
+    /// comment, whichever file it is, and as nothing past the rows.
+    #[test]
+    fn a_press_on_a_files_row_is_its_comment_and_nothing_past_it() {
+        let record = ReviewRecord {
+            comments: vec![
+                comment(4, "a.rs", &[1], CommentStatus::Draft),
+                comment(7, "b.rs", &[1], CommentStatus::Draft),
+            ],
+            ..ReviewRecord::default()
+        };
+        let view = drawer(&record, true, None);
+        let lists = lists(&view);
+        assert_eq!(lists.len(), 2);
+        assert_eq!(comment_at(&record, lists[0], 0), Some(4));
+        assert_eq!(comment_at(&record, lists[1], 0), Some(7));
+        assert_eq!(comment_at(&record, lists[1], 1), None);
+        assert_eq!(comment_at(&record, SEND, 0), None);
+    }
+}

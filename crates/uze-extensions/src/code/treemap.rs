@@ -229,4 +229,63 @@ mod tests {
             vec![Frame::default()]
         );
     }
+    fn frame(w: i32, h: i32) -> Frame {
+        Frame { x: 0, y: 0, w, h }
+    }
+
+    /// The paper's own example, seen at the cell's proportions: the two
+    /// largest share the first strip, the next two the second, and the
+    /// fifth does not join them because it would make their worst tile
+    /// worse.
+    #[test]
+    fn a_strip_takes_weights_until_the_next_would_make_it_worse() {
+        let frames = squarified(&[6, 6, 4, 3, 2, 2, 1], frame(60, 20));
+        assert_eq!((frames[0].x, frames[0].w), (frames[1].x, frames[1].w));
+        assert_ne!(frames[0].y, frames[1].y);
+        assert_eq!((frames[2].y, frames[2].h), (frames[3].y, frames[3].h));
+        assert_ne!(frames[2].x, frames[3].x);
+        assert_ne!(
+            frames[0].x, frames[2].x,
+            "the third starts a strip of its own"
+        );
+        assert_ne!(
+            (frames[4].y, frames[4].h),
+            (frames[2].y, frames[2].h),
+            "the fifth closes the second strip"
+        );
+    }
+
+    /// A weight that leaves the worst tile as it was, no worse, joins the
+    /// strip.
+    #[test]
+    fn a_weight_that_makes_the_strip_no_worse_joins_it() {
+        assert_eq!(
+            squarified(&[1, 1], frame(80, 40)),
+            [
+                Frame {
+                    x: 0,
+                    y: 0,
+                    w: 40,
+                    h: 40
+                },
+                Frame {
+                    x: 40,
+                    y: 0,
+                    w: 40,
+                    h: 40
+                },
+            ]
+        );
+    }
+
+    /// A weight of nothing after the rest is an empty frame however the
+    /// space ran out, across or down.
+    #[test]
+    fn a_trailing_weight_of_nothing_gets_an_empty_frame() {
+        for within in [WITHIN, frame(10, 40)] {
+            let frames = squarified(&[5, 0], within);
+            assert_eq!(frames[0], within);
+            assert_eq!(frames[1], Frame::default(), "{within:?}");
+        }
+    }
 }

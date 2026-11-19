@@ -1291,7 +1291,7 @@ fn grouped(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use super::{Base, DoorRead, ReviewExtension, ReviewOf, ReviewRecord};
     use crate::contract::{AgentWritten, Checkout, Extension, Opaque};
@@ -1584,6 +1584,462 @@ mod tests {
             super::paced(every, Duration::from_secs(2)),
             Duration::from_secs(10)
         );
+    }
+
+    fn draft(text: &str) -> super::Change {
+        super::Change::Draft {
+            id: 1,
+            path: "a.rs".to_owned(),
+            rows: Vec::new(),
+            excerpt: String::new(),
+            text: text.to_owned(),
+        }
+    }
+
+    fn of(root: &str) -> ReviewOf {
+        ReviewOf {
+            root: PathBuf::from(root),
+            agent: None,
+        }
+    }
+
+    fn a_minute_ago() -> Option<Instant> {
+        Some(
+            Instant::now()
+                .checked_sub(Duration::from_secs(60))
+                .expect("a minute of uptime"),
+        )
+    }
+
+    /// The extension says what it is and what it offers: the review, the
+    /// bar's item that opens the comments, and the comments' drawer; no
+    /// section; its reads and writes side by side, as it orders its own
+    /// writes; told about the agents a send goes to.
+    #[test]
+    fn the_extension_offers_the_review_the_item_and_the_comments() {
+        use crate::contract::{Lanes, SurfaceSlot};
+        let extension = ReviewExtension::default();
+        assert_eq!(extension.identity(), crate::review::CATALOG.id);
+        let surfaces = extension.surfaces();
+        let ids: Vec<&str> = surfaces.iter().map(|surface| surface.id.as_str()).collect();
+        assert_eq!(ids, [super::SURFACE, super::ITEM, super::COMMENTS]);
+        assert!(matches!(surfaces[0].slot, SurfaceSlot::View));
+        assert_eq!(surfaces[1].opens.as_deref(), Some(super::COMMENTS));
+        assert!(matches!(surfaces[2].slot, SurfaceSlot::Drawer(_)));
+        assert!(extension.section(super::SURFACE, false).is_none());
+        assert_eq!(extension.lanes(), Lanes::Parallel);
+        assert!(extension.observes_agents());
+    }
+
+    #[test]
+    fn the_review_open_is_the_surfaces_view() {
+        let mut extension = ReviewExtension::default();
+        assert!(extension.view(super::SURFACE, SPACE).is_none());
+        extension.open(super::SURFACE, &checkout("/w"));
+        assert!(extension.view(super::SURFACE, SPACE).is_some());
+    }
+
+    #[test]
+    fn a_checkout_with_nothing_changed_has_no_door() {
+        let mut extension = ReviewExtension::default();
+        extension.counted(PathBuf::from("/w"), 0, 0, 0);
+        assert!(extension.door_badge().is_none());
+        extension.counted(PathBuf::from("/w"), 2, 1, 1);
+        assert!(extension.door_badge().is_some());
+    }
+
+    const SPACE: crate::view::Size = crate::view::Size {
+        width: 100,
+        height: 40,
+    };
+
+    /// Removed lines have no line in the new file: open in code lands on
+    /// the cursor's own line where it has one, else on the nearest line
+    /// kept before it.
+    #[test]
+    fn open_in_code_lands_on_the_cursors_line_or_the_one_kept_before_it() {
+        use crate::contract::Outcome;
+        use crate::view::Command;
+        let mut extension = ReviewExtension::default();
+        extension.showing(
+            PathBuf::from("/w"),
+            &[("a.rs", "@@ -1,3 +1,1 @@\n keep\n-gone one\n-gone two\n")],
+        );
+        let line_opened = |extension: &mut ReviewExtension, cursor: usize| {
+            extension.review_view_mut().unwrap().cursor = cursor;
+            match extension.command(super::SURFACE, Command::OpenInCode, SPACE) {
+                Outcome::OpenPath { line, .. } => line,
+                other => panic!("an open: {other:?}"),
+            }
+        };
+        assert_eq!(line_opened(&mut extension, 0), Some(1));
+        assert_eq!(line_opened(&mut extension, 2), Some(1));
+    }
+
+    #[test]
+    fn the_open_list_is_read_again_once_its_period_passed_and_not_before() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        let mut jobs = Vec::new();
+        extension.list_job(&mut jobs);
+        assert_eq!(jobs.len(), 1, "read as it opens");
+        extension.listing = false;
+        extension.list_job(&mut jobs);
+        assert_eq!(jobs.len(), 1, "not again before its period");
+        extension.listed_at = a_minute_ago();
+        extension.list_job(&mut jobs);
+        assert_eq!(jobs.len(), 2, "again once it passed");
+    }
+
+    #[test]
+    fn the_diff_of_the_file_on_show_is_asked_for() {
+        use crate::shared::git_status::{ChangedFile, FileStatus};
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        let path = PathBuf::from("/w").join("a.rs");
+        extension.review_view_mut().unwrap().absorb_listing(
+            crate::review::Filter::All,
+            Base::default(),
+            String::new(),
+            Ok(super::Listing {
+                files: vec![ChangedFile {
+                    status: FileStatus::Modified,
+                    path: path.clone(),
+                    renamed_from: None,
+                }],
+                stamps: [(path.clone(), 1)].into(),
+                ..super::Listing::default()
+            }),
+        );
+        let mut jobs = Vec::new();
+        extension.diff_job(&mut jobs);
+        assert_eq!(jobs.len(), 1);
+        let asking = extension.review_view().unwrap().asking.clone();
+        assert_eq!(asking.map(|(asked, _)| asked), Some(path));
+    }
+
+    /// A change on the open review is written, one write out at a time.
+    #[test]
+    fn a_change_on_the_open_review_is_written_one_write_at_a_time() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        let mut jobs = Vec::new();
+        extension.write_job(&mut jobs);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(extension.in_flight, Some((of("/w"), vec![draft("one")])));
+        extension.review_view_mut().unwrap().change(draft("two"));
+        extension.write_job(&mut jobs);
+        assert_eq!(jobs.len(), 1, "the next waits for the write out");
+    }
+
+    #[test]
+    fn a_failed_write_is_tried_again_on_the_lists_cadence_and_not_at_once() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        let mut jobs = Vec::new();
+        extension.write_job(&mut jobs);
+        extension.absorb(Opaque::new(super::Written {
+            of: of("/w"),
+            record: Err("refused".to_owned()),
+        }));
+        jobs.clear();
+        extension.write_job(&mut jobs);
+        assert!(jobs.is_empty(), "not at once");
+        extension.retry_at = a_minute_ago();
+        extension.write_job(&mut jobs);
+        assert_eq!(jobs.len(), 1, "once its time came");
+    }
+
+    /// A write for a review no longer open that fails is not dropped: it
+    /// waits to be written again.
+    #[test]
+    fn a_failed_write_for_a_closed_review_waits_to_be_written_again() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        extension.close(super::SURFACE);
+        let mut jobs = Vec::new();
+        extension.write_job(&mut jobs);
+        assert!(extension.waiting.is_empty(), "out for writing");
+        extension.absorb(Opaque::new(super::Written {
+            of: of("/w"),
+            record: Err("refused".to_owned()),
+        }));
+        assert_eq!(extension.waiting, [(of("/w"), vec![draft("one")])]);
+    }
+
+    #[test]
+    fn the_open_review_writes_its_own_changes_before_what_waits_for_another() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/v"));
+        extension.review_view_mut().unwrap().change(draft("theirs"));
+        extension.close(super::SURFACE);
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("mine"));
+        let mut jobs = Vec::new();
+        extension.write_job(&mut jobs);
+        let written = extension.in_flight.as_ref().map(|(of, _)| of.clone());
+        assert_eq!(written, Some(of("/w")));
+    }
+
+    /// A discard asked for is handed to the host, and what it came to is
+    /// said on the review it was asked on.
+    #[test]
+    fn a_discard_is_handed_over_and_its_outcome_said_on_its_review() {
+        let mut extension = ReviewExtension::default();
+        extension.open(super::SURFACE, &checkout("/w"));
+        let path = PathBuf::from("/w").join("a.rs");
+        let view = extension.review_view_mut().unwrap();
+        view.restore = Some(vec![path.clone()]);
+        view.relist = false;
+        let mut jobs = Vec::new();
+        extension.restore_job(&mut jobs);
+        assert_eq!(jobs.len(), 1);
+        assert!(extension.review_view().unwrap().restore.is_none());
+        extension.absorb(Opaque::new(super::Restored {
+            root: PathBuf::from("/w"),
+            path,
+            outcome: Ok(()),
+        }));
+        let view = extension.review_view().unwrap();
+        assert_eq!(
+            view.notice.as_ref().map(|notice| notice.text.as_str()),
+            Some("a.rs discarded")
+        );
+        assert!(view.relist, "the list is read again");
+    }
+
+    /// A diff read for another checkout never lands on the review open.
+    #[test]
+    fn a_diff_read_of_another_checkout_is_dropped() {
+        let mut extension = ReviewExtension::default();
+        extension.showing(PathBuf::from("/w"), &[("a.rs", "@@ -1 +1 @@\n-a\n+b\n")]);
+        extension.review_view_mut().unwrap().diff_pending = true;
+        extension.absorb(Opaque::new(super::DiffRead {
+            root: PathBuf::from("/v"),
+            path: PathBuf::from("/w").join("a.rs"),
+            diff: Err("elsewhere".to_owned()),
+            theme: String::new(),
+        }));
+        let view = extension.review_view().unwrap();
+        assert!(view.diff_error.is_none());
+        assert!(view.diff_pending);
+    }
+
+    #[test]
+    fn the_door_is_read_again_once_its_period_passed_or_for_another_checkout() {
+        let mut extension = ReviewExtension::default();
+        extension.focus(Some(&checkout("/w")));
+        extension.counted(PathBuf::from("/w"), 1, 1, 1);
+        let mut jobs = Vec::new();
+        extension.door_job(&mut jobs);
+        assert!(jobs.is_empty(), "just read");
+        extension.door.at = a_minute_ago();
+        extension.door_job(&mut jobs);
+        assert_eq!(jobs.len(), 1, "its period passed");
+        extension.door.reading = false;
+        extension.counted(PathBuf::from("/v"), 1, 1, 1);
+        extension.door_job(&mut jobs);
+        assert_eq!(jobs.len(), 2, "what was read was another checkout");
+    }
+
+    #[test]
+    fn the_door_is_read_at_once_only_when_the_checkout_in_front_moves() {
+        let mut extension = ReviewExtension::default();
+        extension.focus(Some(&checkout("/w")));
+        extension.counted(PathBuf::from("/w"), 1, 1, 1);
+        extension.focus(Some(&checkout("/w")));
+        assert!(extension.door.at.is_some(), "the same checkout");
+        extension.focus(Some(&checkout("/v")));
+        assert!(extension.door.at.is_none(), "another checkout");
+    }
+
+    /// What waits to be written for an agent stays its own when another
+    /// agent joins the checkout.
+    #[test]
+    fn a_change_kept_for_an_agent_waits_through_another_joining() {
+        let mut extension = ReviewExtension::default();
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        extension.open(super::SURFACE, &agent_in_front("/w", "a1"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        extension.close(super::SURFACE);
+        extension.agents(&serde_json::json!([
+            { "id": "a1", "checkout": "/w" },
+            { "id": "a2", "checkout": "/w" }
+        ]));
+        assert_eq!(extension.waiting.len(), 1);
+    }
+
+    /// The turn a send went into is the agent's while it stays open.
+    #[test]
+    fn the_turn_sent_into_ends_only_with_its_agent_gone() {
+        let mut extension = ReviewExtension {
+            working: Some("a1".to_owned()),
+            ..ReviewExtension::default()
+        };
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        assert_eq!(extension.working.as_deref(), Some("a1"));
+        extension.agents(&serde_json::json!([]));
+        assert_eq!(extension.working, None);
+    }
+
+    /// A press in the drawer on what is not the send button sends nothing.
+    #[test]
+    fn a_press_in_the_drawer_off_the_send_sends_nothing() {
+        use crate::contract::Outcome;
+        use crate::view::{NodeAct, ViewHit};
+        let mut extension = ReviewExtension::default();
+        extension.focus(Some(&checkout("/w")));
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.agents(&serde_json::json!([{ "id": "a1", "checkout": "/w" }]));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        let pressed = extension.hit(
+            super::COMMENTS,
+            ViewHit::Node {
+                node: crate::review::drawer::FIRST_LIST,
+                act: NodeAct::Press,
+            },
+            SPACE,
+        );
+        assert!(matches!(pressed, Outcome::Stay), "{pressed:?}");
+        assert!(extension.sending.is_none());
+    }
+
+    /// The bar counts the review of the checkout in front, not the one
+    /// left open on another.
+    #[test]
+    fn the_bar_counts_the_review_in_front_not_the_one_left_open() {
+        let mut extension = ReviewExtension::default();
+        extension.focus(Some(&checkout("/w")));
+        extension.open(super::SURFACE, &checkout("/w"));
+        extension.review_view_mut().unwrap().change(draft("one"));
+        assert!(extension.view(super::ITEM, SPACE).is_some());
+        extension.focus(Some(&checkout("/v")));
+        assert!(extension.view(super::ITEM, SPACE).is_none());
+    }
+
+    const NAMING: &str = "@@ -1,2 +1,3 @@\n use std::fmt;\n-fn old() {}\n+fn apply() {\n+}\n";
+
+    /// The review open on /w with two files, the first on show.
+    fn showing_two() -> ReviewExtension {
+        let mut extension = ReviewExtension::default();
+        extension.showing(
+            PathBuf::from("/w"),
+            &[("naming.rs", NAMING), ("tests.rs", NAMING)],
+        );
+        extension
+    }
+
+    /// The door shuts the review that stands, and opens one that does not;
+    /// a door or a path asked for starts afresh rather than at what was
+    /// held.
+    #[test]
+    fn the_door_shuts_the_review_that_stands() {
+        use crate::contract::{Entry, Outcome};
+        let mut extension = ReviewExtension::default();
+        let door = || Entry::Door(super::DOOR.to_owned());
+        assert!(matches!(
+            extension.enter(super::SURFACE, door()),
+            Outcome::Stay
+        ));
+        extension.open(super::SURFACE, &checkout("/w"));
+        assert!(matches!(
+            extension.enter(super::SURFACE, door()),
+            Outcome::Close
+        ));
+        assert!(matches!(
+            extension.enter(super::ITEM, door()),
+            Outcome::Stay
+        ));
+    }
+
+    /// Put away and brought back, the review is where it was: the file on
+    /// show, and with a hold the comment being written too.
+    #[test]
+    fn a_review_brought_back_is_where_it_was_left() {
+        use crate::view::Command;
+        let mut extension = showing_two();
+        let tests = PathBuf::from("/w").join("tests.rs");
+        extension.review_view_mut().unwrap().select_file(1);
+        assert!(extension.place(super::ITEM).is_none());
+        assert!(extension.hold(super::ITEM).is_none());
+        let place = extension.place(super::SURFACE).expect("a place");
+
+        let mut back = showing_two();
+        back.resume(super::SURFACE, place);
+        assert_eq!(back.review_view().unwrap().selected, Some(tests));
+
+        let mut extension = showing_two();
+        extension.review_view_mut().unwrap().mark_cell(0, false);
+        extension.command(super::SURFACE, Command::Comment, SPACE);
+        extension.paste(super::SURFACE, "half written", SPACE);
+        let held = extension.hold(super::SURFACE).expect("held");
+        let mut back = showing_two();
+        back.review_view_mut().unwrap().select_file(1);
+        back.resume(super::SURFACE, held);
+        let view = back.review_view().unwrap();
+        assert_eq!(view.selected, Some(PathBuf::from("/w").join("naming.rs")));
+        assert_eq!(
+            view.composer.as_ref().map(|composer| composer.text()),
+            Some("half written".to_owned())
+        );
+    }
+
+    /// The review takes the keys as text only while a comment is written
+    /// on it.
+    #[test]
+    fn the_review_types_only_while_a_comment_is_written() {
+        use crate::view::Command;
+        let mut extension = showing_two();
+        assert!(!extension.typing(super::SURFACE));
+        extension.review_view_mut().unwrap().mark_cell(0, false);
+        extension.command(super::SURFACE, Command::Comment, SPACE);
+        assert!(extension.typing(super::SURFACE));
+        assert!(!extension.typing(super::ITEM));
+    }
+
+    /// The review's lines are copied, and a selection on them quoted, as
+    /// the review itself copies and quotes them.
+    #[test]
+    fn copying_and_selecting_reach_the_review_and_no_other_surface() {
+        let mut extension = showing_two();
+        let copied = extension.text(super::SURFACE, 1..3);
+        assert_eq!(
+            copied,
+            crate::review::text(extension.review_view().unwrap(), 1..3)
+        );
+        assert!(copied.iter().any(|line| line.contains("fn old()")));
+        assert!(extension.text(super::ITEM, 1..3).is_empty());
+        extension.selected(super::SURFACE, 2..3, "apply");
+        assert_eq!(extension.review_view().unwrap().excerpt, "apply");
+    }
+
+    /// The wheel over the diff scrolls it; over the list it leaves the
+    /// diff where it is.
+    #[test]
+    fn the_wheel_scrolls_the_diff_only_over_the_diff() {
+        use crate::view::{ScrollDirection, ScrollTarget, Size};
+        let mut extension = showing_two();
+        let small = Size {
+            width: 100,
+            height: 2,
+        };
+        extension.scroll(
+            super::SURFACE,
+            ScrollTarget::Navigator,
+            ScrollDirection::Down,
+            small,
+        );
+        assert_eq!(extension.review_view().unwrap().scroll, 0);
+        extension.scroll(
+            super::SURFACE,
+            ScrollTarget::Content,
+            ScrollDirection::Down,
+            small,
+        );
+        assert!(extension.review_view().unwrap().scroll > 0);
     }
 
     #[test]

@@ -260,4 +260,28 @@ mod tests {
         assert_eq!(value_role("3.5"), Role::Accent);
         assert_eq!(value_role("greet"), Role::Default);
     }
+
+    /// Inside a block scalar every more-indented line is text, even one
+    /// that looks like a key, and a blank line does not end it.
+    #[test]
+    fn a_block_scalar_holds_its_lines_whatever_they_look_like() {
+        let entries = yaml("description: |\n  note: this\n\n  and more\nname: x\n");
+        assert_eq!(
+            rows(&entries),
+            [(0, "description", "note: this and more"), (0, "name", "x")]
+        );
+    }
+
+    /// A comment is the author's note to themselves, not part of a value.
+    #[test]
+    fn a_comment_line_is_no_part_of_any_value() {
+        assert_eq!(
+            rows(&yaml("name: x\n# a note\nslash: true\n")),
+            [(0, "name", "x"), (0, "slash", "true")]
+        );
+        assert_eq!(
+            rows(&toml("title = \"Hi\"\n# a note\n")),
+            [(0, "title", "Hi")]
+        );
+    }
 }

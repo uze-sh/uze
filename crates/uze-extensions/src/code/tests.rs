@@ -2564,8 +2564,8 @@ fn a_folded_directory_stays_folded_when_the_surface_is_opened_again() {
 
 mod hosted {
     use super::*;
-    use crate::contract::{Checkout, Entry, Extension, Opaque, Outcome};
-    use crate::view::Layout;
+    use crate::contract::{Checkout, Entry, Extension, Lanes, Opaque, Outcome, SurfaceSlot};
+    use crate::view::{Layout, ScrollTarget};
 
     fn checkout(root: &str) -> Checkout {
         Checkout {
@@ -3158,6 +3158,240 @@ mod hosted {
         assert!(
             extension.section(TIMELINE, false).is_none(),
             "and none in front"
+        );
+    }
+
+    /// What each of `extension`'s jobs answers, run against `host`.
+    fn answers(extension: &mut CodeExtension, host: &dyn Host) -> Vec<Opaque> {
+        extension
+            .jobs()
+            .into_iter()
+            .map(|job| (job.run)(host))
+            .collect()
+    }
+
+    fn asks_for_the_branch(extension: &mut CodeExtension, host: &dyn Host) -> bool {
+        answers(extension, host)
+            .into_iter()
+            .any(|answer| answer.downcast::<BranchRead>().is_some())
+    }
+
+    /// The extension is the code surface and the timeline section, known
+    /// to the host by the catalog's id.
+    #[test]
+    fn the_extension_offers_the_code_surface_and_the_timeline() {
+        let extension = CodeExtension::default();
+        assert_eq!(extension.identity(), "code");
+        let surfaces: Vec<(String, SurfaceSlot)> = extension
+            .surfaces()
+            .into_iter()
+            .map(|surface| (surface.id, surface.slot))
+            .collect();
+        assert_eq!(
+            surfaces,
+            [
+                (SURFACE.to_owned(), SurfaceSlot::View),
+                (TIMELINE.to_owned(), SurfaceSlot::Section)
+            ]
+        );
+        assert_eq!(
+            extension.lanes(),
+            Lanes::Parallel,
+            "a listing goes alongside the read before it"
+        );
+    }
+
+    /// An open surface is drawn; the section is not a view.
+    #[test]
+    fn only_the_open_surface_is_drawn_as_a_view() {
+        let extension = opened(FILES, "/w");
+        assert!(extension.view(SURFACE, space()).is_some());
+        assert!(extension.view(TIMELINE, space()).is_none());
+        assert!(CodeExtension::default().view(SURFACE, space()).is_none());
+    }
+
+    /// The branch read for the checkout on show names it; one read for
+    /// another checkout does not.
+    #[test]
+    fn the_branch_read_for_the_checkout_on_show_is_its_caption() {
+        let mut extension = opened(FILES, "/w");
+        extension.absorb(Opaque::new(BranchRead {
+            root: PathBuf::from("/elsewhere"),
+            branch: "other".to_owned(),
+        }));
+        assert_eq!(extension.code_view().unwrap().branch, "");
+        extension.absorb(Opaque::new(BranchRead {
+            root: PathBuf::from("/w"),
+            branch: "feature".to_owned(),
+        }));
+        assert_eq!(extension.code_view().unwrap().branch, "feature");
+    }
+
+    /// Every opening asks which branch the checkout is on, once.
+    #[test]
+    fn each_opening_asks_for_the_branch_once() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+        let mut extension = opened(FILES, "/w");
+        assert!(asks_for_the_branch(&mut extension, &machine));
+        assert!(!asks_for_the_branch(&mut extension, &machine), "once");
+        extension.close(SURFACE);
+        extension.open(SURFACE, &checkout("/w"));
+        assert!(
+            asks_for_the_branch(&mut extension, &machine),
+            "asked again on the next opening"
+        );
+    }
+
+    /// A checkout found unmeasurable says so on the surface showing it.
+    #[test]
+    fn an_unmeasurable_checkout_is_said_on_its_own_surface() {
+        let mut extension = opened(FILES, "/repo");
+        extension.absorb(Opaque::new(MeasureRead {
+            root: PathBuf::from("/elsewhere"),
+            measure: None,
+        }));
+        assert!(!extension.code_view().unwrap().unmeasurable());
+        extension.absorb(Opaque::new(MeasureRead {
+            root: PathBuf::from("/repo"),
+            measure: None,
+        }));
+        assert!(extension.code_view().unwrap().unmeasurable());
+    }
+
+    /// A door this surface does not have does nothing to it.
+    #[test]
+    fn a_door_the_surface_does_not_have_changes_nothing() {
+        let mut extension = opened(FILES, "/w");
+        extension.code_view_mut().unwrap().show(ContentMode::Map);
+        assert_eq!(
+            extension.enter(SURFACE, Entry::Door("elsewhere".to_owned())),
+            Outcome::Stay
+        );
+        assert_eq!(extension.code_view().unwrap().showing(), ContentMode::Map);
+    }
+
+    /// The wheel over the content scrolls it and the scrollbar places it;
+    /// the wheel over the list is the host's.
+    #[test]
+    fn the_wheel_and_the_scrollbar_reach_the_content_only() {
+        let mut extension = opened(FILES, "/w");
+        extension.scroll(
+            SURFACE,
+            ScrollTarget::Navigator,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert_eq!(extension.code_view().unwrap().scroll, 0);
+        extension.scroll(
+            SURFACE,
+            ScrollTarget::Content,
+            ScrollDirection::Down,
+            space(),
+        );
+        assert_eq!(extension.code_view().unwrap().scroll, 3);
+        extension.scroll_to(SURFACE, 7, space());
+        assert_eq!(extension.code_view().unwrap().scroll, 7);
+    }
+
+    /// The pointer over the row menu lights its entry, and a click off the
+    /// surface shuts the menu.
+    #[test]
+    fn the_pointer_and_a_click_off_the_surface_reach_the_menu() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "a\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        extension.command(SURFACE, Command::OpenMenu, space());
+        assert!(extension.hover(SURFACE, Some(ViewHit::MenuEntry(1))));
+        assert!(!extension.hover(SURFACE, Some(ViewHit::MenuEntry(1))));
+        assert!(extension.code_view().unwrap().menu.is_some());
+        extension.missed(SURFACE, space());
+        assert!(extension.code_view().unwrap().menu.is_none());
+    }
+
+    /// Unsaved work kept over a return comes back on the half it was
+    /// left on: only a door says which half.
+    #[test]
+    fn unsaved_work_returned_to_comes_back_on_its_own_half() {
+        let machine = FakeMachine::default().with_file("/w/a.txt", "aaa\n");
+        let mut extension = opened(FILES, "/w");
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        press(view, Command::Activate);
+        settle_hosted(&mut extension, &machine);
+        let view = extension.code_view_mut().unwrap();
+        handle_mouse(
+            view,
+            Some(ViewHit::PlaceCaret { line: 0, cell: 0 }),
+            space(),
+        );
+        type_text(view, "x");
+        view.content = ContentMode::Map;
+        view.before_map = ContentMode::Contents;
+        extension.close(SURFACE);
+
+        extension.enter(SURFACE, Entry::Return);
+        extension.open(SURFACE, &checkout("/w"));
+        let view = extension.code_view().unwrap();
+        assert!(view.has_unsaved(), "the kept surface");
+        assert_eq!(view.showing(), ContentMode::Map);
+    }
+
+    /// The history is read again for the checkout moved to, once the read
+    /// before it has answered.
+    #[test]
+    fn moving_to_another_checkout_reads_its_history() {
+        let machine = FakeMachine::default();
+        let mut extension = CodeExtension::default();
+        extension.focus(Some(&checkout("/one")));
+        let reads = answers(&mut extension, &machine);
+        assert_eq!(reads.len(), 1);
+        for read in reads {
+            extension.absorb(read);
+        }
+        assert!(answers(&mut extension, &machine).is_empty(), "fresh");
+        extension.focus(Some(&checkout("/two")));
+        let reads: Vec<PathBuf> = answers(&mut extension, &machine)
+            .into_iter()
+            .filter_map(|answer| answer.downcast::<TimelineRead>())
+            .map(|read| read.cwd)
+            .collect();
+        assert_eq!(reads, [PathBuf::from("/two")]);
+    }
+
+    /// A delete or a rename that failed after the surface closed is said
+    /// all the same, naming what it was about.
+    #[test]
+    fn a_delete_or_rename_that_failed_after_the_surface_closed_is_still_said() {
+        let mut extension = opened(FILES, "/w");
+        extension.close(SURFACE);
+        let deleted = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: FileAnswer::Deleted {
+                path: PathBuf::from("/w/a.rs"),
+                outcome: Err("busy".to_owned()),
+            },
+        }));
+        assert_eq!(
+            deleted,
+            Outcome::Failed {
+                title: "delete failed".to_owned(),
+                detail: "a.rs: busy".to_owned(),
+            }
+        );
+        let renamed = extension.absorb(Opaque::new(FileRead {
+            root: PathBuf::from("/w"),
+            answer: FileAnswer::Renamed {
+                from: PathBuf::from("/w/b.rs"),
+                to: PathBuf::from("/w/c.rs"),
+                outcome: Err("busy".to_owned()),
+            },
+        }));
+        assert_eq!(
+            renamed,
+            Outcome::Failed {
+                title: "rename failed".to_owned(),
+                detail: "b.rs: busy".to_owned(),
+            }
         );
     }
 }
@@ -4580,4 +4814,318 @@ fn esc_on_the_delete_question_cancels_it() {
         view.notice.as_ref().map(|notice| notice.text.as_str()),
         Some("delete cancelled")
     );
+}
+
+/// Up in the menu steps the highlight back and leaves the menu open.
+#[test]
+fn the_rows_menu_highlight_steps_back_and_stays_open() {
+    let (mut view, _machine) = tree_fixture();
+    press(&mut view, Command::OpenMenu);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::SelectPrevious);
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(1));
+    assert_eq!(
+        press(&mut view, Command::Activate),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
+    );
+}
+
+/// A click on an entry picks it; the pointer past the last entry lights
+/// nothing.
+#[test]
+fn a_click_on_a_menu_entry_picks_it_and_past_the_last_lights_nothing() {
+    let (mut view, _machine) = tree_fixture();
+    press(&mut view, Command::OpenMenu);
+    let entries = menu_of(&view).expect("open").1.len();
+    assert!(!handle_hover(&mut view, Some(ViewHit::MenuEntry(entries))));
+    assert_eq!(menu_of(&view).map(|(.., highlighted)| highlighted), Some(0));
+    assert_eq!(
+        handle_mouse(&mut view, Some(ViewHit::MenuEntry(1)), space()),
+        CodeOutcome::Copy(spelled(Path::new("src").join("main.rs")))
+    );
+    assert!(menu_of(&view).is_none());
+}
+
+/// The rename dialog's buttons answer it: one renames what was typed, the
+/// other leaves it; a click anywhere else does neither.
+#[test]
+fn the_rename_dialogs_buttons_rename_or_leave() {
+    let machine = FakeMachine::default().with_file("/w/main.rs", "\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/main.rs"));
+
+    pick_from_menu(&mut view, 2);
+    type_text(&mut view, "x");
+    handle_mouse(&mut view, Some(ViewHit::SelectItem(0)), space());
+    assert!(view.typing(), "still open");
+    handle_mouse(&mut view, Some(ViewHit::Answer(false)), space());
+    assert!(!view.typing());
+    assert!(view.peek_request().is_none());
+
+    pick_from_menu(&mut view, 2);
+    type_text(&mut view, "x");
+    handle_mouse(&mut view, Some(ViewHit::Answer(true)), space());
+    assert!(!view.typing());
+    assert_eq!(
+        view.peek_request(),
+        Some(&FileRequest::Rename {
+            root: PathBuf::from("/w"),
+            from: PathBuf::from("/w/main.rs"),
+            to: PathBuf::from("/w/main.rsx"),
+        })
+    );
+}
+
+/// No name at all, and the names a directory already answers to, are
+/// refused where they are typed.
+#[test]
+fn a_rename_refuses_no_name_and_the_directorys_own_names() {
+    let machine = FakeMachine::default().with_file("/w/a", "\n");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/a"));
+
+    for typed in ["", ".", ".."] {
+        pick_from_menu(&mut view, 2);
+        press(&mut view, Command::EraseBack);
+        type_text(&mut view, typed);
+        press(&mut view, Command::Newline);
+        assert!(view.typing(), "{typed:?} leaves the dialog open");
+        assert_eq!(
+            view.notice.as_ref().map(|notice| notice.role),
+            Some(Role::Warning)
+        );
+        assert!(view.peek_request().is_none(), "{typed:?}");
+        press(&mut view, Command::Close);
+    }
+}
+
+/// Editor settings with no `settings.json` among them are no exclusion
+/// and no failure: the tree shows everything and says nothing.
+#[test]
+fn editor_settings_without_the_settings_file_hide_nothing_quietly() {
+    let machine = FakeMachine::default()
+        .with_directory("/w/.vscode")
+        .with_file("/w/.vscode/extensions.json", "{}")
+        .with_directory("/w/node_modules");
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    assert_eq!(item_names_of_tree(&view), [".vscode", "node_modules"]);
+    assert!(view.notice.is_none(), "{:?}", view.notice);
+}
+
+/// A chain of only children with no bottom — what a link naming its own
+/// directory looks like — is read thirty-two directories down and no
+/// further.
+#[test]
+fn a_chain_with_no_bottom_is_read_only_so_far_down() {
+    let mut machine = FakeMachine::default().with_file("/w/README.md", "# hi\n");
+    let mut path = String::from("/w/top");
+    machine = machine.with_directory(&path);
+    for _ in 0..40 {
+        path.push_str("/a");
+        machine = machine.with_directory(&path);
+    }
+    let mut view = files_at("/w");
+    settle(&mut view, &machine);
+    view.select(PathBuf::from("/w/top"));
+    press(&mut view, Command::Activate);
+    let request = view.take_request().expect("the opened directory is read");
+    view.absorb(fulfill(&machine, request));
+    let below_top = view
+        .files
+        .listings
+        .keys()
+        .filter(|listed| listed.starts_with("/w/top/a"))
+        .count();
+    assert_eq!(below_top, 32);
+}
+
+/// The ASCII rendering of the map draws with ASCII alone, for a terminal
+/// whose font has no box-drawing glyphs.
+#[test]
+fn the_ascii_map_is_drawn_in_ascii_alone() {
+    let mut view = on_the_map();
+    view.map_showing = MapShowing::Ascii;
+    let Content::Lines { lines, .. } = render::view(&view, space()).content else {
+        panic!("the map is lines");
+    };
+    let drawn: String = lines
+        .iter()
+        .flat_map(|line| line.spans.iter().map(|span| span.text.as_str()))
+        .collect();
+    assert!(!drawn.trim().is_empty());
+    assert!(drawn.is_ascii(), "{drawn}");
+}
+
+/// The trail stands on the directory the map is in: its last step.
+#[test]
+fn the_maps_trail_stands_on_its_last_step() {
+    let current = |view: &CodeView| -> Vec<bool> {
+        render::view(view, space())
+            .trail
+            .into_iter()
+            .map(|step| step.current)
+            .collect()
+    };
+    let mut view = on_the_map();
+    assert_eq!(current(&view), [true]);
+    click_tile(&mut view, "src");
+    press(&mut view, Command::Activate);
+    assert_eq!(current(&view), [false, true]);
+}
+
+/// The footer names what each state answers: nothing over a question,
+/// which names its own keys; a file's actions on a file, a directory's
+/// on a directory; and the map's own way through.
+#[test]
+fn the_footer_names_what_the_surface_answers_now() {
+    let footer = |view: &CodeView| render::view(view, space()).footer;
+    let (mut view, _machine) = tree_fixture();
+    let on_a_file = footer(&view);
+    for command in [
+        Command::SelectNext,
+        Command::Collapse,
+        Command::Expand,
+        Command::OpenMenu,
+        Command::Edit,
+        Command::Delete,
+        Command::Find,
+        Command::ToggleMap,
+        Command::Close,
+    ] {
+        assert!(on_a_file.contains(&command), "{command:?} in {on_a_file:?}");
+    }
+
+    view.select(PathBuf::from("/w/src"));
+    let on_a_directory = footer(&view);
+    assert!(on_a_directory.contains(&Command::OpenMenu));
+    assert!(on_a_directory.contains(&Command::Delete));
+    assert!(
+        !on_a_directory.contains(&Command::Edit),
+        "{on_a_directory:?}"
+    );
+
+    press(&mut view, Command::Delete);
+    assert!(view.confirming_delete.is_some());
+    assert_eq!(footer(&view), [], "the question names its own keys");
+    press(&mut view, Command::Close);
+
+    view.select(PathBuf::from("/w/README.md"));
+    pick_from_menu(&mut view, 2);
+    assert!(view.renaming.is_some());
+    assert_eq!(footer(&view), []);
+    press(&mut view, Command::Close);
+
+    let machine = FakeMachine::default().with_directory("/w");
+    let mut empty = files_at("/w");
+    settle(&mut empty, &machine);
+    assert_eq!(empty.selected, None);
+    let on_nothing = footer(&empty);
+    assert!(!on_nothing.contains(&Command::OpenMenu), "{on_nothing:?}");
+    assert!(!on_nothing.contains(&Command::Delete));
+
+    let map = on_the_map();
+    assert_eq!(
+        footer(&map),
+        [
+            Command::SelectNext,
+            Command::Activate,
+            Command::ToggleMap,
+            Command::Close
+        ]
+    );
+}
+
+/// Beside a search the list's own keys are a search's: no folding, no
+/// row menu, and no second search to start.
+#[test]
+fn beside_a_search_the_footer_offers_no_tree_keys() {
+    let (mut view, _machine) = searched_fog();
+    press(&mut view, Command::FocusNext);
+    assert!(!view.typing(), "the keys are out of the field");
+    let footer = render::view(&view, space()).footer;
+    for command in [
+        Command::Collapse,
+        Command::OpenMenu,
+        Command::Edit,
+        Command::Find,
+    ] {
+        assert!(!footer.contains(&command), "{command:?} in {footer:?}");
+    }
+}
+
+/// The tree's badge counts its files, not its directories.
+#[test]
+fn the_trees_badge_counts_its_files() {
+    let (view, _machine) = tree_fixture();
+    assert_eq!(navigator_of_tree(&view).badge, "2");
+}
+
+/// The search's list is lit while it has the keys.
+#[test]
+fn the_search_list_is_focused_while_it_has_the_keys() {
+    let (mut view, _machine) = searched_fog();
+    view.focus = Focus::Navigator;
+    assert!(navigator_of_tree(&view).focused);
+    view.focus = Focus::Content;
+    assert!(!navigator_of_tree(&view).focused);
+}
+
+/// A file opened from a search has what was searched for set apart in
+/// it; the same file read from the tree does not.
+#[test]
+fn a_file_beside_its_search_sets_the_matches_apart() {
+    let grounds = |view: &CodeView| -> Vec<bool> {
+        let Content::Lines { lines, .. } = render::view(view, space()).content else {
+            panic!("a file's lines");
+        };
+        lines[0]
+            .spans
+            .iter()
+            .map(|span| span.ground.is_some())
+            .collect()
+    };
+    let (mut view, machine) = searched_fog();
+    press(&mut view, Command::SelectNext);
+    press(&mut view, Command::Activate);
+    settle(&mut view, &machine);
+    assert!(grounds(&view).contains(&true), "{:?}", grounds(&view));
+
+    let mut read = reading(&machine, "/w/a.txt");
+    read.search.query = "fog".to_owned();
+    assert!(!grounds(&read).contains(&true));
+}
+
+/// The caret is drawn only while the file is being typed into.
+#[test]
+fn the_caret_is_drawn_only_while_editing() {
+    let caret = |view: &CodeView| match render::view(view, space()).content {
+        Content::Lines { caret, .. } => caret,
+        other => panic!("a file's lines: {other:?}"),
+    };
+    let machine = FakeMachine::default().with_file("/w/a.txt", "one\n");
+    assert_eq!(caret(&reading(&machine, "/w/a.txt")), None);
+    assert!(caret(&editing(&machine, "/w/a.txt")).is_some());
+}
+
+/// A directory's row says whether it is open or folded.
+#[test]
+fn a_directory_row_says_whether_it_is_open() {
+    let (mut view, _machine) = tree_fixture();
+    let collapsed = |view: &CodeView| {
+        navigator_of_tree(view)
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                NavigatorRow::Group { collapsed, .. } => Some(*collapsed),
+                _ => None,
+            })
+    };
+    assert_eq!(collapsed(&view), Some(false), "src is open");
+    view.select(PathBuf::from("/w/src"));
+    press(&mut view, Command::Collapse);
+    assert_eq!(collapsed(&view), Some(true));
 }

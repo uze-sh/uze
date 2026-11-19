@@ -1057,6 +1057,30 @@ mod tests {
         }
     }
 
+    /// The room a name needs is room in the box as drawn, after the cell
+    /// it gives back to a neighbour.
+    #[test]
+    fn every_tile_as_drawn_has_room_for_its_name() {
+        let mut files = vec![
+            file("Cargo.lock", 3799, 2),
+            file("AGENTS.md", 620, 9),
+            file("README.md", 300, 4),
+        ];
+        files.extend((0..14).map(|n| file(&format!("crates/core/m{n}.rs"), 1400 + n * 60, n)));
+        files.extend((0..7).map(|n| file(&format!("src/ui/u{n}.rs"), 2400, 20 + n)));
+        files.extend((0..40).map(|n| file(&format!("docs/adr/{n:03}.md"), 180, 1)));
+        for space in [(150, 38), SPACE, (80, 24), (60, 16)] {
+            for tile in map(files.clone()).tiles(space) {
+                let drawn = bordered(tile.frame, space);
+                assert!(
+                    drawn.w >= NAMED.0 && drawn.h >= NAMED.1,
+                    "{} drawn as {drawn:?} in {space:?}",
+                    tile.name
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_level_is_never_more_than_a_screenful_of_tiles() {
         let map = map((0..200)
@@ -1320,5 +1344,310 @@ mod tests {
         assert!(changed.contains(&("kept.rs", false)), "{changed:?}");
 
         let _ = std::fs::remove_dir_all(root);
+    }
+    /// A small checkout: a changed, busy file, a directory of two, a file
+    /// nobody touched this year and one touched twice.
+    fn small() -> Map {
+        map(vec![
+            FileMeasure {
+                changed: true,
+                ..file("main.rs", 400, 12)
+            },
+            file("lib.rs", 300, 0),
+            file("docs/guide.md", 200, 1),
+            file("docs/notes.md", 100, 1),
+            file("Cargo.toml", 200, 2),
+        ])
+    }
+
+    const SMALL: (i32, i32) = (60, 14);
+
+    fn painted(map: &Map) -> Canvas {
+        map.paint(&map.tiles(SMALL), SMALL, Glyphs::Unicode)
+    }
+
+    /// Each tile is a box of its own, a cell clear of its neighbours and
+    /// flush with the map's edge, holding its name, its lines and what it
+    /// is made of as far down as it has room; a directory says so with a
+    /// slash, and a changed file carries the mark.
+    #[test]
+    fn a_map_is_drawn_as_boxes_that_say_what_they_hold() {
+        let text = painted(&small()).to_text();
+        let rows: Vec<&str> = text.lines().map(str::trim_end).collect();
+        assert_eq!(
+            rows,
+            [
+                "┌─────────────────┐ ┌────────────┐ ┌───────────────────────┐",
+                "│ main.rs ●       │ │ docs/      │ │ lib.rs                │",
+                "│ 400 lines       │ │ 300 lines  │ │ 300 lines             │",
+                "│ 12 commits thi… │ │ 2 files    │ │                       │",
+                "│                 │ │            │ │                       │",
+                "│                 │ │            │ │                       │",
+                "│                 │ │            │ └───────────────────────┘",
+                "│                 │ │            │",
+                "│                 │ │            │ ┌───────────────────────┐",
+                "│                 │ │            │ │ Cargo.toml            │",
+                "│                 │ │            │ │ 200 lines             │",
+                "│                 │ │            │ │ 2 commits this year   │",
+                "│                 │ │            │ │                       │",
+                "└─────────────────┘ └────────────┘ └───────────────────────┘",
+            ]
+        );
+    }
+
+    /// A tile's border is drawn in the colour of how hot it is.
+    #[test]
+    fn a_tiles_border_is_the_colour_of_its_heat() {
+        let canvas = painted(&small());
+        let role = |x, y| canvas.cell(x, y).map(|cell| cell.role);
+        assert_eq!(role(0, 0), Some(Role::Danger), "main.rs is hot");
+        assert_eq!(role(20, 0), Some(Role::Muted), "docs was touched");
+        assert_eq!(role(35, 0), Some(Role::Faint), "lib.rs was not");
+    }
+
+    /// Only the selected tile is laid on a ground.
+    #[test]
+    fn only_the_selected_tile_has_a_ground() {
+        let mut map = small();
+        let grounded = |canvas: &Canvas, x, y| canvas.cell(x, y).and_then(|cell| cell.ground);
+        let canvas = painted(&map);
+        assert_eq!(grounded(&canvas, 5, 5), None);
+        assert_eq!(grounded(&canvas, 40, 3), None);
+        map.picked = Some("lib.rs".to_owned());
+        let canvas = painted(&map);
+        assert_eq!(grounded(&canvas, 40, 3), Some(Role::Faint));
+        assert_eq!(grounded(&canvas, 5, 5), None);
+    }
+
+    /// The footer speaks of the whole level until a tile is selected, and
+    /// then of that tile.
+    #[test]
+    fn the_caption_speaks_of_the_level_or_the_selected_tile() {
+        let mut map = small();
+        let caption = |map: &Map| map.caption(&map.tiles(SMALL));
+        assert_eq!(caption(&map), "5 files · 1,200 lines");
+        map.picked = Some("main.rs".to_owned());
+        assert_eq!(
+            caption(&map),
+            "main.rs · 400 lines · 12 commits this year · changed · enter opens it"
+        );
+        map.picked = Some("docs".to_owned());
+        assert_eq!(
+            caption(&map),
+            "docs/ · 2 files · 300 lines · enter goes inside"
+        );
+        assert_eq!(grouped(123_456), "123,456");
+        assert_eq!(grouped(1_234_567), "1,234,567");
+    }
+
+    /// With nothing selected, an arrow picks the tile nearest the middle.
+    #[test]
+    fn an_arrow_with_nothing_picked_starts_in_the_middle() {
+        let mut map = small();
+        map.pick_toward(PanDirection::Right, SMALL);
+        assert_eq!(map.picked.as_deref(), Some("docs"));
+    }
+
+    /// The steps are ranked: the busiest twentieth of the touched files
+    /// is hot, the busiest fifth warm, and files nobody touched do not
+    /// count towards the rank.
+    #[test]
+    fn heat_is_ranked_among_the_files_that_were_touched() {
+        let mut files: Vec<FileMeasure> = (1..=100)
+            .map(|commits| file(&format!("t{commits}.rs"), 100, commits))
+            .collect();
+        files.extend((0..100).map(|n| file(&format!("u{n}.rs"), 100, 0)));
+        let steps = Steps::of(&files);
+        assert_eq!(steps.heat(100), Heat::Hot);
+        assert_eq!(steps.heat(95), Heat::Hot);
+        assert_eq!(steps.heat(94), Heat::Warm);
+        assert_eq!(steps.heat(80), Heat::Warm);
+        assert_eq!(steps.heat(79), Heat::Touched);
+        assert_eq!(steps.heat(1), Heat::Touched);
+        assert_eq!(steps.heat(0), Heat::Untouched);
+    }
+
+    /// A directory is as busy as its lines are on average, and touched if
+    /// anything in it was.
+    #[test]
+    fn a_directory_is_as_hot_as_its_lines_on_average() {
+        let tiles = map(vec![
+            file("busy/a.rs", 100, 10),
+            file("busy/b.rs", 300, 2),
+            file("quiet/c.rs", 1000, 0),
+            file("quiet/d.rs", 1000, 0),
+            file("nudged/e.rs", 1000, 0),
+            file("nudged/f.rs", 1, 1),
+        ])
+        .tiles(SPACE);
+        assert_eq!(tile(&tiles, "busy").commits, 4);
+        assert_eq!(tile(&tiles, "quiet").heat, Heat::Untouched);
+        assert_eq!(tile(&tiles, "nudged").heat, Heat::Touched);
+    }
+
+    /// An empty file holds no lines to draw: it is not on the map, and a
+    /// checkout of nothing else is an empty map.
+    #[test]
+    fn an_empty_file_is_not_on_the_map() {
+        let drawn = map(vec![file("a.rs", 10, 0), file("empty.rs", 0, 0)]);
+        assert!(!drawn.is_empty());
+        let tiles = drawn.tiles(SPACE);
+        assert!(tiles.iter().all(|tile| tile.path != "empty.rs"));
+        assert_eq!(tiles.iter().map(|tile| tile.files).sum::<usize>(), 1);
+        assert!(map(vec![file("empty.rs", 0, 0)]).is_empty());
+        assert!(map(Vec::new()).is_empty());
+    }
+
+    /// No space holds no tile; a single cell is still a tile to click.
+    #[test]
+    fn the_map_fits_down_to_a_single_cell() {
+        let map = small();
+        for nothing in [(0, 5), (5, 0), (0, 0)] {
+            assert!(map.tiles(nothing).is_empty(), "{nothing:?}");
+        }
+        let one = map.tiles((1, 1));
+        assert!(one.iter().any(|tile| tile.frame.contains(0, 0)));
+    }
+    /// Checkouts of every shape, in spaces of every size, keep the map's
+    /// promises: where the largest tile can be named every tile as drawn
+    /// has room for its name, no tail is
+    /// folded into a tile standing for one file, a level is at most a
+    /// screenful, and the tiles cover the space.
+    #[test]
+    fn the_maps_promises_hold_in_every_space() {
+        let mut shapes: Vec<Vec<FileMeasure>> = Vec::new();
+        shapes.push(
+            (0..60)
+                .map(|n| file(&format!("f{n:02}.rs"), 2000 / (n + 1), n))
+                .collect(),
+        );
+        shapes.push(
+            (0..30)
+                .map(|n| file(&format!("e{n:02}.rs"), 100, 1))
+                .collect(),
+        );
+        let mut mixed = vec![file("big.rs", 9000, 3), file("mid.rs", 1500, 1)];
+        mixed.extend((0..25).map(|n| file(&format!("s{n:02}.rs"), 40 + n, 0)));
+        shapes.push(mixed);
+        let mut few = vec![
+            file("a.rs", 500, 1),
+            file("b.rs", 400, 1),
+            file("c.rs", 300, 1),
+        ];
+        few.push(file("d.rs", 5, 0));
+        shapes.push(few);
+        for files in shapes {
+            let map = map(files);
+            for width in (20..=200).step_by(9) {
+                for height in (8..=60).step_by(5) {
+                    let space = (width, height);
+                    let tiles = map.tiles(space);
+                    assert!(
+                        tiles.len() <= MOST + 1,
+                        "{} tiles in {space:?}",
+                        tiles.len()
+                    );
+                    let covered: i32 = tiles.iter().map(|tile| tile.frame.w * tile.frame.h).sum();
+                    assert_eq!(covered, width * height, "{space:?}");
+                    let has_room = |tile: &Tile| {
+                        let drawn = bordered(tile.frame, space);
+                        drawn.w >= NAMED.0 && drawn.h >= NAMED.1
+                    };
+                    // Narrowing stops at the first tile: a space too small
+                    // for the largest name promises none.
+                    let roomy = tiles.first().is_some_and(has_room);
+                    for tile in &tiles {
+                        assert_ne!(tile.name, "+1 files", "{space:?}");
+                        assert!(
+                            !roomy || has_room(tile),
+                            "{} drawn as {:?} in {space:?}",
+                            tile.name,
+                            bordered(tile.frame, space)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// With nothing picked, an arrow starts from the middle of the map,
+    /// up and down as much as across.
+    #[test]
+    fn an_arrow_with_nothing_picked_starts_halfway_down() {
+        let mut map = map(vec![
+            file("a.rs", 100, 0),
+            file("b.rs", 100, 0),
+            file("c.rs", 100, 0),
+        ]);
+        let space = (20, 40);
+        let tiles = map.tiles(space);
+        let middle = tiles
+            .iter()
+            .find(|tile| tile.frame.contains(10, 20))
+            .map(|tile| tile.path.clone());
+        map.pick_toward(PanDirection::Down, space);
+        assert_eq!(map.picked, middle, "{tiles:?}");
+    }
+    fn labelled(name: &str, changed: bool, frame: Frame) -> Vec<String> {
+        let tile = Tile {
+            frame,
+            kind: TileKind::File,
+            path: name.to_owned(),
+            name: name.to_owned(),
+            lines: 10,
+            files: 1,
+            commits: 0,
+            changed,
+            heat: Heat::Touched,
+        };
+        let mut canvas = Canvas::new(frame.w + 6, frame.h, Glyphs::Unicode);
+        label(&mut canvas, &tile, frame, false);
+        canvas
+            .to_text()
+            .lines()
+            .map(|row| row.trim_end().to_owned())
+            .collect()
+    }
+
+    /// A box as small as a name allows still says it, cut to its room; one
+    /// any narrower or shorter says nothing rather than spill over its
+    /// border.
+    #[test]
+    fn a_name_is_written_only_where_a_box_has_room_for_it() {
+        let at = |w, h| Frame { x: 0, y: 0, w, h };
+        assert_eq!(labelled("main.rs", false, at(20, 3))[1].trim(), "main.rs");
+        assert_eq!(
+            labelled("main.rs", false, at(7, 3))[1].chars().count(),
+            2 + 3
+        );
+        assert!(
+            labelled("main.rs", false, at(6, 3))
+                .iter()
+                .all(|row| row.trim().is_empty())
+        );
+        assert!(
+            labelled("main.rs", false, at(20, 2))
+                .iter()
+                .all(|row| row.trim().is_empty())
+        );
+    }
+
+    /// A changed file's mark stays inside the box: the name gives way to
+    /// it.
+    #[test]
+    fn the_changed_mark_is_kept_and_the_name_cut_for_it() {
+        let row = labelled(
+            "abcdefghijkl.rs",
+            true,
+            Frame {
+                x: 0,
+                y: 0,
+                w: 12,
+                h: 3,
+            },
+        )[1]
+        .clone();
+        assert!(row.ends_with('●'), "{row}");
+        assert_eq!(row.chars().count(), 2 + 8, "{row}");
     }
 }
