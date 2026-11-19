@@ -103,6 +103,17 @@ fn endpoint_identity_is_project_specific() {
     );
 }
 
+/// Homes that differ in a single character — numbered checkouts, a
+/// series of scratch homes — are as many workspaces, each with an
+/// endpoint of its own.
+#[test]
+fn sibling_homes_never_share_an_endpoint_identity() {
+    let identities: std::collections::BTreeSet<String> = (0..256)
+        .map(|index| identity_of(Path::new(&format!("/tmp/home-{index}"))))
+        .collect();
+    assert_eq!(identities.len(), 256);
+}
+
 /// One workspace, one endpoint, whatever each terminal's environment
 /// says. `XDG_RUNTIME_DIR` and `TMPDIR` are set per session and can
 /// differ between two terminals of one login — and then the two
@@ -197,6 +208,211 @@ fn the_listener_is_told_apart_by_what_it_runs() {
         "and so is one started from another image"
     );
     another_build.release();
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that does not act on the request to stop is ended outright,
+/// so it cannot keep the workspace from the server replacing it.
+#[test]
+fn a_server_that_ignores_the_request_to_stop_is_ended_all_the_same() {
+    let scratch = uze_testkit::temp::socket_scratch("retire-deaf");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let socket = super::transport::scratch_endpoint(&scratch, "test.sock");
+
+    let mut deaf = ClaimHolder::spawn_deaf(
+        &another_build_of_this_binary(&scratch),
+        &uze_home,
+        &super::stop_channel(&socket),
+    );
+    assert!(workspace_is_claimed());
+
+    assert!(retire(deaf.pid(), None, &socket), "it was retired");
+    assert!(!workspace_is_claimed(), "and let go of the workspace");
+    assert!(!deaf.process.wait().unwrap().success(), "it was ended");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server is asked to stop under its endpoint's own name, whatever
+/// directory holds the endpoint, so any build can ask any other.
+#[test]
+fn a_stop_is_asked_under_the_endpoints_own_name() {
+    let here = Path::new("state").join("uze-1.sock");
+    let elsewhere = Path::new("other").join("place").join("uze-1.sock");
+    let another = Path::new("state").join("uze-2.sock");
+    assert_eq!(super::stop_channel(&here), super::stop_channel(&elsewhere));
+    assert_ne!(super::stop_channel(&here), super::stop_channel(&another));
+}
+
+/// A server is started from a binary that is on disk: this one, here.
+#[test]
+fn a_server_is_started_from_a_binary_on_disk() {
+    let executable = super::server_executable().expect("this binary is on disk");
+    assert!(executable.is_file(), "{}", executable.display());
+}
+
+/// A server that has yet to bind is waited for, a moment; one that never
+/// does is reported as not ready rather than as a missing file.
+#[test]
+fn a_server_binding_its_endpoint_late_is_waited_for_and_one_that_never_does_is_not_ready() {
+    let scratch = uze_testkit::temp::socket_scratch("connect-waiting");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+
+    let late = super::transport::scratch_endpoint(&scratch, "late.sock");
+    let binding = {
+        let late = late.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            let listener = super::transport::bind(&late).unwrap();
+            drop(super::transport::accept(&listener));
+        })
+    };
+    assert!(
+        super::connect_waiting(&late).is_ok(),
+        "a server binding a moment after the client looked is reached"
+    );
+    let _ = binding.join();
+
+    let never = super::transport::scratch_endpoint(&scratch, "never.sock");
+    assert!(matches!(
+        super::connect_waiting(&never),
+        Err(RuntimeError::Protocol(_))
+    ));
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// An endpoint that cannot be reached for a reason other than nobody
+/// listening yet is that error, at once — never a wait for a server.
+// Unix only: an endpoint is a socket file, and one under a regular file is
+// a path the kernel refuses outright; a named pipe has no directory.
+#[cfg(unix)]
+#[test]
+fn an_endpoint_that_cannot_exist_is_reported_at_once() {
+    let scratch = uze_testkit::temp::socket_scratch("connect-refused");
+    let uze_home = scratch.join("home");
+    std::fs::create_dir_all(&uze_home).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let file = scratch.join("a-file");
+    std::fs::write(&file, "").unwrap();
+    let impossible = file.join("test.sock");
+
+    assert!(matches!(
+        super::connect_waiting(&impossible),
+        Err(RuntimeError::Io(_))
+    ));
+    // Outlives the wait for a server to start, so only the error can end it.
+    let mut starting = std::process::Command::new("sleep")
+        .arg("300")
+        .spawn()
+        .unwrap();
+    let answer = super::connect_starting(&impossible, &mut starting);
+    let _ = starting.kill();
+    let _ = starting.wait();
+    assert!(
+        matches!(answer, Err(RuntimeError::Io(_))),
+        "a server still starting is not waited on for an endpoint it can never bind"
+    );
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A starting server waits out a client asking whether the workspace is
+/// claimed: each asks for an instant, and only a server is a refusal.
+#[test]
+fn a_starting_server_waits_out_a_client_asking_about_the_claim() {
+    let scratch = uze_testkit::temp::scratch("terminal-lock-waits");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+
+    let asker = super::open_workspace_lock().unwrap();
+    super::try_lock(&asker, super::LockMode::Shared).expect("an asker takes it shared");
+    let letting_go = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        super::unlock(&asker);
+    });
+    let claimed = WorkspaceLock::acquire();
+    let _ = letting_go.join();
+
+    assert!(
+        claimed.is_ok(),
+        "the asker let go, and the claim is the server's"
+    );
+    drop(claimed);
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// The key is written back when its file goes missing or is changed under
+/// a live server, or every client after that is turned away.
+#[test]
+fn the_runtimes_key_is_written_back_when_it_goes_missing_or_changes() {
+    let scratch = uze_testkit::temp::scratch("terminal-key-kept");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+    std::fs::create_dir_all(super::key_path().parent().unwrap()).unwrap();
+
+    let key = super::ServerKey::mint().unwrap();
+    assert!(key.admits(&super::server_key()));
+
+    std::fs::remove_file(super::key_path()).unwrap();
+    key.keep();
+    assert!(key.admits(&super::server_key()), "a key cleaned away");
+
+    std::fs::write(super::key_path(), "another").unwrap();
+    key.keep();
+    assert!(key.admits(&super::server_key()), "a key overwritten");
+
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// Where the kernel seals a pane, the person's endpoint is published for
+/// the person's clients, and published again when its record goes missing
+/// or is changed under a live server.
+// Linux only: the person's endpoint stands where a pane can be sealed, a
+// Landlock scope no other kernel has.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_persons_endpoint_is_published_again_when_its_record_goes() {
+    if !uze_platform::seal::available() {
+        eprintln!("skipped: this kernel cannot seal a pane");
+        return;
+    }
+    let scratch = uze_testkit::temp::scratch("terminal-door-kept");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &scratch);
+    std::fs::create_dir_all(super::operator_path().parent().unwrap()).unwrap();
+    let published = || {
+        std::fs::read_to_string(super::operator_path())
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+    };
+
+    let (door, _listener) = super::PersonDoor::open(true).expect("opened where a pane is sealed");
+    assert_eq!(published(), door.name());
+    assert!(
+        uze_platform::seal::connect(door.name()).is_ok(),
+        "the name published is where the endpoint listens"
+    );
+
+    std::fs::remove_file(super::operator_path()).unwrap();
+    door.keep();
+    assert_eq!(published(), door.name(), "a record cleaned away");
+
+    std::fs::write(super::operator_path(), "uze-person-another").unwrap();
+    door.keep();
+    assert_eq!(published(), door.name(), "a record overwritten");
 
     let _ = std::fs::remove_dir_all(&scratch);
 }
@@ -441,6 +657,28 @@ fn mouse_mode_reflects_what_the_pane_actually_asked_for() {
     assert_eq!(snapshot(PaneId(1), &terminal).mouse, MouseMode::default());
 }
 
+/// Drag reporting alone (1002) reports the press that starts a drag too.
+#[test]
+fn a_program_asking_only_for_drags_is_sent_clicks_as_well() {
+    let (sender, _receiver) = std::sync::mpsc::channel();
+    let mut terminal = Term::new(Config::default(), &TermSize::new(12, 3), reply_sink(sender));
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut terminal, b"\x1b[?1002h");
+    let mouse = snapshot(PaneId(1), &terminal).mouse;
+    assert!(mouse.reports_clicks && mouse.reports_drag, "{mouse:?}");
+}
+
+/// A query the emulator answers on its own (where the cursor is) is
+/// handed back for the program.
+#[test]
+fn a_cursor_position_query_is_answered() {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let mut terminal = Term::new(Config::default(), &TermSize::new(12, 3), reply_sink(sender));
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut terminal, b"\x1b[2;3H\x1b[6n");
+    assert_eq!(receiver.try_recv().expect("a reply"), b"\x1b[2;3R".to_vec());
+}
+
 #[test]
 fn bracketed_paste_reflects_what_the_pane_actually_asked_for() {
     // A readline-style program (Claude Code, Codex) turns this on
@@ -574,8 +812,163 @@ fn damage_that_changes_nothing_drawn_is_not_offered() {
     assert_eq!(offered, 1, "an unchanged screen was offered again");
 }
 
+/// A pane whose program prints nothing, so what is fed to its emulator
+/// is all it shows.
+// Unix only: `sleep` in a POSIX shell prints nothing, while ConPTY paints a
+// starting console on its own schedule, over whatever was fed before it.
+#[cfg(unix)]
+fn quiet_pane(id: u64, columns: u16, rows: u16) -> PaneRuntime {
+    let (damage, _damage_events) = std::sync::mpsc::channel();
+    PaneRuntime::spawn(
+        PaneId(id),
+        std::env::temp_dir(),
+        columns,
+        rows,
+        damage,
+        Launch::Program {
+            argv: shell_argv("sleep 30", "Start-Sleep 30"),
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+        false,
+    )
+    .unwrap()
+}
+
+/// Feeds `bytes` to `pane`'s emulator as if its program had written them.
+// Unix only: used by the `quiet_pane` tests alone.
+#[cfg(unix)]
+fn draw(pane: &PaneRuntime, bytes: &[u8]) {
+    let mut parser: Processor = Processor::new();
+    parser.advance(&mut *pane.terminal.lock().unwrap(), bytes);
+}
+
+/// A cell rewritten with the cursor put back where it was still changed
+/// what a client draws.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn a_change_that_leaves_the_cursor_where_it_was_is_still_offered() {
+    let pane = quiet_pane(30, 80, 24);
+    let mut offered = Vec::new();
+    pane.offer_damage(|damage| offered.push(damage.changed.len()));
+    draw(&pane, b"\x1b7X\x1b8");
+    pane.offer_damage(|damage| offered.push(damage.changed.len()));
+    pane.stop();
+    assert_eq!(offered.len(), 2, "the rewritten cell was never offered");
+    assert_eq!(offered[1], 1);
+}
+
+/// Damage names each changed cell by the row and column it stands at.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn damage_names_the_row_and_column_of_a_changed_cell() {
+    let pane = quiet_pane(31, 80, 24);
+    pane.damage_since_last();
+    draw(&pane, b"\x1b[3;5HX");
+    let damage = pane.damage_since_last();
+    pane.stop();
+    let written: Vec<_> = damage
+        .changed
+        .iter()
+        .filter(|(_, _, cell)| cell.character == 'X')
+        .map(|(row, column, _)| (*row, *column))
+        .collect();
+    assert_eq!(written, [(2, 4)]);
+}
+
+/// A grid of another shape cannot be diffed against the last one, so the
+/// first damage after a resize describes every cell, even when only one
+/// dimension moved.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn damage_after_a_resize_describes_every_cell() {
+    let pane = quiet_pane(32, 80, 24);
+    pane.damage_since_last();
+    pane.resize(80, 30);
+    let damage = pane.damage_since_last();
+    pane.stop();
+    assert_eq!(damage.changed.len(), 80 * 30);
+}
+
+/// Scrolling says whether the view moved: up into the scrollback and back
+/// down do, and nothing below the newest line or above the oldest does.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn scrolling_a_pane_says_whether_the_view_moved() {
+    let pane = quiet_pane(33, 80, 24);
+    let lines: String = (0..60).map(|line| format!("line {line}\r\n")).collect();
+    draw(&pane, lines.as_bytes());
+    let moved: Vec<bool> = [-1, 1, -1, -1, 1000, 1]
+        .into_iter()
+        .map(|lines| pane.scroll(lines))
+        .collect();
+    pane.stop();
+    assert_eq!(moved, [false, true, true, false, true, false]);
+}
+
+/// Selecting says whether what is selected changed, and the selection is
+/// the pane's text it covers.
+// Unix only: a `quiet_pane`.
+#[cfg(unix)]
+#[test]
+fn a_pane_selects_and_copies_the_text_under_a_gesture() {
+    let pane = quiet_pane(34, 80, 24);
+    draw(&pane, b"hello world");
+    let began = pane.select(crate::SelectionGesture::Begin {
+        anchor: (0, 0),
+        head: (4, 0),
+    });
+    let released = pane.select(crate::SelectionGesture::Release);
+    let text = pane.selected_text();
+    pane.stop();
+    assert!(began, "a selection was drawn");
+    assert!(!released, "letting go selects nothing new");
+    assert_eq!(text, "hello");
+}
+
+/// What the emulator answers a program's query with — here where its
+/// cursor is — reaches the program, which a terminal echoing input shows.
+// Unix only: a POSIX shell's `printf`, and a terminal that echoes input.
+#[cfg(unix)]
+#[test]
+fn a_programs_query_is_answered_on_its_terminal() {
+    let (damage, damage_events) = std::sync::mpsc::channel();
+    let pane = PaneRuntime::spawn(
+        PaneId(35),
+        std::env::temp_dir(),
+        80,
+        24,
+        damage,
+        Launch::Program {
+            argv: shell_argv("printf '\\033[6n'; sleep 30", "Start-Sleep 30"),
+            env: Vec::new(),
+        },
+        Arc::new(Mutex::new(Palette::default())),
+        false,
+    )
+    .unwrap();
+    let answered = std::iter::from_fn(|| damage_events.recv_timeout(Duration::from_secs(10)).ok())
+        .any(|_| {
+            pane.snapshot()
+                .cells
+                .into_iter()
+                .map(|cell| cell.character)
+                .collect::<String>()
+                .contains("1;1R")
+        });
+    pane.stop();
+    assert!(answered, "the cursor report never reached the program");
+}
+
 #[test]
 fn damage_since_last_is_sparse_after_a_small_change() {
+    // The pane starts the default shell, which reads `UZE_SHELL`: hold the
+    // environment still while it does, as other tests point it elsewhere.
+    let _env = uze_testkit::env::scope();
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(9),
@@ -616,6 +1009,9 @@ fn damage_since_last_is_sparse_after_a_small_change() {
 
 #[test]
 fn pane_process_keeps_output_until_explicit_stop() {
+    // The pane starts the default shell, which reads `UZE_SHELL`: hold the
+    // environment still while it does, as other tests point it elsewhere.
+    let _env = uze_testkit::env::scope();
     let (damage, damage_events) = std::sync::mpsc::channel();
     let pane = PaneRuntime::spawn(
         PaneId(7),
@@ -1670,6 +2066,12 @@ fn the_server_works_in_no_checkout() {
     assert_eq!(
         command.get_current_dir(),
         Some(super::host::server_directory().as_path())
+    );
+    let directory = super::host::server_directory();
+    assert!(
+        directory.is_absolute() && directory.is_dir(),
+        "the server stands in a directory that exists: {}",
+        directory.display()
     );
 }
 
@@ -3304,6 +3706,10 @@ const SERVING_HOLDER: &str = "UZE_TERMINAL_TEST_SERVES";
 /// does, whatever else it can read.
 const REFUSING_HOLDER: &str = "UZE_TERMINAL_TEST_REFUSES";
 
+/// Set, to a stop channel, on the holder that is to hear a request to stop
+/// on it and do nothing: a server that has stopped answering.
+const DEAF_HOLDER: &str = "UZE_TERMINAL_TEST_IGNORES_STOP";
+
 /// The other server in the two claim tests: a process of its own that
 /// takes the workspace claim under the `UZE_HOME` it is given, says so,
 /// and keeps it for as long as its stdin stays open.
@@ -3371,6 +3777,9 @@ fn holds_the_workspace_claim_while_its_stdin_is_open() {
         }
         None => Some(WorkspaceLock::acquire().expect("the holder's claim is granted")),
     };
+    if let Some(channel) = std::env::var_os(DEAF_HOLDER) {
+        uze_platform::process::listen_for_stop(&channel.to_string_lossy(), || {});
+    }
     println!("{CLAIM_HELD}");
     let mut until_eof = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut until_eof);
@@ -3402,6 +3811,13 @@ impl ClaimHolder {
     /// attach asks of a server before it decides anything about it.
     fn spawn_serving(executable: &Path, uze_home: &Path, project: &Path) -> Self {
         Self::spawn_with(executable, uze_home, Some(project))
+    }
+
+    /// A holder that does nothing when asked to stop on `channel`.
+    fn spawn_deaf(executable: &Path, uze_home: &Path, channel: &str) -> Self {
+        let mut command = std::process::Command::new(executable);
+        command.env(DEAF_HOLDER, channel);
+        Self::spawn_command(command, uze_home)
     }
 
     /// A holder that is a server of another release: it binds this
@@ -4207,6 +4623,51 @@ fn a_server_that_answers_this_builds_handshake_serves_it() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A repaint can reach a client before its snapshot does: talk before
+/// the answer is not an answer either way, and the snapshot after it is.
+#[test]
+fn a_server_that_talks_before_its_snapshot_still_serves_this_build() {
+    let scratch = uze_testkit::temp::socket_scratch("serves-talking");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "talking.sock");
+    let listener = super::transport::bind(&socket).unwrap();
+    let answering = std::thread::spawn(move || {
+        let mut stream = super::transport::accept(&listener).unwrap();
+        let _ = read_message::<_, crate::ClientRequest>(&mut std::io::BufReader::new(
+            stream.try_clone().unwrap(),
+        ));
+        let _ = write_message(&mut stream, &crate::ClientEvent::Detached);
+        let _ = write_message(
+            &mut stream,
+            &crate::ClientEvent::Snapshot {
+                session: Session::new(seat_at(Path::new("/tmp/a")), 80, 24),
+            },
+        );
+    });
+    assert!(serves_this_build(&socket));
+    let _ = answering.join();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A server that keeps talking and never answers is a "no" once the
+/// question's bound runs out, however often it speaks.
+#[test]
+fn a_server_that_talks_without_ever_answering_does_not_serve_this_build() {
+    let scratch = uze_testkit::temp::socket_scratch("serves-chatty");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let socket = super::transport::scratch_endpoint(&scratch, "chatty.sock");
+    let listener = super::transport::bind(&socket).unwrap();
+    let talking = std::thread::spawn(move || {
+        let mut stream = super::transport::accept(&listener).unwrap();
+        while write_message(&mut stream, &crate::ClientEvent::Detached).is_ok() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+    assert!(!serves_this_build(&socket));
+    let _ = talking.join();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// The state the question exists to find: something is listening at the
 /// endpoint of a claimed workspace and cannot be talked to — a server
 /// built to another framing, one that refuses this build's version, one
@@ -4429,6 +4890,74 @@ fn the_answer_to_an_attach_is_the_snapshot_or_the_reason_there_is_none() {
     );
 }
 
+/// A reader that hands over `said`, then fails with `kind`.
+struct EndsWith {
+    said: std::io::Cursor<Vec<u8>>,
+    kind: std::io::ErrorKind,
+}
+
+impl std::io::Read for EndsWith {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.said.read(buffer)? {
+            0 => Err(std::io::Error::from(self.kind)),
+            read => Ok(read),
+        }
+    }
+}
+
+/// A server that hangs up after saying why is reported by its reason
+/// however the platform reports the hang-up; any other failure to read is
+/// that failure.
+#[test]
+fn a_hang_up_after_a_reason_is_the_reason_and_another_failure_is_itself() {
+    let mut said = Vec::new();
+    write_message(
+        &mut said,
+        &crate::ClientEvent::Refused {
+            message: "turned away".into(),
+        },
+    )
+    .unwrap();
+    for kind in [
+        std::io::ErrorKind::UnexpectedEof,
+        std::io::ErrorKind::ConnectionReset,
+        std::io::ErrorKind::ConnectionAborted,
+        std::io::ErrorKind::BrokenPipe,
+    ] {
+        let mut reader = EndsWith {
+            said: std::io::Cursor::new(said.clone()),
+            kind,
+        };
+        let answer = super::answer_to_attach(&mut reader).expect_err("turned away");
+        assert_eq!(
+            answer.to_string(),
+            "terminal runtime protocol error: turned away",
+            "{kind:?}"
+        );
+    }
+    let mut reader = EndsWith {
+        said: std::io::Cursor::new(said),
+        kind: std::io::ErrorKind::PermissionDenied,
+    };
+    assert!(matches!(
+        super::answer_to_attach(&mut reader),
+        Err(RuntimeError::Io(error)) if error.kind() == std::io::ErrorKind::PermissionDenied
+    ));
+}
+
+/// Once the peer has said who it is, silence is a person reading: the
+/// handshake's deadline no longer applies.
+#[test]
+fn an_attached_peer_may_be_silent_past_the_handshake_deadline() {
+    let (mut peer, socket) = super::transport::pair().unwrap();
+    let mut handshake = super::Handshake::new(socket, Duration::from_millis(50));
+    handshake.attached();
+    std::thread::sleep(Duration::from_millis(150));
+    std::io::Write::write_all(&mut peer, b"x").unwrap();
+    let mut byte = [0u8; 1];
+    assert_eq!(std::io::Read::read(&mut handshake, &mut byte).unwrap(), 1);
+}
+
 /// `SO_RCVTIMEO` restarts on every successful read, so a deadline
 /// spelled with it alone is no deadline at all: a peer dribbling a byte
 /// just inside it holds a reader thread, a writer thread and whatever
@@ -4498,6 +5027,20 @@ fn a_first_frame_is_bounded_by_what_a_handshake_says_not_by_a_repaint() {
     assert!(
         attach.len() < super::MAX_HANDSHAKE_FRAME as usize,
         "and the bound still has to fit what a handshake actually says"
+    );
+
+    let deepest = Path::new("/").join("d".repeat(4096));
+    let attach = bincode::serialize(&crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns: 200,
+        rows: 50,
+        seating: crate::Seating::Open(seat_at(&deepest)),
+        key: super::server_key(),
+    })
+    .unwrap();
+    assert!(
+        attach.len() < super::MAX_HANDSHAKE_FRAME as usize,
+        "a root as long as a path can be still fits"
     );
 }
 
@@ -4685,6 +5228,332 @@ fn listening_server(project: &Path) -> (Arc<Server>, PathBuf) {
     let accepting = Arc::clone(&server);
     thread::spawn(move || super::accept_connections(listener, accepting, super::Door::Shared));
     (server, socket)
+}
+
+/// A client of another protocol is told so, key or no key: the answer
+/// is "incompatible", which its build acts on by replacing this server.
+#[test]
+fn a_client_of_another_protocol_is_told_so_whatever_key_it_offers() {
+    let scratch = uze_testkit::temp::socket_scratch("another-protocol");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+
+    let answer = first_answer_to(
+        &socket,
+        &crate::ClientRequest::Attach {
+            version: crate::PROTOCOL_VERSION + 1,
+            columns: 0,
+            rows: 0,
+            seating: crate::Seating::WhereItLeftOff,
+            key: String::new(),
+        },
+    );
+    assert!(answer.starts_with("answered Error"), "{answer}");
+
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// What a client attaching says about its size sizes the pane it lands
+/// on, and only when it gives both dimensions: a zero is "leave it
+/// alone", and a space opened for such a client starts at the placeholder.
+#[test]
+fn an_attach_sizes_the_pane_it_lands_on_only_with_both_dimensions() {
+    let scratch = uze_testkit::temp::socket_scratch("attach-sizes");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    let sizeless = scratch.join("sizeless");
+    let half_sized = scratch.join("half-sized");
+    let other_half = scratch.join("other-half");
+    for directory in [&uze_home, &project, &sizeless, &half_sized, &other_half] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, socket) = listening_server(&project);
+    let size_of = |pane: PaneId| {
+        let snapshot = server.runtime(pane).expect("the pane runs").snapshot();
+        (snapshot.columns, snapshot.rows)
+    };
+    let attach = |columns, rows, seating| crate::ClientRequest::Attach {
+        version: crate::PROTOCOL_VERSION,
+        columns,
+        rows,
+        seating,
+        key: super::server_key(),
+    };
+    let first = server.session.lock().unwrap().selected_tab().pane.id;
+    let placeholder = crate::state::PLACEHOLDER_PANE_SIZE;
+
+    let attached = |request: crate::ClientRequest| {
+        let mut stream = super::transport::connect(&socket).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        send_request(&mut stream, &request).unwrap();
+        let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+        read_until(&mut reader, |event| match event {
+            crate::ClientEvent::Snapshot { .. } => Some(()),
+            _ => None,
+        });
+        let _ = send_request(&mut stream, &crate::ClientRequest::Detach);
+    };
+
+    for (columns, rows) in [(0, 0), (100, 0), (0, 30)] {
+        attached(attach(columns, rows, crate::Seating::WhereItLeftOff));
+        assert_eq!(size_of(first), placeholder, "{columns}x{rows}");
+    }
+    attached(attach(100, 30, crate::Seating::WhereItLeftOff));
+    assert_eq!(size_of(first), (100, 30));
+
+    for (root, (columns, rows)) in [
+        (&sizeless, (0, 0)),
+        (&half_sized, (120, 0)),
+        (&other_half, (0, 30)),
+    ] {
+        attached(attach(columns, rows, crate::Seating::Open(seat_at(root))));
+        let opened = server
+            .session
+            .lock()
+            .unwrap()
+            .workspace
+            .spaces
+            .last()
+            .expect("a space was opened")
+            .tabs[0]
+            .pane
+            .id;
+        assert_eq!(size_of(opened), placeholder, "{columns}x{rows}");
+    }
+
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A client attached to `server` over a pair, and what reads its events.
+fn client_of(
+    server: &Arc<Server>,
+) -> (
+    super::Stream,
+    std::io::BufReader<super::Stream>,
+    std::thread::JoinHandle<()>,
+) {
+    let (client, driver) = super::transport::pair().unwrap();
+    let serving = {
+        let server = Arc::clone(server);
+        std::thread::spawn(move || server.handle_client(client, super::Door::Shared))
+    };
+    let mut writer = driver.try_clone().unwrap();
+    driver
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    send_request(&mut writer, &attach_with(super::server_key())).unwrap();
+    (writer, std::io::BufReader::new(driver), serving)
+}
+
+/// Reads `reader` until an event `wanted` picks something out of.
+fn read_until<T>(
+    reader: &mut std::io::BufReader<super::Stream>,
+    mut wanted: impl FnMut(crate::ClientEvent) -> Option<T>,
+) -> T {
+    loop {
+        match read_event(reader).expect("the server must still be speaking") {
+            Some(event) => {
+                if let Some(found) = wanted(event) {
+                    return found;
+                }
+            }
+            None => panic!("the server hung up"),
+        }
+    }
+}
+
+/// Copies `pane`'s selection and waits for the answer: every request sent
+/// before it has been handled once it arrives.
+fn copied(
+    writer: &mut super::Stream,
+    reader: &mut std::io::BufReader<super::Stream>,
+    pane: PaneId,
+) -> String {
+    send_request(writer, &crate::ClientRequest::CopySelection { pane }).unwrap();
+    read_until(reader, |event| match event {
+        crate::ClientEvent::SelectionText { text, .. } => Some(text),
+        _ => None,
+    })
+}
+
+/// A space a client creates is started, and that client is put in it; a
+/// tab it selects afterwards in another space puts it back there.
+#[test]
+fn a_client_lands_in_the_space_it_creates_and_in_the_space_of_a_tab_it_selects() {
+    let scratch = uze_testkit::temp::socket_scratch("create-select");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, _damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    let (first_space, first_tab, first_pane) = {
+        let session = server.session.lock().unwrap();
+        let tab = session.selected_tab();
+        (session.workspace.selected_space, tab.id, tab.pane.id)
+    };
+    let client_space = || server.clients.lock().unwrap()[0].selection.space;
+
+    let (mut writer, mut reader, serving) = client_of(&server);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::CreateSpace {
+            label: None,
+            cwd: project.clone(),
+            columns: 80,
+            rows: 24,
+        },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, first_pane);
+    let (created, created_pane) = {
+        let session = server.session.lock().unwrap();
+        let space = session.workspace.spaces.last().unwrap();
+        (space.id, space.tabs[0].pane.id)
+    };
+    assert_ne!(created, first_space);
+    assert!(
+        server.runtime(created_pane).is_some(),
+        "the created space's shell was started"
+    );
+    assert_eq!(client_space(), Some(created), "the client is in it");
+
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::SelectTab { tab: first_tab },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, first_pane);
+    assert_eq!(
+        client_space(),
+        Some(first_space),
+        "selecting a tab of the first space put the client back there"
+    );
+
+    drop(writer);
+    drop(reader);
+    let _ = serving.join();
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// A client's scroll moves the pane's view, its selection selects the
+/// pane's text, and the pane's output reaches it as damage.
+// Unix only: `sleep` in the pane prints nothing, so the text fed to the
+// pane is all it shows.
+#[cfg(unix)]
+#[test]
+fn a_client_scrolls_and_selects_in_a_pane_and_is_sent_its_output() {
+    let scratch = uze_testkit::temp::socket_scratch("scroll-select");
+    let uze_home = scratch.join("home");
+    let project = scratch.join("project");
+    for directory in [&uze_home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let mut env = uze_testkit::env::scope();
+    env.set("UZE_HOME", &uze_home);
+    let (server, damage) = Server::new(
+        seat_at(&project),
+        Palette::default(),
+        socket_path().unwrap(),
+    )
+    .unwrap();
+    let server = Arc::new(server);
+    super::spawn_damage_broadcaster(Arc::clone(&server), damage);
+    let shell = server.session.lock().unwrap().selected_tab().pane.id;
+
+    let (mut writer, mut reader, serving) = client_of(&server);
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::CreateTab {
+            space: None,
+            label: "quiet".into(),
+            agent: None,
+            columns: 80,
+            rows: 24,
+            cwd: Some(project.clone()),
+            command: Some(vec!["sleep".into(), "30".into()]),
+            env: Vec::new(),
+        },
+    )
+    .unwrap();
+    copied(&mut writer, &mut reader, shell);
+    let pane = server.session.lock().unwrap().selected_tab().pane.id;
+    assert_ne!(pane, shell);
+    let runtime = server.runtime(pane).expect("the pane runs");
+    let lines: String = (0..60).map(|line| format!("line {line}\r\n")).collect();
+    draw(&runtime, format!("hello\r\n{lines}").as_bytes());
+
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Input {
+            pane,
+            bytes: b"uze-echo".to_vec(),
+        },
+    )
+    .unwrap();
+    read_until(&mut reader, |event| match event {
+        crate::ClientEvent::Damage(damage)
+            if damage.pane == pane
+                && damage
+                    .changed
+                    .iter()
+                    .map(|(_, _, cell)| cell.character)
+                    .collect::<String>()
+                    .contains("uze-echo") =>
+        {
+            Some(())
+        }
+        _ => None,
+    });
+
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Scroll { pane, lines: 1000 },
+    )
+    .unwrap();
+    send_request(
+        &mut writer,
+        &crate::ClientRequest::Select {
+            pane,
+            gesture: crate::SelectionGesture::Begin {
+                anchor: (0, 0),
+                head: (4, 0),
+            },
+        },
+    )
+    .unwrap();
+    assert_eq!(copied(&mut writer, &mut reader, pane), "hello");
+    assert!(
+        runtime.terminal.lock().unwrap().grid().display_offset() > 0,
+        "the view moved into the scrollback"
+    );
+
+    drop(writer);
+    drop(reader);
+    let _ = serving.join();
+    server.stop_panes();
+    let _ = std::fs::remove_dir_all(&scratch);
 }
 
 /// ADR-056: any process of this user can reach the endpoint, so reaching

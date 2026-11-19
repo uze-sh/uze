@@ -79,3 +79,79 @@ pub(super) fn runs_more_confined_than_this(pid: u32) -> bool {
 pub(super) fn find_server() -> String {
     uze_platform::process::finding_command("uze", "terminal serve")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn member(name: &str, pid: u32) -> Member {
+        Member {
+            pid,
+            parent: None,
+            name: name.to_owned(),
+        }
+    }
+
+    /// No process has this pid, so nothing launched it.
+    const NOBODY: u32 = u32::MAX;
+
+    #[test]
+    fn the_console_passes_on_through_a_shell_and_through_uze_only() {
+        let child = member("claude", NOBODY);
+        assert!(passes_on(&member("bash", 1), &child), "a shell");
+        assert!(passes_on(&member("uze", 1), &child), "UZE's launcher");
+        assert!(
+            !passes_on(&member("vim", 1), &child),
+            "a program keeps the console for itself"
+        );
+    }
+
+    #[test]
+    fn an_empty_uze_shell_is_the_persons_own_shell() {
+        let mut env = uze_testkit::env::scope();
+        // Only ever set to empty: a pane another test starts meanwhile
+        // reads it too, and empty is what it would get anyway.
+        env.set("UZE_SHELL", "");
+        assert_eq!(default_shell(), uze_platform::shell::interactive());
+        assert!(!default_shell().is_empty());
+    }
+
+    /// A server started with no terminal of its own still tells a pane's
+    /// programs what terminal they are on.
+    #[test]
+    fn a_pane_is_told_what_terminal_it_is_on() {
+        let mut env = uze_testkit::env::scope();
+        env.remove("TERM");
+        let terminal = uze_platform::shell::terminal_environment();
+        assert!(!terminal.is_empty());
+        let mut command = CommandBuilder::new("program");
+        prepare_pane(&mut command);
+        for (name, value) in terminal {
+            assert_eq!(
+                command.get_env(name).and_then(|value| value.to_str()),
+                Some(value),
+                "{name}"
+            );
+        }
+    }
+
+    /// Where a program joins its group only from inside, it is started
+    /// through the serving binary's `terminal host-pane` once one is named.
+    // Unix only: Unix starts a pane's program as it is whatever host is
+    // named, so naming one here changes no pane another test starts; on
+    // Windows every pane after it would be started through this name.
+    #[cfg(unix)]
+    #[test]
+    fn a_named_host_starts_a_pane_through_terminal_host_pane() {
+        let executable = std::env::current_exe().unwrap();
+        crate::runtime::host_panes_with(executable.clone());
+        assert_eq!(
+            pane_host(),
+            Some(vec![
+                executable.into_os_string(),
+                "terminal".into(),
+                "host-pane".into()
+            ])
+        );
+    }
+}
