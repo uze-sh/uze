@@ -214,7 +214,6 @@ impl Document {
                 self.flush();
                 self.heading = Some(level);
             }
-            Tag::Paragraph => self.flush(),
             Tag::Emphasis => self.emphasis.italic = true,
             Tag::Strong => self.emphasis.bold = true,
             Tag::Strikethrough => self.emphasis.struck = true,
@@ -811,6 +810,15 @@ mod tests {
 
         assert!(lines.iter().any(|line| line == "• one"), "{lines:?}");
         assert!(lines.iter().any(|line| line == "  • deep"), "{lines:?}");
+    }
+
+    #[test]
+    fn a_loose_list_keeps_each_item_beside_its_marker() {
+        let lines = lines_of("- one\n\n- two\n\n1. three\n");
+
+        assert!(lines.iter().any(|line| line == "• one"), "{lines:?}");
+        assert!(lines.iter().any(|line| line == "• two"), "{lines:?}");
+        assert!(lines.iter().any(|line| line == "1. three"), "{lines:?}");
     }
 
     #[test]
