@@ -139,7 +139,7 @@ accepts, which is why the table sums to more than the number of crates.
 | Licence | Crates |
 | --- | --- |
 | Apache License 2.0 (`Apache-2.0`) | 229 |
-| MIT License (`MIT`) | 82 |
+| MIT License (`MIT`) | 81 |
 | Unicode License v3 (`Unicode-3.0`) | 19 |
 | Creative Commons Zero v1.0 Universal (`CC0-1.0`) | 1 |
 | Mozilla Public License 2.0 (`MPL-2.0`) | 1 |
@@ -282,7 +282,6 @@ accepts, which is why the table sums to more than the number of crates.
 | `landlock` | 0.4.7 | MIT OR Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
 | `libc` | 0.2.191 | MIT OR Apache-2.0 |
-| `libm` | 0.2.16 | MIT |
 | `line-clipping` | 0.3.8 | MIT OR Apache-2.0 |
 | `linked-hash-map` | 0.5.6 | MIT OR Apache-2.0 |
 | `linux-raw-sys` | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -302,7 +301,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `monch` | 0.6.0 | MIT |
 | `nix` | 0.28.0 | MIT |
 | `nix` | 0.29.0 | MIT |
-| `noyalib` | 0.0.58 | MIT OR Apache-2.0 |
+| `noyalib` | 0.0.60 | MIT OR Apache-2.0 |
 | `nu-ansi-term` | 0.50.3 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -342,8 +341,8 @@ accepts, which is why the table sums to more than the number of crates.
 | `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
 | `rhai` | 1.27.0 | MIT OR Apache-2.0 |
 | `rhai_codegen` | 3.3.0 | MIT OR Apache-2.0 |
-| `rmcp` | 3.9.0 | Apache-2.0 |
-| `rmcp-macros` | 3.9.0 | Apache-2.0 |
+| `rmcp` | 3.10.0 | Apache-2.0 |
+| `rmcp-macros` | 3.11.0 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
 | `rustix` | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
