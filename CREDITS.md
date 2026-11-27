@@ -138,9 +138,9 @@ accepts, which is why the table sums to more than the number of crates.
 
 | Licence | Crates |
 | --- | --- |
-| Apache License 2.0 (`Apache-2.0`) | 229 |
+| Apache License 2.0 (`Apache-2.0`) | 232 |
 | MIT License (`MIT`) | 81 |
-| Unicode License v3 (`Unicode-3.0`) | 19 |
+| Unicode License v3 (`Unicode-3.0`) | 20 |
 | Creative Commons Zero v1.0 Universal (`CC0-1.0`) | 1 |
 | Mozilla Public License 2.0 (`MPL-2.0`) | 1 |
 | zlib License (`Zlib`) | 1 |
@@ -182,9 +182,9 @@ accepts, which is why the table sums to more than the number of crates.
 | `cfg_aliases` | 0.1.1 | MIT |
 | `cfg_aliases` | 0.2.2 | MIT |
 | `chrono` | 0.4.45 | MIT OR Apache-2.0 |
-| `clap` | 4.6.7 | MIT OR Apache-2.0 |
+| `clap` | 4.6.9 | MIT OR Apache-2.0 |
 | `clap_builder` | 4.6.7 | MIT OR Apache-2.0 |
-| `clap_derive` | 4.6.7 | MIT OR Apache-2.0 |
+| `clap_derive` | 4.6.9 | MIT OR Apache-2.0 |
 | `clap_lex` | 1.1.0 | MIT OR Apache-2.0 |
 | `colorchoice` | 1.0.5 | MIT OR Apache-2.0 |
 | `compact_str` | 0.9.1 | MIT |
@@ -279,7 +279,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `junction` | 1.4.2 | MIT |
 | `kasuari` | 0.4.12 | MIT OR Apache-2.0 |
 | `kdl` | 6.7.1 | Apache-2.0 |
-| `landlock` | 0.4.7 | MIT OR Apache-2.0 |
+| `landlock` | 0.4.8 | MIT OR Apache-2.0 |
 | `lazy_static` | 1.5.0 | MIT OR Apache-2.0 |
 | `libc` | 0.2.191 | MIT OR Apache-2.0 |
 | `line-clipping` | 0.3.8 | MIT OR Apache-2.0 |
@@ -301,7 +301,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `monch` | 0.6.0 | MIT |
 | `nix` | 0.28.0 | MIT |
 | `nix` | 0.29.0 | MIT |
-| `noyalib` | 0.0.60 | MIT OR Apache-2.0 |
+| `noyalib` | 0.0.64 | MIT OR Apache-2.0 |
 | `nu-ansi-term` | 0.50.3 | MIT |
 | `num-conv` | 0.2.2 | MIT OR Apache-2.0 |
 | `num-traits` | 0.2.19 | MIT OR Apache-2.0 |
@@ -336,12 +336,12 @@ accepts, which is why the table sums to more than the number of crates.
 | `redox_syscall` | 0.5.18 | MIT |
 | `ref-cast` | 1.0.27 | MIT OR Apache-2.0 |
 | `ref-cast-impl` | 1.0.27 | MIT OR Apache-2.0 |
-| `regex` | 1.13.1 | MIT OR Apache-2.0 |
-| `regex-automata` | 0.4.18 | MIT OR Apache-2.0 |
-| `regex-syntax` | 0.8.11 | MIT OR Apache-2.0 |
+| `regex` | 1.13.2 | MIT OR Apache-2.0 |
+| `regex-automata` | 0.4.19 | MIT OR Apache-2.0 |
+| `regex-syntax` | 0.8.12 | MIT OR Apache-2.0 |
 | `rhai` | 1.27.0 | MIT OR Apache-2.0 |
 | `rhai_codegen` | 3.3.0 | MIT OR Apache-2.0 |
-| `rmcp` | 3.10.0 | Apache-2.0 |
+| `rmcp` | 3.11.0 | Apache-2.0 |
 | `rmcp-macros` | 3.11.0 | Apache-2.0 |
 | `rustc-hash` | 2.1.3 | Apache-2.0 OR MIT |
 | `rustc_version` | 0.4.1 | MIT OR Apache-2.0 |
@@ -382,7 +382,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `strum_macros` | 0.28.0 | MIT |
 | `symlink` | 0.1.0 | MIT OR Apache-2.0 |
 | `syn` | 2.0.119 | MIT OR Apache-2.0 |
-| `syn` | 3.0.5 | MIT OR Apache-2.0 |
+| `syn` | 3.0.10 | MIT OR Apache-2.0 |
 | `synstructure` | 0.13.2 | MIT |
 | `syntect` | 5.3.0 | MIT |
 | `sys_traits` | 0.1.29 | MIT |
@@ -398,12 +398,13 @@ accepts, which is why the table sums to more than the number of crates.
 | `time-core` | 0.1.9 | MIT OR Apache-2.0 |
 | `tiny-keccak` | 2.0.2 | CC0-1.0 |
 | `tinystr` | 0.8.4 | Unicode-3.0 |
+| `tinyvec` | 1.13.3 | Zlib OR Apache-2.0 OR MIT |
 | `tokio` | 1.54.1 | MIT |
 | `tokio-macros` | 2.7.2 | MIT |
 | `tokio-util` | 0.7.19 | MIT |
 | `toml_datetime` | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_edit` | 0.25.19+spec-1.1.0 | MIT OR Apache-2.0 |
-| `toml_parser` | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_edit` | 0.25.20+spec-1.1.0 | MIT OR Apache-2.0 |
+| `toml_parser` | 1.1.7+spec-1.1.0 | MIT OR Apache-2.0 |
 | `toml_writer` | 1.2.0+spec-1.1.0 | MIT OR Apache-2.0 |
 | `tracing` | 0.1.44 | MIT |
 | `tracing-appender` | 0.2.5 | MIT |
@@ -414,7 +415,9 @@ accepts, which is why the table sums to more than the number of crates.
 | `two-face` | 0.5.2+bat-0.26.1 | MIT OR Apache-2.0 |
 | `typenum` | 1.20.1 | MIT OR Apache-2.0 |
 | `unicase` | 2.9.0 | MIT OR Apache-2.0 |
+| `unicode-general-category` | 1.1.0 | Apache-2.0 |
 | `unicode-ident` | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| `unicode-normalization` | 0.1.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | `unicode-segmentation` | 1.13.3 | MIT OR Apache-2.0 |
 | `unicode-truncate` | 2.0.1 | MIT OR Apache-2.0 |
 | `unicode-width` | 0.1.14 | MIT OR Apache-2.0 |
