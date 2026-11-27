@@ -235,7 +235,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `flate2` | 1.1.10 | MIT OR Apache-2.0 |
 | `fnv` | 1.0.7 | Apache-2.0  OR  MIT |
 | `foldhash` | 0.2.0 | Zlib |
-| `form_urlencoded` | 1.2.2 | MIT OR Apache-2.0 |
+| `form_urlencoded` | 1.2.3 | MIT OR Apache-2.0 |
 | `futures` | 0.3.34 | MIT OR Apache-2.0 |
 | `futures-channel` | 0.3.34 | MIT OR Apache-2.0 |
 | `futures-core` | 0.3.34 | MIT OR Apache-2.0 |
@@ -420,7 +420,7 @@ accepts, which is why the table sums to more than the number of crates.
 | `unicode-width` | 0.1.14 | MIT OR Apache-2.0 |
 | `unicode-width` | 0.2.3 | MIT OR Apache-2.0 |
 | `unit-prefix` | 0.5.2 | MIT |
-| `url` | 2.5.8 | MIT OR Apache-2.0 |
+| `url` | 2.5.9 | MIT OR Apache-2.0 |
 | `utf8_iter` | 1.0.4 | Apache-2.0 OR MIT |
 | `utf8parse` | 0.2.2 | Apache-2.0 OR MIT |
 | `uuid` | 1.26.0 | Apache-2.0 OR MIT |
