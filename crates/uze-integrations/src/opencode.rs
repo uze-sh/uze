@@ -187,8 +187,10 @@ impl IntegrationPort for OpenCodeIntegration {
         Some("https://opencode.ai")
     }
 
-    /// Reads the shared `AGENTS.md` natively (preferred over `CLAUDE.md`
-    /// per its own docs); UZE maintains no artifact for it.
+    /// Reads the shared `AGENTS.md` natively; since 2.4.0 a directory with
+    /// no `AGENTS.md` is read through its `CLAUDE.md`, and with no global
+    /// `AGENTS.md` it reads `~/.claude/CLAUDE.md` (instructions docs). UZE
+    /// maintains no artifact for it.
     fn context_delivery(&self) -> ContextDelivery {
         ContextDelivery::Native { files: &[] }
     }

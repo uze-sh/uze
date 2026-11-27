@@ -47,8 +47,16 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // with the empty object the vendor's contract requires. A
             // handler's denial in an `ask` group is answered `ask`, which
             // the harness puts to the person; any other closing is `deny`.
+            // A denied stop is the exception: `Stop` keeps the agent going
+            // on `continue` alone and lets it stop on any other value
+            // (docs/hooks.md, 1.5.18).
             posix: Decisions {
-                deny: "printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\"",
+                deny: concat!(
+                    "case $HOOK_EVENT in\n",
+                    "    stop) printf '{\"decision\":\"continue\",\"reason\":%s}' \"$reason_json\" ;;\n",
+                    "    *) printf '{\"decision\":\"%s\",\"reason\":%s}' \"$decision\" \"$reason_json\" ;;\n",
+                    "  esac",
+                ),
                 allow: "[ \"$HOOK_EVENT\" = pre_tool_use ] || printf '{}'",
                 // A rewrite is `overwrite` beside `allow`, which the vendor
                 // merges into the call's args shallowly, key by key (docs,
@@ -64,7 +72,10 @@ pub(crate) const HOOKS: HookTarget = HookTarget {
             // writing nothing, `{}` reading as a denial. The entry's line is
             // sealed against `cmd`'s quoting (`sealed_wrapper_command_line`).
             powershell: Some(Decisions {
-                deny: "[Console]::Out.Write('{\"decision\":\"' + $decision + '\",\"reason\":' + $reasonJson + '}')",
+                deny: concat!(
+                    "if ($hookEvent -eq 'stop') { $decision = 'continue' }\n",
+                    "  [Console]::Out.Write('{\"decision\":\"' + $decision + '\",\"reason\":' + $reasonJson + '}')",
+                ),
                 allow: "if ($hookEvent -ne 'pre_tool_use') { [Console]::Out.Write('{}') }",
                 transform: Some(
                     "[Console]::Out.Write('{\"decision\":\"allow\",\"overwrite\":' + $updatedJson + '}')",
