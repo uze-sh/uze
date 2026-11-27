@@ -34,7 +34,10 @@ deny_native() {                 # $1 reason, plain text; $2 decision (deny)
   # cannot be encoded is replaced, never left out of the document.
   reason_json=$(json_string "$1") && [ -n "$reason_json" ] \
     || reason_json='"hooks/exec: denied; the reason could not be encoded"'
-  printf '{"decision":"%s","reason":%s}' "$decision" "$reason_json" || exit 2
+  case $HOOK_EVENT in
+    stop) printf '{"decision":"continue","reason":%s}' "$reason_json" ;;
+    *) printf '{"decision":"%s","reason":%s}' "$decision" "$reason_json" ;;
+  esac || exit 2
   exit 0                                # this harness's block signal
 }
 

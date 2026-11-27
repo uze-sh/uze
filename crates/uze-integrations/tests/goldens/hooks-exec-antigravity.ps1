@@ -41,6 +41,7 @@ function Deny-Native([string]$reason, [string]$decision = 'deny') {
   # session opens as if the handler had allowed.
   if ($hookEvent -eq 'session_start') { Allow-Native; exit 0 }
   $reasonJson = $json.Serialize($reason)
+  if ($hookEvent -eq 'stop') { $decision = 'continue' }
   [Console]::Out.Write('{"decision":"' + $decision + '","reason":' + $reasonJson + '}')
   exit 0
 }
