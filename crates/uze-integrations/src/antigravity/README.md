@@ -127,3 +127,9 @@ it become authoritative.
   of 2026-09-28 (read off the requests the harness sent; `agy mcp list` shows
   only the global servers, so it is not the place to look). The project
   authors that directory, and UZE writes nothing into it.
+- Since 1.5.16 agy also reads Codex's `~/.agents/skills`, and a skill of
+  the same name under `~/.gemini` wins (`agy changelog`; not yet measured
+  by the Lab). A skill both harnesses receive is therefore shown as the
+  copy encoded for agy. A skill only Codex receives reaches agy too, and
+  agy does not read the policy sidecar Codex carries, so a user-only Skill
+  delivered for Codex alone is one agy's model may invoke.

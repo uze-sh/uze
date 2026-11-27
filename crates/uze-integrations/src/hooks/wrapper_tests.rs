@@ -697,6 +697,48 @@ fn a_stop_payload_leaves_the_handler_without_a_tool() {
     }
 }
 
+/// A denied stop keeps the agent going, and each harness reads that from
+/// its own word: Antigravity continues on `continue` alone and lets the
+/// agent stop on any other decision.
+#[test]
+fn a_denied_stop_is_answered_as_the_harnesss_continuation() {
+    for target in TARGETS {
+        let root = package(&format!("wrapper-stop-deny-{target}"));
+        write_script(
+            &root.join("scripts").join("unfinished"),
+            "echo 'the tests have not run' >&2\nexit 3",
+        );
+        let hook = group_at(HookEvent::Stop, HookEffect::Deny, &["unfinished"], 10);
+        let answer = run_wrapper(target, &root, &hook, &stop_payload(target), None);
+        assert_eq!(
+            answer.exit,
+            block_exit(target),
+            "{target}: {}",
+            answer.stdout
+        );
+        assert!(
+            answer.stderr.contains("the tests have not run"),
+            "{target}: the reason reaches stderr"
+        );
+        let document: serde_json::Value = serde_json::from_str(answer.stdout.trim()).unwrap();
+        let continues = if target == crate::antigravity::HOOKS {
+            &document["decision"] == "continue"
+        } else if target == crate::claude::HOOKS {
+            &document["decision"] == "block"
+        } else {
+            // Codex continues on exit 2 with the reason on stderr and
+            // ignores the document.
+            true
+        };
+        assert!(continues, "{target}: {document}");
+        assert!(
+            document.to_string().contains("the tests have not run"),
+            "{target}: the reason travels in the document"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
 #[test]
 fn a_session_start_hands_the_handler_its_source_and_no_tool() {
     for target in [crate::claude::HOOKS, crate::codex::HOOKS] {
