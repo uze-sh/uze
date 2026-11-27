@@ -21,8 +21,10 @@ Usage of agy:
   --project                       Project ID or project name for the current CLI session
   --prompt                        Alias for --print
   --prompt-interactive            Run an initial prompt interactively and continue the session
+  -r                              Short alias for --conversation
   --remote-agent                  Run this session's conversations using remote agents; --project then names a remote project by ID or name, otherwise they open in this machine's default remote project
   --remote-control                Create a remote connection for the CLI session on start up
+  --resume                        Alias for --conversation
   --sandbox                       Run in a sandbox with terminal restrictions enabled
   --settings                      Settings for this session only, never saved: a JSON object of settings.json keys, inline or as a file path
 
